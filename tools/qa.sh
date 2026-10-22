@@ -1,5 +1,5 @@
 #!/bin/bash
-# Full scenario suite (baseline, lost first send, two mutants). Takes about 15 minutes.
+# Shared-state suite (live sync, packet loss, peer restart and two tutorial doors, with mutants). Accepts scenario name filters.
 # Lab mode: leases two slots (without waiting: exit 3 = busy, run game-free tests instead or retry), builds the hard-linked
 # instance folders, runs, and always kills this agent's games and frees the slots. QA_WAIT=<seconds> waits for slots.
 . "$(dirname "$0")/config.sh"

@@ -2,7 +2,7 @@
 
 Co-op for The Witness (Steam app 210970, build 11370412). **Dev preview, not playable with friends yet.** Two copies of the
 game on one PC can see each other as puppets, and when one player solves a panel the other game marks it solved and opens the
-door it gates. Only the first puzzle has been played through and tested; cables, panels powered by other panels, lasers, plates
+door it gates. The first two tutorial puzzles have automated bots; cables, panels powered by other panels, lasers, plates
 and bridges are not synced, and there is no installer or release.
 Built with the [Co-op Anything](https://github.com/cranebeaker/coop-anything) playbook; research notes live in
 `games/the-witness/NOTES.md` there.
@@ -25,7 +25,7 @@ No game files are in this repo. You need your own copy of The Witness, Steam bui
   sent back.
 
 Not done: cables and panels powered by panels, plates, lasers, bridges, a real network (localhost only), late join into a game
-with progress (restart catch-up is in the suite; a first-time late join is not), saves, a second puzzle, a player model.
+with progress (restart catch-up is in the suite; a first-time late join is not), saves, puzzles beyond the first two tutorial doors, a player model.
 
 ## Try it (two copies on one PC)
 
@@ -67,16 +67,18 @@ file made the loader fail with "AnselSDK64_real.dll not found"). `DllMain` only 
 | Hooks | `hooks.cpp`, `config.cpp` | Import-table hooks installed from `DllMain` (memory patching only): `SHGetFolderPathW` (save folder), `CreateFileA/W` (`data-pc.zip` share mode); settings read lazily from the cfg |
 | Game calls | `game.cpp` | `DoorOpenStart(door, amount)` at `base + 0x8E4B0`, type-checked; `witness_cmd.txt` (`door <hexid>`) for development |
 
-Build 11370412 facts the code relies on (module-relative): entity table `[[base+0x62D0A0]+0x18]` indexed by entity id; entity
+Build 11370412 facts the code relies on (module-relative): entity table `[[base+0x62D0A0]+0x18]` indexed by the mod's entity IDs
+(table indices, including zero); entity
 `+0x08` points to a type descriptor (`Machine_Panel` `0x62E670`, `Door` `0x62DE70`); camera position `0x6304C0`, angles `0x6303EC`;
 a panel is solved when the float at `+0x294` is `1.0` and the int at `+0x298` is `1` (a solve also sets `+0x278`, `+0x280`, `+0x290`);
-a door is open when the word at `+0x1D0` is `1.0`. Writing those fields into another game does not start a door: its opening is
+a door is open when the word at `+0x1D0` is `1.0`. The game's stored target IDs use a separate namespace: subtract the table
+base ID at `[[base+0x62D0A0]+0x08]` (observed `1`) to get a table index. Writing those fields into another game does not start a door: its opening is
 started by the function call. Sources and the evidence for each are in the hub notes.
 
 `witness_coop.cfg` (next to the DLL): `id`, `listen`, `peer` (UDP ports on localhost), optional `peer_host`. Instance isolation (all
 off by default, so a player's own game is unchanged): `save_dir=instance` (the game's save folder, `%APPDATA%\The Witness`, becomes
 `<game folder>\appdata`, or give a path; the owner's real saves are then never touched), `cap_fps=N` (frame cap), `share_zip=1`
-(see above), `force_active=1` (the game believes its window is always active: full speed, and it accepts injected input, without taking the focus or the mouse; the real cursor is replaced by a virtual one). Test-only switches: `drop_first_event=1`, `no_resend=1`, `no_echo_guard=1`, `no_resync_on_restart=1`. The log is `witness_proxy.log` next to the DLL.
+(see above), `force_active=1` (the game believes its window is always active: full speed, and it accepts injected input, without taking the focus or the mouse; the real cursor is replaced by a virtual one). Test-only switches: `drop_first_event=1`, `no_resend=1`, `no_echo_guard=1`, `no_resync_on_restart=1`, `skip_entity_zero=1`. The log is `witness_proxy.log` next to the DLL.
 
 Without `force_active` the game runs unthrottled only while its window is the active one (otherwise about 10 fps) and ignores keys and
 mouse buttons. It also takes the foreground by itself while loading (`tools/restart.sh` runs a guard that hands the focus back).
@@ -140,7 +142,17 @@ leave the first panel and its door missing on B. Assertions read both processes'
 Targeted run on 2026-10-22: both scenarios PASS; clean state identical (1 panel, 10 doors), mutant missing exactly panel
 `0x64` and door `0x34eda`. Real saves unchanged, instance save redirect and cursor checks passed, and A ran at 30.0 fps.
 
-Not covered by the suite: a real network, more than two players, any puzzle besides the first, cables and powered panels,
+`tools/qa.sh 'second tutorial door'` runs the first-panel bot then `wbot2.py`, which naturally solves Tutorial Bend (`0x182`)
+by tracing up and left. Both games must contain both solved panels and open doors `0x34eda` and `0x0`; the mutant skips entity
+zero during A's scan and must leave exactly that door missing on B. This caught a real adapter bug: scanning from ID 1
+excluded the second tutorial door even though table index zero is valid. The second bot uses a calibrated standing point and
+cursor path for the lab's 1920x1080 back buffer; other resolutions are untested. `tools/win/wpanel.py <pid> <hex id>` reads a
+panel's graph for extending the bot to more puzzles.
+Targeted run on 2026-10-22: clean and mutant both PASS (command exit 0). Clean has 2 solved panels and 11 open doors on both
+sides; mutant lacks only door `0x0` on B. Save isolation, free cursor and 30.0 fps checks passed. The clean check failed before
+the scanner fix, with that same missing door.
+
+Not covered by the suite: a real network, more than two players, puzzles beyond the first two tutorial doors, cables and powered panels,
 a first-time late join into a game that already has progress, same-process save reloads, saves, fullscreen, non-16:9 windows.
 
 The probes in `tools/win/` (`wread.py`, `wsnap.py` + `wdiff.py` for before/after memory diffs, `wnames.py`, `wstatedump.py`, `wfps.py`) are

@@ -80,6 +80,8 @@ SCENARIOS = [   # name, extra cfg for A, extra cfg for B, check(a_stats, b_stats
   ('MUTANT: echo guard off', '', 'no_echo_guard=1', lambda a, b, ok: (b.get('ep', 0) + b.get('ed', 0) > 0, 'B must echo events back, otherwise the echo check tests nothing')),
   ('peer restart catch-up', '', '', lambda a, b, ok: (ok and b.get('ap', 0) >= 1 and b.get('ad', 0) >= 1 and b.get('ep', 9) == 0 and b.get('ed', 9) == 0, 'fresh B catches up without echoing')),
   ('MUTANT: peer restart catch-up disabled', 'no_resync_on_restart=1', '', lambda a, b, ok: (not ok, 'fresh B must diverge without full-state catch-up')),
+  ('second tutorial door', '', '', lambda a, b, ok: (ok and b.get('ep', 9) == 0 and b.get('ed', 9) == 0, 'both tutorial panels and doors match without B echo')),
+  ('MUTANT: second tutorial door skips entity zero', 'skip_entity_zero=1', '', lambda a, b, ok: (not ok, 'door entity zero must be missing on B')),
 ]
 only = sys.argv[1:]; results = []
 SAVES0 = real_saves()
@@ -94,11 +96,23 @@ for name, ca, cb, check in SCENARIOS:
     bot = sh('%s -I %s %s %s 2>&1 | tail -3' % (shlex.quote(PYW), shlex.quote(win(os.path.join(TOOLS, 'win', 'wbot.py'))), pid('A'), shlex.quote(win(DIR1)))).strip()
     print(bot, flush=True)
     bot_ok = 'solved: True' in bot      # a scenario that never solved the panel proves nothing, whatever the state diff says
+    second_ok = True
+    if 'second tutorial door' in name and bot_ok:
+        bot2 = pyw('wbot2.py', pid('A'), win(DIR1))
+        print(bot2.strip(), flush=True)
+        second_ok = 'panel 0x182 solved: True' in bot2
     time.sleep(14)    # the stats line is logged every 10 s
     catchup = restart_catchup(ca, cb, name.startswith('MUTANT:')) if 'restart catch-up' in name and bot_ok else None
     out = sh('python3 %s' % os.path.join(TOOLS, 'state_diff.py')); print(out.strip(), flush=True)
     a, b = last_stats(DIR1), last_stats(DIR2)
     ok, why = check(a, b, 'IDENTICAL' in out)
+    if 'second tutorial door' in name:
+        sa, sb = state('A'), state('B')
+        panels_ok = all(entity in sa['panels'] and entity in sb['panels'] for entity in ('0x64', '0x182'))
+        doors_ok = all(entity in sa['doors'] for entity in ('0x34eda', '0x0')) and '0x34eda' in sb['doors']
+        zero_ok = ('0x0' not in sb['doors']) if name.startswith('MUTANT:') else ('0x0' in sb['doors'])
+        ok = ok and second_ok and panels_ok and doors_ok and zero_ok
+        if not second_ok: why = 'the bot did not solve the second panel'
     if catchup:
         ok = ok and catchup[0]; why = catchup[1]
     if not bot_ok: ok, why = False, 'the bot did not solve the panel (a state diff of two untouched games proves nothing)'

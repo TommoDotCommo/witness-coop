@@ -9,6 +9,7 @@
 #include "coop.h"
 #include "game.h"
 #include "state.h"
+#include "config.h"
 
 void Log(const char* msg);
 
@@ -34,7 +35,8 @@ public:
         uintptr_t arr = 0; if (!Rd(glob + 0x18, &arr, 8) || !arr) return false;
         tbl_.assign(kMaxId, 0);
         if (!Rd(arr, tbl_.data(), kMaxId * 8)) return false;
-        for (unsigned id = 1; id < kMaxId; id++) {
+        // Table index zero is valid: it is the door opened by Tutorial Bend (panel index 0x182).
+        for (unsigned id = GetCfg().skipEntityZero ? 1u : 0u; id < kMaxId; id++) {
             if (!tbl_[id]) continue;
             uintptr_t ti = 0; if (!Rd(tbl_[id] + 8, &ti, 8)) continue;
             if (ti == Base() + kPanelTI) panels.push_back(id); else if (ti == Base() + kDoorTI) doors.push_back(id);
