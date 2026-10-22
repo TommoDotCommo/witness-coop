@@ -6,8 +6,8 @@
 namespace witness {
 namespace {
 
-// Protocol v2 adds panel power-on. Distinct magics prevent a v1 peer from ACKing an incomplete vocabulary.
-constexpr uint32_t kMagicPose = 0x32505457, kMagicEv = 0x32455457, kMagicAck = 0x32415457;   // "WTP2" "WTE2" "WTA2"
+// Protocol v3 adds cable lighting (v2 added panel power-on). Distinct magics prevent an older peer from ACKing an incomplete vocabulary.
+constexpr uint32_t kMagicPose = 0x33505457, kMagicEv = 0x33455457, kMagicAck = 0x33415457;   // "WTP3" "WTE3" "WTA3"
 constexpr size_t kPoseLen = 40, kEvLen = 32, kAckLen = 24;                                    // with the 4-byte checksum
 constexpr uint64_t kSuppressMs = 5000, kSettleMs = 15000, kCascadeMs = 5000;
 
@@ -76,7 +76,7 @@ void SyncCore::onPacket(const uint8_t* d, size_t n, uint64_t now) {
     Guard g(h_);
     if (magic == kMagicEv && n == kEvLen) {
         uint32_t from = get32(d + 4), seq = get32(d + 16), kind = get32(d + 20), entity = get32(d + 24); uint64_t epoch = get64(d + 8);
-        if (int(from) == id_ || (kind != EV_PANEL_SOLVED && kind != EV_DOOR_OPENED && kind != EV_PANEL_POWERED) || entity >= kMaxEntityId) return;
+        if (int(from) == id_ || (kind != EV_PANEL_SOLVED && kind != EV_DOOR_OPENED && kind != EV_PANEL_POWERED && kind != EV_CABLE_LIT) || entity >= kMaxEntityId) return;
         if (epoch < peerEpoch_) { st_.ooo++; if (h_.onRejected) h_.onRejected(uint8_t(kind), entity, epoch, seq, "stale epoch"); return; }   // a delayed packet of an earlier run
         if (epoch > peerEpoch_) { peerEpoch_ = epoch; if (!f_.noEpochReset) peerApplied_ = 0; }
         bool ordered = false, dup = false;
@@ -123,7 +123,9 @@ bool SyncCore::scanWorld() {
     std::vector<unsigned> p, d; uint64_t tid = 0;
     if (!w_->scan(p, d, &tid)) return false;
     bool changed = tid != tableId_ || p.size() != panels_.size() || d.size() != doors_.size();
-    tableId_ = tid; panels_.swap(p); doors_.swap(d);
+    std::vector<unsigned> c; if (!w_->scanCables(c)) return false;
+    changed = changed || c.size() != cables_.size();
+    tableId_ = tid; panels_.swap(p); doors_.swap(d); cables_.swap(c);
     return changed;
 }
 
@@ -135,6 +137,8 @@ uint64_t SyncCore::signature() {   // FNV-1a over which panels are solved and wh
     for (unsigned id : doors_) if (w_->entityExists(id) && w_->doorOpen(id)) mix(id);
     mix(0xFFFE);
     for (unsigned id : panels_) if (w_->entityExists(id) && w_->panelPowered(id)) mix(id);
+    mix(0xFFFD);
+    for (unsigned id : cables_) if (w_->entityExists(id) && w_->cableLit(id)) mix(id);
     return h;
 }
 
@@ -151,6 +155,11 @@ void SyncCore::baseline(bool full) {
         bool o = w_->entityExists(id) && w_->doorOpen(id);
         if (o) knownDoor_.insert(id); else knownDoor_.erase(id);
         if (full && o) emit(EV_DOOR_OPENED, id, true);
+    }
+    for (unsigned id : cables_) {
+        bool lit = w_->entityExists(id) && w_->cableLit(id);
+        if (lit) knownCable_.insert(id); else knownCable_.erase(id);
+        if (full && lit && !f_.noCableSync) emit(EV_CABLE_LIT, id, true);
     }
 }
 
@@ -195,7 +204,7 @@ void SyncCore::pollState(uint64_t now) {
         // settle again, and publish this world's full state once it has.
         log("state: save reload suspected (known progress vanished), waiting for a stable world");
         ready_ = false; gateSame_ = 0; gateLastPanels_ = gateLastDoors_ = 0; gateLastSig_ = 0; nextGate_ = now + 3000;
-        suppressPanel_.clear(); suppressDoor_.clear(); suppressPower_.clear(); anyLocalSolve_ = false;
+        suppressPanel_.clear(); suppressDoor_.clear(); suppressPower_.clear(); suppressCable_.clear(); anyLocalSolve_ = false;
         session_++; epoch_ = (uint64_t(session_) << 16) | ++restartsSeen_; nextSeq_ = 1; sent_.clear(); resync_ = true;
         st_.reloads++;
         return;
@@ -222,6 +231,18 @@ void SyncCore::pollState(uint64_t now) {
         }
         if (powered) knownPower_.insert(id); else knownPower_.erase(id);
     }
+    for (unsigned id : cables_) {      // same rules as panel power: a cable that lights during start-up is folded into the baseline
+        if (!w_->entityExists(id)) continue;
+        bool lit = w_->cableLit(id), known = knownCable_.count(id) != 0;
+        auto sp = suppressCable_.find(id);
+        bool suppressed = sp != suppressCable_.end() && now < sp->second;
+        bool cascade = anyLocalSolve_ && now < lastLocalSolveAt_ + kCascadeMs;
+        if (lit && !known && !suppressed && !(now < settleUntil_ && !cascade) && !f_.noCableSync) {
+            emit(EV_CABLE_LIT, id, false); st_.emittedCables++;
+            char l[100]; std::snprintf(l, sizeof l, "state: local cable %#x lit -> event", id); log(l);
+        }
+        if (lit) knownCable_.insert(id); else knownCable_.erase(id);
+    }
     for (unsigned id : doors_) {
         if (!w_->entityExists(id)) continue;
         bool o = w_->doorOpen(id); bool known = knownDoor_.count(id) != 0;
@@ -234,8 +255,8 @@ void SyncCore::pollState(uint64_t now) {
     }
     if (now >= nextStats_) {
         nextStats_ = now + 10000;
-        char l[320]; std::snprintf(l, sizeof l, "state: emitted panels %u doors %u, applied panels %u doors %u | net sent %u resent %u in-order %u dup %u ooo %u acked %u | power emitted %u applied %u",
-            st_.emittedPanels, st_.emittedDoors, st_.appliedPanels, st_.appliedDoors, st_.sent, st_.resent, st_.inOrder, st_.dup, st_.ooo, st_.acked, st_.emittedPowers, st_.appliedPowers); log(l);
+        char l[320]; std::snprintf(l, sizeof l, "state: emitted panels %u doors %u, applied panels %u doors %u | net sent %u resent %u in-order %u dup %u ooo %u acked %u | power emitted %u applied %u | cable emitted %u applied %u",
+            st_.emittedPanels, st_.emittedDoors, st_.appliedPanels, st_.appliedDoors, st_.sent, st_.resent, st_.inOrder, st_.dup, st_.ooo, st_.acked, st_.emittedPowers, st_.appliedPowers, st_.emittedCables, st_.appliedCables); log(l);
     }
 }
 
@@ -273,6 +294,16 @@ void SyncCore::applyRemote(uint64_t now) {
             st_.appliedPowers++;
             if (h_.onApplied) h_.onApplied(r.kind, r.entity, r.epoch, r.seq);
             std::snprintf(l, sizeof l, "state: remote panel %#x powered", r.entity); log(l);
+        } else if (r.kind == EV_CABLE_LIT && w_->isCable(r.entity)) {
+            if (w_->cableLit(r.entity) && !f_.noDedupe) { knownCable_.insert(r.entity); continue; }
+            if (!w_->applyCableLit(r.entity)) {
+                if (!f_.noApplyRetry) recvQ_.push_back(r);
+                continue;
+            }
+            if (!f_.noEchoGuard) { knownCable_.insert(r.entity); suppressCable_[r.entity] = now + kSuppressMs; }
+            st_.appliedCables++;
+            if (h_.onApplied) h_.onApplied(r.kind, r.entity, r.epoch, r.seq);
+            std::snprintf(l, sizeof l, "state: remote cable %#x lit", r.entity); log(l);
         } else if (r.kind == EV_DOOR_OPENED && w_->isDoor(r.entity)) {
             if (w_->doorOpen(r.entity) && !f_.noDedupe) {
                 knownDoor_.insert(r.entity);

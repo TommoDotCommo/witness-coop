@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Shared-state assertion: solved/powered panels and open doors must match in both games. Exit 1 on any difference."""
+"""Shared-state assertion: solved/powered panels, open doors and lit cables must match in both games. Exit 1 on any difference."""
 import json, sys
 from witness import pyw, pid
 def dump(which): return json.loads(pyw('wstatedump.py', pid(which)).strip().splitlines()[-1])
 a, b = dump('A'), dump('B'); bad = 0
-for kind in ('panels', 'doors', 'powered_panels'):
+for kind in ('panels', 'doors', 'powered_panels', 'lit_cables'):
     sa, sb = set(a[kind]), set(b[kind])
     print('%-6s A solved/open: %3d  B: %3d  only-A: %s  only-B: %s' % (kind, len(sa), len(sb), sorted(sa - sb), sorted(sb - sa)))
     bad += len(sa ^ sb)

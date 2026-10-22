@@ -7,3 +7,5 @@ void GameEnqueueDoorOpen(unsigned id, float amount);
 uintptr_t GameEntity(unsigned id);                    // entity pointer or 0
 bool GameDoorOpenNow(unsigned id, float amount);      // render thread only; refuses non-Door entities
 bool GamePanelPowerOnNow(unsigned id);                // render thread only; refuses non-panel entities or a wrong prologue
+bool GameCablePowerOnNow(unsigned id);                // render thread only; refuses non-cable entities or a wrong prologue
+void GameEnqueueCablePower(unsigned id);              // development command: run GameCablePowerOnNow on the render thread

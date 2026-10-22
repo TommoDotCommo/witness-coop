@@ -13,7 +13,7 @@
 
 void Log(const char* msg);
 
-static const uintptr_t kGlobals = 0x62D0A0, kDoorTI = 0x62DE70, kPanelTI = 0x62E670;
+static const uintptr_t kGlobals = 0x62D0A0, kDoorTI = 0x62DE70, kPanelTI = 0x62E670, kCableTI = 0x62EB10;
 static const int kSolvedF = 0x294, kEver = 0x298, kPanelState = 0x280, kDoorPower = 0x1D0;
 static const uint32_t kOne = 0x3F800000;
 static const unsigned kMaxId = 0x40000;
@@ -33,16 +33,20 @@ public:
     bool scan(std::vector<unsigned>& panels, std::vector<unsigned>& doors, uint64_t* tableId) override {   // all Machine_Panel and Door entities from the live table
         uintptr_t glob = 0; if (!Rd(Base() + kGlobals, &glob, 8) || !glob) return false;
         uintptr_t arr = 0; if (!Rd(glob + 0x18, &arr, 8) || !arr) return false;
-        tbl_.assign(kMaxId, 0);
+        tbl_.assign(kMaxId, 0); cables_.clear();
         if (!Rd(arr, tbl_.data(), kMaxId * 8)) return false;
         // Table index zero is valid: it is the door opened by Tutorial Bend (panel index 0x182).
         for (unsigned id = GetCfg().skipEntityZero ? 1u : 0u; id < kMaxId; id++) {
             if (!tbl_[id]) continue;
             uintptr_t ti = 0; if (!Rd(tbl_[id] + 8, &ti, 8)) continue;
-            if (ti == Base() + kPanelTI) panels.push_back(id); else if (ti == Base() + kDoorTI) doors.push_back(id);
+            if (ti == Base() + kPanelTI) panels.push_back(id); else if (ti == Base() + kDoorTI) doors.push_back(id); else if (ti == Base() + kCableTI) cables_.push_back(id);
         }
         *tableId = arr; return true;
     }
+    bool scanCables(std::vector<unsigned>& cables) override { cables = cables_; return true; }       // filled by the last scan()
+    bool isCable(unsigned id) override { uintptr_t e = id < kMaxId ? GameEntity(id) : 0; return e && Type(e) == Base() + kCableTI; }
+    bool cableLit(unsigned id) override { uintptr_t e = GameEntity(id); return e && Rd32(e + 0xC4) == kOne && Rd32(e + 0xC8) == kOne; }
+    bool applyCableLit(unsigned id) override { return GameCablePowerOnNow(id); }
     bool entityExists(unsigned id) override { return id < kMaxId && GameEntity(id) != 0; }
     bool isPanel(unsigned id) override { uintptr_t e = id < kMaxId ? GameEntity(id) : 0; return e && Type(e) == Base() + kPanelTI; }
     bool isDoor(unsigned id) override { uintptr_t e = id < kMaxId ? GameEntity(id) : 0; return e && Type(e) == Base() + kDoorTI; }
@@ -63,7 +67,7 @@ public:
         ang[0] = a[0]; ang[1] = a[1]; return true;
     }
 private:
-    std::vector<uintptr_t> tbl_;
+    std::vector<uintptr_t> tbl_; std::vector<unsigned> cables_;
 };
 
 static GameWorld g_world;

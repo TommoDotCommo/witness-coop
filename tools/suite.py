@@ -14,6 +14,8 @@ def last_stats(d):
     out = dict(zip(['ep', 'ed', 'ap', 'ad', 'sent', 'resent', 'inorder', 'dup', 'ooo', 'acked'], map(int, m.groups()))) if m else {}
     power = re.search(r'\| power emitted (\d+) applied (\d+)', lines[-1]) if lines else None
     if power: out.update(zip(['epow', 'apow'], map(int, power.groups())))
+    cable = re.search(r'\| cable emitted (\d+) applied (\d+)', lines[-1]) if lines else None
+    if cable: out.update(zip(['ecab', 'acab'], map(int, cable.groups())))
     return out
 
 def real_saves():
@@ -28,17 +30,17 @@ def fps(which, secs=4):
 def state(which):
     return json.loads(pyw('wstatedump.py', pid(which)))
 
-def restart_catchup(ca, cb, mutant, include_power=False):
+def restart_catchup(ca, cb, mutant, include_power=False, expected=None):
     """Discard B's world after the live solve has already been delivered and ACKed.
 
     Assert against process memory before and after; a log saying 'resync' is not evidence of restored progress.
     """
     before_a, before_b = state('A'), state('B')
-    expected = {'panels': '0x64', 'doors': '0x34eda'}
+    expected = dict(expected or {'panels': '0x64', 'doors': '0x34eda'})
     if include_power: expected['powered_panels'] = '0x1b'
     for kind, entity in expected.items():
         if entity not in before_a[kind] or before_a[kind] != before_b[kind]:
-            return False, 'precondition failed: both worlds must have the solved panel and open door before B restarts'
+            return False, 'precondition failed: both worlds must have the solved panel and its effects before B restarts'
     stats = last_stats(DIR1)
     if not stats or stats['sent'] != stats['acked']:
         return False, 'precondition failed: wait for all original events to be acknowledged'
@@ -58,7 +60,7 @@ def restart_catchup(ca, cb, mutant, include_power=False):
         return False, 'B entity census is incomplete after restart'
     if mutant:
         ok = all(expected[kind] not in after_b[kind] for kind in expected)
-        return ok, 'catch-up disabled: fresh B must lack panel 0x64 and door 0x34eda'
+        return ok, 'catch-up disabled: fresh B must lack every effect of the solve'
     ok = all(after_a[kind] == after_b[kind] for kind in expected)
     return ok, 'fresh B restored all progress from surviving A after original events were ACKed'
 
@@ -152,6 +154,8 @@ SCENARIOS = [   # name, extra cfg for A, extra cfg for B, check(a_stats, b_stats
   ('MUTANT: late join without snapshot', 'no_resend=1\nno_resync_on_restart=1', '', lambda a, b, ok: (not ok, 'a never-seen B must diverge without the full-state snapshot')),
   ('same-process reload', '', '', lambda a, b, ok: (b.get('ep', 9) == 0 and b.get('ed', 9) == 0, 'B reloads an older save in the same process and catches up from A')),
   ('MUTANT: same-process reload ignored', '', 'no_reload_sync=1', lambda a, b, ok: (True, 'B must stay diverged after the reload')),
+  ('cable maze', '', '', lambda a, b, ok: (ok and b.get('ecab', 9) == 0 and b.get('acab', 0) >= 1 and b.get('ep', 9) == 0, 'solving a maze lights its cable in both games, once, without echo, and a fresh B recovers it')),
+  ('MUTANT: cable maze without cable sync', 'no_cable_sync=1', 'no_cable_sync=1', lambda a, b, ok: (not ok, 'the cable must stay dark on B')),
   ('second tutorial door', '', '', lambda a, b, ok: (ok and b.get('ep', 9) == 0 and b.get('ed', 9) == 0, 'both tutorial panels and doors match without B echo')),
   ('MUTANT: second tutorial door skips entity zero', 'skip_entity_zero=1', '', lambda a, b, ok: (not ok, 'door entity zero must be missing on B')),
   ('panel power chain', '', '', lambda a, b, ok: (ok and b.get('epow', 9) == 0 and b.get('apow', 0) >= 1, 'target panel powers on without being solved or echoed')),
@@ -174,7 +178,8 @@ for name, ca, cb, check in SCENARIOS:
     if 'same-process reload' in name and not backup: print('no first save appeared on B', flush=True)
     # The bot is in-process (tp, mouse and button commands to the proxy): no focus, no desktop input, no lock; several can run at once.
     open(os.path.join(RUN, 'guard.stop'), 'w').write('bot starting')      # the focus guard (for the game grabbing the foreground while loading) ends
-    bot = sh('%s -I %s %s %s 2>&1 | tail -3' % (shlex.quote(PYW), shlex.quote(win(os.path.join(TOOLS, 'win', 'wbot.py'))), pid('A'), shlex.quote(win(DIR1)))).strip()
+    maze = 'cable maze' in name
+    bot = sh('%s -I %s %s %s %s 2>&1 | tail -3' % (shlex.quote(PYW), shlex.quote(win(os.path.join(TOOLS, 'win', 'wbot_maze.py' if maze else 'wbot.py'))), pid('A'), shlex.quote(win(DIR1)), '0x293' if maze else '')).strip()
     print(bot, flush=True)
     bot_ok = 'solved: True' in bot      # a scenario that never solved the panel proves nothing, whatever the state diff says
     second_ok = True
@@ -196,12 +201,20 @@ for name, ca, cb, check in SCENARIOS:
     elif late: pass
     elif 'restart catch-up' in name and bot_ok:
         catchup = restart_catchup(ca, cb, name.startswith('MUTANT:'))
+    elif maze and bot_ok and not name.startswith('MUTANT:'):
+        catchup = restart_catchup(ca, cb, False, expected={'panels': '0x293', 'lit_cables': '0x349'})
     elif 'panel power chain' in name and bot_ok and power_ok and not name.startswith('MUTANT:'):
         catchup = restart_catchup(ca, cb, False, include_power=True)
     if late and bot_ok: catchup = late_join(ca, cb, name.startswith('MUTANT:'))
     out = sh('python3 %s' % os.path.join(TOOLS, 'state_diff.py')); print(out.strip(), flush=True)
     a, b = last_stats(DIR1), last_stats(DIR2)
     ok, why = check(a, b, 'IDENTICAL' in out)
+    if maze:
+        sa, sb = state('A'), state('B')
+        solved_ok = '0x293' in sa['panels'] and '0x293' in sb['panels'] and sa['panels'] == sb['panels']
+        if name.startswith('MUTANT:'): cable_ok = '0x349' in sa['lit_cables'] and '0x349' not in sb['lit_cables'] and set(sa['lit_cables']) - set(sb['lit_cables']) == {'0x349'}
+        else: cable_ok = '0x349' in sa['lit_cables'] and sa['lit_cables'] == sb['lit_cables']
+        ok = ok and solved_ok and cable_ok
     if 'panel power chain' in name:
         sa, sb = state('A'), state('B')
         same_solves = sa['panels'] == sb['panels'] and '0x18af' in sa['panels'] and '0x1b' not in sa['panels']

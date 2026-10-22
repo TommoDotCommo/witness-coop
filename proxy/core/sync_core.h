@@ -12,7 +12,7 @@
 namespace witness {
 
 using Bytes = std::vector<uint8_t>;
-enum EvKind : uint8_t { EV_PANEL_SOLVED = 1, EV_DOOR_OPENED = 2, EV_PANEL_POWERED = 3 };
+enum EvKind : uint8_t { EV_PANEL_SOLVED = 1, EV_DOOR_OPENED = 2, EV_PANEL_POWERED = 3, EV_CABLE_LIT = 4 };
 constexpr unsigned kMaxEntityId = 0x40000;      // the game's entity table size; ids at or above it are refused
 
 // What the core needs from the game (or a fake of it).
@@ -30,6 +30,10 @@ public:
     virtual bool applyPanelPower(unsigned) { return false; }                    // render thread only; false: retry later
     virtual void applyPanelSolved(unsigned id) = 0;                             // render thread only
     virtual bool applyDoorOpen(unsigned id) = 0;                                // render thread only (calls the game's door function)
+    virtual bool scanCables(std::vector<unsigned>&) { return true; }              // all Power_Cable entities (none by default)
+    virtual bool isCable(unsigned) { return false; }
+    virtual bool cableLit(unsigned) { return false; }                            // the cable's lit state (+0xC4 and +0xC8 at 1.0)
+    virtual bool applyCableLit(unsigned) { return false; }                       // render thread only; false: retry later
     virtual bool pose(float pos[3], float ang[2]) = 0;                          // local player pose; false when not available
 };
 
@@ -40,6 +44,7 @@ struct Flags {   // all off by default
     bool wrongAckEpoch = false, applyOutOfOrder = false, noChecksum = false;
     bool noApplyRetry = false;  // twin: discard ACKed events when the game cannot apply them yet
     bool noPanelPower = false;  // twin: omit panel power-on progression from live sync and snapshots
+    bool noCableSync = false;   // twin: omit cable lighting from live sync and snapshots
     bool noReloadSync = false;  // twin: ignore a same-process save reload (no re-gate, no resync with the peer)
 };
 
@@ -57,7 +62,7 @@ struct Hooks {
 
 struct RemotePose { bool valid = false; float pos[3] = {0, 0, 0}, ang[2] = {0, 0}; uint64_t ageMs = 0; unsigned seq = 0, id = 0; };
 
-struct Stats { uint32_t sent = 0, resent = 0, inOrder = 0, dup = 0, ooo = 0, acked = 0, emittedPanels = 0, emittedDoors = 0, appliedPanels = 0, appliedDoors = 0, resyncs = 0, emittedPowers = 0, appliedPowers = 0, reloads = 0; };
+struct Stats { uint32_t sent = 0, resent = 0, inOrder = 0, dup = 0, ooo = 0, acked = 0, emittedPanels = 0, emittedDoors = 0, appliedPanels = 0, appliedDoors = 0, resyncs = 0, emittedPowers = 0, appliedPowers = 0, reloads = 0, emittedCables = 0, appliedCables = 0; };
 
 class SyncCore {
 public:
@@ -98,6 +103,7 @@ private:
     std::vector<unsigned> panels_, doors_; uint64_t tableId_ = 0;
     std::set<unsigned> knownPanel_, knownDoor_; std::map<unsigned, uint64_t> suppressPanel_, suppressDoor_;
     std::set<unsigned> knownPower_; std::map<unsigned, uint64_t> suppressPower_;
+    std::vector<unsigned> cables_; std::set<unsigned> knownCable_; std::map<unsigned, uint64_t> suppressCable_;
     uint64_t lastLocalSolveAt_ = 0; bool anyLocalSolve_ = false;     // a door opening soon after a local solve is that solve's cascade, not a start-up flip
     bool ready_ = false, gateStarted_ = false; uint64_t nextGate_ = 0, settleUntil_ = 0, nextScan_ = 0, nextStats_ = 0;
     size_t gateLastPanels_ = 0, gateLastDoors_ = 0; uint64_t gateLastSig_ = 0; int gateSame_ = 0;

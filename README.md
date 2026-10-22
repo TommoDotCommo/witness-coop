@@ -2,7 +2,7 @@
 
 Co-op for The Witness (Steam app 210970, build 11370412). **Dev preview, not playable with friends yet.** Two copies of the
 game on one PC can see each other as puppets, and when one player solves a panel the other game marks it solved and opens the
-door it gates. The first two tutorial door puzzles and a panel-to-panel power-on chain have automated bots; cables, power-off switches, lasers, plates
+door it gates. The first two tutorial door puzzles and a panel-to-panel power-on chain have automated bots; power-off switches, lasers, plates
 and bridges are not synced, and there is no installer or release.
 Built with the [Co-op Anything](https://github.com/cranebeaker/coop-anything) playbook; research notes live in
 `games/the-witness/NOTES.md` there.
@@ -28,8 +28,8 @@ No game files are in this repo. You need your own copy of The Witness, Steam bui
   counts on three scans three seconds apart); after applying a remote change the entity is suppressed for 5 s so it is not
   sent back.
 
-Not done: cables, power-off switching, plates, lasers, bridges, a real network (localhost only), late join into a game
-with progress (restart catch-up is in the suite; a first-time late join is not), saves, puzzles beyond the first two tutorial doors and first black/white tutorial panel, a player model.
+Not done: power-off switching, plates, lasers, bridges, a real network (localhost only), late join into a game
+with progress (restart catch-up, a first-time late join and a same-process save reload are in the suite), puzzles beyond the first two tutorial doors, the first black/white tutorial panel and one cable-driving maze (`0x293`), a player model.
 
 ## Try it (two copies on one PC)
 
@@ -65,7 +65,7 @@ file made the loader fail with "AnselSDK64_real.dll not found"). `DllMain` only 
 | Part | File | What it does |
 |---|---|---|
 | Overlay | `overlay.cpp` | Patches slot 8 (`Present`) of the swap-chain vtable (found through a dummy device), draws the puppet; also runs queued game commands and remote events between frames |
-| Network | `coop.cpp` | Protocol v2 UDP: pose at 30 Hz (`WTP2`, 40 bytes), reliable events (`WTE2`, 32 bytes: epoch, sequence, kind, entity), cumulative acks (`WTA2`, 24 bytes); lengths include checksums. A peer session change starts a new epoch and full state resend |
+| Network | `coop.cpp` | Protocol v3 UDP: pose at 30 Hz (`WTP3`, 40 bytes), reliable events (`WTE3`, 32 bytes: epoch, sequence, kind, entity), cumulative acks (`WTA3`, 24 bytes); lengths include checksums. A peer session change starts a new epoch and full state resend |
 | State | `state.cpp` | Detector thread (10 Hz) and the applier; echo guard and stable-world gate |
 | Input | `input.cpp`, `game.cpp` | Injects keys, mouse and clicks into the game's own input pump, teleports the player, takes screenshots, parses `witness_cmd.txt` |
 | Hooks | `hooks.cpp`, `config.cpp` | Import-table hooks installed from `DllMain` (memory patching only): `SHGetFolderPathW` (save folder), `CreateFileA/W` (`data-pc.zip` share mode); settings read lazily from the cfg |
@@ -84,7 +84,7 @@ off by default, so a player's own game is unchanged): `save_dir=instance` (the g
 `<game folder>\appdata`, or give a path; the owner's real saves are then never touched), `cap_fps=N` (frame cap), `share_zip=1`
 (see above), `force_active=1` (the game believes its window is always active: full speed, and it accepts injected input, without taking the focus or the mouse; the real cursor is replaced by a virtual one). Test-only switches: `drop_first_event=1`, `no_resend=1`, `no_echo_guard=1`, `no_resync_on_restart=1`, `skip_entity_zero=1`, `no_panel_power=1`. The log is `witness_proxy.log` next to the DLL.
 
-Both peers must use the updated DLL. Protocol v2 adds panel power-on and uses new packet magics; v1 peers are ignored.
+Both peers must use the updated DLL. Protocol v2 added panel power-on and v3 adds cable lighting (event kind 4: a cable is lit when `+0xC4` and `+0xC8` are 1.0; applied through the game's own `exe+0x175EE0`, the call its target dispatcher at `exe+0xC24F0` makes for a cable target); each version uses new packet magics, so older peers are ignored.
 
 Without `force_active` the game runs unthrottled only while its window is the active one (otherwise about 10 fps) and ignores keys and
 mouse buttons. It also takes the foreground by itself while loading (`tools/restart.sh` runs a guard that hands the focus back).
@@ -171,8 +171,8 @@ Targeted run on 2026-10-22: both scenarios PASS (exit 0). Clean, including fresh
 10 open doors and 238 powered panels; the mutant left only `0x1b` unpowered on B (237 there). Both kept the target unsolved.
 Save hashes, instance saves, free cursor and 30.0 fps checks passed.
 
-Not covered by the suite: a real network, more than two players, puzzles beyond the first two tutorial doors and first black/white tutorial panel, cables, power-off switching,
-a first-time late join into a game that already has progress, same-process save reloads, saves, fullscreen, non-16:9 windows.
+Not covered by the suite: a real network, more than two players, puzzles beyond the first two tutorial doors, the first black/white tutorial panel and maze `0x293`, other cable-driving panels and the `:slider_cable` cables, power-off switching,
+loading a different save slot, saves, fullscreen, non-16:9 windows.
 
 The probes in `tools/win/` (`wread.py`, `wsnap.py` + `wdiff.py` for before/after memory diffs, `wnames.py`, `wstatedump.py`, `wfps.py`) are
 read-only; `wkeys.py`, `wshot.py`, `wplace.py`, `wfocus.py` and `launch.py` drive the windows.

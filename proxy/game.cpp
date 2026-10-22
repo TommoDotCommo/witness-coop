@@ -1,5 +1,5 @@
 // Game-function bridge. Commands arrive from other threads and run on the render thread, between frames.
-// witness_cmd.txt (one per line):  door <hexid> [amount]
+// witness_cmd.txt (one per line):  door <hexid> [amount] | cable <hexid>
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <cstdio>
@@ -14,9 +14,10 @@ extern HMODULE g_selfModule();
 
 static const uintptr_t kGlobals = 0x62D0A0, kDoorTypeInfo = 0x62DE70, kDoorOpenStart = 0x8E4B0;
 static const uintptr_t kPanelTypeInfo = 0x62E670, kPanelPowerOn = 0xC2890;
+static const uintptr_t kCableTypeInfo = 0x62EB10, kCablePowerOn = 0x175EE0;
 typedef void(__fastcall* DoorOpenFn)(void* door, float amount);
 
-struct Cmd { int type; unsigned id; float amount; unsigned vk, scan; bool down; int dx, dy; unsigned bf; };   // type 0 door, 1 key, 2 mouse
+struct Cmd { int type; unsigned id; float amount; unsigned vk, scan; bool down; int dx, dy; unsigned bf; };   // type 0 door, 1 key, 2 mouse, 3 cable
 struct Tp { float v[5]; int frames; }; static Tp g_tp; static bool g_tpOn;      // teleport: x y z yaw pitch, held for a few frames
 static CRITICAL_SECTION g_lock; static bool g_lockInit; static Cmd g_q[64]; static int g_n;
 
@@ -36,6 +37,13 @@ void GameEnqueueDoorOpen(unsigned id, float amount) {
     LeaveCriticalSection(&g_lock);
 }
 
+void GameEnqueueCablePower(unsigned id) {
+    if (!g_lockInit) return;
+    EnterCriticalSection(&g_lock);
+    if (g_n < 64) g_q[g_n++] = {3, id, 0, 0, 0, false, 0, 0, 0};
+    LeaveCriticalSection(&g_lock);
+}
+
 void GameRunQueued() {
     if (g_tpOn && g_lockInit) {   // camera position and angles are the player's: write them for a few frames so the game keeps them
         float* pos = (float*)(Base() + 0x6304B0 + 0x10); float* ang = (float*)(Base() + 0x6303EC);
@@ -50,6 +58,7 @@ void GameRunQueued() {
     for (int i = 0; i < n; i++) {
         if (batch[i].type == 1) { InputKey(batch[i].vk, batch[i].scan, batch[i].down); continue; }
         if (batch[i].type == 2) { InputMouse(batch[i].dx, batch[i].dy, batch[i].bf); continue; }
+        if (batch[i].type == 3) { char m[100]; snprintf(m, sizeof m, "game: cable %#x power-on %s", batch[i].id, GameCablePowerOnNow(batch[i].id) ? "called" : "refused"); Log(m); continue; }
         uintptr_t e = GameEntity(batch[i].id); char m[160];
         if (!e) { snprintf(m, sizeof m, "game: door %#x: no such entity", batch[i].id); Log(m); continue; }
         if (*(uintptr_t*)(e + 8) != Base() + kDoorTypeInfo) { snprintf(m, sizeof m, "game: entity %#x is not a Door, refusing", batch[i].id); Log(m); continue; }
@@ -71,6 +80,7 @@ static DWORD WINAPI CmdThread(LPVOID) {
             unsigned id; float amt = 1.0f;
             char a[16], b[16]; int dx, dy;
             if (sscanf(line, "door %x %f", &id, &amt) >= 1) GameEnqueueDoorOpen(id, amt);
+            else if (sscanf(line, "cable %x", &id) == 1) GameEnqueueCablePower(id);
             else if (sscanf(line, "key %15s %15s", a, b) == 2) {       // key W down|up
                 struct { const char* n; unsigned vk, sc; } keys[] = {{"W", 0x57, 0x11}, {"A", 0x41, 0x1E}, {"S", 0x53, 0x1F}, {"D", 0x44, 0x20}, {"SPACE", 0x20, 0x39}, {"ENTER", 0x0D, 0x1C}, {"ESC", 0x1B, 0x01}};
                 for (auto& k : keys) if (!_stricmp(a, k.n)) { Cmd c = {1, 0, 0, k.vk, k.sc, !_stricmp(b, "down"), 0, 0, 0}; EnterCriticalSection(&g_lock); if (g_n < 64) g_q[g_n++] = c; LeaveCriticalSection(&g_lock); }
@@ -109,5 +119,17 @@ bool GamePanelPowerOnNow(unsigned id) {
     const unsigned char prologue[] = {0x48, 0x89, 0x5C, 0x24, 0x10};
     if (IsBadReadPtr(fn, sizeof prologue) || memcmp(fn, prologue, sizeof prologue)) return false;
     ((void(__fastcall*)(void*))(fn))((void*)e);
+    return true;
+}
+
+bool GameCablePowerOnNow(unsigned id) {
+    uintptr_t e = id < 0x40000 ? GameEntity(id) : 0;
+    if (!e || IsBadReadPtr((void*)(e + 8), 8) || *(uintptr_t*)(e + 8) != Base() + kCableTypeInfo) return false;
+    // Build 11370412: the game's own target dispatcher (exe+0xC24F0) calls this for a Power_Cable target of a solved panel (second
+    // argument 0). It lights the cable (+0xC4/+0xC8 to 1.0) and its glow.
+    const unsigned char* fn = (const unsigned char*)(Base() + kCablePowerOn);
+    const unsigned char prologue[] = {0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48, 0x83, 0xEC, 0x60};
+    if (IsBadReadPtr(fn, sizeof prologue) || memcmp(fn, prologue, sizeof prologue)) return false;
+    ((void(__fastcall*)(void*, unsigned char))(fn))((void*)e, 0);
     return true;
 }

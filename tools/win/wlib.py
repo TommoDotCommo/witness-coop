@@ -3,7 +3,7 @@
 import ctypes, ctypes.wintypes as wt, struct
 
 GLOBALS, CAM_POS, CAM_ANG = 0x62D0A0, 0x6304B0 + 0x10, 0x6303EC
-TI_PANEL, TI_DOOR = 0x62E670, 0x62DE70          # type descriptors (module-relative)
+TI_PANEL, TI_DOOR, TI_CABLE = 0x62E670, 0x62DE70, 0x62EB10          # type descriptors (module-relative)
 MAX_ID = 0x40000
 
 k = ctypes.WinDLL('kernel32', use_last_error=True)
