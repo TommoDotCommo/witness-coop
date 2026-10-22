@@ -12,7 +12,7 @@
 
 void Log(const char* msg);
 
-static bool HookImport(const char* dll, const char* fn, void* hook, void** orig) {
+bool HookImport(const char* dll, const char* fn, void* hook, void** orig) {
     BYTE* base = (BYTE*)GetModuleHandleW(nullptr);
     auto nt = (IMAGE_NT_HEADERS*)(base + ((IMAGE_DOS_HEADER*)base)->e_lfanew);
     auto& dir = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
@@ -65,7 +65,106 @@ static HANDLE WINAPI HookCreateFileA(LPCSTR p, DWORD a, DWORD s, LPSECURITY_ATTR
     return g_origCFA(p, a, s, sa, cd, fl, t);
 }
 
+// ---- diagnostic: which Sleep calls shape the frame time (debug_sleep=1)
+typedef VOID(WINAPI* SleepFn)(DWORD);
+static SleepFn g_origSleep;
+static VOID WINAPI HookSleep(DWORD ms) {
+    if (GetCfg().debugSleep) {
+        static struct { DWORD ms; void* ret; LONG n; } seen[40]; static LONG used;
+        void* ret = __builtin_return_address(0); int i = 0;
+        for (; i < used; i++) if (seen[i].ms == ms && seen[i].ret == ret) break;
+        if (i == used && used < 40) { seen[used].ms = ms; seen[used].ret = ret; used++; }
+        if (i < 40 && InterlockedIncrement(&seen[i].n) == 3) {      // log a call the third time it happens: skips one-off startup sleeps
+            char m[140]; snprintf(m, sizeof m, "sleep: Sleep(%lu) from exe+%#llx", (unsigned long)ms, (unsigned long long)((ULONG_PTR)ret - (ULONG_PTR)GetModuleHandleW(nullptr))); Log(m);
+        }
+    }
+    g_origSleep(ms);
+}
+
+// ---- diagnostic: which window messages the game's loop gets (debug_msgs=1)
+typedef BOOL(WINAPI* PeekMessageAFn)(LPMSG, HWND, UINT, UINT, UINT);
+static PeekMessageAFn g_origPeek;
+static BOOL WINAPI HookPeekMessageA(LPMSG m, HWND w, UINT a, UINT b, UINT rm) {
+    BOOL r = g_origPeek(m, w, a, b, rm);
+    if (GetCfg().debugMsgs) {   // every distinct call site of PeekMessageA (there may be a second pump that handles input itself)
+        static void* sites[16]; static LONG used; void* ra = __builtin_return_address(0); int k = 0;
+        for (; k < used; k++) if (sites[k] == ra) break;
+        if (k == used && used < 16) { sites[used++] = ra; char s[140]; snprintf(s, sizeof s, "msg: PeekMessageA call site exe+%#llx filter %#x-%#x flags %#x", (unsigned long long)((ULONG_PTR)ra - (ULONG_PTR)GetModuleHandleW(nullptr)), a, b, rm); Log(s); }
+    }
+    if (r && GetCfg().debugMsgs && (rm & PM_REMOVE)) {
+        static LONG seen[0x400]; UINT id = m->message;
+        if (id < 0x400 && id != 0x200 && id != 0x113 && id != 0x1 /* mouse move, timer, create */) {
+            LONG n = InterlockedIncrement(&seen[id]);
+            if (n == 1 || n == 20) { char s[140]; snprintf(s, sizeof s, "msg: %#x wParam %#llx lParam %#llx (x%ld)", id, (unsigned long long)m->wParam, (unsigned long long)m->lParam, (long)n); Log(s); }
+        }
+    }
+    return r;
+}
+
+// ---- the game installs a Windows hook: note its type and callback (the keyboard may come through it, not through messages)
+typedef HHOOK(WINAPI* SetWindowsHookExAFn)(int, HOOKPROC, HINSTANCE, DWORD);
+static SetWindowsHookExAFn g_origSWH;
+HOOKPROC g_gameKbdHook;        // low-level keyboard hook procedure of the game, if it installs one (input.cpp calls it)
+static HHOOK WINAPI HookSetWindowsHookExA(int id, HOOKPROC proc, HINSTANCE mod, DWORD tid) {
+    if (id == WH_KEYBOARD_LL) g_gameKbdHook = proc;
+    char m[140]; snprintf(m, sizeof m, "hooks: game installs hook type %d, callback exe+%#llx, thread %lu", id, (unsigned long long)((ULONG_PTR)proc - (ULONG_PTR)GetModuleHandleW(nullptr)), (unsigned long)tid); Log(m);
+    return g_origSWH(id, proc, mod, tid);
+}
+
+// ---- GetActiveWindow: the game looks this up by name at run time (GetProcAddress) to learn whether its window is active.
+// With force_active=1 it is told its window always is, so it neither throttles nor ignores the keyboard in the background.
+typedef FARPROC(WINAPI* GetProcAddressFn)(HMODULE, LPCSTR);
+typedef HWND(WINAPI* GetActiveWindowFn)();
+static GetProcAddressFn g_origGPA; static GetActiveWindowFn g_realGAW;
+HWND g_gameWnd;                // set by the overlay from the swap chain
+static HWND WINAPI FakeGetActiveWindow() { return g_gameWnd ? g_gameWnd : g_realGAW(); }
+static FARPROC WINAPI HookGetProcAddress(HMODULE m, LPCSTR name) {
+    FARPROC p = g_origGPA(m, name);
+    if (GetCfg().debugMsgs && !IS_INTRESOURCE(name)) { static LONG n; if (InterlockedIncrement(&n) <= 80) { char s[140]; snprintf(s, sizeof s, "gpa: %s", name); Log(s); } }
+    if (p && !IS_INTRESOURCE(name) && !strcmp(name, "GetActiveWindow") && GetCfg().forceActive) {
+        g_realGAW = (GetActiveWindowFn)p; Log("hooks: GetActiveWindow resolved by the game -> always the game window (force_active)"); return (FARPROC)FakeGetActiveWindow;
+    }
+    return p;
+}
+
+typedef ATOM(WINAPI* RegisterClassExAFn)(const WNDCLASSEXA*);
+static RegisterClassExAFn g_origRC;
+static ATOM WINAPI HookRegisterClassExA(const WNDCLASSEXA* c) {
+    char m[160]; snprintf(m, sizeof m, "hooks: RegisterClassExA(%s) wndproc exe+%#llx", c && c->lpszClassName && !IS_INTRESOURCE(c->lpszClassName) ? c->lpszClassName : "?", (unsigned long long)((ULONG_PTR)(c ? c->lpfnWndProc : 0) - (ULONG_PTR)GetModuleHandleW(nullptr))); Log(m);
+    return g_origRC(c);
+}
+
+// ---- virtual cursor (force_active=1). The game thinks it is active, so it would lock the REAL mouse cursor into its window
+// (SetCursorPos to the centre, ClipCursor to a 2x2 box): the owner could not use the mouse. Instead it gets a virtual cursor:
+// those calls do nothing and GetCursorPos answers with the centre of the game window, which is where the game puts it in play.
+extern HWND g_gameWnd;
+typedef BOOL(WINAPI* ClipCursorFn)(const RECT*); typedef BOOL(WINAPI* SetCursorPosFn)(int, int); typedef BOOL(WINAPI* GetCursorPosFn)(LPPOINT);
+typedef HWND(WINAPI* SetCaptureFn)(HWND); typedef BOOL(WINAPI* ReleaseCaptureFn)(); typedef int(WINAPI* ShowCursorFn)(BOOL);
+static ClipCursorFn g_oClip; static SetCursorPosFn g_oSetPos; static GetCursorPosFn g_oGetPos; static SetCaptureFn g_oSetCap; static ReleaseCaptureFn g_oRelCap; static ShowCursorFn g_oShow;
+static BOOL WINAPI HookClipCursor(const RECT* r) { static LONG n; if (InterlockedIncrement(&n) <= 3) { char m[120]; snprintf(m, sizeof m, "hooks: ClipCursor(%s) force_active=%d", r ? "rect" : "NULL", (int)GetCfg().forceActive); Log(m); } return GetCfg().forceActive ? TRUE : g_oClip(r); }
+static BOOL WINAPI HookSetCursorPos(int x, int y) { static LONG n; if (InterlockedIncrement(&n) <= 2) { char m[100]; snprintf(m, sizeof m, "hooks: SetCursorPos(%d,%d) force_active=%d", x, y, (int)GetCfg().forceActive); Log(m); } return GetCfg().forceActive ? TRUE : g_oSetPos(x, y); }
+static BOOL WINAPI HookGetCursorPos(LPPOINT p) {
+    if (GetCfg().forceActive && g_gameWnd && p) { RECT c; GetClientRect(g_gameWnd, &c); POINT q = {c.right / 2, c.bottom / 2}; ClientToScreen(g_gameWnd, &q); *p = q; return TRUE; }
+    return g_oGetPos(p);
+}
+static HWND WINAPI HookSetCapture(HWND w) { return GetCfg().forceActive ? nullptr : g_oSetCap(w); }
+static BOOL WINAPI HookReleaseCapture() { return GetCfg().forceActive ? TRUE : g_oRelCap(); }
+static int WINAPI HookShowCursor(BOOL s) { return GetCfg().forceActive ? (s ? 0 : -1) : g_oShow(s); }
+
+void InputInstallHook();
 void InstallHooks() {   // called from DllMain: memory patching only
+    InputInstallHook();
+    HookImport("USER32.dll", "ClipCursor", (void*)HookClipCursor, (void**)&g_oClip);
+    HookImport("USER32.dll", "SetCursorPos", (void*)HookSetCursorPos, (void**)&g_oSetPos);
+    HookImport("USER32.dll", "GetCursorPos", (void*)HookGetCursorPos, (void**)&g_oGetPos);
+    HookImport("USER32.dll", "SetCapture", (void*)HookSetCapture, (void**)&g_oSetCap);
+    HookImport("USER32.dll", "ReleaseCapture", (void*)HookReleaseCapture, (void**)&g_oRelCap);
+    HookImport("USER32.dll", "ShowCursor", (void*)HookShowCursor, (void**)&g_oShow);
+    HookImport("USER32.dll", "RegisterClassExA", (void*)HookRegisterClassExA, (void**)&g_origRC);
+    HookImport("KERNEL32.dll", "GetProcAddress", (void*)HookGetProcAddress, (void**)&g_origGPA);
+    HookImport("USER32.dll", "SetWindowsHookExA", (void*)HookSetWindowsHookExA, (void**)&g_origSWH);
+    HookImport("USER32.dll", "PeekMessageA", (void*)HookPeekMessageA, (void**)&g_origPeek);
+    HookImport("KERNEL32.dll", "Sleep", (void*)HookSleep, (void**)&g_origSleep);
     HookImport("SHELL32.dll", "SHGetFolderPathW", (void*)HookSHGetFolderPathW, (void**)&g_origSH);
     HookImport("KERNEL32.dll", "CreateFileW", (void*)HookCreateFileW, (void**)&g_origCFW);
     HookImport("KERNEL32.dll", "CreateFileA", (void*)HookCreateFileA, (void**)&g_origCFA);

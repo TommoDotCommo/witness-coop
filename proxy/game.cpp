@@ -6,14 +6,17 @@
 #include <cstdint>
 #include <cstring>
 #include "game.h"
+#include "input.h"
 
 void Log(const char* msg);
+void RequestShot(const char* name);
 extern HMODULE g_selfModule();
 
 static const uintptr_t kGlobals = 0x62D0A0, kDoorTypeInfo = 0x62DE70, kDoorOpenStart = 0x8E4B0;
 typedef void(__fastcall* DoorOpenFn)(void* door, float amount);
 
-struct Cmd { unsigned id; float amount; };
+struct Cmd { int type; unsigned id; float amount; unsigned vk, scan; bool down; int dx, dy; unsigned bf; };   // type 0 door, 1 key, 2 mouse
+struct Tp { float v[5]; int frames; }; static Tp g_tp; static bool g_tpOn;      // teleport: x y z yaw pitch, held for a few frames
 static CRITICAL_SECTION g_lock; static bool g_lockInit; static Cmd g_q[64]; static int g_n;
 
 static uintptr_t Base() { return (uintptr_t)GetModuleHandleA(nullptr); }
@@ -28,15 +31,24 @@ uintptr_t GameEntity(unsigned id) {
 void GameEnqueueDoorOpen(unsigned id, float amount) {
     if (!g_lockInit) return;
     EnterCriticalSection(&g_lock);
-    if (g_n < 64) g_q[g_n++] = {id, amount};
+    if (g_n < 64) g_q[g_n++] = {0, id, amount, 0, 0, false, 0, 0, 0};
     LeaveCriticalSection(&g_lock);
 }
 
 void GameRunQueued() {
+    if (g_tpOn && g_lockInit) {   // camera position and angles are the player's: write them for a few frames so the game keeps them
+        float* pos = (float*)(Base() + 0x6304B0 + 0x10); float* ang = (float*)(Base() + 0x6303EC);
+        uintptr_t pl = GameEntity(0x1E465);       // the player ('Human'): the camera follows it, 1.69 above the feet
+        if (pl && !IsBadWritePtr((void*)(pl + 0x24), 12)) { float* fp = (float*)(pl + 0x24); fp[0] = g_tp.v[0]; fp[1] = g_tp.v[1]; fp[2] = g_tp.v[2] - 1.69f; }
+        if (!IsBadWritePtr(pos, 12) && !IsBadWritePtr(ang, 8)) { pos[0] = g_tp.v[0]; pos[1] = g_tp.v[1]; pos[2] = g_tp.v[2]; ang[0] = g_tp.v[3]; ang[1] = g_tp.v[4]; }
+        if (--g_tp.frames <= 0) { g_tpOn = false; Log("game: teleport done"); }
+    }
     if (!g_lockInit || g_n == 0) return;
     Cmd batch[64]; int n;
     EnterCriticalSection(&g_lock); n = g_n; memcpy(batch, g_q, sizeof(Cmd) * n); g_n = 0; LeaveCriticalSection(&g_lock);
     for (int i = 0; i < n; i++) {
+        if (batch[i].type == 1) { InputKey(batch[i].vk, batch[i].scan, batch[i].down); continue; }
+        if (batch[i].type == 2) { InputMouse(batch[i].dx, batch[i].dy, batch[i].bf); continue; }
         uintptr_t e = GameEntity(batch[i].id); char m[160];
         if (!e) { snprintf(m, sizeof m, "game: door %#x: no such entity", batch[i].id); Log(m); continue; }
         if (*(uintptr_t*)(e + 8) != Base() + kDoorTypeInfo) { snprintf(m, sizeof m, "game: entity %#x is not a Door, refusing", batch[i].id); Log(m); continue; }
@@ -56,7 +68,16 @@ static DWORD WINAPI CmdThread(LPVOID) {
         char line[160];
         while (fgets(line, sizeof line, f)) {
             unsigned id; float amt = 1.0f;
+            char a[16], b[16]; int dx, dy;
             if (sscanf(line, "door %x %f", &id, &amt) >= 1) GameEnqueueDoorOpen(id, amt);
+            else if (sscanf(line, "key %15s %15s", a, b) == 2) {       // key W down|up
+                struct { const char* n; unsigned vk, sc; } keys[] = {{"W", 0x57, 0x11}, {"A", 0x41, 0x1E}, {"S", 0x53, 0x1F}, {"D", 0x44, 0x20}, {"SPACE", 0x20, 0x39}, {"ENTER", 0x0D, 0x1C}, {"ESC", 0x1B, 0x01}};
+                for (auto& k : keys) if (!_stricmp(a, k.n)) { Cmd c = {1, 0, 0, k.vk, k.sc, !_stricmp(b, "down"), 0, 0, 0}; EnterCriticalSection(&g_lock); if (g_n < 64) g_q[g_n++] = c; LeaveCriticalSection(&g_lock); }
+            } else if (sscanf(line, "mouse %d %d", &dx, &dy) == 2) { Cmd c = {2, 0, 0, 0, 0, false, dx, dy, 0}; EnterCriticalSection(&g_lock); if (g_n < 64) g_q[g_n++] = c; LeaveCriticalSection(&g_lock); }
+            else if (sscanf(line, "shot %15s", a) == 1) RequestShot(a);
+            else if (!strncmp(line, "tp ", 3)) { Tp t = {}; if (sscanf(line, "tp %f %f %f %f %f", &t.v[0], &t.v[1], &t.v[2], &t.v[3], &t.v[4]) == 5) { t.frames = 12; EnterCriticalSection(&g_lock); g_tp = t; g_tpOn = true; LeaveCriticalSection(&g_lock); } }
+            else if (!strncmp(line, "stats", 5)) { char m[160]; snprintf(m, sizeof m, "input: posted %u answered %u | GetRawInputData calls: real handles %u, ours %u", InputStats(0), InputStats(1), InputStats(2), InputStats(3)); Log(m); }
+            else if (sscanf(line, "button %15s %15s", a, b) == 2) { bool left = !_stricmp(a, "L"), dn = !_stricmp(b, "down"); Cmd c = {2, 0, 0, 0, 0, false, 0, 0, left ? (dn ? 0x1u : 0x2u) : (dn ? 0x4u : 0x8u)}; EnterCriticalSection(&g_lock); if (g_n < 64) g_q[g_n++] = c; LeaveCriticalSection(&g_lock); }
         }
         fclose(f); DeleteFileW(taken);
     }

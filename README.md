@@ -60,6 +60,7 @@ file made the loader fail with "AnselSDK64_real.dll not found"). `DllMain` only 
 | Overlay | `overlay.cpp` | Patches slot 8 (`Present`) of the swap-chain vtable (found through a dummy device), draws the puppet; also runs queued game commands and remote events between frames |
 | Network | `coop.cpp` | UDP: pose at 30 Hz (`WTCP`, 36 bytes), reliable events (`WTCE`, 24 bytes: epoch, sequence, kind, entity), cumulative acks (`WTCA`); a peer session change starts a new epoch and a full state resend |
 | State | `state.cpp` | Detector thread (10 Hz) and the applier; echo guard and stable-world gate |
+| Input | `input.cpp`, `game.cpp` | Injects keys, mouse and clicks into the game's own input pump, teleports the player, takes screenshots, parses `witness_cmd.txt` |
 | Hooks | `hooks.cpp`, `config.cpp` | Import-table hooks installed from `DllMain` (memory patching only): `SHGetFolderPathW` (save folder), `CreateFileA/W` (`data-pc.zip` share mode); settings read lazily from the cfg |
 | Game calls | `game.cpp` | `DoorOpenStart(door, amount)` at `base + 0x8E4B0`, type-checked; `witness_cmd.txt` (`door <hexid>`) for development |
 
@@ -72,15 +73,28 @@ started by the function call. Sources and the evidence for each are in the hub n
 `witness_coop.cfg` (next to the DLL): `id`, `listen`, `peer` (UDP ports on localhost), optional `peer_host`. Instance isolation (all
 off by default, so a player's own game is unchanged): `save_dir=instance` (the game's save folder, `%APPDATA%\The Witness`, becomes
 `<game folder>\appdata`, or give a path; the owner's real saves are then never touched), `cap_fps=N` (frame cap), `share_zip=1`
-(see above). Test-only switches: `drop_first_event=1`, `no_resend=1`, `no_echo_guard=1`. The log is `witness_proxy.log` next to the DLL.
+(see above), `force_active=1` (the game believes its window is always active: full speed, and it accepts injected input, without taking the focus or the mouse; the real cursor is replaced by a virtual one). Test-only switches: `drop_first_event=1`, `no_resend=1`, `no_echo_guard=1`. The log is `witness_proxy.log` next to the DLL.
 
-The game runs unthrottled only while its window is the active one; otherwise it drops to about 10 fps (measured), and it takes the
-foreground by itself while loading (`tools/restart.sh` runs a guard that hands the focus back).
+Without `force_active` the game runs unthrottled only while its window is the active one (otherwise about 10 fps) and ignores keys and
+mouse buttons. It also takes the foreground by itself while loading (`tools/restart.sh` runs a guard that hands the focus back).
+
+**In-process control** (what the bots use; no window needs the focus and the desktop is never touched). The proxy polls
+`witness_cmd.txt` (next to the DLL, one command per line, the whole file is taken at once, one input event is executed per frame):
+
+| Command | Effect |
+|---|---|
+| `key W|A|S|D|SPACE|ENTER|ESC down|up` | a key press as the game's own key messages (holding `W` for 3 s walks the player about 9 m) |
+| `mouse <dx> <dy>` | relative mouse motion as raw input (0.0025 rad per count when looking; 3.6 counts per pixel on a puzzle) |
+| `button L|R down|up` | a mouse click as `WM_LBUTTONDOWN`-style messages at the window centre (the virtual cursor) |
+| `tp <x> <y> <z> <yaw> <pitch>` | put the player there and face that way (the camera is 1.69 above the player entity) |
+| `shot <name>` | back buffer to `shots\<name>.bmp`, also while the window is unfocused or covered (`tools/bmp2png.py` converts) |
+| `door <hexid>` | open that Door entity with the game's own function |
+| `stats` | log the input counters |
 
 ## Automated checks
 
-`tools/qa.sh` restarts both games for each scenario, a bot plays player A with real keyboard and mouse input (walks 46 m to the
-first panel, aims by feedback from the camera angles, enters the puzzle, traces the line), and `tools/state_diff.py` compares the
+`tools/qa.sh` restarts both games for each scenario, and a bot plays player A through the proxy's in-process control (teleports to the
+first panel, aims, clicks to enter the puzzle, traces the line, clicks to finish), with no window focused and no desktop input, and `tools/state_diff.py` compares the
 solved panels and open doors read from both games' memory. Scenarios marked MUTANT are deliberately broken and must fail.
 
 Last full run from this repo (2026-10-22, one machine, localhost, build 11370412, about 15 minutes):

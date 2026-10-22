@@ -1,13 +1,14 @@
 #!/bin/bash
 # Restart both test copies with the current proxy, fresh new games, windows side by side.
+# force_active=1: each game believes its window is active (full speed, accepts injected input) without taking the focus or the mouse.
 # Every copy gets its own save folder (save_dir=instance: <game folder>\appdata, so the owner's real saves are never touched) and a
 # frame cap (WITNESS_FPS, default 30). CFG_A / CFG_B add lines to each copy's witness_coop.cfg (test-only switches: drop_first_event=1, no_resend=1, no_echo_guard=1).
 . "$(dirname "$0")/config.sh"
 PREV_FG=$(timeout 20 "$PYW" -I "$(win "$TOOLS/win/wfocus.py")" save)      # who has the focus now (the game grabs it when it starts)
 for p in A B; do [ -f "$RUN/pid$p.txt" ] && taskkill.exe /PID "$(cat "$RUN/pid$p.txt")" /F >/dev/null 2>&1; done; sleep 4
 "$TOOLS/install.sh" >/dev/null || exit 1
-printf 'id=1\nlisten=%s\npeer=%s\nsave_dir=instance\nshare_zip=1\ncap_fps=%s\n%s\n' "$WITNESS_PORT1" "$WITNESS_PORT2" "${WITNESS_FPS:-30}" "$CFG_A" > "$WITNESS_DIR1/witness_coop.cfg"
-printf 'id=2\nlisten=%s\npeer=%s\nsave_dir=instance\nshare_zip=1\ncap_fps=%s\n%s\n' "$WITNESS_PORT2" "$WITNESS_PORT1" "${WITNESS_FPS:-30}" "$CFG_B" > "$WITNESS_DIR2/witness_coop.cfg"
+printf 'id=1\nlisten=%s\npeer=%s\nsave_dir=instance\nshare_zip=1\nforce_active=1\ncap_fps=%s\n%s\n' "$WITNESS_PORT1" "$WITNESS_PORT2" "${WITNESS_FPS:-30}" "$CFG_A" > "$WITNESS_DIR1/witness_coop.cfg"
+printf 'id=2\nlisten=%s\npeer=%s\nsave_dir=instance\nshare_zip=1\nforce_active=1\ncap_fps=%s\n%s\n' "$WITNESS_PORT2" "$WITNESS_PORT1" "${WITNESS_FPS:-30}" "$CFG_B" > "$WITNESS_DIR2/witness_coop.cfg"
 rm -f "$WITNESS_DIR1/witness_proxy.log" "$WITNESS_DIR2/witness_proxy.log" "$WITNESS_DIR1/witness_cmd.txt" "$WITNESS_DIR2/witness_cmd.txt"
 launch() {   # dir -> pid; the game opens an options dialog unless -skip_config_dialog is given
   timeout 30 "$PYW" -I "$(win "$TOOLS/win/launch.py")" "$(win "$1")" -skip_config_dialog -windowed -new_game | tail -1 | tr -d '\r'; }

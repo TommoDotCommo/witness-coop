@@ -2,8 +2,8 @@
 """Shared-state suite. Each scenario restarts both games, a bot solves the first panel on A, and the result is checked against
 what that scenario must produce. MUTANT scenarios are deliberately broken builds that must FAIL the check, so that a pass
 means the check can fail. usage: suite.py [substring of scenario name ...]   (about 4 minutes per scenario)"""
-import json, os, re, subprocess, sys, time
-from witness import ROOT, TOOLS, DIR1, DIR2, PYW, RUN, pid, pyw
+import json, os, re, shlex, subprocess, sys, time
+from witness import ROOT, TOOLS, DIR1, DIR2, PYW, RUN, pid, pyw, win
 
 def sh(cmd, env=None, timeout=600):
     return subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=timeout, env={**os.environ, **(env or {})}).stdout
@@ -29,7 +29,9 @@ def hygiene(saves_before):
     log = open(os.path.join(DIR1, 'witness_proxy.log'), errors='ignore').read()
     files = [f for _, _, fs in os.walk(os.path.join(DIR1, 'appdata')) for f in fs]
     out['save folder redirected, instance wrote %d file(s)' % len(files)] = 'SHGetFolderPathW(csidl 0x1a) -> redirected' in log and len(files) > 0
-    out['_fps'] = fps('A')     # the bot left game A focused, so it is not throttled as a background window
+    clip = pyw('wmouse.py').split()      # real cursor and system clip rectangle: the game must never grab the owner's mouse
+    out['real mouse not grabbed (clip rect is the whole screen)'] = clip[0] == 'free'
+    out['_fps'] = fps('A')     # game A is not focused: force_active keeps it at the cap instead of the ~10 fps background throttle
     return out
 
 SCENARIOS = [   # name, extra cfg for A, extra cfg for B, check(a_stats, b_stats, identical) -> (ok, why)
@@ -46,24 +48,23 @@ for name, ca, cb, check in SCENARIOS:
     print('\n=== %s' % name, flush=True)
     sh(os.path.join(TOOLS, 'restart.sh'), {'CFG_A': ca, 'CFG_B': cb})
     time.sleep(30)    # both worlds must pass the stable-world gate (three identical scans 3 s apart)
-    # The bot uses SendInput, which is desktop-wide: only one bot may run at a time on this PC (until in-process input exists).
-    open(os.path.join(RUN, 'guard.stop'), 'w').write('bot starting')      # the focus guard must not fight the bot
-    lab = os.environ.get('LAB', os.path.expanduser('~/source/coop-lab/lab'))
-    if os.path.exists(lab): sh('%s input-lock acquire --ttl 400 --wait 1800' % lab)
-    try:
-        print(sh('python3 %s %s | tail -2' % (os.path.join(TOOLS, 'solve_bot.py'), pid('A'))).strip(), flush=True)
-    finally:
-        if os.path.exists(lab): sh('%s input-lock release' % lab)
+    # The bot is in-process (tp, mouse and button commands to the proxy): no focus, no desktop input, no lock; several can run at once.
+    open(os.path.join(RUN, 'guard.stop'), 'w').write('bot starting')      # the focus guard (for the game grabbing the foreground while loading) ends
+    bot = sh('%s -I %s %s %s 2>&1 | tail -3' % (shlex.quote(PYW), shlex.quote(win(os.path.join(TOOLS, 'win', 'wbot.py'))), pid('A'), shlex.quote(win(DIR1)))).strip()
+    print(bot, flush=True)
+    bot_ok = 'solved: True' in bot      # a scenario that never solved the panel proves nothing, whatever the state diff says
     time.sleep(14)    # the stats line is logged every 10 s
     out = sh('python3 %s' % os.path.join(TOOLS, 'state_diff.py')); print(out.strip(), flush=True)
     a, b = last_stats(DIR1), last_stats(DIR2)
     ok, why = check(a, b, 'IDENTICAL' in out)
+    if not bot_ok: ok, why = False, 'the bot did not solve the panel (a state diff of two untouched games proves nothing)'
     h = hygiene(SAVES0); f = h.pop('_fps'); cap_on = 'cap_fps=0' not in ca
-    h['frame cap: game A at %.1f fps (capped game must be 20-40, an uncapped one runs far faster)' % f] = (20 <= f <= 40) if cap_on else (f > 100)
+    h['frame cap: game A at %.1f fps (capped 20-40; uncapped far more)' % f] = (20 <= f <= 40) if cap_on else (f > 100)
     for k_, v_ in h.items(): print('  hygiene: %-86s %s' % (k_, 'ok' if v_ else 'FAILED'))
     cap_key = [k_ for k_ in h if k_.startswith('frame cap')][0]; others = all(v_ for k_, v_ in h.items() if k_ != cap_key)
-    if name.startswith('MUTANT: frame cap'): ok = h[cap_key] and others; why = 'the cap check must see an uncapped game (> 100 fps), otherwise it tests nothing'
+    if name.startswith('MUTANT: frame cap'): ok = h[cap_key] and others and bot_ok; why = 'the cap check must see an uncapped game (> 100 fps), otherwise it tests nothing'
     else: ok = ok and h[cap_key] and others
+    if not bot_ok: ok = False
     print('A %s\nB %s' % (a, b)); print('RESULT: %s  (%s)' % ('PASS' if ok else 'FAIL', why), flush=True)
     results.append((name, ok))
 print('\n==== SUMMARY')

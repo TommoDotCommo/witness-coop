@@ -65,9 +65,9 @@ Game slots come from the shared lab; `tools/qa.sh` does all of this itself: it l
 do game-free work and retry, do not block), builds your hard-linked instance folders on the NTFS pool, runs, and in a trap kills
 only your own games and frees the slots. Your folders, UDP ports and run folder come from the lease (`tools/config.sh`).
 `tools/stop.sh` closes your games. `lab status` shows who holds what.
-The Witness bot uses `SendInput`, which takes the keyboard and mouse of the whole desktop, so the suite holds `lab input-lock`
-while the bot runs (one bot on the PC at a time) and interrupts anyone typing; run it when the owner is away or has said it is
-fine. Games sit on the second monitor, started without taking focus; do not minimize them (a minimized Witness runs at 10 fps).
+The Witness bot is in-process (`tools/win/wbot.py` sends commands to the proxy inside the game): no window needs the focus, the
+desktop and the real mouse are never touched, and several bots can run at once. Games sit on the second monitor, started without
+taking focus, and believe they are active (`force_active=1`), so they run at the frame cap instead of the ~10 fps background throttle.
 `tools/qa.sh baseline` runs one scenario; the full suite is about 15 minutes.
 Windows tools are started with Windows Python from WSL. After a failed launch a "System Error" box (owned by `csrss.exe`) stays
 on screen and shows up in screenshots: close it by title (`<exe> - System Error`) with WM_CLOSE.

@@ -12,7 +12,8 @@ and publishing permissions. Keep shared workflow changes there so agents stay in
   `ansel_proxy.cpp` (export stubs, `DllMain`, log, startup of the other parts), `overlay.cpp` (Direct3D 11
   `Present` hook and puppet drawing), `coop.cpp` (UDP pose exchange and the reliable event layer), `state.cpp`
   (detector for solved panels and opened doors, and the applier), `game.cpp` (calls into the game's own
-  functions and the `witness_cmd.txt` channel), `hooks.cpp` and `config.cpp` (import-table hooks for the save folder and the
+  functions and the `witness_cmd.txt` channel), `input.cpp` (in-process keys, mouse and clicks, so no window needs the focus),
+  `hooks.cpp` and `config.cpp` (import-table hooks for the save folder and the
   archive's share mode, and the lazily read `witness_coop.cfg`). Build offsets are at the top of those files.
 - `tools/`: WSL scripts (`config.sh`, `install.sh`, `restart.sh`, `qa.sh`, `suite.py`, `solve_bot.py`,
   `state_diff.py`) and `tools/win/` (Windows Python probes and input helpers; `wlib.py` is shared).

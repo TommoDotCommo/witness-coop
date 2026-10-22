@@ -11,6 +11,8 @@
 #include <cstring>
 
 void Log(const char* msg);   // from ansel_proxy.cpp
+extern HWND g_gameWnd;       // hooks.cpp
+extern HMODULE g_selfModule();
 
 // Offsets from the module base, build 11370412 (verified by static scan and live reads).
 static const uintptr_t kGlobals = 0x62D0A0, kCamPos = 0x6304B0 + 0x10, kCamAng = 0x6303EC;
@@ -19,6 +21,7 @@ static const float kVFovDeg = 60.0f;                 // calibrated: horizontal ~
 #include "game.h"
 #include "state.h"
 #include "config.h"
+#include "input.h"
 
 typedef HRESULT(STDMETHODCALLTYPE* PresentFn)(IDXGISwapChain*, UINT, UINT);
 static PresentFn g_origPresent;
@@ -36,6 +39,41 @@ O VS(uint vid : SV_VertexID, uint iid : SV_InstanceID) {
   float4 r = rects[iid]; O o; o.p = float4(r.xy + q * r.zw, 0, 1); o.c = cols[iid]; return o; }
 float4 PS(O i) : SV_TARGET { return i.c; }
 )";
+
+static char g_shotName[64];     // set by RequestShot from another thread, taken at the next Present
+void RequestShot(const char* name) { strncpy(g_shotName, name, sizeof g_shotName - 1); }
+
+// Back buffer to <dll folder>\shots\<name>.bmp (32-bit, top-down). Works while the window is covered or unfocused.
+static void TakeShot(IDXGISwapChain* sc, const char* name) {
+    ID3D11Texture2D *bb = nullptr, *st = nullptr;
+    if (FAILED(sc->GetBuffer(0, __uuidof(ID3D11Texture2D), (void**)&bb))) return;
+    D3D11_TEXTURE2D_DESC td; bb->GetDesc(&td); td.Usage = D3D11_USAGE_STAGING; td.BindFlags = 0; td.CPUAccessFlags = D3D11_CPU_ACCESS_READ; td.MiscFlags = 0;
+    if (SUCCEEDED(g_dev->CreateTexture2D(&td, nullptr, &st))) {
+        g_ctx->CopyResource(st, bb);
+        D3D11_MAPPED_SUBRESOURCE ms;
+        if (SUCCEEDED(g_ctx->Map(st, 0, D3D11_MAP_READ, 0, &ms))) {
+            wchar_t path[MAX_PATH]; GetModuleFileNameW(g_selfModule(), path, MAX_PATH); wchar_t* sl = wcsrchr(path, L'\\'); if (sl) *(sl + 1) = 0;
+            wcscat_s(path, L"shots"); CreateDirectoryW(path, nullptr); wcscat_s(path, L"\\");
+            wchar_t w[80]; MultiByteToWideChar(CP_UTF8, 0, name, -1, w, 80); wcscat_s(path, w); wcscat_s(path, L".bmp");
+            HANDLE f = CreateFileW(path, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+            if (f != INVALID_HANDLE_VALUE) {
+                BITMAPFILEHEADER fh = {0x4D42, (DWORD)(54 + td.Width * td.Height * 4), 0, 0, 54}; BITMAPINFOHEADER ih = {40, (LONG)td.Width, -(LONG)td.Height, 1, 32, BI_RGB, td.Width * td.Height * 4, 0, 0, 0, 0};
+                DWORD n; WriteFile(f, &fh, 14, &n, nullptr); WriteFile(f, &ih, 40, &n, nullptr);
+                unsigned char* row = new unsigned char[td.Width * 4];
+                for (UINT y = 0; y < td.Height; y++) {      // RGBA -> BGRA
+                    const unsigned char* s = (const unsigned char*)ms.pData + (size_t)y * ms.RowPitch;
+                    for (UINT x = 0; x < td.Width; x++) { row[x*4] = s[x*4+2]; row[x*4+1] = s[x*4+1]; row[x*4+2] = s[x*4]; row[x*4+3] = 255; }
+                    WriteFile(f, row, td.Width * 4, &n, nullptr);
+                }
+                delete[] row; CloseHandle(f);
+                char m[120]; snprintf(m, sizeof m, "shot: wrote %s.bmp (%ux%u)", name, td.Width, td.Height); Log(m);
+            }
+            g_ctx->Unmap(st, 0);
+        }
+        st->Release();
+    }
+    bb->Release();
+}
 
 static bool Readable(const void* p, size_t n) { return !IsBadReadPtr(p, n); }
 
@@ -126,6 +164,18 @@ static HRESULT STDMETHODCALLTYPE HookPresent(IDXGISwapChain* sc, UINT sync, UINT
     if (f == 1) Log("overlay: Present hook called (first frame)");
     if (!g_ready && !g_failed) { g_ready = InitResources(sc); g_failed = !g_ready; }
     if (g_ready) DrawMarkers(sc);
+    if (GetCfg().forceActive) {   // build 11370412: the game's focus state is byte +0x21 of the object at exe+0x469A5B0; its loop does
+        // Sleep(100) (about 10 fps) when this and the byte at exe+0x62D394 are both 0, and it ignores WM_INPUT while it is 0
+        uintptr_t base = (uintptr_t)GetModuleHandleA(nullptr), p = IsBadReadPtr((void*)(base + 0x469A5B0), 8) ? 0 : *(uintptr_t*)(base + 0x469A5B0);
+        if (p && !IsBadWritePtr((void*)(p + 0x21), 1)) *(volatile unsigned char*)(p + 0x21) = 1;
+        // the input manager ([[exe+0x469A060]]) drops every key and mouse-button message while its byte +0xE5C is 0 (cleared when
+        // the window loses activation); mouse motion arrives as raw input and does not check it
+        uintptr_t g = IsBadReadPtr((void*)(base + 0x469A060), 8) ? 0 : *(uintptr_t*)(base + 0x469A060);
+        uintptr_t im = (g && !IsBadReadPtr((void*)g, 8)) ? *(uintptr_t*)g : 0;
+        if (im && !IsBadWritePtr((void*)(im + 0xE5C), 1)) *(volatile unsigned char*)(im + 0xE5C) = 1;
+    }
+    { DXGI_SWAP_CHAIN_DESC d; if (SUCCEEDED(sc->GetDesc(&d))) { g_gameWnd = d.OutputWindow; InputPump(d.OutputWindow); } }
+    if (g_shotName[0] && g_ready) { char n[64]; strcpy(n, g_shotName); g_shotName[0] = 0; TakeShot(sc, n); }
     HRESULT hr = g_origPresent(sc, sync, flags);
     if (int cap = GetCfg().capFps; cap > 0) {   // frame cap: sleep out the rest of the frame (Sleep(1) until close, then spin)
         static LARGE_INTEGER freq, next; if (!freq.QuadPart) { QueryPerformanceFrequency(&freq); QueryPerformanceCounter(&next); }
