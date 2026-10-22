@@ -97,15 +97,23 @@ mouse buttons. It also takes the foreground by itself while loading (`tools/rest
 first panel, aims, clicks to enter the puzzle, traces the line, clicks to finish), with no window focused and no desktop input, and `tools/state_diff.py` compares the
 solved panels and open doors read from both games' memory. Scenarios marked MUTANT are deliberately broken and must fail.
 
-Last full run from this repo (2026-10-22, one machine, localhost, build 11370412, about 15 minutes):
+Last full run from this repo (2026-10-22, one machine, localhost, build 11370412, about 8 minutes now that the bot teleports instead of
+walking 46 m). Every scenario also checks that the owner's real save folder is byte-identical, that the instance's saves were
+redirected, that the real mouse is not grabbed (system clip rectangle is the whole screen) and that the frame cap holds:
 
 ```
 baseline                                 PASS   identical (1 panel, 10 doors); B sent nothing back; no resend needed
 lost first send of every event           PASS   identical; A resent all 11 events
 MUTANT: no resend + lost first send      PASS   games diverged (panel 0x64 and door 0x34eda only on A), as required
+MUTANT: frame cap off                    PASS   game A read 1123 fps (uncapped), as required
 MUTANT: echo guard off                   PASS   B echoed its 2 events back, as required
 ALL OK
 ```
+
+Two Witness agents (separate worktrees, so separate slots, ports and folders) ran the baseline **at the same time** beside an MDK2
+agent's own QA (34 of 34): all passed, and a monitor sampling the foreground window every 0.2 s (1,648 samples) never saw a game own it.
+An earlier run of the in-process suite passed while the bot had done nothing (two untouched games are "identical"); the suite now
+requires the bot to report the panel solved.
 
 The suite found one real bug in an earlier run: a default-open door (`0x338d5`) powered up on player B a few seconds *after* the
 "world stable" gate, so B sent an event with nobody having solved anything and the baseline check ("B sends nothing") would have
