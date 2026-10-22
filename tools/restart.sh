@@ -23,15 +23,16 @@ for p in "${peers[@]}"; do
   [ -x "$LAB" ] && "$LAB" register-pid "$game_pid" >/dev/null 2>&1
   for i in $(seq 1 45); do grep -q "overlay: resources ready" "$d/witness_proxy.log" 2>/dev/null && break; sleep 2; done
 done
-PA=$(cat "$RUN/pidA.txt"); PB=$(cat "$RUN/pidB.txt")
+PA=$(cat "$RUN/pidA.txt" 2>/dev/null); PB=$(cat "$RUN/pidB.txt" 2>/dev/null)     # a peer that was never started (late join) has no pid file
 # every game is registered with the lab (only registered pids are ever killed for this agent) and placed on the second monitor
 # without taking focus (tile by slot number; in a plain checkout without the lab: the first monitor)
 for w in "A $PA $SLOT1" "B $PB $SLOT2"; do set -- $w
+  [ -n "$2" ] || continue
   if [ -x "$LAB" ]; then read -r x y ww hh < <("$LAB" rect "$3"); else x=$(( ($3) * 1280 )); y=0; ww=1270; hh=760; fi
   timeout 20 "$PYW" -I "$(win "$TOOLS/win/wplace.py")" "$2" "$x" "$y" "$ww" "$hh" >/dev/null
 done
 # keep the focus where it was for up to 3 minutes (the game takes the foreground by itself while it loads); the bot
 # focuses game A on purpose later, after this guard has ended
 rm -f "$RUN/guard.stop"       # whoever starts a bot creates this file first, so the guard never fights it
-( timeout 200 "$PYW" -I "$(win "$TOOLS/win/wfocus.py")" guard "$PREV_FG" 180 "$(win "$RUN/guard.stop")" "$PA" "$PB" >/dev/null 2>&1 & )
+( timeout 200 "$PYW" -I "$(win "$TOOLS/win/wfocus.py")" guard "$PREV_FG" 180 "$(win "$RUN/guard.stop")" $PA $PB >/dev/null 2>&1 & )
 echo "A=$PA B=$PB"

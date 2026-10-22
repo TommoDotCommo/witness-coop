@@ -62,6 +62,24 @@ def restart_catchup(ca, cb, mutant, include_power=False):
     ok = all(after_a[kind] == after_b[kind] for kind in expected)
     return ok, 'fresh B restored all progress from surviving A after original events were ACKed'
 
+def late_join(ca, cb, mutant):
+    """Play on A alone, then start B for the first time. A never saw B, so no ACK exists; no_resend=1 on A means the original
+    events were sent once into the void, so only the full-state snapshot sent when A first sees B can deliver them."""
+    before_a = state('A')
+    if '0x64' not in before_a['panels'] or '0x34eda' not in before_a['doors']:
+        return False, 'precondition failed: A must have the solved panel and its open door before B exists'
+    if os.path.exists(os.path.join(RUN, 'pidB.txt')): return False, 'precondition failed: B must never have been started'
+    result = subprocess.run([os.path.join(TOOLS, 'restart.sh'), 'B'],
+                            env={**os.environ, 'CFG_A': ca, 'CFG_B': cb}, capture_output=True, text=True, timeout=240)
+    if result.returncode: return False, 'B start failed: ' + result.stdout + result.stderr
+    time.sleep(30)
+    open(os.path.join(RUN, 'guard.stop'), 'w').write('late join complete')
+    after_a, after_b = state('A'), state('B')
+    if after_a['panels'] != before_a['panels'] or after_a['doors'] != before_a['doors']: return False, 'A lost or changed its progress'
+    if after_b['n_panels'] != after_a['n_panels'] or after_b['n_doors'] != after_a['n_doors']: return False, 'B entity census is incomplete'
+    if mutant: return ('0x64' not in after_b['panels'] and '0x34eda' not in after_b['doors']), 'no snapshot: B must lack panel 0x64 and door 0x34eda'
+    return (after_a['panels'] == after_b['panels'] and after_a['doors'] == after_b['doors']), 'B restored all progress from A on first contact'
+
 def hygiene(saves_before):
     """Checks that do not depend on the scenario: real saves untouched, save folder redirected, frame cap in force."""
     out = {}
@@ -84,6 +102,8 @@ SCENARIOS = [   # name, extra cfg for A, extra cfg for B, check(a_stats, b_stats
   ('MUTANT: echo guard off', '', 'no_echo_guard=1', lambda a, b, ok: (b.get('ep', 0) + b.get('ed', 0) > 0, 'B must echo events back, otherwise the echo check tests nothing')),
   ('peer restart catch-up', '', '', lambda a, b, ok: (ok and b.get('ap', 0) >= 1 and b.get('ad', 0) >= 1 and b.get('ep', 9) == 0 and b.get('ed', 9) == 0, 'fresh B catches up without echoing')),
   ('MUTANT: peer restart catch-up disabled', 'no_resync_on_restart=1', '', lambda a, b, ok: (not ok, 'fresh B must diverge without full-state catch-up')),
+  ('late join', 'no_resend=1', '', lambda a, b, ok: (ok and b.get('ap', 0) >= 1 and b.get('ad', 0) >= 1 and b.get('ep', 9) == 0 and b.get('ed', 9) == 0, 'B, started for the first time after the solve, receives the snapshot')),
+  ('MUTANT: late join without snapshot', 'no_resend=1\nno_resync_on_restart=1', '', lambda a, b, ok: (not ok, 'a never-seen B must diverge without the full-state snapshot')),
   ('second tutorial door', '', '', lambda a, b, ok: (ok and b.get('ep', 9) == 0 and b.get('ed', 9) == 0, 'both tutorial panels and doors match without B echo')),
   ('MUTANT: second tutorial door skips entity zero', 'skip_entity_zero=1', '', lambda a, b, ok: (not ok, 'door entity zero must be missing on B')),
   ('panel power chain', '', '', lambda a, b, ok: (ok and b.get('epow', 9) == 0 and b.get('apow', 0) >= 1, 'target panel powers on without being solved or echoed')),
@@ -94,7 +114,12 @@ SAVES0 = real_saves()
 for name, ca, cb, check in SCENARIOS:
     if only and not any(o in name for o in only): continue
     print('\n=== %s' % name, flush=True)
-    subprocess.run([os.path.join(TOOLS, 'restart.sh')], env={**os.environ, 'CFG_A': ca, 'CFG_B': cb},
+    late = 'late join' in name
+    if late:      # free B from the previous scenario and start A alone
+        pb = os.path.join(RUN, 'pidB.txt')
+        if os.path.exists(pb):
+            subprocess.run(['taskkill.exe', '/PID', open(pb).read().strip(), '/F'], capture_output=True); os.remove(pb)
+    subprocess.run([os.path.join(TOOLS, 'restart.sh')] + (['A'] if late else []), env={**os.environ, 'CFG_A': ca, 'CFG_B': cb},
                    capture_output=True, text=True, timeout=600, check=True)
     time.sleep(30)    # both worlds must pass the stable-world gate (three identical scans 3 s apart)
     # The bot is in-process (tp, mouse and button commands to the proxy): no focus, no desktop input, no lock; several can run at once.
@@ -117,10 +142,12 @@ for name, ca, cb, check in SCENARIOS:
             power_ok = 'panel 0x18af solved: True | target 0x1b powered: True | target unsolved: True' in power_bot
     time.sleep(14)    # the stats line is logged every 10 s
     catchup = None
-    if 'restart catch-up' in name and bot_ok:
+    if late: pass
+    elif 'restart catch-up' in name and bot_ok:
         catchup = restart_catchup(ca, cb, name.startswith('MUTANT:'))
     elif 'panel power chain' in name and bot_ok and power_ok and not name.startswith('MUTANT:'):
         catchup = restart_catchup(ca, cb, False, include_power=True)
+    if late and bot_ok: catchup = late_join(ca, cb, name.startswith('MUTANT:'))
     out = sh('python3 %s' % os.path.join(TOOLS, 'state_diff.py')); print(out.strip(), flush=True)
     a, b = last_stats(DIR1), last_stats(DIR2)
     ok, why = check(a, b, 'IDENTICAL' in out)
