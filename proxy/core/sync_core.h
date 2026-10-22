@@ -36,6 +36,7 @@ struct Flags {   // all off by default
     // bug twins: each switches one protection off so a test must fail (see core/tests)
     bool noDedupe = false, noEpochReset = false, noResyncOnRestart = false, noGate = false, noSettle = false;
     bool wrongAckEpoch = false, applyOutOfOrder = false, noChecksum = false;
+    bool noApplyRetry = false;  // twin: discard ACKed events when the game cannot apply them yet
 };
 
 struct Hooks {

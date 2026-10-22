@@ -16,8 +16,9 @@ No game files are in this repo. You need your own copy of The Witness, Steam bui
   Direct3D 11 `Present` call (camera model checked against screenshots). It is a flat rectangle and shows through walls.
 - **Shared panels and doors.** A detector watches all 594 `Machine_Panel` and 327 `Door` entities. A solved panel is sent to the
   other game and written there as solved; an opened door is opened there by calling the game's own door function, so the
-  door animates and collides as in single-player. Events are numbered, acknowledged, resent until acknowledged and applied once
-  in order. A restarted game gets the whole state again.
+  door animates and collides as in single-player. Events are numbered, received in sequence and resent until acknowledged.
+  If an entity is temporarily missing or a door call is refused, its acknowledged event stays queued and retries on the render
+  thread; other entities can still progress. Successful changes are applied once. A restarted game gets the whole state again.
 - **Safe start.** Nothing is detected, resent or applied until the world is stable (camera valid and identical panel and door
   counts on three scans three seconds apart); after applying a remote change the entity is suppressed for 5 s so it is not
   sent back.
@@ -94,6 +95,11 @@ mouse buttons. It also takes the foreground by itself while loading (`tools/rest
 ## Automated checks
 
 **T0, no game needed:** the sync logic lives in `proxy/core/` (`sync_core.{h,cpp}`, pure C++17, talks to the game only through a `World` interface; `state.cpp` is the game adapter). `make -C proxy/core test` (needs a clone of the Co-op Anything hub for its fuzzer; `HUB=<dir>`, default `~/source/coop-anything`) fuzzes two cores over a lossy link with a fake world: 500 sessions must pass, and each of 10 bug twins (no resend, no echo guard, no dedupe, ...) must be caught. About 3 seconds.
+
+The same command also runs deterministic application regressions: acknowledged events survive a missing panel, a missing door,
+or repeated refused door calls, then apply without another network packet and without echoing. An unrelated door must still open,
+wrong entity types must be rejected, and each retry case must catch the `noApplyRetry` bug twin. These simulate adapter failures;
+they do not demonstrate a late-loading entity or a refused call in the real game.
 
 **T2, two real games:**
 

@@ -200,12 +200,14 @@ void SyncCore::pollState(uint64_t now) {
 void SyncCore::applyRemote(uint64_t now) {
     Guard g(h_);
     if (!ready_) return;   // events stay queued until this world is stable
-    while (!recvQ_.empty()) {
+    // One attempt per queued event per frame. Keep temporarily unavailable entities and refused calls: the transport already
+    // ACKed these events, so the sender will not send them again. Other independent, monotonic changes can still make progress.
+    size_t attempts = recvQ_.size();
+    while (attempts--) {
         Recv r = recvQ_.front(); recvQ_.erase(recvQ_.begin());
         char l[140];
         if (r.entity >= kMaxEntityId || !w_->entityExists(r.entity)) {
-            std::snprintf(l, sizeof l, "state: remote event kind %u entity %#x: no such entity", r.kind, r.entity); log(l);
-            if (h_.onRejected) h_.onRejected(r.kind, r.entity, r.epoch, r.seq, "no such entity");
+            if (!f_.noApplyRetry) recvQ_.push_back(r);
             continue;
         }
         if (r.kind == EV_PANEL_SOLVED && w_->isPanel(r.entity)) {
@@ -225,8 +227,13 @@ void SyncCore::applyRemote(uint64_t now) {
                 if (h_.onRejected) h_.onRejected(r.kind, r.entity, r.epoch, r.seq, "already open");
                 continue;
             }
-            if (!f_.noEchoGuard) { knownDoor_.insert(r.entity); suppressDoor_[r.entity] = now + kSuppressMs; }
             bool ok = w_->applyDoorOpen(r.entity);
+            if (!ok) {
+                if (!f_.noApplyRetry) recvQ_.push_back(r);
+                continue;
+            }
+            // The core lock keeps the detector out until the successful call's echo guard is installed.
+            if (!f_.noEchoGuard) { knownDoor_.insert(r.entity); suppressDoor_[r.entity] = now + kSuppressMs; }
             st_.appliedDoors++;
             if (h_.onApplied) h_.onApplied(r.kind, r.entity, r.epoch, r.seq);
             std::snprintf(l, sizeof l, "state: remote door %#x opened (call %s)", r.entity, ok ? "ok" : "REFUSED"); log(l);
