@@ -18,6 +18,7 @@ static const float kVFovDeg = 60.0f;                 // calibrated: horizontal ~
 #include "coop.h"
 #include "game.h"
 #include "state.h"
+#include "config.h"
 
 typedef HRESULT(STDMETHODCALLTYPE* PresentFn)(IDXGISwapChain*, UINT, UINT);
 static PresentFn g_origPresent;
@@ -125,7 +126,15 @@ static HRESULT STDMETHODCALLTYPE HookPresent(IDXGISwapChain* sc, UINT sync, UINT
     if (f == 1) Log("overlay: Present hook called (first frame)");
     if (!g_ready && !g_failed) { g_ready = InitResources(sc); g_failed = !g_ready; }
     if (g_ready) DrawMarkers(sc);
-    return g_origPresent(sc, sync, flags);
+    HRESULT hr = g_origPresent(sc, sync, flags);
+    if (int cap = GetCfg().capFps; cap > 0) {   // frame cap: sleep out the rest of the frame (Sleep(1) until close, then spin)
+        static LARGE_INTEGER freq, next; if (!freq.QuadPart) { QueryPerformanceFrequency(&freq); QueryPerformanceCounter(&next); }
+        LARGE_INTEGER now; QueryPerformanceCounter(&now);
+        next.QuadPart += freq.QuadPart / cap;
+        if (now.QuadPart > next.QuadPart + freq.QuadPart / 10) next = now;      // far behind (a load): do not try to catch up
+        for (;;) { QueryPerformanceCounter(&now); LONGLONG left = next.QuadPart - now.QuadPart; if (left <= 0) break; if (left > freq.QuadPart / 500) Sleep(1); }
+    }
+    return hr;
 }
 
 void OverlayInstall() {

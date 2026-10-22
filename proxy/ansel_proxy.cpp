@@ -79,6 +79,7 @@ extern "C" uintptr_t updateCamera(void* a, void* b, void* c, void* d) {
 }
 
 void OverlayInstall();
+void InstallHooks();
 void CoopStart();
 void GameStart();
 void StateStart();
@@ -109,6 +110,7 @@ static DWORD WINAPI Init(LPVOID) {
 BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID) {
     if (reason == DLL_PROCESS_ATTACH) {
         g_self = inst;
+        InstallHooks();      // memory patching only: no I/O under the loader lock
         DisableThreadLibraryCalls(inst);
         HANDLE t = CreateThread(nullptr, 0, Init, nullptr, 0, nullptr);
         if (t) CloseHandle(t);

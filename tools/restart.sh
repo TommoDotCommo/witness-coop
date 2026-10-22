@@ -1,11 +1,13 @@
 #!/bin/bash
 # Restart both test copies with the current proxy, fresh new games, windows side by side.
-# CFG_A / CFG_B add lines to each copy's witness_coop.cfg (test-only switches: drop_first_event=1, no_resend=1, no_echo_guard=1).
+# Every copy gets its own save folder (save_dir=instance: <game folder>\appdata, so the owner's real saves are never touched) and a
+# frame cap (WITNESS_FPS, default 30). CFG_A / CFG_B add lines to each copy's witness_coop.cfg (test-only switches: drop_first_event=1, no_resend=1, no_echo_guard=1).
 . "$(dirname "$0")/config.sh"
+PREV_FG=$(timeout 20 "$PYW" -I "$(win "$TOOLS/win/wfocus.py")" save)      # who has the focus now (the game grabs it when it starts)
 for p in A B; do [ -f "$RUN/pid$p.txt" ] && taskkill.exe /PID "$(cat "$RUN/pid$p.txt")" /F >/dev/null 2>&1; done; sleep 4
 "$TOOLS/install.sh" >/dev/null || exit 1
-printf 'id=1\nlisten=%s\npeer=%s\n%s\n' "$WITNESS_PORT1" "$WITNESS_PORT2" "$CFG_A" > "$WITNESS_DIR1/witness_coop.cfg"
-printf 'id=2\nlisten=%s\npeer=%s\n%s\n' "$WITNESS_PORT2" "$WITNESS_PORT1" "$CFG_B" > "$WITNESS_DIR2/witness_coop.cfg"
+printf 'id=1\nlisten=%s\npeer=%s\nsave_dir=instance\nshare_zip=1\ncap_fps=%s\n%s\n' "$WITNESS_PORT1" "$WITNESS_PORT2" "${WITNESS_FPS:-30}" "$CFG_A" > "$WITNESS_DIR1/witness_coop.cfg"
+printf 'id=2\nlisten=%s\npeer=%s\nsave_dir=instance\nshare_zip=1\ncap_fps=%s\n%s\n' "$WITNESS_PORT2" "$WITNESS_PORT1" "${WITNESS_FPS:-30}" "$CFG_B" > "$WITNESS_DIR2/witness_coop.cfg"
 rm -f "$WITNESS_DIR1/witness_proxy.log" "$WITNESS_DIR2/witness_proxy.log" "$WITNESS_DIR1/witness_cmd.txt" "$WITNESS_DIR2/witness_cmd.txt"
 launch() {   # dir -> pid; the game opens an options dialog unless -skip_config_dialog is given
   timeout 30 "$PYW" -I "$(win "$TOOLS/win/launch.py")" "$(win "$1")" -skip_config_dialog -windowed -new_game | tail -1 | tr -d '\r'; }
@@ -20,4 +22,8 @@ for w in "A $PA $SLOT1" "B $PB $SLOT2"; do set -- $w
   if [ -x "$LAB" ]; then read -r x y ww hh < <("$LAB" rect "$3"); else x=$(( ($3) * 1280 )); y=0; ww=1270; hh=760; fi
   timeout 20 "$PYW" -I "$(win "$TOOLS/win/wplace.py")" "$2" "$x" "$y" "$ww" "$hh" >/dev/null
 done
+# keep the focus where it was for up to 3 minutes (the game takes the foreground by itself while it loads); the bot
+# focuses game A on purpose later, after this guard has ended
+rm -f "$RUN/guard.stop"       # whoever starts a bot creates this file first, so the guard never fights it
+( timeout 200 "$PYW" -I "$(win "$TOOLS/win/wfocus.py")" guard "$PREV_FG" 180 "$(win "$RUN/guard.stop")" "$PA" "$PB" >/dev/null 2>&1 & )
 echo "A=$PA B=$PB"

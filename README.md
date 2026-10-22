@@ -31,9 +31,9 @@ Requirements: Windows with the Steam build above; WSL2 with `make` and MinGW-w64
 (default `/mnt/c/Python311/python.exe`, override with `PYW`); Python 3 in WSL. Nothing here installs anything for you.
 
 **With the shared lab** (`~/source/coop-lab`, several agents on one PC): `tools/qa.sh` does everything below for you: it leases two
-game slots, builds hard-linked instance folders on the NTFS pool (`C:\coop\lab\witness\s<slot>`, one shared base copy; each slot
-needs its own real copy of `data-pc.zip`, because the game will not let a second process open the same file), runs, and kills only
-its own games at the end. Run `lab firewall` once (one UAC click) so the copies start without a Windows Firewall prompt.
+game slots, builds hard-linked instance folders on the NTFS pool (`C:\coop\lab\witness\s<slot>`: one shared base copy, so a slot
+costs about 40 MB; the game opens `data-pc.zip` exclusively, so the mod adds `FILE_SHARE_READ` to that open, `share_zip=1`), runs
+with each instance's saves redirected into its own folder and a 30 fps cap, and kills only its own games at the end. Run `lab firewall` once (one UAC click) so the copies start without a Windows Firewall prompt.
 
 **Test copies, without the lab.** The proxy goes into two disposable copies of the install, never the real one:
 
@@ -60,6 +60,7 @@ file made the loader fail with "AnselSDK64_real.dll not found"). `DllMain` only 
 | Overlay | `overlay.cpp` | Patches slot 8 (`Present`) of the swap-chain vtable (found through a dummy device), draws the puppet; also runs queued game commands and remote events between frames |
 | Network | `coop.cpp` | UDP: pose at 30 Hz (`WTCP`, 36 bytes), reliable events (`WTCE`, 24 bytes: epoch, sequence, kind, entity), cumulative acks (`WTCA`); a peer session change starts a new epoch and a full state resend |
 | State | `state.cpp` | Detector thread (10 Hz) and the applier; echo guard and stable-world gate |
+| Hooks | `hooks.cpp`, `config.cpp` | Import-table hooks installed from `DllMain` (memory patching only): `SHGetFolderPathW` (save folder), `CreateFileA/W` (`data-pc.zip` share mode); settings read lazily from the cfg |
 | Game calls | `game.cpp` | `DoorOpenStart(door, amount)` at `base + 0x8E4B0`, type-checked; `witness_cmd.txt` (`door <hexid>`) for development |
 
 Build 11370412 facts the code relies on (module-relative): entity table `[[base+0x62D0A0]+0x18]` indexed by entity id; entity
@@ -68,8 +69,13 @@ a panel is solved when the float at `+0x294` is `1.0` and the int at `+0x298` is
 a door is open when the word at `+0x1D0` is `1.0`. Writing those fields into another game does not start a door: its opening is
 started by the function call. Sources and the evidence for each are in the hub notes.
 
-`witness_coop.cfg` (next to the DLL): `id`, `listen`, `peer` (UDP ports on localhost), optional `peer_host`; test-only switches
-`drop_first_event=1`, `no_resend=1`, `no_echo_guard=1` (all off by default). The log is `witness_proxy.log` next to the DLL.
+`witness_coop.cfg` (next to the DLL): `id`, `listen`, `peer` (UDP ports on localhost), optional `peer_host`. Instance isolation (all
+off by default, so a player's own game is unchanged): `save_dir=instance` (the game's save folder, `%APPDATA%\The Witness`, becomes
+`<game folder>\appdata`, or give a path; the owner's real saves are then never touched), `cap_fps=N` (frame cap), `share_zip=1`
+(see above). Test-only switches: `drop_first_event=1`, `no_resend=1`, `no_echo_guard=1`. The log is `witness_proxy.log` next to the DLL.
+
+The game runs unthrottled only while its window is the active one; otherwise it drops to about 10 fps (measured), and it takes the
+foreground by itself while loading (`tools/restart.sh` runs a guard that hands the focus back).
 
 ## Automated checks
 
@@ -96,8 +102,8 @@ starts and did not recur in the final run, so the fix is in place but not shown 
 Not covered by the suite: a real network, random loss (only a deterministic "first send lost"), more than two players, any puzzle
 besides the first, cables and powered panels, a late join into a game that already has progress, saves, fullscreen, non-16:9 windows.
 
-The probes in `tools/win/` (`wread.py`, `wsnap.py` + `wdiff.py` for before/after memory diffs, `wnames.py`, `wstatedump.py`) are
-read-only; `wkeys.py`, `wshot.py`, `wplace.py` and `launch.py` drive the windows.
+The probes in `tools/win/` (`wread.py`, `wsnap.py` + `wdiff.py` for before/after memory diffs, `wnames.py`, `wstatedump.py`, `wfps.py`) are
+read-only; `wkeys.py`, `wshot.py`, `wplace.py`, `wfocus.py` and `launch.py` drive the windows.
 
 ## License
 
