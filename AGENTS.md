@@ -15,14 +15,15 @@ and publishing permissions. Keep shared workflow changes there so agents stay in
   functions and the `witness_cmd.txt` channel). Build offsets are at the top of those files.
 - `tools/`: WSL scripts (`config.sh`, `install.sh`, `restart.sh`, `qa.sh`, `suite.py`, `solve_bot.py`,
   `state_diff.py`) and `tools/win/` (Windows Python probes and input helpers; `wlib.py` is shared).
-- `local/`: ignored. Two copies of the game install (`witness-1`, `witness-2`), pid files and logs under `run/`.
+- `local/`: ignored. Only used without the lab (two game copies `witness-1`, `witness-2`, `run/`); in lab mode the game folders,
+  pid files and logs live under `C:\coop\lab\` (see `~/source/coop-lab/LAB.md`).
 
 ## Build and validation
 
 - Build the DLL: `make -C proxy` (needs `x86_64-w64-mingw32-g++`).
 - Put it into the test copies: `tools/install.sh` (checks both exe hashes first and refuses any other build).
-- Restart both games with fresh new games: `tools/restart.sh`.
-- Full regression: `tools/qa.sh` (baseline, lost first send, two mutants that must fail). Report only what you ran.
+- Restart both games with fresh new games: `tools/restart.sh` (lab mode: your slots; registers and tiles the windows). Close them: `tools/stop.sh`.
+- Full regression: `tools/qa.sh` (leases slots, runs baseline, lost first send and two mutants that must fail, always cleans up). Report only what you ran.
 - For documentation changes, check links, paths and `git diff --check`; game runs are unnecessary.
 
 ## Compatibility constraints

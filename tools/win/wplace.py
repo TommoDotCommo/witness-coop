@@ -1,4 +1,5 @@
-import ctypes, ctypes.wintypes as wt, sys
+# usage: wplace.py <pid> <x> <y> <w> <h>   move and size the game window without activating it (SWP_NOZORDER | SWP_NOACTIVATE)
+import ctypes, ctypes.wintypes as wt, sys, time
 u = ctypes.WinDLL('user32'); pid, x, y, w, h = map(int, sys.argv[1:6]); found = []
 @ctypes.WINFUNCTYPE(wt.BOOL, wt.HWND, wt.LPARAM)
 def cb(hw, lp):
@@ -8,4 +9,4 @@ def cb(hw, lp):
         if r.right > 200: found.append(hw)
     return True
 u.EnumWindows(cb, 0)
-print('placed', bool(found and u.SetWindowPos(found[0], 0, x, y, w, h, 0x0004)))
+print('placed', bool(found and u.SetWindowPos(found[0], 0, x, y, w, h, 0x0004 | 0x0010)))

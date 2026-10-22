@@ -25,7 +25,13 @@ for name, ca, cb, check in SCENARIOS:
     print('\n=== %s' % name, flush=True)
     sh(os.path.join(TOOLS, 'restart.sh'), {'CFG_A': ca, 'CFG_B': cb})
     time.sleep(30)    # both worlds must pass the stable-world gate (three identical scans 3 s apart)
-    print(sh('python3 %s %s | tail -2' % (os.path.join(TOOLS, 'solve_bot.py'), pid('A'))).strip(), flush=True)
+    # The bot uses SendInput, which is desktop-wide: only one bot may run at a time on this PC (until in-process input exists).
+    lab = os.environ.get('LAB', os.path.expanduser('~/source/coop-lab/lab'))
+    if os.path.exists(lab): sh('%s input-lock acquire --ttl 400 --wait 1800' % lab)
+    try:
+        print(sh('python3 %s %s | tail -2' % (os.path.join(TOOLS, 'solve_bot.py'), pid('A'))).strip(), flush=True)
+    finally:
+        if os.path.exists(lab): sh('%s input-lock release' % lab)
     time.sleep(14)    # the stats line is logged every 10 s
     out = sh('python3 %s' % os.path.join(TOOLS, 'state_diff.py')); print(out.strip(), flush=True)
     a, b = last_stats(DIR1), last_stats(DIR2)

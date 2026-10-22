@@ -9,9 +9,17 @@ apply to every session here.
 2. Check for others' work on this game:
    `gh issue list -R cranebeaker/coop-anything --search "Witness" --state all` and
    `gh pr list -R cranebeaker/coop-anything --search "Witness" --state all`. Read open Witness PRs.
-3. `git worktree list` and `ListAgents`: if another session is working on this repo, work in
-   your own worktree (`git worktree add ../witness-coop-<topic> -b <topic>`), never in a shared tree.
-   Use separate game copies and ports for parallel game runs.
+3. Read `~/source/coop-lab/LAB.md` (the rules for every agent on this PC: testing policy, game slots, the shared desktop).
+4. `git worktree list` and `ListAgents`: several agents work on this repo at once. Work in your own worktree
+   (`git worktree add ~/source/witness-coop-worktrees/<topic> -b <topic>`), never in a shared tree. The worktree folder name is
+   your identity in the lab, so your slots, ports, game folders and pid files never collide with another agent's.
+
+## Testing: automated first
+Automated testing is preferred over manual testing, always (LAB.md section 1). A change is done when a script proves it: write the
+test, watch it fail, fix the code, watch it pass; every protection gets a mutant the test must fail. Manual play is for finding
+problems, and each problem found becomes a script. Use the cheapest tier that can catch it: T0 game-free (none for this repo yet,
+extracting the sync core so it runs without the game is on the roadmap), T2 `tools/qa.sh`. Assert on state read from both
+games, not on logs or screenshots.
 
 ## While working
 - Notes as you go: append to `~/source/coop-anything/games/the-witness/NOTES.md` in the same
@@ -49,10 +57,14 @@ apply to every session here.
   in any new worktree or clone). No real names, emails or usernamed paths in files or commit messages.
   Before pushing: `git log --format='%an %ae %cn %ce' origin/main..HEAD` and read the diff.
 
-## Testing
-The games are real windows and the bot uses real keyboard and mouse input, so the machine cannot be used while a
-scenario runs (about 4 minutes each, 15 for the whole suite). `tools/qa.sh` is the full suite; `tools/qa.sh baseline`
-runs one scenario by name. `tools/restart.sh` closes only the two copies it started (pid files in `local/run/`).
-Windows tools are started with Windows Python from WSL; `powershell.exe` hangs under this setup.
-After a failed launch a "System Error" box (owned by `csrss.exe`) stays on screen and shows up in screenshots:
-close it by title (`<exe> - System Error`) with WM_CLOSE.
+## Running the games (several agents at once)
+Game slots come from the shared lab; `tools/qa.sh` does all of this itself: it leases two slots without waiting (exit 3 = busy:
+do game-free work and retry, do not block), builds your hard-linked instance folders on the NTFS pool, runs, and in a trap kills
+only your own games and frees the slots. Your folders, UDP ports and run folder come from the lease (`tools/config.sh`).
+`tools/stop.sh` closes your games. `lab status` shows who holds what.
+The Witness bot uses `SendInput`, which takes the keyboard and mouse of the whole desktop, so the suite holds `lab input-lock`
+while the bot runs (one bot on the PC at a time) and interrupts anyone typing; run it when the owner is away or has said it is
+fine. Games sit on the second monitor, started without taking focus; do not minimize them (a minimized Witness runs at 10 fps).
+`tools/qa.sh baseline` runs one scenario; the full suite is about 15 minutes.
+Windows tools are started with Windows Python from WSL. After a failed launch a "System Error" box (owned by `csrss.exe`) stays
+on screen and shows up in screenshots: close it by title (`<exe> - System Error`) with WM_CLOSE.

@@ -6,7 +6,7 @@ TOOLS = os.path.join(ROOT, 'tools')
 DIR1 = os.environ.get('WITNESS_DIR1', os.path.join(ROOT, 'local', 'witness-1'))
 DIR2 = os.environ.get('WITNESS_DIR2', os.path.join(ROOT, 'local', 'witness-2'))
 PYW = os.environ.get('PYW', '/mnt/c/Python311/python.exe')
-RUN = os.path.join(ROOT, 'local', 'run')
+RUN = os.environ.get('WITNESS_RUN', os.path.join(ROOT, 'local', 'run'))
 
 def win(path): return subprocess.check_output(['wslpath', '-w', path]).decode().strip()
 def pid(which): return open(os.path.join(RUN, 'pid%s.txt' % which)).read().strip()
