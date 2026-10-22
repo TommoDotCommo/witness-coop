@@ -40,6 +40,7 @@ struct Flags {   // all off by default
     bool wrongAckEpoch = false, applyOutOfOrder = false, noChecksum = false;
     bool noApplyRetry = false;  // twin: discard ACKed events when the game cannot apply them yet
     bool noPanelPower = false;  // twin: omit panel power-on progression from live sync and snapshots
+    bool noReloadSync = false;  // twin: ignore a same-process save reload (no re-gate, no resync with the peer)
 };
 
 struct Hooks {
@@ -56,7 +57,7 @@ struct Hooks {
 
 struct RemotePose { bool valid = false; float pos[3] = {0, 0, 0}, ang[2] = {0, 0}; uint64_t ageMs = 0; unsigned seq = 0, id = 0; };
 
-struct Stats { uint32_t sent = 0, resent = 0, inOrder = 0, dup = 0, ooo = 0, acked = 0, emittedPanels = 0, emittedDoors = 0, appliedPanels = 0, appliedDoors = 0, resyncs = 0, emittedPowers = 0, appliedPowers = 0; };
+struct Stats { uint32_t sent = 0, resent = 0, inOrder = 0, dup = 0, ooo = 0, acked = 0, emittedPanels = 0, emittedDoors = 0, appliedPanels = 0, appliedDoors = 0, resyncs = 0, emittedPowers = 0, appliedPowers = 0, reloads = 0; };
 
 class SyncCore {
 public:
@@ -81,6 +82,7 @@ private:
     struct Guard;                                          // scoped lock
     void emit(uint8_t kind, unsigned id, bool resync);
     void baseline(bool full);
+    bool reloadSeen(uint64_t now);
     bool scanWorld();
     uint64_t signature();
     void log(const char* m);

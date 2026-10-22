@@ -2,7 +2,7 @@
 """Shared-state suite. Each scenario starts both games, a bot solves the first panel on A, and the result is checked against
 what that scenario must produce. MUTANT scenarios are deliberately broken builds that must FAIL the check, so that a pass
 means the check can fail. usage: suite.py [substring of scenario name ...]   (about 4 minutes per scenario)"""
-import json, os, re, shlex, subprocess, sys, time
+import json, os, re, shlex, shutil, subprocess, sys, time
 from witness import ROOT, TOOLS, DIR1, DIR2, PYW, RUN, pid, pyw, win
 
 def sh(cmd, env=None, timeout=600):
@@ -80,6 +80,52 @@ def late_join(ca, cb, mutant):
     if mutant: return ('0x64' not in after_b['panels'] and '0x34eda' not in after_b['doors']), 'no snapshot: B must lack panel 0x64 and door 0x34eda'
     return (after_a['panels'] == after_b['panels'] and after_a['doors'] == after_b['doors']), 'B restored all progress from A on first contact'
 
+def b_saves():
+    return os.path.join(DIR2, 'appdata', 'The Witness')
+
+def wait_first_b_save(timeout=180):
+    """The game writes its first save about a minute after a new game starts. Back it up before any progress exists: it is the
+    older save the reload will load (the game rewrites the one save file in place and saves again when the pause menu opens)."""
+    end = time.time() + timeout
+    while time.time() < end:
+        files = [f for f in os.listdir(b_saves()) if f.endswith('.witness_campaign')] if os.path.isdir(b_saves()) else []
+        if files:
+            time.sleep(5)       # let the write finish
+            bk = os.path.join(RUN, 'save_backup'); shutil.rmtree(bk, ignore_errors=True); os.makedirs(bk)
+            for f in os.listdir(b_saves()): shutil.copy(os.path.join(b_saves(), f), bk)
+            return bk
+        time.sleep(3)
+    return None
+
+def reload_check(bk, mutant):
+    """B loads its older save through the game's own menu while both processes and the link stay up."""
+    before_a, before_b = state('A'), state('B')
+    expected = {'panels': '0x64', 'doors': '0x34eda'}
+    for kind, entity in expected.items():
+        if entity not in before_a[kind] or entity not in before_b[kind]:
+            return False, 'precondition failed: both worlds must have the solved panel and open door before B reloads'
+    stats = last_stats(DIR1)
+    if not stats or stats['sent'] != stats['acked']: return False, 'precondition failed: wait for all original events to be acknowledged'
+    old = (pid('A'), pid('B'))
+    out = pyw('wreload.py', win(DIR2), win(bk))
+    print(out.strip(), flush=True)
+    if 'reload requested' not in out: return False, 'the reload could not be requested'
+    seen_lost = False; deadline = time.time() + 90
+    while time.time() < deadline:
+        time.sleep(3)
+        cur = state('B')
+        if all(e not in cur[k] for k, e in expected.items()): seen_lost = True       # the load really reset B's world
+        if seen_lost and all(e in cur[k] for k, e in expected.items()) and not mutant: break
+        if mutant and seen_lost and time.time() > deadline - 45: break
+    after_a, after_b = state('A'), state('B')
+    log_b = open(os.path.join(DIR2, 'witness_proxy.log'), errors='ignore').read()
+    if (pid('A'), pid('B')) != old: return False, 'no process may restart in a same-process reload'
+    if not seen_lost: return False, 'the reload never reset B (a test that cannot see the load proves nothing)'
+    if any(after_a[k] != before_a[k] and not set(before_a[k]) <= set(after_a[k]) for k in expected): return False, 'A lost progress'
+    if mutant: return all(e not in after_b[k] for k, e in expected.items()), 'reload ignored: B must still lack panel 0x64 and door 0x34eda'
+    ok = all(e in after_b[k] for k, e in expected.items()) and 'save reload suspected' in log_b
+    return ok, 'B caught up from A after loading its older save, without a restart'
+
 def hygiene(saves_before):
     """Checks that do not depend on the scenario: real saves untouched, save folder redirected, frame cap in force."""
     out = {}
@@ -104,6 +150,8 @@ SCENARIOS = [   # name, extra cfg for A, extra cfg for B, check(a_stats, b_stats
   ('MUTANT: peer restart catch-up disabled', 'no_resync_on_restart=1', '', lambda a, b, ok: (not ok, 'fresh B must diverge without full-state catch-up')),
   ('late join', 'no_resend=1', '', lambda a, b, ok: (ok and b.get('ap', 0) >= 1 and b.get('ad', 0) >= 1 and b.get('ep', 9) == 0 and b.get('ed', 9) == 0, 'B, started for the first time after the solve, receives the snapshot')),
   ('MUTANT: late join without snapshot', 'no_resend=1\nno_resync_on_restart=1', '', lambda a, b, ok: (not ok, 'a never-seen B must diverge without the full-state snapshot')),
+  ('same-process reload', '', '', lambda a, b, ok: (b.get('ep', 9) == 0 and b.get('ed', 9) == 0, 'B reloads an older save in the same process and catches up from A')),
+  ('MUTANT: same-process reload ignored', '', 'no_reload_sync=1', lambda a, b, ok: (True, 'B must stay diverged after the reload')),
   ('second tutorial door', '', '', lambda a, b, ok: (ok and b.get('ep', 9) == 0 and b.get('ed', 9) == 0, 'both tutorial panels and doors match without B echo')),
   ('MUTANT: second tutorial door skips entity zero', 'skip_entity_zero=1', '', lambda a, b, ok: (not ok, 'door entity zero must be missing on B')),
   ('panel power chain', '', '', lambda a, b, ok: (ok and b.get('epow', 9) == 0 and b.get('apow', 0) >= 1, 'target panel powers on without being solved or echoed')),
@@ -122,6 +170,8 @@ for name, ca, cb, check in SCENARIOS:
     subprocess.run([os.path.join(TOOLS, 'restart.sh')] + (['A'] if late else []), env={**os.environ, 'CFG_A': ca, 'CFG_B': cb},
                    capture_output=True, text=True, timeout=600, check=True)
     time.sleep(30)    # both worlds must pass the stable-world gate (three identical scans 3 s apart)
+    backup = wait_first_b_save() if 'same-process reload' in name else None
+    if 'same-process reload' in name and not backup: print('no first save appeared on B', flush=True)
     # The bot is in-process (tp, mouse and button commands to the proxy): no focus, no desktop input, no lock; several can run at once.
     open(os.path.join(RUN, 'guard.stop'), 'w').write('bot starting')      # the focus guard (for the game grabbing the foreground while loading) ends
     bot = sh('%s -I %s %s %s 2>&1 | tail -3' % (shlex.quote(PYW), shlex.quote(win(os.path.join(TOOLS, 'win', 'wbot.py'))), pid('A'), shlex.quote(win(DIR1)))).strip()
@@ -142,7 +192,8 @@ for name, ca, cb, check in SCENARIOS:
             power_ok = 'panel 0x18af solved: True | target 0x1b powered: True | target unsolved: True' in power_bot
     time.sleep(14)    # the stats line is logged every 10 s
     catchup = None
-    if late: pass
+    if 'same-process reload' in name and bot_ok and backup: catchup = reload_check(backup, name.startswith('MUTANT:'))
+    elif late: pass
     elif 'restart catch-up' in name and bot_ok:
         catchup = restart_catchup(ca, cb, name.startswith('MUTANT:'))
     elif 'panel power chain' in name and bot_ok and power_ok and not name.startswith('MUTANT:'):
@@ -169,6 +220,7 @@ for name, ca, cb, check in SCENARIOS:
         if not second_ok: why = 'the bot did not solve the second panel'
     if catchup:
         ok = ok and catchup[0]; why = catchup[1]
+    if 'same-process reload' in name and not backup: ok, why = False, 'no first save to reload'
     if not bot_ok: ok, why = False, 'the bot did not solve the panel (a state diff of two untouched games proves nothing)'
     h = hygiene(SAVES0); f = h.pop('_fps'); cap_on = 'cap_fps=0' not in ca
     h['frame cap: game A at %.1f fps (capped 20-40; uncapped far more)' % f] = (20 <= f <= 40) if cap_on else (f > 100)

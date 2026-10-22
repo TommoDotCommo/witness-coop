@@ -19,6 +19,7 @@ for p in "${peers[@]}"; do
   else d="$WITNESS_DIR2"; id=2; listen="$WITNESS_PORT2"; peer="$WITNESS_PORT1"; cfg="${CFG_B:-}"; fi
   printf 'id=%s\nlisten=%s\npeer=%s\nsave_dir=instance\nshare_zip=1\nforce_active=1\ncap_fps=%s\n%s\n' "$id" "$listen" "$peer" "${WITNESS_FPS:-30}" "$cfg" > "$d/witness_coop.cfg"
   rm -f "$d/witness_proxy.log" "$d/witness_cmd.txt"
+  [ -d "$d/appdata/The Witness" ] && rm -f "$d/appdata/The Witness/"*.witness_campaign "$d/appdata/The Witness/"*.png   # this instance's own saves only: reloads must start from known saves
   game_pid=$(launch "$d"); echo "$game_pid" > "$RUN/pid$p.txt"
   [ -x "$LAB" ] && "$LAB" register-pid "$game_pid" >/dev/null 2>&1
   for i in $(seq 1 45); do grep -q "overlay: resources ready" "$d/witness_proxy.log" 2>/dev/null && break; sleep 2; done

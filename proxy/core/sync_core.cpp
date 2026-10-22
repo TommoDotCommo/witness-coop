@@ -154,6 +154,19 @@ void SyncCore::baseline(bool full) {
     }
 }
 
+bool SyncCore::reloadSeen(uint64_t now) {   // doors do not close and one panel can be redrawn, so those alone are not a load
+    unsigned closed = 0, unsolved = 0;
+    for (unsigned id : doors_) {
+        auto sp = suppressDoor_.find(id);
+        if (knownDoor_.count(id) && w_->entityExists(id) && !w_->doorOpen(id) && !(sp != suppressDoor_.end() && now < sp->second)) closed++;
+    }
+    for (unsigned id : panels_) {
+        auto sp = suppressPanel_.find(id);
+        if (knownPanel_.count(id) && w_->entityExists(id) && !w_->panelSolved(id) && !(sp != suppressPanel_.end() && now < sp->second)) unsolved++;
+    }
+    return closed >= 1 || unsolved >= 2;
+}
+
 void SyncCore::pollState(uint64_t now) {
     Guard g(h_);
     if (!gateStarted_) { gateStarted_ = true; nextGate_ = now + 3000; }
@@ -174,6 +187,17 @@ void SyncCore::pollState(uint64_t now) {
         char m[160]; std::snprintf(m, sizeof m, "state: world stable, %zu panels, %zu doors", panels_.size(), doors_.size()); log(m);
         baseline(false);
         ready_ = true; settleUntil_ = f_.noSettle ? now : now + kSettleMs; nextScan_ = now + 3000; nextStats_ = now + 10000;
+        return;
+    }
+    if (!f_.noReloadSync && reloadSeen(now)) {
+        // The process and the link are up, but the world lost progress it had: a save was loaded. Nothing told the peer, so
+        // announce a new session (the peer then resends its full state, as for a restart), wait for the loading world to
+        // settle again, and publish this world's full state once it has.
+        log("state: save reload suspected (known progress vanished), waiting for a stable world");
+        ready_ = false; gateSame_ = 0; gateLastPanels_ = gateLastDoors_ = 0; gateLastSig_ = 0; nextGate_ = now + 3000;
+        suppressPanel_.clear(); suppressDoor_.clear(); suppressPower_.clear(); anyLocalSolve_ = false;
+        session_++; epoch_ = (uint64_t(session_) << 16) | ++restartsSeen_; nextSeq_ = 1; sent_.clear(); resync_ = true;
+        st_.reloads++;
         return;
     }
     if (now >= nextScan_) { nextScan_ = now + 3000; if (scanWorld()) { log("state: entity table changed, new baseline"); baseline(false); } }
