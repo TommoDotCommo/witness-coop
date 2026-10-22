@@ -30,11 +30,16 @@ with progress (the full resend exists but is not in the suite), saves, a second 
 Requirements: Windows with the Steam build above; WSL2 with `make` and MinGW-w64 (`x86_64-w64-mingw32-g++`); Windows Python 3
 (default `/mnt/c/Python311/python.exe`, override with `PYW`); Python 3 in WSL. Nothing here installs anything for you.
 
-**Test copies.** The proxy goes into two disposable copies of the install, never the real one:
+**With the shared lab** (`~/source/coop-lab`, several agents on one PC): `tools/qa.sh` does everything below for you: it leases two
+game slots, builds hard-linked instance folders on the NTFS pool (`C:\coop\lab\witness\s<slot>`, one shared base copy; each slot
+needs its own real copy of `data-pc.zip`, because the game will not let a second process open the same file), runs, and kills only
+its own games at the end. Run `lab firewall` once (one UAC click) so the copies start without a Windows Firewall prompt.
+
+**Test copies, without the lab.** The proxy goes into two disposable copies of the install, never the real one:
 
 ```
 cp -a "<Steam library>/steamapps/common/The Witness" local/witness-1
-cp -a "<Steam library>/steamapps/common/The Witness" local/witness-2
+cp -a "<Steam library>/steamapps/common/The Witness" local/witness-2     # (then set WITNESS_DIR1/2, or use the lab)
 tools/install.sh       # builds the DLL, checks both exe hashes, renames AnselSDK64.dll to AnselSDK64_real.dll, installs the proxy
 tools/restart.sh       # starts both with -skip_config_dialog -windowed -new_game, side by side
 ```
