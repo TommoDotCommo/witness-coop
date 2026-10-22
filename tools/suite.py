@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Shared-state suite. Each scenario restarts both games, a bot solves the first panel on A, and the result is checked against
+"""Shared-state suite. Each scenario starts both games, a bot solves the first panel on A, and the result is checked against
 what that scenario must produce. MUTANT scenarios are deliberately broken builds that must FAIL the check, so that a pass
 means the check can fail. usage: suite.py [substring of scenario name ...]   (about 4 minutes per scenario)"""
 import json, os, re, shlex, subprocess, sys, time
@@ -22,6 +22,42 @@ def real_saves():
 def fps(which, secs=4):
     return float(pyw('wfps.py', pid(which), str(secs)).strip() or 0)
 
+def state(which):
+    return json.loads(pyw('wstatedump.py', pid(which)))
+
+def restart_catchup(ca, cb, mutant):
+    """Discard B's world after the live solve has already been delivered and ACKed.
+
+    Assert against process memory before and after; a log saying 'resync' is not evidence of restored progress.
+    """
+    before_a, before_b = state('A'), state('B')
+    expected = {'panels': '0x64', 'doors': '0x34eda'}
+    for kind, entity in expected.items():
+        if entity not in before_a[kind] or before_a[kind] != before_b[kind]:
+            return False, 'precondition failed: both worlds must have the solved panel and open door before B restarts'
+    stats = last_stats(DIR1)
+    if not stats or stats['sent'] != stats['acked']:
+        return False, 'precondition failed: wait for all original events to be acknowledged'
+    old_a, old_b = pid('A'), pid('B')
+    result = subprocess.run([os.path.join(TOOLS, 'restart.sh'), 'B'],
+                            env={**os.environ, 'CFG_A': ca, 'CFG_B': cb}, capture_output=True, text=True, timeout=240)
+    if result.returncode:
+        return False, 'B restart failed: ' + result.stdout + result.stderr
+    time.sleep(30)
+    open(os.path.join(RUN, 'guard.stop'), 'w').write('restart complete')
+    after_a, after_b = state('A'), state('B')
+    if pid('A') != old_a or pid('B') == old_b:
+        return False, 'restart must replace only B, keeping A alive'
+    for kind in expected:
+        if after_a[kind] != before_a[kind]: return False, 'surviving A lost or changed its progress'
+    if after_b['n_panels'] != before_b['n_panels'] or after_b['n_doors'] != before_b['n_doors']:
+        return False, 'B entity census is incomplete after restart'
+    if mutant:
+        ok = all(expected[kind] not in after_b[kind] for kind in expected)
+        return ok, 'catch-up disabled: fresh B must lack panel 0x64 and door 0x34eda'
+    ok = all(after_a[kind] == after_b[kind] for kind in expected)
+    return ok, 'fresh B restored all progress from surviving A after original events were ACKed'
+
 def hygiene(saves_before):
     """Checks that do not depend on the scenario: real saves untouched, save folder redirected, frame cap in force."""
     out = {}
@@ -42,13 +78,16 @@ SCENARIOS = [   # name, extra cfg for A, extra cfg for B, check(a_stats, b_stats
   ('MUTANT: no resend + 30% random loss', 'drop_pct=30\ndrop_seed=7\nno_resend=1', 'drop_pct=30\ndrop_seed=11', lambda a, b, ok: (not ok, 'must DIVERGE, otherwise the random-loss test tests nothing')),
   ('MUTANT: frame cap off', 'cap_fps=0', '', lambda a, b, ok: (ok, 'state still identical; the hygiene check must see an uncapped game')),
   ('MUTANT: echo guard off', '', 'no_echo_guard=1', lambda a, b, ok: (b.get('ep', 0) + b.get('ed', 0) > 0, 'B must echo events back, otherwise the echo check tests nothing')),
+  ('peer restart catch-up', '', '', lambda a, b, ok: (ok and b.get('ap', 0) >= 1 and b.get('ad', 0) >= 1 and b.get('ep', 9) == 0 and b.get('ed', 9) == 0, 'fresh B catches up without echoing')),
+  ('MUTANT: peer restart catch-up disabled', 'no_resync_on_restart=1', '', lambda a, b, ok: (not ok, 'fresh B must diverge without full-state catch-up')),
 ]
 only = sys.argv[1:]; results = []
 SAVES0 = real_saves()
 for name, ca, cb, check in SCENARIOS:
     if only and not any(o in name for o in only): continue
     print('\n=== %s' % name, flush=True)
-    sh(os.path.join(TOOLS, 'restart.sh'), {'CFG_A': ca, 'CFG_B': cb})
+    subprocess.run([os.path.join(TOOLS, 'restart.sh')], env={**os.environ, 'CFG_A': ca, 'CFG_B': cb},
+                   capture_output=True, text=True, timeout=600, check=True)
     time.sleep(30)    # both worlds must pass the stable-world gate (three identical scans 3 s apart)
     # The bot is in-process (tp, mouse and button commands to the proxy): no focus, no desktop input, no lock; several can run at once.
     open(os.path.join(RUN, 'guard.stop'), 'w').write('bot starting')      # the focus guard (for the game grabbing the foreground while loading) ends
@@ -56,9 +95,12 @@ for name, ca, cb, check in SCENARIOS:
     print(bot, flush=True)
     bot_ok = 'solved: True' in bot      # a scenario that never solved the panel proves nothing, whatever the state diff says
     time.sleep(14)    # the stats line is logged every 10 s
+    catchup = restart_catchup(ca, cb, name.startswith('MUTANT:')) if 'restart catch-up' in name and bot_ok else None
     out = sh('python3 %s' % os.path.join(TOOLS, 'state_diff.py')); print(out.strip(), flush=True)
     a, b = last_stats(DIR1), last_stats(DIR2)
     ok, why = check(a, b, 'IDENTICAL' in out)
+    if catchup:
+        ok = ok and catchup[0]; why = catchup[1]
     if not bot_ok: ok, why = False, 'the bot did not solve the panel (a state diff of two untouched games proves nothing)'
     h = hygiene(SAVES0); f = h.pop('_fps'); cap_on = 'cap_fps=0' not in ca
     h['frame cap: game A at %.1f fps (capped 20-40; uncapped far more)' % f] = (20 <= f <= 40) if cap_on else (f > 100)

@@ -19,12 +19,13 @@ No game files are in this repo. You need your own copy of The Witness, Steam bui
   door animates and collides as in single-player. Events are numbered, received in sequence and resent until acknowledged.
   If an entity is temporarily missing or a door call is refused, its acknowledged event stays queued and retries on the render
   thread; other entities can still progress. Successful changes are applied once. A restarted game gets the whole state again.
+  The restart catch-up scenario checks this after the original panel/door events have already been acknowledged.
 - **Safe start.** Nothing is detected, resent or applied until the world is stable (camera valid and identical panel and door
   counts on three scans three seconds apart); after applying a remote change the entity is suppressed for 5 s so it is not
   sent back.
 
 Not done: cables and panels powered by panels, plates, lasers, bridges, a real network (localhost only), late join into a game
-with progress (the full resend exists but is not in the suite), saves, a second puzzle, a player model.
+with progress (restart catch-up is in the suite; a first-time late join is not), saves, a second puzzle, a player model.
 
 ## Try it (two copies on one PC)
 
@@ -43,6 +44,7 @@ cp -a "<Steam library>/steamapps/common/The Witness" local/witness-1
 cp -a "<Steam library>/steamapps/common/The Witness" local/witness-2     # (then set WITNESS_DIR1/2, or use the lab)
 tools/install.sh       # builds the DLL, checks both exe hashes, renames AnselSDK64.dll to AnselSDK64_real.dll, installs the proxy
 tools/restart.sh       # starts both with -skip_config_dialog -windowed -new_game, side by side
+tools/restart.sh B     # restart only B with a fresh world, keeping A and its progress running (also accepts A)
 ```
 
 Each copy is 3.9 GB. **The game keeps its saves in `%APPDATA%\The Witness` whatever folder the exe runs from**, so a copy does not
@@ -74,7 +76,7 @@ started by the function call. Sources and the evidence for each are in the hub n
 `witness_coop.cfg` (next to the DLL): `id`, `listen`, `peer` (UDP ports on localhost), optional `peer_host`. Instance isolation (all
 off by default, so a player's own game is unchanged): `save_dir=instance` (the game's save folder, `%APPDATA%\The Witness`, becomes
 `<game folder>\appdata`, or give a path; the owner's real saves are then never touched), `cap_fps=N` (frame cap), `share_zip=1`
-(see above), `force_active=1` (the game believes its window is always active: full speed, and it accepts injected input, without taking the focus or the mouse; the real cursor is replaced by a virtual one). Test-only switches: `drop_first_event=1`, `no_resend=1`, `no_echo_guard=1`. The log is `witness_proxy.log` next to the DLL.
+(see above), `force_active=1` (the game believes its window is always active: full speed, and it accepts injected input, without taking the focus or the mouse; the real cursor is replaced by a virtual one). Test-only switches: `drop_first_event=1`, `no_resend=1`, `no_echo_guard=1`, `no_resync_on_restart=1`. The log is `witness_proxy.log` next to the DLL.
 
 Without `force_active` the game runs unthrottled only while its window is the active one (otherwise about 10 fps) and ignores keys and
 mouse buttons. It also takes the foreground by itself while loading (`tools/restart.sh` runs a guard that hands the focus back).
@@ -131,8 +133,15 @@ failed. The gate now also needs the same set of solved panels and open doors on 
 the gate are folded into the baseline (the log says `changed during start-up, folded into the baseline`). It happened once in about nine
 starts and did not recur in the final run, so the fix is in place but not shown to trigger.
 
-Not covered by the suite: a real network, random loss (only a deterministic "first send lost"), more than two players, any puzzle
-besides the first, cables and powered panels, a late join into a game that already has progress, saves, fullscreen, non-16:9 windows.
+`tools/qa.sh 'restart catch-up'` runs two additional scenarios: B is restarted into a fresh new game after both copies have the
+first panel solved and A's original events are acknowledged. The survivor must retain its PID and progress; the new process
+must recover all solved panels and opened doors with no echo. The mutant disables the survivor's full-state resend and must
+leave the first panel and its door missing on B. Assertions read both processes' state and require a complete entity census.
+Targeted run on 2026-10-22: both scenarios PASS; clean state identical (1 panel, 10 doors), mutant missing exactly panel
+`0x64` and door `0x34eda`. Real saves unchanged, instance save redirect and cursor checks passed, and A ran at 30.0 fps.
+
+Not covered by the suite: a real network, more than two players, any puzzle besides the first, cables and powered panels,
+a first-time late join into a game that already has progress, same-process save reloads, saves, fullscreen, non-16:9 windows.
 
 The probes in `tools/win/` (`wread.py`, `wsnap.py` + `wdiff.py` for before/after memory diffs, `wnames.py`, `wstatedump.py`, `wfps.py`) are
 read-only; `wkeys.py`, `wshot.py`, `wplace.py`, `wfocus.py` and `launch.py` drive the windows.
