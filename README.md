@@ -72,7 +72,7 @@ started by the function call. Sources and the evidence for each are in the hub n
 first panel, aims by feedback from the camera angles, enters the puzzle, traces the line), and `tools/state_diff.py` compares the
 solved panels and open doors read from both games' memory. Scenarios marked MUTANT are deliberately broken and must fail.
 
-Last full run from this repo (2026-10-24, one machine, localhost, build 11370412, about 15 minutes):
+Last full run from this repo (2026-10-22, one machine, localhost, build 11370412, about 15 minutes):
 
 ```
 baseline                                 PASS   identical (1 panel, 10 doors); B sent nothing back; no resend needed
