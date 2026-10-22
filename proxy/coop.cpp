@@ -1,6 +1,6 @@
 // UDP transport and configuration for the sync core (core/sync_core.cpp holds all the logic and is tested without the game).
 // witness_coop.cfg (next to the DLL):  id=1  listen=47001  peer=47002  [peer_host=127.0.0.1]
-//   test-only switches: drop_first_event=1  no_resend=1  no_echo_guard=1
+//   test-only switches: drop_pct=30 drop_seed=7 (seeded random loss of outgoing datagrams)  drop_first_event=1  no_resend=1  no_echo_guard=1
 #define WIN32_LEAN_AND_MEAN
 #include <ctime>
 #include <winsock2.h>
@@ -30,10 +30,12 @@ static DWORD WINAPI NetThread(LPVOID) {
     wchar_t* sl = wcsrchr(wp, L'\\'); if (sl) *(sl + 1) = 0; wcscat_s(wp, L"witness_coop.cfg");
     FILE* f = _wfopen(wp, L"r");
     if (!f) { Log("coop: no witness_coop.cfg, networking off"); return 0; }
-    witness::Flags flags; int id = 0, listenPort = 0, peerPort = 0; char host[64] = "127.0.0.1", line[200];
+    witness::Flags flags; int id = 0, listenPort = 0, peerPort = 0; char host[64] = "127.0.0.1", line[200]; int dropPct = 0; uint32_t dropState = 1;
     while (fgets(line, sizeof line, f)) {
         int v; sscanf(line, "id=%d", &id); sscanf(line, "listen=%d", &listenPort); sscanf(line, "peer=%d", &peerPort); sscanf(line, "peer_host=%63s", host);
         if (sscanf(line, "drop_first_event=%d", &v) == 1) flags.dropFirstEvent = v;
+        if (sscanf(line, "drop_pct=%d", &v) == 1) dropPct = v;
+        if (sscanf(line, "drop_seed=%d", &v) == 1) dropState = (uint32_t)v * 2654435761u + 1;
         if (sscanf(line, "no_resend=%d", &v) == 1) flags.noResend = v;
         if (sscanf(line, "no_echo_guard=%d", &v) == 1) flags.noEchoGuard = v;
     }
@@ -48,7 +50,9 @@ static DWORD WINAPI NetThread(LPVOID) {
     char m[160]; snprintf(m, sizeof m, "coop: id=%d listening %d, sending to %s:%d", id, listenPort, host, peerPort); Log(m);
 
     witness::Hooks h;
-    h.send = [&](const witness::Bytes& b) { sendto(s, (const char*)b.data(), (int)b.size(), 0, (sockaddr*)&peer, sizeof peer); };
+    h.send = [&](const witness::Bytes& b) {
+        if (dropPct > 0) { dropState = dropState * 1664525u + 1013904223u; if ((int)((dropState >> 16) % 100) < dropPct) return; }   // deterministic seeded loss
+        sendto(s, (const char*)b.data(), (int)b.size(), 0, (sockaddr*)&peer, sizeof peer); };
     h.log = [](const char* t) { Log(t); };
     h.lock = [] { EnterCriticalSection(&g_lock); }; h.unlock = [] { LeaveCriticalSection(&g_lock); };
     uint32_t session = (uint32_t)time(nullptr);     // must grow with every start: the core ignores packets from an older session
