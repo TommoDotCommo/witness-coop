@@ -6,3 +6,4 @@ void GameRunQueued();   // call from the render thread (Present hook): runs queu
 void GameEnqueueDoorOpen(unsigned id, float amount);
 uintptr_t GameEntity(unsigned id);                    // entity pointer or 0
 bool GameDoorOpenNow(unsigned id, float amount);      // render thread only; refuses non-Door entities
+bool GamePanelPowerOnNow(unsigned id);                // render thread only; refuses non-panel entities or a wrong prologue

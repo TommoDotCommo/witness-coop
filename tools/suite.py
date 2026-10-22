@@ -11,7 +11,10 @@ def sh(cmd, env=None, timeout=600):
 def last_stats(d):
     lines = [l for l in open(os.path.join(d, 'witness_proxy.log'), errors='ignore') if l.startswith('state: emitted')]
     m = re.search(r'emitted panels (\d+) doors (\d+), applied panels (\d+) doors (\d+) \| net sent (\d+) resent (\d+) in-order (\d+) dup (\d+) ooo (\d+) acked (\d+)', lines[-1]) if lines else None
-    return dict(zip(['ep', 'ed', 'ap', 'ad', 'sent', 'resent', 'inorder', 'dup', 'ooo', 'acked'], map(int, m.groups()))) if m else {}
+    out = dict(zip(['ep', 'ed', 'ap', 'ad', 'sent', 'resent', 'inorder', 'dup', 'ooo', 'acked'], map(int, m.groups()))) if m else {}
+    power = re.search(r'\| power emitted (\d+) applied (\d+)', lines[-1]) if lines else None
+    if power: out.update(zip(['epow', 'apow'], map(int, power.groups())))
+    return out
 
 def real_saves():
     """Hashes of the owner's real save folder (%APPDATA%\\The Witness), read through Windows Python. Instances must never touch it."""
@@ -25,13 +28,14 @@ def fps(which, secs=4):
 def state(which):
     return json.loads(pyw('wstatedump.py', pid(which)))
 
-def restart_catchup(ca, cb, mutant):
+def restart_catchup(ca, cb, mutant, include_power=False):
     """Discard B's world after the live solve has already been delivered and ACKed.
 
     Assert against process memory before and after; a log saying 'resync' is not evidence of restored progress.
     """
     before_a, before_b = state('A'), state('B')
     expected = {'panels': '0x64', 'doors': '0x34eda'}
+    if include_power: expected['powered_panels'] = '0x1b'
     for kind, entity in expected.items():
         if entity not in before_a[kind] or before_a[kind] != before_b[kind]:
             return False, 'precondition failed: both worlds must have the solved panel and open door before B restarts'
@@ -82,6 +86,8 @@ SCENARIOS = [   # name, extra cfg for A, extra cfg for B, check(a_stats, b_stats
   ('MUTANT: peer restart catch-up disabled', 'no_resync_on_restart=1', '', lambda a, b, ok: (not ok, 'fresh B must diverge without full-state catch-up')),
   ('second tutorial door', '', '', lambda a, b, ok: (ok and b.get('ep', 9) == 0 and b.get('ed', 9) == 0, 'both tutorial panels and doors match without B echo')),
   ('MUTANT: second tutorial door skips entity zero', 'skip_entity_zero=1', '', lambda a, b, ok: (not ok, 'door entity zero must be missing on B')),
+  ('panel power chain', '', '', lambda a, b, ok: (ok and b.get('epow', 9) == 0 and b.get('apow', 0) >= 1, 'target panel powers on without being solved or echoed')),
+  ('MUTANT: panel power chain disabled', 'no_panel_power=1', '', lambda a, b, ok: (not ok, 'target panel must remain dark on B')),
 ]
 only = sys.argv[1:]; results = []
 SAVES0 = real_saves()
@@ -101,11 +107,32 @@ for name, ca, cb, check in SCENARIOS:
         bot2 = pyw('wbot2.py', pid('A'), win(DIR1))
         print(bot2.strip(), flush=True)
         second_ok = 'panel 0x182 solved: True' in bot2
+    power_ok = True
+    if 'panel power chain' in name and bot_ok:
+        before_a, before_b = state('A'), state('B')
+        power_ok = all('0x1b' not in s['powered_panels'] and '0x18af' not in s['panels'] for s in (before_a, before_b))
+        if power_ok:
+            power_bot = pyw('wbot_power.py', pid('A'), win(DIR1))
+            print(power_bot.strip(), flush=True)
+            power_ok = 'panel 0x18af solved: True | target 0x1b powered: True | target unsolved: True' in power_bot
     time.sleep(14)    # the stats line is logged every 10 s
-    catchup = restart_catchup(ca, cb, name.startswith('MUTANT:')) if 'restart catch-up' in name and bot_ok else None
+    catchup = None
+    if 'restart catch-up' in name and bot_ok:
+        catchup = restart_catchup(ca, cb, name.startswith('MUTANT:'))
+    elif 'panel power chain' in name and bot_ok and power_ok and not name.startswith('MUTANT:'):
+        catchup = restart_catchup(ca, cb, False, include_power=True)
     out = sh('python3 %s' % os.path.join(TOOLS, 'state_diff.py')); print(out.strip(), flush=True)
     a, b = last_stats(DIR1), last_stats(DIR2)
     ok, why = check(a, b, 'IDENTICAL' in out)
+    if 'panel power chain' in name:
+        sa, sb = state('A'), state('B')
+        same_solves = sa['panels'] == sb['panels'] and '0x18af' in sa['panels'] and '0x1b' not in sa['panels']
+        powered_a, powered_b = set(sa['powered_panels']), set(sb['powered_panels'])
+        if name.startswith('MUTANT:'):
+            target_ok = powered_a - powered_b == {'0x1b'} and not (powered_b - powered_a)
+        else: target_ok = powered_a == powered_b and '0x1b' in powered_b
+        ok = ok and power_ok and same_solves and target_ok and sa['doors'] == sb['doors']
+        if not power_ok: why = 'power bot or fresh-chain precondition failed'
     if 'second tutorial door' in name:
         sa, sb = state('A'), state('B')
         panels_ok = all(entity in sa['panels'] and entity in sb['panels'] for entity in ('0x64', '0x182'))

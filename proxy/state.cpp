@@ -48,6 +48,8 @@ public:
     bool isDoor(unsigned id) override { uintptr_t e = id < kMaxId ? GameEntity(id) : 0; return e && Type(e) == Base() + kDoorTI; }
     bool panelSolved(unsigned id) override { uintptr_t e = GameEntity(id); return e && PanelSolved(e); }
     bool doorOpen(unsigned id) override { uintptr_t e = GameEntity(id); return e && DoorOpen(e); }
+    bool panelPowered(unsigned id) override { uintptr_t e = GameEntity(id); return e && Rd32(e + 0x2A4) == kOne; }
+    bool applyPanelPower(unsigned id) override { return GamePanelPowerOnNow(id); }
     void applyPanelSolved(unsigned id) override {   // the fields a real solve sets; the door itself is opened by its own event
         uintptr_t e = GameEntity(id); if (!e) return;
         const struct { int off; uint32_t v; } w[] = {{0x278, kOne}, {kPanelState, 1}, {0x290, kOne}, {kSolvedF, kOne}, {kEver, 1}};

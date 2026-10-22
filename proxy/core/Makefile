@@ -10,8 +10,12 @@ $(BUILD)/coopfuzz-witness: tests/witness_target.cpp sync_core.cpp sync_core.h $(
 $(BUILD)/apply-retry: tests/apply_retry.cpp sync_core.cpp sync_core.h
 	mkdir -p $(BUILD)
 	g++ -std=c++17 -O2 -Wall -Wextra -o $@ tests/apply_retry.cpp sync_core.cpp
-test: $(BUILD)/coopfuzz-witness $(BUILD)/apply-retry
+$(BUILD)/power-sync: tests/power_sync.cpp sync_core.cpp sync_core.h
+	mkdir -p $(BUILD)
+	g++ -std=c++17 -O2 -Wall -Wextra -o $@ tests/power_sync.cpp sync_core.cpp
+test: $(BUILD)/coopfuzz-witness $(BUILD)/apply-retry $(BUILD)/power-sync
 	$(BUILD)/apply-retry
+	$(BUILD)/power-sync
 	python3 tests/run_t0.py --hub $(HUB)
 clean:
 	rm -rf $(BUILD)

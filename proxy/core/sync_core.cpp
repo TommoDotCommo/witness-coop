@@ -6,7 +6,8 @@
 namespace witness {
 namespace {
 
-constexpr uint32_t kMagicPose = 0x50435457, kMagicEv = 0x45435457, kMagicAck = 0x41435457;   // "WTCP" "WTCE" "WTCA"
+// Protocol v2 adds panel power-on. Distinct magics prevent a v1 peer from ACKing an incomplete vocabulary.
+constexpr uint32_t kMagicPose = 0x32505457, kMagicEv = 0x32455457, kMagicAck = 0x32415457;   // "WTP2" "WTE2" "WTA2"
 constexpr size_t kPoseLen = 40, kEvLen = 32, kAckLen = 24;                                    // with the 4-byte checksum
 constexpr uint64_t kSuppressMs = 5000, kSettleMs = 15000, kCascadeMs = 5000;
 
@@ -75,7 +76,7 @@ void SyncCore::onPacket(const uint8_t* d, size_t n, uint64_t now) {
     Guard g(h_);
     if (magic == kMagicEv && n == kEvLen) {
         uint32_t from = get32(d + 4), seq = get32(d + 16), kind = get32(d + 20), entity = get32(d + 24); uint64_t epoch = get64(d + 8);
-        if (int(from) == id_ || (kind != EV_PANEL_SOLVED && kind != EV_DOOR_OPENED) || entity >= kMaxEntityId) return;
+        if (int(from) == id_ || (kind != EV_PANEL_SOLVED && kind != EV_DOOR_OPENED && kind != EV_PANEL_POWERED) || entity >= kMaxEntityId) return;
         if (epoch < peerEpoch_) { st_.ooo++; if (h_.onRejected) h_.onRejected(uint8_t(kind), entity, epoch, seq, "stale epoch"); return; }   // a delayed packet of an earlier run
         if (epoch > peerEpoch_) { peerEpoch_ = epoch; if (!f_.noEpochReset) peerApplied_ = 0; }
         bool ordered = false, dup = false;
@@ -132,6 +133,8 @@ uint64_t SyncCore::signature() {   // FNV-1a over which panels are solved and wh
     for (unsigned id : panels_) if (w_->entityExists(id) && w_->panelSolved(id)) mix(id);
     mix(0xFFFF);
     for (unsigned id : doors_) if (w_->entityExists(id) && w_->doorOpen(id)) mix(id);
+    mix(0xFFFE);
+    for (unsigned id : panels_) if (w_->entityExists(id) && w_->panelPowered(id)) mix(id);
     return h;
 }
 
@@ -140,6 +143,9 @@ void SyncCore::baseline(bool full) {
         bool s = w_->entityExists(id) && w_->panelSolved(id);
         if (s) knownPanel_.insert(id); else knownPanel_.erase(id);
         if (full && s) emit(EV_PANEL_SOLVED, id, true);
+        bool powered = w_->entityExists(id) && w_->panelPowered(id);
+        if (powered) knownPower_.insert(id); else knownPower_.erase(id);
+        if (full && powered && !f_.noPanelPower) emit(EV_PANEL_POWERED, id, true);
     }
     for (unsigned id : doors_) {
         bool o = w_->entityExists(id) && w_->doorOpen(id);
@@ -180,6 +186,18 @@ void SyncCore::pollState(uint64_t now) {
         if (s && !known) { knownPanel_.insert(id); emit(EV_PANEL_SOLVED, id, false); st_.emittedPanels++; lastLocalSolveAt_ = now; anyLocalSolve_ = true; char l[100]; std::snprintf(l, sizeof l, "state: local panel %#x solved -> event", id); log(l); }
         else if (!s) knownPanel_.erase(id);
     }
+    for (unsigned id : panels_) {
+        if (!w_->entityExists(id)) continue;
+        bool powered = w_->panelPowered(id), known = knownPower_.count(id) != 0;
+        auto sp = suppressPower_.find(id);
+        bool suppressed = sp != suppressPower_.end() && now < sp->second;
+        bool cascade = anyLocalSolve_ && now < lastLocalSolveAt_ + kCascadeMs;
+        if (powered && !known && !suppressed && !(now < settleUntil_ && !cascade) && !f_.noPanelPower) {
+            emit(EV_PANEL_POWERED, id, false); st_.emittedPowers++;
+            char l[100]; std::snprintf(l, sizeof l, "state: local panel %#x powered -> event", id); log(l);
+        }
+        if (powered) knownPower_.insert(id); else knownPower_.erase(id);
+    }
     for (unsigned id : doors_) {
         if (!w_->entityExists(id)) continue;
         bool o = w_->doorOpen(id); bool known = knownDoor_.count(id) != 0;
@@ -192,8 +210,8 @@ void SyncCore::pollState(uint64_t now) {
     }
     if (now >= nextStats_) {
         nextStats_ = now + 10000;
-        char l[200]; std::snprintf(l, sizeof l, "state: emitted panels %u doors %u, applied panels %u doors %u | net sent %u resent %u in-order %u dup %u ooo %u acked %u",
-            st_.emittedPanels, st_.emittedDoors, st_.appliedPanels, st_.appliedDoors, st_.sent, st_.resent, st_.inOrder, st_.dup, st_.ooo, st_.acked); log(l);
+        char l[320]; std::snprintf(l, sizeof l, "state: emitted panels %u doors %u, applied panels %u doors %u | net sent %u resent %u in-order %u dup %u ooo %u acked %u | power emitted %u applied %u",
+            st_.emittedPanels, st_.emittedDoors, st_.appliedPanels, st_.appliedDoors, st_.sent, st_.resent, st_.inOrder, st_.dup, st_.ooo, st_.acked, st_.emittedPowers, st_.appliedPowers); log(l);
     }
 }
 
@@ -221,6 +239,16 @@ void SyncCore::applyRemote(uint64_t now) {
             st_.appliedPanels++;
             if (h_.onApplied) h_.onApplied(r.kind, r.entity, r.epoch, r.seq);
             std::snprintf(l, sizeof l, "state: remote panel %#x applied as solved", r.entity); log(l);
+        } else if (r.kind == EV_PANEL_POWERED && w_->isPanel(r.entity)) {
+            if (w_->panelPowered(r.entity) && !f_.noDedupe) { knownPower_.insert(r.entity); continue; }
+            if (!w_->applyPanelPower(r.entity)) {
+                if (!f_.noApplyRetry) recvQ_.push_back(r);
+                continue;
+            }
+            if (!f_.noEchoGuard) { knownPower_.insert(r.entity); suppressPower_[r.entity] = now + kSuppressMs; }
+            st_.appliedPowers++;
+            if (h_.onApplied) h_.onApplied(r.kind, r.entity, r.epoch, r.seq);
+            std::snprintf(l, sizeof l, "state: remote panel %#x powered", r.entity); log(l);
         } else if (r.kind == EV_DOOR_OPENED && w_->isDoor(r.entity)) {
             if (w_->doorOpen(r.entity) && !f_.noDedupe) {
                 knownDoor_.insert(r.entity);

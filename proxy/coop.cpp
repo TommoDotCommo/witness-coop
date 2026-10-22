@@ -39,6 +39,7 @@ static DWORD WINAPI NetThread(LPVOID) {
         if (sscanf(line, "no_resend=%d", &v) == 1) flags.noResend = v;
         if (sscanf(line, "no_echo_guard=%d", &v) == 1) flags.noEchoGuard = v;
         if (sscanf(line, "no_resync_on_restart=%d", &v) == 1) flags.noResyncOnRestart = v;
+        if (sscanf(line, "no_panel_power=%d", &v) == 1) flags.noPanelPower = v;
     }
     fclose(f);
     WSADATA wd; WSAStartup(MAKEWORD(2, 2), &wd);

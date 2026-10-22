@@ -13,6 +13,7 @@ void RequestShot(const char* name);
 extern HMODULE g_selfModule();
 
 static const uintptr_t kGlobals = 0x62D0A0, kDoorTypeInfo = 0x62DE70, kDoorOpenStart = 0x8E4B0;
+static const uintptr_t kPanelTypeInfo = 0x62E670, kPanelPowerOn = 0xC2890;
 typedef void(__fastcall* DoorOpenFn)(void* door, float amount);
 
 struct Cmd { int type; unsigned id; float amount; unsigned vk, scan; bool down; int dx, dy; unsigned bf; };   // type 0 door, 1 key, 2 mouse
@@ -96,5 +97,17 @@ bool GameDoorOpenNow(unsigned id, float amount) {
     uintptr_t e = GameEntity(id);
     if (!e || IsBadReadPtr((void*)(e + 8), 8) || *(uintptr_t*)(e + 8) != Base() + kDoorTypeInfo) return false;
     ((DoorOpenFn)(Base() + kDoorOpenStart))((void*)e, amount);
+    return true;
+}
+
+bool GamePanelPowerOnNow(unsigned id) {
+    uintptr_t e = id < 0x40000 ? GameEntity(id) : 0;
+    if (!e || IsBadReadPtr((void*)(e + 8), 8) || *(uintptr_t*)(e + 8) != Base() + kPanelTypeInfo) return false;
+    // Build 11370412: sets requested power (+0x2A4), handles redraw/randomization and linked doors.
+    // The game's own frame updates the visible power level (+0x2A0).
+    const unsigned char* fn = (const unsigned char*)(Base() + kPanelPowerOn);
+    const unsigned char prologue[] = {0x48, 0x89, 0x5C, 0x24, 0x10};
+    if (IsBadReadPtr(fn, sizeof prologue) || memcmp(fn, prologue, sizeof prologue)) return false;
+    ((void(__fastcall*)(void*))(fn))((void*)e);
     return true;
 }
