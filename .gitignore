@@ -1,0 +1,3 @@
+local/
+proxy/*.dll
+__pycache__/

@@ -1,0 +1,37 @@
+# Agent instructions
+
+Read and follow [CLAUDE.md](CLAUDE.md) before starting work in this repository,
+including the Co-op Anything `AGENTS.md` it references. `CLAUDE.md` is the shared
+source of truth for session setup, research notes, testing, privacy, commit identity,
+and publishing permissions. Keep shared workflow changes there so agents stay in sync.
+
+## Repository map
+
+- `README.md`: what works, how to run the dev setup, architecture, QA results.
+- `proxy/`: C++ source of the 64-bit `AnselSDK64.dll` proxy that the game loads from its own folder.
+  `ansel_proxy.cpp` (export stubs, `DllMain`, log, startup of the other parts), `overlay.cpp` (Direct3D 11
+  `Present` hook and puppet drawing), `coop.cpp` (UDP pose exchange and the reliable event layer), `state.cpp`
+  (detector for solved panels and opened doors, and the applier), `game.cpp` (calls into the game's own
+  functions and the `witness_cmd.txt` channel). Build offsets are at the top of those files.
+- `tools/`: WSL scripts (`config.sh`, `install.sh`, `restart.sh`, `qa.sh`, `suite.py`, `solve_bot.py`,
+  `state_diff.py`) and `tools/win/` (Windows Python probes and input helpers; `wlib.py` is shared).
+- `local/`: ignored. Two copies of the game install (`witness-1`, `witness-2`), pid files and logs under `run/`.
+
+## Build and validation
+
+- Build the DLL: `make -C proxy` (needs `x86_64-w64-mingw32-g++`).
+- Put it into the test copies: `tools/install.sh` (checks both exe hashes first and refuses any other build).
+- Restart both games with fresh new games: `tools/restart.sh`.
+- Full regression: `tools/qa.sh` (baseline, lost first send, two mutants that must fail). Report only what you ran.
+- For documentation changes, check links, paths and `git diff --check`; game runs are unnecessary.
+
+## Compatibility constraints
+
+- Addresses, offsets and signatures target Steam build 11370412 (`witness64_d3d11.exe`, SHA-256 in the README).
+  `install.sh` refuses any other build. A new build needs its offsets re-derived and the checks re-run.
+- Do no file or network I/O in `DllMain` (loader lock: a log write there hung the game). Work goes to threads.
+- Call game functions and write game memory only from the render thread (the `Present` hook), between frames, and
+  check the entity's type descriptor before calling a type-specific function.
+- Never sync or baseline before the world is stable; after applying a remote change, suppress local detection for
+  that entity (the echo guard). Both were real bugs, see the README.
+- Keep the real install untouched: the proxy is installed into disposable copies only.

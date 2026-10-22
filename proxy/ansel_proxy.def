@@ -1,0 +1,11 @@
+LIBRARY AnselSDK64
+EXPORTS
+    getConfiguration
+    getConfigurationSize
+    getSessionConfigurationSize
+    getVersion
+    setConfiguration
+    setStopSessionCallback
+    setUpdateCameraFunc
+    stopSession
+    updateCamera
