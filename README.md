@@ -93,6 +93,10 @@ mouse buttons. It also takes the foreground by itself while loading (`tools/rest
 
 ## Automated checks
 
+**T0, no game needed:** the sync logic lives in `proxy/core/` (`sync_core.{h,cpp}`, pure C++17, talks to the game only through a `World` interface; `state.cpp` is the game adapter). `make -C proxy/core test` (needs a clone of the Co-op Anything hub for its fuzzer; `HUB=<dir>`, default `~/source/coop-anything`) fuzzes two cores over a lossy link with a fake world: 500 sessions must pass, and each of 10 bug twins (no resend, no echo guard, no dedupe, ...) must be caught. About 3 seconds.
+
+**T2, two real games:**
+
 `tools/qa.sh` restarts both games for each scenario, and a bot plays player A through the proxy's in-process control (teleports to the
 first panel, aims, clicks to enter the puzzle, traces the line, clicks to finish), with no window focused and no desktop input, and `tools/state_diff.py` compares the
 solved panels and open doors read from both games' memory. Scenarios marked MUTANT are deliberately broken and must fail.

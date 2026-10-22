@@ -1,3 +1,4 @@
 local/
 proxy/*.dll
 __pycache__/
+proxy/core/build/

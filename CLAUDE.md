@@ -17,8 +17,7 @@ apply to every session here.
 ## Testing: automated first
 Automated testing is preferred over manual testing, always (LAB.md section 1). A change is done when a script proves it: write the
 test, watch it fail, fix the code, watch it pass; every protection gets a mutant the test must fail. Manual play is for finding
-problems, and each problem found becomes a script. Use the cheapest tier that can catch it: T0 game-free (none for this repo yet,
-extracting the sync core so it runs without the game is on the roadmap), T2 `tools/qa.sh`. Assert on state read from both
+problems, and each problem found becomes a script. Use the cheapest tier that can catch it: T0 game-free (`make -C proxy/core test`: the sync core in the hub's fuzzer, clean plus 10 bug twins, 3 s, no slot), T2 `tools/qa.sh`. Assert on state read from both
 games, not on logs or screenshots.
 
 ## While working
