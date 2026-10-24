@@ -22,6 +22,8 @@ static const float kVFovDeg = 60.0f;                 // calibrated: horizontal ~
 #include "state.h"
 #include "config.h"
 #include "input.h"
+#include "model_gpu.h"
+#include "depth.h"
 
 typedef HRESULT(STDMETHODCALLTYPE* PresentFn)(IDXGISwapChain*, UINT, UINT);
 static PresentFn g_origPresent;
@@ -109,6 +111,8 @@ static bool InitResources(IDXGISwapChain* sc) {
     D3D11_RASTERIZER_DESC rd = {}; rd.FillMode = D3D11_FILL_SOLID; rd.CullMode = D3D11_CULL_NONE; g_dev->CreateRasterizerState(&rd, &g_rs);
     D3D11_DEPTH_STENCIL_DESC dd = {}; g_dev->CreateDepthStencilState(&dd, &g_ds);   // depth and stencil off
     DXGI_SWAP_CHAIN_DESC sd; sc->GetDesc(&sd);
+    DepthInstall(g_ctx, g_dev, sd.BufferDesc.Width, sd.BufferDesc.Height);
+    ModelGpuInit(g_dev, g_ctx);
     char m[200]; snprintf(m, sizeof m, "overlay: resources ready, backbuffer %ux%u fmt %d", sd.BufferDesc.Width, sd.BufferDesc.Height, (int)sd.BufferDesc.Format);
     Log(m);
     return g_vs && g_ps && g_cb && g_blend && g_rs && g_ds;
@@ -126,7 +130,13 @@ static void DrawMarkers(IDXGISwapChain* sc) {
     uintptr_t glob = Readable((void*)(base + kGlobals), 8) ? *(uintptr_t*)(base + kGlobals) : 0;
     uintptr_t arr = glob && Readable((void*)(glob + 0x18), 8) ? *(uintptr_t*)(glob + 0x18) : 0;
     RemotePose rp;
-    if (CoopGetRemote(&rp) && rp.ageMs < 2000) {
+    bool have = CoopGetRemote(&rp) && rp.ageMs < 2000;
+    if (ModelGpuReady()) {      // the character model replaces the flat puppet
+        wm::Cam wc = {{cam[0], cam[1], cam[2]}, ang[0], ang[1], kVFovDeg, aspect, 0.1f, 2000.0f};
+        ModelGpuDraw(rtv, td.Width, td.Height, wc, have, rp.seq, rp.pos, rp.ang[0]);
+        rtv->Release(); bb->Release(); return;
+    }
+    if (have) {
         float feet[3] = {rp.pos[0], rp.pos[1], rp.pos[2] - 1.71f}, head[3] = {rp.pos[0], rp.pos[1], rp.pos[2] + 0.12f};
         float nfx, nfy, nhx, nhy;
         if (Project(cam, ang[0], ang[1], feet, aspect, &nfx, &nfy) && Project(cam, ang[0], ang[1], head, aspect, &nhx, &nhy) && n < 15) {
@@ -163,6 +173,7 @@ static HRESULT STDMETHODCALLTYPE HookPresent(IDXGISwapChain* sc, UINT sync, UINT
     StateApplyRemote();
     if (f == 1) Log("overlay: Present hook called (first frame)");
     if (!g_ready && !g_failed) { g_ready = InitResources(sc); g_failed = !g_ready; }
+    DepthDiagFrame((unsigned)f);
     if (g_ready) DrawMarkers(sc);
     if (GetCfg().forceActive) {   // build 11370412: the game's focus state is byte +0x21 of the object at exe+0x469A5B0; its loop does
         // Sleep(100) (about 10 fps) when this and the byte at exe+0x62D394 are both 0, and it ignores WM_INPUT while it is 0
