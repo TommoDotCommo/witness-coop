@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <functional>
 #include <cstdint>
+#include <unordered_map>
 using namespace std;
 
 static int N, M, GX, GY, NDEC, CW, CH;
@@ -53,28 +54,50 @@ static bool tile(const vector<pair<int, int>>& cells, vector<unsigned> pos, vect
     int area = 0; for (auto m : pos) area += __builtin_popcount(m & 0xFFFF); int narea = 0; for (auto m : neg) narea += __builtin_popcount(m & 0xFFFF);
     if (area - narea != (int)cells.size()) return false;
     if (pos.empty() && neg.empty()) return true;
+    if (pos.empty()) return false;
     int minr = 99, maxr = -99, minc = 99, maxc = -99; for (auto& c : cells) { minr = min(minr, c.first); maxr = max(maxr, c.first); minc = min(minc, c.second); maxc = max(maxc, c.second); }
-    int R = maxr - minr + 1 + 8, C = maxc - minc + 1 + 8, off = 4;       // a margin of 4 cells all round for shapes that stick out under a negative one
-    vector<int> cover(R * C, 0); vector<char> inReg(R * C, 0);
-    for (auto& c : cells) inReg[(c.first - minr + off) * C + (c.second - minc + off)] = 1;
-    vector<vector<Shape>> po, no; for (size_t i = 0; i < pos.size(); i++) po.push_back(orientations(pos[i] >> 0 & 0xFFFF, posRot[i]));
-    for (size_t i = 0; i < neg.size(); i++) no.push_back(orientations(neg[i] >> 0 & 0xFFFF, negRot[i]));
-    int total = (int)(pos.size() + neg.size());
-    function<bool(int)> place = [&](int k) -> bool {
-        if (k == total) { for (int i = 0; i < R * C; i++) if (cover[i] != (inReg[i] ? 1 : 0)) return false; return true; }
-        const vector<Shape>& opts = k < (int)pos.size() ? po[k] : no[k - pos.size()]; int sign = k < (int)pos.size() ? 1 : -1;
-        for (auto& sh : opts) for (int r0 = 0; r0 < R; r0++) for (int c0 = 0; c0 < C; c0++) {
-            bool ok = true; for (auto& p : sh) { int r = r0 + p.first, c = c0 + p.second; if (r >= R || c >= C) { ok = false; break; } }
-            if (!ok) continue;
-            for (auto& p : sh) cover[(r0 + p.first) * C + c0 + p.second] += sign;
-            // prune: a cell inside the region may never exceed 1; positives only add
-            bool bad = false; if (sign > 0) for (auto& p : sh) { int v = cover[(r0 + p.first) * C + c0 + p.second]; if (v > 1) { bad = true; break; } }
-            if (!bad && place(k + 1)) return true;
-            for (auto& p : sh) cover[(r0 + p.first) * C + c0 + p.second] -= sign;
+    int margin = neg.empty() ? 0 : 4;      // shapes may stick out of the region only where a negative shape cancels them
+    int R = maxr - minr + 1 + 2 * margin, C = maxc - minc + 1 + 2 * margin, off = margin;
+    vector<int> target(R * C, 0), cover(R * C, 0);
+    for (auto& c : cells) target[(c.first - minr + off) * C + (c.second - minc + off)] = 1;
+    vector<vector<Shape>> po, no; for (size_t i = 0; i < pos.size(); i++) po.push_back(orientations(pos[i] & 0xFFFF, posRot[i]));
+    for (size_t i = 0; i < neg.size(); i++) no.push_back(orientations(neg[i] & 0xFFFF, negRot[i]));
+    vector<char> used(pos.size(), 0);
+    // positives: exact cover of `target` (the region plus whatever the negatives cancel), always covering the first cell that is still short
+    function<bool(int)> placePos = [&](int left) -> bool {
+        if (left == 0) { for (int i = 0; i < R * C; i++) if (cover[i] != target[i]) return false; return true; }
+        int first = -1; for (int i = 0; i < R * C; i++) if (cover[i] < target[i]) { first = i; break; }
+        if (first < 0) return false;
+        int fr = first / C, fc = first % C;
+        vector<pair<unsigned, bool>> tried;
+        for (size_t k = 0; k < pos.size(); k++) {
+            if (used[k]) continue; bool dup = false; for (auto& t : tried) if (t.first == (pos[k] & 0xFFFF) && t.second == posRot[k]) dup = true; if (dup) continue; tried.push_back({pos[k] & 0xFFFF, (bool)posRot[k]});
+            for (auto& sh : po[k]) {
+                int r0 = fr - sh[0].first, c0 = fc - sh[0].second;      // the shape's first cell (smallest row, then column) sits on `first`
+                bool ok = true; for (auto& p : sh) { int r = r0 + p.first, c = c0 + p.second; if (r < 0 || c < 0 || r >= R || c >= C || cover[r * C + c] + 1 > target[r * C + c]) { ok = false; break; } }
+                if (!ok) continue;
+                for (auto& p : sh) cover[(r0 + p.first) * C + c0 + p.second]++;
+                used[k] = 1; bool done = placePos(left - 1); used[k] = 0;
+                for (auto& p : sh) cover[(r0 + p.first) * C + c0 + p.second]--;
+                if (done) return true;
+            }
         }
         return false;
     };
-    return place(0);
+    // negatives first: every placement of every negative shape (they are few); each raises the target of the cells it covers
+    function<bool(size_t)> placeNeg = [&](size_t k) -> bool {
+        if (k == neg.size()) return placePos((int)pos.size());
+        for (auto& sh : no[k]) for (int r0 = 0; r0 < R; r0++) for (int c0 = 0; c0 < C; c0++) {
+            bool ok = true; for (auto& p : sh) { int r = r0 + p.first, c = c0 + p.second; if (r >= R || c >= C) { ok = false; break; } }
+            if (!ok) continue;
+            for (auto& p : sh) target[(r0 + p.first) * C + c0 + p.second]++;
+            bool done = placeNeg(k + 1);
+            for (auto& p : sh) target[(r0 + p.first) * C + c0 + p.second]--;
+            if (done) return true;
+        }
+        return false;
+    };
+    return placeNeg(0);
 }
 
 // ---- region checking --------------------------------------------------------------------------------------------------------------------
@@ -100,9 +123,20 @@ static bool checkNoErasers(const vector<Elem>& els, const vector<int>& cellsIdx)
     return true;
 }
 
-static bool regionValid(const vector<int>& cellsIdx, const vector<int>& triOk) {
+static bool regionValidRaw(const vector<int>& cellsIdx, const vector<int>& triOk, int spentOnDots);
+static unordered_map<unsigned long long, char> g_cacheLo;      // key: the region's cells (<= 64 of them), the cells whose triangle is wrong, the erasers spent on dots
+struct Key { unsigned long long a, b; int c; bool operator==(const Key& o) const { return a == o.a && b == o.b && c == o.c; } };
+struct KeyHash { size_t operator()(const Key& k) const { return (size_t)(k.a * 0x9E3779B97F4A7C15ULL ^ (k.b + 0x7F4A7C15ULL) * 0xC2B2AE3D27D4EB4FULL ^ (unsigned long long)k.c); } };
+static unordered_map<Key, char, KeyHash> g_cache;
+static bool regionValid(const vector<int>& cellsIdx, const vector<int>& triOk, int spentOnDots = 0) {
+    if (NDEC > 64) return regionValidRaw(cellsIdx, triOk, spentOnDots);
+    Key k = {0, 0, spentOnDots}; for (int ci : cellsIdx) { k.a |= 1ULL << ci; if (ctype(cellv[ci]) == T_TRI && !triOk[ci]) k.b |= 1ULL << ci; }
+    auto it = g_cache.find(k); if (it != g_cache.end()) return it->second;
+    bool r = regionValidRaw(cellsIdx, triOk, spentOnDots); g_cache[k] = r; return r;
+}
+static bool regionValidRaw(const vector<int>& cellsIdx, const vector<int>& triOk, int spentOnDots) {
     vector<Elem> els; vector<int> erasers;
-    for (int ci : cellsIdx) { unsigned v = cellv[ci]; if (!v) continue; if (ctype(v) == T_ERASER) erasers.push_back((int)els.size()); if (ctype(v) == T_TRI) continue; els.push_back({ci, v}); }
+    for (int ci : cellsIdx) { unsigned v = cellv[ci]; if (!v) continue; if (ctype(v) == T_ERASER) { if (spentOnDots > 0) { spentOnDots--; continue; } erasers.push_back((int)els.size()); } if (ctype(v) == T_TRI) continue; els.push_back({ci, v}); }
     // triangles are checked on the path; an erased triangle's failure is forgiven, so they take part as elements with a precomputed verdict
     vector<Elem> triEls; vector<int> triBad;
     for (int ci : cellsIdx) if (ctype(cellv[ci]) == T_TRI) { triEls.push_back({ci, cellv[ci]}); triBad.push_back(!triOk[ci]); }
@@ -137,12 +171,16 @@ static int nodeCellRow(int n) { return n / GX; }
 static bool gridPanel;
 
 static bool evaluate() {
-    // dots
-    if (!mut("dots")) for (int d : dots) {
-        if (!sym) { if (!visited[d]) return false; continue; }
-        unsigned f = flags[d]; if ((f & 0x100) ? !vis1[d] : (f & 0x200) ? !vis2[d] : !(vis1[d] || vis2[d])) return false;      // blue dots belong to the drawn line, yellow to its mirror
+    // dots that the line does not satisfy: they can only be erased by an eraser whose region touches them
+    vector<int> unmet;
+    for (int d : dots) {
+        bool ok; if (!sym) ok = visited[d]; else { unsigned f = flags[d]; ok = (f & 0x100) ? vis1[d] : (f & 0x200) ? vis2[d] : (vis1[d] || vis2[d]); }
+        if (mut("dots")) ok = true;
+        if (!ok) unmet.push_back(d);
     }
-    if (!gridPanel || NDEC == 0) return true;
+    bool anyEraser = false; if (gridPanel) for (unsigned v : cellv) if (ctype(v) == T_ERASER) { anyEraser = true; break; }
+    if (!unmet.empty() && !anyEraser) return false;
+    if (!gridPanel || NDEC == 0) return unmet.empty();
     // cells separated by used edges: cell (r,c) and (r,c+1) are separated by the edge between node (r,c+1) and (r+1,c+1); (r,c) and (r+1,c) by (r+1,c)-(r+1,c+1)
     auto edgeUsed = [&](int a, int b) { if (a < 0 || b < 0) return false; int e = eid[a * N + b]; return e >= 0 && usedEdge[e]; };
     vector<int> triOk(NDEC, 1);
@@ -152,21 +190,39 @@ static bool evaluate() {
         cnt += edgeUsed(n00, n01) + edgeUsed(n10, n11) + edgeUsed(n00, n10) + edgeUsed(n01, n11);
         triOk[ci] = mut("triangles") || cnt == (int)(v >> 16);
     }
-    vector<int> comp(NDEC, -1); int nc = 0;
+    vector<int> comp(NDEC, -1); int nc = 0; vector<vector<int>> regs;
     for (int s = 0; s < NDEC; s++) {
         if (comp[s] >= 0) continue; vector<int> st = {s}, cells; comp[s] = nc;
         while (!st.empty()) {
             int ci = st.back(); st.pop_back(); cells.push_back(ci); int r = ci / CW, c = ci % CW;
-            // right neighbour
             if (c + 1 < CW && comp[ci + 1] < 0 && !edgeUsed((r) * GX + c + 1, (r + 1) * GX + c + 1)) { comp[ci + 1] = nc; st.push_back(ci + 1); }
             if (c > 0 && comp[ci - 1] < 0 && !edgeUsed(r * GX + c, (r + 1) * GX + c)) { comp[ci - 1] = nc; st.push_back(ci - 1); }
             if (r + 1 < CH && comp[ci + CW] < 0 && !edgeUsed((r + 1) * GX + c, (r + 1) * GX + c + 1)) { comp[ci + CW] = nc; st.push_back(ci + CW); }
             if (r > 0 && comp[ci - CW] < 0 && !edgeUsed(r * GX + c, r * GX + c + 1)) { comp[ci - CW] = nc; st.push_back(ci - CW); }
         }
-        if (!regionValid(cells, triOk)) return false;
-        nc++;
+        regs.push_back(cells); nc++;
     }
-    return true;
+    // erasers available per region, and the regions each unmet dot touches
+    vector<int> cap(nc, 0); for (int ci = 0; ci < NDEC; ci++) if (ctype(cellv[ci]) == T_ERASER) cap[comp[ci]]++;
+    vector<vector<int>> touch;
+    for (int d : unmet) {
+        vector<int> rs; auto addCell = [&](int r, int c) { if (r >= 0 && c >= 0 && r < CH && c < CW) { int g = comp[r * CW + c]; if (find(rs.begin(), rs.end(), g) == rs.end()) rs.push_back(g); } };
+        if (d < GX * GY) { int r = d / GX, c = d % GX; addCell(r - 1, c - 1); addCell(r - 1, c); addCell(r, c - 1); addCell(r, c); }
+        else if (adj[d].size() == 2) {
+            int a = adj[d][0], b = adj[d][1]; if (a < GX * GY && b < GX * GY) {
+                int ar = a / GX, ac = a % GX, br = b / GX, bc = b % GX;
+                if (ar == br) { int c = min(ac, bc); addCell(ar - 1, c); addCell(ar, c); } else { int r = min(ar, br); addCell(r, ac - 1); addCell(r, ac); }
+            }
+        }
+        touch.push_back(rs);
+    }
+    vector<int> spent(nc, 0);
+    function<bool(size_t)> assign = [&](size_t k) -> bool {
+        if (k == unmet.size()) { for (int g = 0; g < nc; g++) if (!regionValid(regs[g], triOk, spent[g])) return false; return true; }
+        for (int g : touch[k]) if (spent[g] < cap[g]) { spent[g]++; if (assign(k + 1)) return true; spent[g]--; }
+        return false;
+    };
+    return assign(0);
 }
 
 static vector<int> ends, starts; static vector<char> isEnd;
