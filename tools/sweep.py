@@ -94,7 +94,7 @@ def run(args):
         for q in manifest:
             if q['id'] in live: q['solved'] = live[q['id']]['solved']; q['powered'] = live[q['id']]['powered']; q['link'] = live[q['id']].get('link', q.get('link')); q['ttype'] = live[q['id']].get('ttype', q.get('ttype', ''))
         solved_in_pass = 0; skipped_unpowered = 0; n_solved = sum(1 for q in manifest if q['solved'])
-        for p in sorted(manifest, key=order_key):
+        for p in sorted(manifest, key=order_key, reverse='--reverse' in args):
             if ids is not None and p['id'] not in ids: continue
             key = '%x' % p['id']
             if p['solved']:
