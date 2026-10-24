@@ -20,6 +20,25 @@ def last_stats(d):
     if cable: out.update(zip(['ecab', 'acab'], map(int, cable.groups())))
     return out
 
+def log_has(d, text):
+    try: return any(text in l for l in open(os.path.join(d, 'witness_proxy.log'), errors='ignore'))
+    except OSError: return False
+
+def wait_stable(dirs, timeout=120):
+    """Wait until every game's own log says its world passed the stable-world gate (instead of a fixed sleep); returns the seconds waited."""
+    t0 = time.time()
+    while time.time() - t0 < timeout and not all(log_has(d, 'state: world stable') for d in dirs): time.sleep(1)
+    return time.time() - t0
+
+def stats_lines(d):
+    try: return sum(1 for l in open(os.path.join(d, 'witness_proxy.log'), errors='ignore') if l.startswith('state: emitted'))
+    except OSError: return 0
+
+def wait_new_stats(dirs, timeout=14):
+    """The stats line is logged every 10 s: wait for one logged after now in every game (the old fixed sleep of 14 s guaranteed the same)."""
+    n0 = [stats_lines(d) for d in dirs]; t0 = time.time()
+    while time.time() - t0 < timeout and any(stats_lines(d) <= n for d, n in zip(dirs, n0)): time.sleep(0.5)
+
 def real_saves():
     """Hashes of the owner's real save folder (%APPDATA%\\The Witness), read through Windows Python. Instances must never touch it."""
     code = ("import os,hashlib,json\nd=os.path.join(os.environ['APPDATA'],'The Witness');m={}\n"
@@ -51,7 +70,12 @@ def restart_catchup(ca, cb, mutant, include_power=False, expected=None):
                             env={**os.environ, 'CFG_A': ca, 'CFG_B': cb}, capture_output=True, text=True, timeout=240)
     if result.returncode:
         return False, 'B restart failed: ' + result.stdout + result.stderr
-    time.sleep(30)
+    wait_stable([DIR2])
+    if mutant: time.sleep(16)
+    else:      # the catch-up needs only B's stable world and A's snapshot: stop as soon as B shows everything, with the old fixed wait as the cap
+        t0 = time.time()
+        while time.time() - t0 < 45 and any(state('B')[kind] != before_a[kind] for kind in expected): time.sleep(2)
+    wait_new_stats([DIR2])
     open(os.path.join(RUN, 'guard.stop'), 'w').write('restart complete')
     after_a, after_b = state('A'), state('B')
     if pid('A') != old_a or pid('B') == old_b:
@@ -137,6 +161,8 @@ def hygiene(saves_before):
     out = {}
     out['real saves untouched'] = real_saves() == saves_before
     log = open(os.path.join(DIR1, 'witness_proxy.log'), errors='ignore').read()
+    t0 = time.time()      # the game writes its first save about a minute after a new game starts: wait for it instead of counting on the scenario being slow
+    while time.time() - t0 < 120 and not [f for _, _, fs in os.walk(os.path.join(DIR1, 'appdata')) for f in fs]: time.sleep(2)
     files = [f for _, _, fs in os.walk(os.path.join(DIR1, 'appdata')) for f in fs]
     out['save folder redirected, instance wrote %d file(s)' % len(files)] = 'SHGetFolderPathW(csidl 0x1a) -> redirected' in log and len(files) > 0
     clip = pyw('wmouse.py').split()      # real cursor and system clip rectangle: the game must never grab the owner's mouse
@@ -158,25 +184,24 @@ SCENARIOS = [   # name, extra cfg for A, extra cfg for B, check(a_stats, b_stats
   ('MUTANT: late join without snapshot', 'no_resend=1\nno_resync_on_restart=1', '', lambda a, b, ok: (not ok, 'a never-seen B must diverge without the full-state snapshot')),
   ('same-process reload', '', '', lambda a, b, ok: (b.get('ep', 9) == 0 and b.get('ed', 9) == 0, 'B reloads an older save in the same process and catches up from A')),
   ('MUTANT: same-process reload ignored', '', 'no_reload_sync=1', lambda a, b, ok: (True, 'B must stay diverged after the reload')),
-  ('cable maze', '', '', lambda a, b, ok: (ok and b.get('ecab', 9) == 0 and b.get('acab', 0) >= 1 and b.get('ep', 9) == 0, 'solving a maze lights its cable in both games, once, without echo, and a fresh B recovers it')),
   ('cable chain', '', '', lambda a, b, ok: (ok and b.get('ecab', 9) == 0 and b.get('acab', 0) >= 2 and b.get('ep', 9) == 0, 'solving a maze powers the next one through its cable; both mazes and both cables match on B, once, without echo, and a fresh B recovers them')),
   ('MUTANT: cable chain without cable sync', 'no_cable_sync=1', 'no_cable_sync=1', lambda a, b, ok: (not ok, 'both cables must stay dark on B')),
-  ('MUTANT: cable maze without cable sync', 'no_cable_sync=1', 'no_cable_sync=1', lambda a, b, ok: (not ok, 'the cable must stay dark on B')),
   ('second tutorial door', '', '', lambda a, b, ok: (ok and b.get('ep', 9) == 0 and b.get('ed', 9) == 0, 'both tutorial panels and doors match without B echo')),
   ('MUTANT: second tutorial door skips entity zero', 'skip_entity_zero=1', '', lambda a, b, ok: (not ok, 'door entity zero must be missing on B')),
   ('panel power chain', '', '', lambda a, b, ok: (ok and b.get('epow', 9) == 0 and b.get('apow', 0) >= 1, 'target panel powers on without being solved or echoed')),
   ('MUTANT: panel power chain without source link', '', 'no_power_link=1', lambda a, b, ok: (not ok, 'B must power the target but lack its source back-link')),
-  ('laser target', '', '', lambda a, b, ok: (ok and b.get('ep', 9) == 0, 'a solved panel that targets a laser leaves the laser in the same state on both, and a fresh B recovers it')),
-  ('MUTANT: laser target without dispatch', '', 'no_target_dispatch=1', lambda a, b, ok: (not ok, 'B must keep the laser off')),
-  ('cable off', '', '', lambda a, b, ok: (ok and b.get('ecab', 9) == 0, 'a default-lit cable switched off on A goes dark on B too, once, without echo, and a fresh B learns it')),
-  ('MUTANT: cable off without power-off sync', '', 'no_cable_off=1', lambda a, b, ok: (not ok, 'B must keep the cable lit')),
-  ('MUTANT: cable off without snapshot', 'no_off_snapshot=1\nno_snap_reassert=1', '', lambda a, b, ok: (not ok, 'a fresh B must still show the cable lit')),
+  ('bot-free effects', '', '', lambda a, b, ok: (ok and b.get('ecab', 9) == 0 and b.get('ep', 9) == 0, 'a solved laser-panel and a default-lit cable switched off on A reach B once, without echo, and a fresh B recovers both')),
+  ('MUTANT: bot-free effects without dispatch and power-off', '', 'no_target_dispatch=1\nno_cable_off=1', lambda a, b, ok: (not ok, 'B must keep the laser off and the cable lit')),
+  ('MUTANT: bot-free effects without snapshot', 'no_off_snapshot=1\nno_snap_reassert=1', '', lambda a, b, ok: (not ok, 'a fresh B must still show the cable lit')),
   ('MUTANT: panel power chain disabled', 'no_panel_power=1', '', lambda a, b, ok: (not ok, 'target panel must remain dark on B')),
 ]
-only = sys.argv[1:]; results = []
+args = sys.argv[1:]; shard = None
+if args and args[0] == '--shard': shard = tuple(map(int, args[1].split('/'))); args = args[2:]      # --shard i/n: run every n-th selected scenario starting at i (1-based), for parallel runs under separate lab owners
+only = args; results = []
+selected = [sc for sc in SCENARIOS if not only or any(o in sc[0] for o in only)]
+if shard: selected = [sc for k, sc in enumerate(selected) if k % shard[1] == shard[0] - 1]
 SAVES0 = real_saves()
-for name, ca, cb, check in SCENARIOS:
-    if only and not any(o in name for o in only): continue
+for name, ca, cb, check in selected:
     print('\n=== %s' % name, flush=True)
     late = 'late join' in name
     if late:      # free B from the previous scenario and start A alone
@@ -185,23 +210,19 @@ for name, ca, cb, check in SCENARIOS:
             subprocess.run(['taskkill.exe', '/PID', open(pb).read().strip(), '/F'], capture_output=True); os.remove(pb)
     subprocess.run([os.path.join(TOOLS, 'restart.sh')] + (['A'] if late else []), env={**os.environ, 'CFG_A': ca, 'CFG_B': cb},
                    capture_output=True, text=True, timeout=600, check=True)
-    time.sleep(30)    # both worlds must pass the stable-world gate (three identical scans 3 s apart)
+    wait_stable([DIR1] if late else [DIR1, DIR2]); time.sleep(16)    # the stable-world gate (three identical scans 3 s apart), then the 15 s start-up settling window in which local changes are folded into the baseline
     backup = wait_first_b_save() if 'same-process reload' in name else None
     if 'same-process reload' in name and not backup: print('no first save appeared on B', flush=True)
     # The bot is in-process (tp, mouse and button commands to the proxy): no focus, no desktop input, no lock; several can run at once.
     open(os.path.join(RUN, 'guard.stop'), 'w').write('bot starting')      # the focus guard (for the game grabbing the foreground while loading) ends
     chain = 'cable chain' in name
-    laser = 'laser target' in name
-    cableoff = 'cable off' in name
-    maze = 'cable maze' in name or chain
-    if laser:      # the laser panel is out of the bot's reach: make it solved on A as a native solve would (fields and dispatcher)
-        bot = pyw('wsolve.py', win(DIR1), '0x32f5').strip(); time.sleep(6)
-        bot += '\n' + ('panel solved: True' if state('A')['lasers'].get('0x32f9') == LASER_ON else 'laser did not change on A')
-        bot = bot.replace('panel solved: True', 'solved: True')
-    elif cableoff:      # cable 0x18458 is lit from the start in every world: switch it off with the game's own power-off call
-        before = state('A')['lit_cables'].get('0x18458') and state('B')['lit_cables'].get('0x18458')
-        bot = pyw('wcmd.py', win(DIR1), 'cableoff', '18458').strip(); time.sleep(8)
-        bot = 'solved: True' if before and '0x18458' not in state('A')['lit_cables'] else 'cable was not lit at the start, or did not go dark on A'
+    effects = 'bot-free effects' in name
+    maze = chain      # the chain scenario also covers the single maze: its first panel is the one the 'cable maze' scenario used
+    if effects:      # nothing for the bot to play: make the laser panel solved as a native solve would (fields and dispatcher), and switch the default-lit cable 0x18458 off with the game's own call
+        lit0 = state('A')['lit_cables'].get('0x18458') and state('B')['lit_cables'].get('0x18458')
+        pyw('wsolve.py', win(DIR1), '0x32f5'); pyw('wcmd.py', win(DIR1), 'cableoff', '18458'); time.sleep(8)
+        sa0 = state('A')
+        bot = 'solved: True' if lit0 and sa0['lasers'].get('0x32f9') == LASER_ON and '0x18458' not in sa0['lit_cables'] else 'the laser or the cable did not change on A (or the cable was dark at the start)'
     else: bot = sh('%s -I %s %s %s %s 2>&1 | tail -3' % (shlex.quote(PYW), shlex.quote(win(os.path.join(TOOLS, 'win', 'wbot_maze.py' if maze else 'wbot.py'))), pid('A'), shlex.quote(win(DIR1)), '0x293' if maze else '')).strip()
     if chain and 'solved: True' in bot:       # the first cable powers the second maze: wait for its power, then solve it too
         time.sleep(6)
@@ -221,23 +242,23 @@ for name, ca, cb, check in SCENARIOS:
             power_bot = pyw('wbot_power.py', pid('A'), win(DIR1))
             print(power_bot.strip(), flush=True)
             power_ok = 'panel 0x18af solved: True | target 0x1b powered: True | target unsolved: True' in power_bot
-    time.sleep(14)    # the stats line is logged every 10 s
-    if laser and name.startswith('MUTANT:'): time.sleep(45)      # no restart follows: give the game time to write its first save (a hygiene check)
+    wait_new_stats([DIR1] if late else [DIR1, DIR2])    # the stats line is logged every 10 s
     catchup = None
     if 'same-process reload' in name and bot_ok and backup: catchup = reload_check(backup, name.startswith('MUTANT:'))
     elif late: pass
     elif 'restart catch-up' in name and bot_ok:
         catchup = restart_catchup(ca, cb, name.startswith('MUTANT:'))
-    elif cableoff and bot_ok and name != 'MUTANT: cable off without power-off sync':
-        catchup = restart_catchup(ca, cb, name.startswith('MUTANT:'), expected={'dark_cables': '0x18458'})
-    elif laser and bot_ok and not name.startswith('MUTANT:'):
-        catchup = restart_catchup(ca, cb, False, expected={'panels': '0x32f5', 'lasers': '0x32f9'})
+    elif effects and bot_ok and 'dispatch' not in name:
+        catchup = restart_catchup(ca, cb, 'snapshot' in name, expected={'dark_cables': '0x18458'} if 'snapshot' in name else {'panels': '0x32f5', 'lasers': '0x32f9', 'dark_cables': '0x18458'})
     elif maze and bot_ok and not name.startswith('MUTANT:'):
         catchup = restart_catchup(ca, cb, False, expected={'panels': '0x295' if chain else '0x293', 'lit_cables': '0x45c' if chain else '0x349'})
     elif 'panel power chain' in name and bot_ok and power_ok and not name.startswith('MUTANT:'):
         catchup = restart_catchup(ca, cb, False, include_power=True)
     if late and bot_ok: catchup = late_join(ca, cb, name.startswith('MUTANT:'))
-    out = sh('python3 %s' % os.path.join(TOOLS, 'state_diff.py')); print(out.strip(), flush=True)
+    out = sh('python3 %s' % os.path.join(TOOLS, 'state_diff.py'))
+    t0 = time.time()      # a door that a solve opened late (its animation) may still be on its way to B: give a clean scenario up to 20 s to converge (a mutant must differ, so it is not retried)
+    while not name.startswith('MUTANT:') and 'IDENTICAL' not in out and time.time() - t0 < 20: time.sleep(3); out = sh('python3 %s' % os.path.join(TOOLS, 'state_diff.py'))
+    print(out.strip(), flush=True)
     a, b = last_stats(DIR1), last_stats(DIR2)
     ok, why = check(a, b, 'IDENTICAL' in out)
     if maze:
@@ -247,16 +268,11 @@ for name, ca, cb, check in SCENARIOS:
         if name.startswith('MUTANT:'): cable_ok = all(c in sa['lit_cables'] and c not in sb['lit_cables'] for c in cables) and set(sa['lit_cables']) - set(sb['lit_cables']) == set(cables)
         else: cable_ok = all(c in sa['lit_cables'] for c in cables) and sa['lit_cables'] == sb['lit_cables'] and sa['powered_panels'] == sb['powered_panels']
         ok = ok and solved_ok and cable_ok
-    if cableoff:
-        sa, sb = state('A'), state('B'); gone = '0x18458' not in sa['lit_cables']
-        if name == 'MUTANT: cable off without power-off sync': ok = bot_ok and gone and '0x18458' in sb['lit_cables']
-        elif name == 'MUTANT: cable off without snapshot': ok = bot_ok and gone      # the restart check below (B restarted before this point) must see the cable lit again on a fresh B
-        else: ok = ok and gone and sa['lit_cables'] == sb['lit_cables']
-    if laser:
+    if effects:
         sa, sb = state('A'), state('B')
-        same = sa['lasers'] == sb['lasers'] and sa['lasers']['0x32f9'] == LASER_ON and sa['panels'] == sb['panels']
-        if name.startswith('MUTANT:'): ok = bot_ok and sa['lasers']['0x32f9'] == LASER_ON and sb['lasers']['0x32f9'] != LASER_ON and '0x32f5' in sb['panels']
-        else: ok = ok and same
+        if 'dispatch' in name: ok = bot_ok and sb['lasers']['0x32f9'] != LASER_ON and '0x18458' in sb['lit_cables']          # both effects must be missing on B
+        elif 'snapshot' in name: ok = bot_ok                                                                                  # the restart check above must see the cable lit again on a fresh B
+        else: ok = ok and sa['lasers'] == sb['lasers'] and sa['lasers']['0x32f9'] == LASER_ON and sa['panels'] == sb['panels'] and '0x18458' not in sa['lit_cables'] and sa['lit_cables'] == sb['lit_cables']
     if 'panel power chain' in name:
         sa, sb = state('A'), state('B')
         same_solves = sa['panels'] == sb['panels'] and '0x18af' in sa['panels'] and '0x1b' not in sa['panels']
