@@ -94,6 +94,39 @@ def aim():
     c.send(['tp %.4f %.4f %.4f %.5f %.5f' % (cx, cy, cz, math.atan2(py_ - cy, px_ - cx), math.atan2(pz_ - cz, hd))], 1.2)
 aim()
 
+def depth_ratio():
+    """The game's scene depth at the screen centre against what an unobstructed panel at this distance gives (stored depth = 0.0597 / metres, measured):
+    about 1 when the panel is what we are looking at, far from it when a wall or the ground is in the way."""
+    log = os.path.join(gdir, 'witness_proxy.log')
+    try: n0 = sum(1 for l in open(log, errors='ignore') if l.startswith('probe:'))
+    except OSError: return 1.0
+    c.send(['probe'], 0.0)
+    for _ in range(20):
+        time.sleep(0.15)
+        lines = [l for l in open(log, errors='ignore') if l.startswith('probe:')]
+        if len(lines) > n0:
+            v = float(lines[-1].split('centre samples ')[1].split(' ')[0]); cx, cy, cz = p.camera()[0]
+            return v / (0.0597 / max(0.3, math.dist((cx, cy, cz), (px_, py_, pz_))))
+    return 1.0
+
+def other_standing_points():
+    """Where else to stand: other distances along the panel's normal (the first try, 3 m, may be inside a wall or over a drop)."""
+    nx, ny = NORMAL[0], NORMAL[1]; nn = math.hypot(nx, ny) or 1.0; nx, ny = nx / nn, ny / nn
+    return [(px_ + d_ * nx, py_ + d_ * ny) for d_ in (2.0, 4.0, 1.6, 5.0, 2.5, 3.5)]
+
+r_ = depth_ratio(); stamp('view check: depth ratio %.2f' % r_)
+if not 0.7 < r_ < 1.45:
+    ok_view = False
+    for (hx, hy) in other_standing_points():
+        c.send(['hover %.4f %.4f %.4f %.5f 0.0' % (hx, hy, pz_ + 0.2, math.atan2(py_ - hy, px_ - hx))], 2.4)
+        c.send(['hover off'], 1.5)
+        cx, cy, cz = p.camera()[0]
+        if math.hypot(cx - px_, cy - py_) > 12: continue            # put back at the spawn point: nothing to stand on there
+        aim(); r_ = depth_ratio(); stamp('view check at (%.1f, %.1f): depth ratio %.2f' % (hx, hy, r_))
+        if 0.7 < r_ < 1.45: ok_view = True; break
+    if not ok_view: done(False, 'the panel cannot be seen from any of the places tried (something is in the way, or there is nothing to stand on)', 0, dist)
+    dist = math.dist(p.camera()[0], (px_, py_, pz_))
+
 # ---- projection -----------------------------------------------------------------------------------------------------------------------------
 def cam_basis():
     (cx, cy, cz), (yaw, pitch) = p.camera()
@@ -137,7 +170,10 @@ if 'w%x' % eid in kcache:
 pskey = 'ws%.3f' % pscale
 if pskey in kcache: cands.insert(0, (kcache[pskey], 0))
 started = None
-ROUNDS = [(1.0, 1, 1), (1.0, 1, 1)] + [(ax_, sx_, sy_) for ax_ in (1.0, 1.45, 0.7, 2.0, 0.5) for (sx_, sy_) in ((-1, -1), (1, 1), (1, -1), (-1, 1))][1:]
+FORCE = os.environ.get('WDRAW_FORCE')      # test: W,dy,AX,SX,SY, only this one
+ROUNDS = [(1.0, 1, 1), (1.0, 1, 1), (1.4, -1, -1)] + [(ax_, sx_, sy_) for ax_ in (1.0, 1.45, 0.7, 2.0, 0.5) for (sx_, sy_) in ((-1, -1), (1, 1), (1, -1), (-1, 1)) if (ax_, sx_, sy_) != (1.0, 1, 1)]
+if FORCE:
+    fw, fdy, fax, fsx, fsy = [float(v) for v in FORCE.split(',')]; ROUNDS = [(fax, int(fsx), int(fsy))] * 2; cands = [(fw, int(fdy))]; cached_ax = None
 for attempt, (ax_, sx_, sy_) in enumerate(ROUNDS):
     AX = cached_ax if (attempt == 0 and cached_ax) else ax_; SX, SY = cached_flip if attempt == 0 else (sx_, sy_)
     for _ in range(3):
@@ -145,8 +181,8 @@ for attempt, (ax_, sx_, sy_) in enumerate(ROUNDS):
         if not probe_free_look(): break              # entered (the cursor moved, the view did not)
         rclick()                                     # not entered: leave and click again
     cur = (0.0, 0.0)
-    for w_, dy_ in (cands if attempt < 2 else [(w2, dy2) for dy2 in (0, 20, -20, 40, -40) for w2 in (0.567, 0.645, 0.70, 0.76, 0.88, 1.05)]):
-        if time.time() - T_START > 400: break
+    for w_, dy_ in (cands if (attempt < 2 or FORCE) else [(w2, dy2) for dy2 in (0, 12, -12, 24, -24, 36, -36) for w2 in ((0.70, 0.66, 0.74, 0.62, 0.78, 0.58, 0.82) if attempt == 2 else (0.567, 0.645, 0.70, 0.76, 0.82, 0.88, 0.95, 1.05))]):
+        if time.time() - T_START > 130: break
         W = w_
         sx, sy = node_px(path[0]); sy += dy_
         ddx, ddy = (sx - cur[0]) * COUNTS_PER_PX, (sy - cur[1]) * COUNTS_PER_PX

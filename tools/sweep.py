@@ -22,6 +22,18 @@ def load(path, default):
     try: return json.load(open(path))
     except Exception: return default
 
+def alive(which):
+    try: out = subprocess.run(['tasklist.exe', '/FI', 'PID eq %s' % pid(which)], capture_output=True, text=True, timeout=30).stdout
+    except Exception: return True
+    return 'witness64' in out.lower()
+
+def restart_game(which):
+    """A game that died (a crash, mostly after a teleport to a place with nothing to stand on) is started again with the same owner's lease; it gets the
+    solved panels back from its partner (a late join)."""
+    print('game %s is gone: restarting it' % which, flush=True)
+    subprocess.run([os.path.join(TOOLS, 'restart.sh'), which], capture_output=True, text=True, timeout=600)
+    time.sleep(45); open(os.path.join(RUN, 'guard.stop'), 'w').write('bot starting')
+
 def draw(panel, path, which, timeout=420):
     """One drawn attempt on one panel: returns the JSON record wdraw.py prints, or a record saying why there is none."""
     gdir = DIR2 if which == 'B' else DIR1
@@ -30,8 +42,10 @@ def draw(panel, path, which, timeout=420):
         out = subprocess.run([os.environ.get('PYW', '/mnt/c/Python311/python.exe'), '-I', win(os.path.join(TOOLS, 'win', os.environ.get('WDRAW_SCRIPT', 'wdraw.py'))), pid(which), win(gdir),
                               '%x' % panel['id'], ','.join(map(str, path))], capture_output=True, text=True, timeout=timeout, env=env).stdout
     except subprocess.TimeoutExpired:
+        if not alive(which): restart_game(which)
         return {'solved': False, 'why': 'the drawing script timed out'}
     lines = [l for l in out.splitlines() if l.startswith('{')]
+    if not lines and not alive(which): restart_game(which); return {'solved': False, 'why': 'the game died (restarted)', 'infrastructure': True}
     return json.loads(lines[-1]) if lines else {'solved': False, 'why': 'the drawing script printed nothing: ' + out[-200:], 'infrastructure': True}
 
 def retry_possible(manifest, results, n_solved):
@@ -52,7 +66,7 @@ def run(args):
     ids = [int(v, 16) for v in args[args.index('--ids') + 1].split(',')] if '--ids' in args else None
     limit = int(args[args.index('--limit') + 1]) if '--limit' in args else 10 ** 9
     shard = tuple(map(int, args[args.index('--shard') + 1].split('/'))) if '--shard' in args else (1, 1)
-    done_n = 0
+    done_n = 0; infra = {}
     while True:      # passes: solving a panel can power others, so go again until a pass solves nothing
         live = {q['id']: q for q in inventory(which, full=False)}
         for q in manifest:
@@ -77,6 +91,9 @@ def run(args):
                 skipped_unpowered += 1; continue
             else:
                 t0 = time.time(); r = draw(p, path, which)
+                if r.get('infrastructure'):      # not the panel's fault (the game was gone): try again, twice at most
+                    infra[key] = infra.get(key, 0) + 1
+                    if infra[key] < 3: continue
                 results[key] = {'result': 'solved' if r.get('solved') else 'failed', 'why': r.get('why', ''), 'seconds': round(time.time() - t0), 'path': path, 'tries': r0.get('tries', 0) + 1, 'at': n_solved}
                 solved_in_pass += bool(r.get('solved'))
             done_n += 1
