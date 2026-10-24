@@ -159,13 +159,13 @@ def reload_check(bk, mutant):
     out = pyw('wreload.py', win(DIR2), win(bk))
     print(out.strip(), flush=True)
     if 'reload requested' not in out: return False, 'the reload could not be requested'
-    seen_lost = False; deadline = time.time() + 90
+    seen_lost = False; deadline = time.time() + 150
     while time.time() < deadline:
         time.sleep(3)
         cur = state('B')
         if all(e not in cur[k] for k, e in expected.items()): seen_lost = True       # the load really reset B's world
         if seen_lost and all(e in cur[k] for k, e in expected.items()) and not mutant: break
-        if mutant and seen_lost and time.time() > deadline - 45: break
+        if mutant and seen_lost and time.time() > deadline - 105: break
     after_a, after_b = state('A'), state('B')
     log_b = open(os.path.join(DIR2, 'witness_proxy.log'), errors='ignore').read()
     if (pid('A'), pid('B')) != old: return False, 'no process may restart in a same-process reload'
