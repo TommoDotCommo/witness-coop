@@ -34,12 +34,23 @@ def restart_game(which):
     subprocess.run([os.path.join(TOOLS, 'restart.sh'), which], capture_output=True, text=True, timeout=600)
     time.sleep(45); open(os.path.join(RUN, 'guard.stop'), 'w').write('bot starting')
 
+FLOOR = None
+def floor_panels():
+    """Panels whose line is walked, not drawn (the Keep's pressure plates): json made by tools/win/wplates.py, looked for in this run folder and the first one."""
+    global FLOOR
+    if FLOOR is None:
+        FLOOR = {}
+        for d_ in (RUN, os.path.join(os.path.dirname(RUN), 'panel-sweep')):
+            fn = os.path.join(d_, 'plates_by_panel.json')
+            if os.path.exists(fn): FLOOR = {int(k) for k in load(fn, {})}; break
+    return FLOOR
+
 def draw(panel, path, which, timeout=420):
     """One drawn attempt on one panel: returns the JSON record wdraw.py prints, or a record saying why there is none."""
     gdir = DIR2 if which == 'B' else DIR1
     env = {**os.environ, 'WDRAW_KCACHE': win(KCACHE), 'WSLENV': os.environ.get('WSLENV', '') + ':WDRAW_KCACHE'}
     try:
-        out = subprocess.run([os.environ.get('PYW', '/mnt/c/Python311/python.exe'), '-I', win(os.path.join(TOOLS, 'win', os.environ.get('WDRAW_SCRIPT', 'wdraw.py'))), pid(which), win(gdir),
+        out = subprocess.run([os.environ.get('PYW', '/mnt/c/Python311/python.exe'), '-I', win(os.path.join(TOOLS, 'win', 'wwalk.py' if panel['id'] in floor_panels() else os.environ.get('WDRAW_SCRIPT', 'wdraw.py'))), pid(which), win(gdir),
                               '%x' % panel['id'], ','.join(map(str, path))], capture_output=True, text=True, timeout=timeout, env=env).stdout
     except subprocess.TimeoutExpired:
         if not alive(which): restart_game(which)

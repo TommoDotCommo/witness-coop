@@ -10,6 +10,10 @@ for i, e in enumerate(p.entity_table()):
     ty = p.type_of(e)
     if ty == TI_CABLE: out['cable_target'][i] = p.u32(e + 0xcc) - base_id
     elif ty == TI_PANEL: out['panel_target'][i] = p.u32(e + 0x2b4) - base_id
-    out['types'][i] = names.get(ty, 'other')
+    nm = names.get(ty)
+    if not nm:
+        d = p.u64(e + 8); np_ = p.u64(d + 8) if d else 0; raw = p.rd(np_, 24) if np_ else None
+        nm = raw.split(b'\0')[0].decode('ascii', 'replace') if raw else 'other'
+    out['types'][i] = nm
 json.dump(out, open(sys.argv[2], 'w'))
 print(len(out['cable_target']), 'cables,', len(out['panel_target']), 'panels')
