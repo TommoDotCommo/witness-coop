@@ -34,7 +34,7 @@ def unsupported(p):
     if p.get('refl') and len(p.get('mirror') or []) != p['nodes']: why.add('symmetry without a mirror map')
     if any(p['dec']) and not (p['gx'] > 1 and p['ndec'] == (p['gx'] - 1) * (p['gy'] - 1)): why.add('decorations on a panel that is not a grid')
     for f in p['flags']:
-        if f & ~(0x700000 | 0x40000 | 0x20 | 0x100 | 0x200 | 0x10000 | 0x20000 | 0x30000 | 0x8 | 0x3): why.add('node flags %#x' % (f & ~0x7f0323))
+        if f & ~(0x700000 | 0x40000 | 0x20 | 0x100 | 0x200 | 0x1000 | 0x10000 | 0x20000 | 0x30000 | 0x8 | 0x3): why.add('node flags %#x' % (f & ~0x7f1323))
     return sorted(why)
 
 PSOLVE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'psolve', 'psolve')

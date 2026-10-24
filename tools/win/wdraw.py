@@ -175,8 +175,8 @@ for i in range(1, len(path)):
     ux, uy = x1 - x0, y1 - y0; norm = math.hypot(ux, uy) or 1.0; vx, vy = ux / norm, uy / norm
     last = i == len(path) - 1
     if last:      # the end stub: its length by dead reckoning and a little more (a cursor pushed past the panel's edge cancels the line)
-        mouse(vx, vy, (per_px or 2.9) * norm + 10)
-        dbg('end stub pushed', round((per_px or 2.9) * norm + 10), 'counts, traced', traced())
+        mouse(vx, vy, (per_px or 2.9) * norm + float(os.environ.get('WDRAW_STUB_EXTRA') or 40))
+        dbg('end stub pushed', round((per_px or 2.9) * norm + 40), 'counts, traced', traced())
         continue
     used = 0.0
     if per_px and norm > 4:

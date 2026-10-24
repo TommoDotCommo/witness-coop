@@ -80,8 +80,27 @@ def run(args):
         if done_n >= limit or not solved_in_pass or ids is not None: break
         time.sleep(5)
 
+def report(folders=None):
+    """Merge the result files of every run folder (one per lab owner) and say what the sweep has done."""
+    import glob, collections
+    folders = folders or sorted(glob.glob(os.path.join(os.path.dirname(RUN), 'panel-sweep*')))
+    results = {}
+    for fo in folders:
+        for fn in glob.glob(os.path.join(fo, 'sweep_results.*.json')):
+            for k, v in load(fn, {}).items():
+                if results.get(k, {}).get('result') != 'solved': results[k] = v
+    manifest = load(MANIFEST, [])
+    print('%d panels in the manifest, %d with a result' % (len(manifest), len(results)))
+    for name, n in collections.Counter(v['result'] for v in results.values()).most_common(): print('  %-10s %d' % (name, n))
+    why = collections.Counter(v['why'][:70] for v in results.values() if v['result'] != 'solved')
+    for w_, n in why.most_common(14): print('    %3d  %s' % (n, w_))
+    missing = [q['id'] for q in manifest if '%x' % q['id'] not in results]
+    print('  no result yet: %d' % len(missing))
+    return results
+
 if __name__ == '__main__':
     cmd = sys.argv[1] if len(sys.argv) > 1 else 'run'
+    if cmd == 'report': report(); sys.exit(0)
     if cmd == 'inventory':
         inv = inventory(sys.argv[2] if len(sys.argv) > 2 else 'B'); json.dump(inv, open(MANIFEST, 'w'))
         print('%d panels' % len(inv))
