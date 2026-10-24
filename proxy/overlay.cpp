@@ -22,11 +22,13 @@ static const float kVFovDeg = 60.0f;                 // calibrated: horizontal ~
 #include "state.h"
 #include "config.h"
 #include "input.h"
+#include "ui.h"
+#include "devmenu.h"
 
 typedef HRESULT(STDMETHODCALLTYPE* PresentFn)(IDXGISwapChain*, UINT, UINT);
 static PresentFn g_origPresent;
 static volatile LONG g_frames;
-static bool g_ready, g_failed;
+static bool g_ready, g_failed, g_uiReady;
 static ID3D11Device* g_dev; static ID3D11DeviceContext* g_ctx;
 static ID3D11VertexShader* g_vs; static ID3D11PixelShader* g_ps; static ID3D11Buffer* g_cb;
 static ID3D11BlendState* g_blend; static ID3D11RasterizerState* g_rs; static ID3D11DepthStencilState* g_ds;
@@ -111,6 +113,7 @@ static bool InitResources(IDXGISwapChain* sc) {
     DXGI_SWAP_CHAIN_DESC sd; sc->GetDesc(&sd);
     char m[200]; snprintf(m, sizeof m, "overlay: resources ready, backbuffer %ux%u fmt %d", sd.BufferDesc.Width, sd.BufferDesc.Height, (int)sd.BufferDesc.Format);
     Log(m);
+    if (DevMenuEnabled()) g_uiReady = UiInit(g_dev, g_ctx);
     return g_vs && g_ps && g_cb && g_blend && g_rs && g_ds;
 }
 
@@ -157,6 +160,40 @@ static void DrawMarkers(IDXGISwapChain* sc) {
     rtv->Release(); bb->Release();
 }
 
+// The dev menu takes F7/F8, the keys and the mouse while it is open, by sitting in front of the game's window procedure; raw mouse and
+// keyboard input is emptied in the GetRawInputData hook (input.cpp). Key-ups and button-ups still reach the game.
+static WNDPROC g_origWndProc; static bool g_wndUnicode;
+static LRESULT CALLBACK DevWndProc(HWND w, UINT m, WPARAM wp, LPARAM lp) {
+    switch (m) {
+    case WM_KEYDOWN: case WM_SYSKEYDOWN: if (DevMenuKey((unsigned)wp, true)) return 0; break;
+    case WM_KEYUP: case WM_SYSKEYUP: DevMenuKey((unsigned)wp, false); break;
+    case WM_CHAR: if (DevMenuOpen()) return 0; break;
+    case WM_LBUTTONDOWN: if (DevMenuMouseButton(0, true)) return 0; break;
+    case WM_RBUTTONDOWN: if (DevMenuMouseButton(1, true)) return 0; break;
+    case WM_MBUTTONDOWN: if (DevMenuMouseButton(2, true)) return 0; break;
+    case WM_LBUTTONUP: DevMenuMouseButton(0, false); break;
+    case WM_RBUTTONUP: DevMenuMouseButton(1, false); break;
+    case WM_MOUSEWHEEL: if (DevMenuWheel(GET_WHEEL_DELTA_WPARAM(wp))) return 0; break;
+    case WM_MOUSEMOVE: if (DevMenuOpen()) return 0; break;
+    }
+    return g_wndUnicode ? CallWindowProcW(g_origWndProc, w, m, wp, lp) : CallWindowProcA(g_origWndProc, w, m, wp, lp);
+}
+static void InstallDevWndProc(HWND w) {
+    if (g_origWndProc || !w) return;
+    g_wndUnicode = IsWindowUnicode(w) != 0;
+    g_origWndProc = (WNDPROC)(g_wndUnicode ? SetWindowLongPtrW(w, GWLP_WNDPROC, (LONG_PTR)DevWndProc) : SetWindowLongPtrA(w, GWLP_WNDPROC, (LONG_PTR)DevWndProc));
+    Log(g_origWndProc ? "devmenu: window procedure hooked" : "devmenu: window procedure hook FAILED");
+}
+static void DrawDevMenu(IDXGISwapChain* sc) {
+    if (!g_uiReady) return;
+    DevMenuTick();
+    if (!DevMenuOpen() && !DevMenuToastWanted()) return;
+    ID3D11Texture2D* bb = nullptr; if (FAILED(sc->GetBuffer(0, __uuidof(ID3D11Texture2D), (void**)&bb))) return;
+    D3D11_TEXTURE2D_DESC td; bb->GetDesc(&td); ID3D11RenderTargetView* rtv = nullptr;
+    if (SUCCEEDED(g_dev->CreateRenderTargetView(bb, nullptr, &rtv))) { UiBegin((float)td.Width, (float)td.Height); if (DevMenuOpen()) DevMenuDraw((float)td.Width, (float)td.Height); else DevMenuToast((float)td.Width, (float)td.Height); UiEnd(rtv); rtv->Release(); }
+    bb->Release();
+}
+
 static HRESULT STDMETHODCALLTYPE HookPresent(IDXGISwapChain* sc, UINT sync, UINT flags) {
     LONG f = InterlockedIncrement(&g_frames);
     GameRunQueued();
@@ -164,6 +201,7 @@ static HRESULT STDMETHODCALLTYPE HookPresent(IDXGISwapChain* sc, UINT sync, UINT
     if (f == 1) Log("overlay: Present hook called (first frame)");
     if (!g_ready && !g_failed) { g_ready = InitResources(sc); g_failed = !g_ready; }
     if (g_ready) DrawMarkers(sc);
+    if (g_ready && g_uiReady) DrawDevMenu(sc);
     if (GetCfg().forceActive) {   // build 11370412: the game's focus state is byte +0x21 of the object at exe+0x469A5B0; its loop does
         // Sleep(100) (about 10 fps) when this and the byte at exe+0x62D394 are both 0, and it ignores WM_INPUT while it is 0
         uintptr_t base = (uintptr_t)GetModuleHandleA(nullptr), p = IsBadReadPtr((void*)(base + 0x469A5B0), 8) ? 0 : *(uintptr_t*)(base + 0x469A5B0);
@@ -174,7 +212,7 @@ static HRESULT STDMETHODCALLTYPE HookPresent(IDXGISwapChain* sc, UINT sync, UINT
         uintptr_t im = (g && !IsBadReadPtr((void*)g, 8)) ? *(uintptr_t*)g : 0;
         if (im && !IsBadWritePtr((void*)(im + 0xE5C), 1)) *(volatile unsigned char*)(im + 0xE5C) = 1;
     }
-    { DXGI_SWAP_CHAIN_DESC d; if (SUCCEEDED(sc->GetDesc(&d))) { g_gameWnd = d.OutputWindow; InputPump(d.OutputWindow); } }
+    { DXGI_SWAP_CHAIN_DESC d; if (SUCCEEDED(sc->GetDesc(&d))) { g_gameWnd = d.OutputWindow; if (DevMenuEnabled()) InstallDevWndProc(d.OutputWindow); InputPump(d.OutputWindow); } }
     if (g_shotName[0] && g_ready) { char n[64]; strcpy(n, g_shotName); g_shotName[0] = 0; TakeShot(sc, n); }
     HRESULT hr = g_origPresent(sc, sync, flags);
     if (int cap = GetCfg().capFps; cap > 0) {   // frame cap: sleep out the rest of the frame (Sleep(1) until close, then spin)

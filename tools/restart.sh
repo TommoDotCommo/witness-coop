@@ -18,7 +18,7 @@ launch() {   # dir -> pid; the game opens an options dialog unless -skip_config_
 for p in "${peers[@]}"; do
   if [ "$p" = A ]; then d="$WITNESS_DIR1"; id=1; listen="$WITNESS_PORT1"; peer="$WITNESS_PORT2"; cfg="${CFG_A:-}";
   else d="$WITNESS_DIR2"; id=2; listen="$WITNESS_PORT2"; peer="$WITNESS_PORT1"; cfg="${CFG_B:-}"; fi
-  printf 'id=%s\nlisten=%s\npeer=%s\nsave_dir=instance\nshare_zip=1\nforce_active=%s\ncap_fps=%s\n%s\n' "$id" "$listen" "$peer" "$([ -n "${WITNESS_HUMAN:-}" ] && echo 0 || echo 1)" "${WITNESS_FPS:-30}" "$cfg" > "$d/witness_coop.cfg"
+  printf 'id=%s\nlisten=%s\npeer=%s\nsave_dir=instance\nshare_zip=1\nforce_active=%s\ncap_fps=%s\ndev_menu=1\n%s\n' "$id" "$listen" "$peer" "$([ -n "${WITNESS_HUMAN:-}" ] && echo 0 || echo 1)" "${WITNESS_FPS:-30}" "$cfg" > "$d/witness_coop.cfg"
   rm -f "$d/witness_proxy.log" "$d/witness_cmd.txt"
   [ -d "$d/appdata/The Witness" ] && rm -f "$d/appdata/The Witness/"*.witness_campaign "$d/appdata/The Witness/"*.png   # this instance's own saves only: reloads must start from known saves
   game_pid=$(launch "$d"); echo "$game_pid" > "$RUN/pid$p.txt"

@@ -3,6 +3,7 @@
 #include <cstring>
 #include "input.h"
 #include "config.h"
+#include "devmenu.h"
 
 bool HookImport(const char* dll, const char* fn, void* hook, void** orig);   // hooks.cpp
 void Log(const char* msg);
@@ -47,6 +48,11 @@ static UINT WINAPI HookGetRawInputData(HRAWINPUT h, UINT cmd, LPVOID data, PUINT
     if ((v & ~(ULONG_PTR)0xFF) != kTokenBase) {
         InterlockedIncrement(&g_stats[2]);
         UINT r = g_orig(h, cmd, data, size, hdr);
+        if (DevMenuOpen() && data && r != (UINT)-1 && cmd == RID_INPUT && r >= sizeof(RAWINPUTHEADER)) {      // the dev menu is open: it takes the mouse motion, the game gets an empty event
+            RAWINPUT* ri = (RAWINPUT*)data;
+            if (ri->header.dwType == RIM_TYPEMOUSE) { if (!(ri->data.mouse.usFlags & MOUSE_MOVE_ABSOLUTE)) DevMenuRawMove(ri->data.mouse.lLastX, ri->data.mouse.lLastY); ri->data.mouse.lLastX = ri->data.mouse.lLastY = 0; ri->data.mouse.usButtonFlags = 0; ri->data.mouse.usButtonData = 0; }
+            else if (ri->header.dwType == RIM_TYPEKEYBOARD && !(ri->data.keyboard.Flags & RI_KEY_BREAK)) { ri->data.keyboard.VKey = 0; ri->data.keyboard.MakeCode = 0; ri->data.keyboard.Flags |= RI_KEY_BREAK; }
+        }
         if (GetCfg().debugMsgs && data && r != (UINT)-1 && r >= sizeof(RAWINPUTHEADER) && cmd == RID_INPUT) {    // diagnostic (debug_msgs=1): what a REAL event looks like (first few, and every button event)
             const RAWINPUT* ri = (const RAWINPUT*)data; static LONG n;
             bool btn = ri->header.dwType == RIM_TYPEMOUSE && ri->data.mouse.usButtonFlags;
@@ -67,6 +73,10 @@ static UINT WINAPI HookGetRawInputData(HRAWINPUT h, UINT cmd, LPVOID data, PUINT
         ri.data.mouse.usFlags = MOUSE_MOVE_RELATIVE; ri.data.mouse.lLastX = e.dx; ri.data.mouse.lLastY = e.dy;
         ri.data.mouse.usButtonFlags = (USHORT)e.bflags;
     }
+    if (DevMenuOpen()) {      // our own (bot) events go to the dev menu while it is open
+        if (!e.key) { DevMenuRawMove(e.dx, e.dy); ri.data.mouse.lLastX = ri.data.mouse.lLastY = 0; ri.data.mouse.usButtonFlags = 0; }
+        else if (e.down) { ri.data.keyboard.VKey = 0; ri.data.keyboard.MakeCode = 0; ri.data.keyboard.Flags = RI_KEY_BREAK; }
+    }
     UINT total = ri.header.dwSize;
     if (cmd == RID_HEADER) { if (!data) { *size = sizeof(RAWINPUTHEADER); return 0; } if (*size < sizeof(RAWINPUTHEADER)) return (UINT)-1; memcpy(data, &ri.header, sizeof(RAWINPUTHEADER)); return sizeof(RAWINPUTHEADER); }
     if (!data) { *size = total; return 0; }
@@ -75,4 +85,31 @@ static UINT WINAPI HookGetRawInputData(HRAWINPUT h, UINT cmd, LPVOID data, PUINT
 }
 
 void Log(const char* msg);
-void InputInstallHook() { HookImport("USER32.dll", "GetRawInputData", (void*)HookGetRawInputData, (void**)&g_orig); }
+
+// The game's message loop reads mouse messages itself, before the window procedure sees them: the dev menu takes its keys and mouse
+// messages here, and a message it took becomes WM_NULL. Key-ups and button-ups are shown to the menu but still reach the game.
+typedef BOOL(WINAPI* PeekMessageAFn)(LPMSG, HWND, UINT, UINT, UINT);
+static PeekMessageAFn g_origPeekA;
+static BOOL WINAPI HookPeekMessageA(LPMSG m, HWND w, UINT lo, UINT hi, UINT rm) {
+    BOOL r = g_origPeekA(m, w, lo, hi, rm);
+    if (!r || !m || !(rm & PM_REMOVE) || !DevMenuEnabled()) return r;
+    bool take = false;
+    switch (m->message) {
+    case WM_KEYDOWN: case WM_SYSKEYDOWN: take = DevMenuKey((unsigned)m->wParam, true); break;
+    case WM_KEYUP: case WM_SYSKEYUP: DevMenuKey((unsigned)m->wParam, false); break;
+    case WM_CHAR: take = DevMenuOpen(); break;
+    case WM_LBUTTONDOWN: take = DevMenuMouseButton(0, true); break;
+    case WM_RBUTTONDOWN: take = DevMenuMouseButton(1, true); break;
+    case WM_MBUTTONDOWN: take = DevMenuMouseButton(2, true); break;
+    case WM_LBUTTONUP: DevMenuMouseButton(0, false); break;
+    case WM_RBUTTONUP: DevMenuMouseButton(1, false); break;
+    case WM_MOUSEWHEEL: take = DevMenuWheel(GET_WHEEL_DELTA_WPARAM(m->wParam)); break;
+    case WM_MOUSEMOVE: take = DevMenuOpen(); break;
+    }
+    if (take) m->message = WM_NULL;
+    return r;
+}
+void InputInstallHook() {
+    HookImport("USER32.dll", "GetRawInputData", (void*)HookGetRawInputData, (void**)&g_orig);
+    HookImport("USER32.dll", "PeekMessageA", (void*)HookPeekMessageA, (void**)&g_origPeekA);
+}

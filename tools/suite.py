@@ -199,6 +199,8 @@ SCENARIOS = [   # name, extra cfg for A, extra cfg for B, check(a_stats, b_stats
   ('bot-free effects', '', '', lambda a, b, ok: (ok and b.get('ecab', 9) == 0 and b.get('ep', 9) == 0, 'a solved laser-panel and a default-lit cable switched off on A reach B once, without echo, and a fresh B recovers both')),
   ('MUTANT: bot-free effects without dispatch and power-off', '', 'no_target_dispatch=1\nno_cable_off=1', lambda a, b, ok: (not ok, 'B must keep the laser off and the cable lit')),
   ('MUTANT: bot-free effects without snapshot', 'no_off_snapshot=1\nno_snap_reassert=1', '', lambda a, b, ok: (not ok, 'a fresh B must still show the cable lit')),
+  ('dev menu', '', '', lambda a, b, ok: (ok and b.get('ep', 9) == 0 and b.get('ecab', 9) == 0, 'the menu teleports, takes the mouse while open, and its solve and cable actions reach B once, without echo')),
+  ('MUTANT: dev menu actions without sync', 'no_cable_sync=1', 'no_target_dispatch=1\nno_cable_sync=1', lambda a, b, ok: (not ok, 'B must keep the laser off and the cable dark')),
   ('MUTANT: panel power chain disabled', 'no_panel_power=1', '', lambda a, b, ok: (not ok, 'target panel must remain dark on B')),
 ]
 args = sys.argv[1:]; shard = None
@@ -225,8 +227,27 @@ while queue:
     open(os.path.join(RUN, 'guard.stop'), 'w').write('bot starting')      # the focus guard (for the game grabbing the foreground while loading) ends
     chain = 'cable chain' in name
     effects = 'bot-free effects' in name
+    devmenu = 'dev menu' in name
     maze = chain      # the chain scenario also covers the single maze: its first panel is the one the 'cable maze' scenario used
-    if effects:      # nothing for the bot to play: make the laser panel solved as a native solve would (fields and dispatcher), and switch the default-lit cable 0x18458 off with the game's own call
+    if devmenu:      # everything goes through the dev menu: teleport to a panel, check it owns the mouse while open, solve a laser panel, light a cable
+        def cam(): return [float(v) for v in pyw('wcam.py', pid('A')).split()]
+        def dm(*steps): return pyw('wmenu.py', win(DIR1), *steps)
+        def cmd(*words): return pyw('wcmd.py', win(DIR1), *words)
+        why = ''
+        dm('open'); y0 = cam()[3]; cmd('mouse', '80', '0'); cmd('mouse', '80', '0'); cmd('mouse', '80', '0'); time.sleep(1.5)
+        if abs(cam()[3] - y0) > 1e-3: why = 'the game still turned while the menu was open'
+        cmd('menusel', '4ca4'); cmd('menudo', 'teleport'); time.sleep(9)
+        c1 = cam(); px = state('A'); import math
+        if not why and math.hypot(c1[0] - (-112), c1[1] - (-124)) > 10: why = 'the menu teleport did not take the player near panel 0x4ca4: camera %s' % c1
+        if not why:
+            y1 = c1[3]; cmd('mouse', '80', '0'); cmd('mouse', '80', '0'); cmd('mouse', '80', '0'); time.sleep(1.5)
+            if abs(cam()[3] - y1) < 1e-3: why = 'the game did not get the mouse back after the menu closed'
+        if not why:
+            dm('nearby'); cmd('menusel', '32f5'); cmd('menudo', 'solve'); time.sleep(1); cmd('menusel', '293'); cmd('menudo', 'cableon'); time.sleep(8)
+            sa0 = state('A')
+            if sa0['lasers'].get('0x32f9') != LASER_ON or '0x32f5' not in sa0['panels'] or '0x349' not in sa0['lit_cables']: why = 'the menu actions did not change A'
+        bot = 'solved: True' if not why else why
+    elif effects:      # nothing for the bot to play: make the laser panel solved as a native solve would (fields and dispatcher), and switch the default-lit cable 0x18458 off with the game's own call
         lit0 = state('A')['lit_cables'].get('0x18458') and state('B')['lit_cables'].get('0x18458')
         pyw('wsolve.py', win(DIR1), '0x32f5'); pyw('wcmd.py', win(DIR1), 'cableoff', '18458'); time.sleep(8)
         sa0 = state('A')
@@ -256,6 +277,8 @@ while queue:
     elif late: pass
     elif 'restart catch-up' in name and bot_ok:
         catchup = restart_catchup(ca, cb, name.startswith('MUTANT:'))
+    elif devmenu and bot_ok and not name.startswith('MUTANT:'):
+        catchup = restart_catchup(ca, cb, False, expected={'panels': '0x32f5', 'lasers': '0x32f9', 'lit_cables': '0x349'})
     elif effects and bot_ok and 'dispatch' not in name:
         catchup = restart_catchup(ca, cb, 'snapshot' in name, expected={'dark_cables': '0x18458'} if 'snapshot' in name else {'panels': '0x32f5', 'lasers': '0x32f9', 'dark_cables': '0x18458'})
     elif maze and bot_ok and not name.startswith('MUTANT:'):
@@ -276,6 +299,10 @@ while queue:
         if name.startswith('MUTANT:'): cable_ok = all(c in sa['lit_cables'] and c not in sb['lit_cables'] for c in cables) and set(sa['lit_cables']) - set(sb['lit_cables']) == set(cables)
         else: cable_ok = all(c in sa['lit_cables'] for c in cables) and sa['lit_cables'] == sb['lit_cables'] and sa['powered_panels'] == sb['powered_panels']
         ok = ok and solved_ok and cable_ok
+    if devmenu:
+        sa, sb = state('A'), state('B')
+        if name.startswith('MUTANT:'): ok = bot_ok and sb['lasers']['0x32f9'] != LASER_ON and '0x349' not in sb['lit_cables'] and '0x32f5' in sb['panels']
+        else: ok = ok and sa['lasers'] == sb['lasers'] and sa['lasers']['0x32f9'] == LASER_ON and sa['panels'] == sb['panels'] and '0x349' in sb['lit_cables'] and sa['lit_cables'] == sb['lit_cables']
     if effects:
         sa, sb = state('A'), state('B')
         if 'dispatch' in name: ok = bot_ok and sb['lasers']['0x32f9'] != LASER_ON and '0x18458' in sb['lit_cables']          # both effects must be missing on B

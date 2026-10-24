@@ -8,6 +8,7 @@
 #include "game.h"
 #include "input.h"
 #include "config.h"
+#include "devmenu.h"
 
 void Log(const char* msg);
 void RequestShot(const char* name);
@@ -87,10 +88,14 @@ static DWORD WINAPI CmdThread(LPVOID) {
             char a[16], b[16]; int dx, dy;
             if (sscanf(line, "door %x %f", &id, &amt) >= 1) GameEnqueueDoorOpen(id, amt);
             else if (sscanf(line, "cableoff %x", &id) == 1) GameEnqueueCableOff(id);
+            else if (sscanf(line, "menusel %x", &id) == 1) DevMenuCommand("select", id);
+            else if (sscanf(line, "menudo %15s", a) == 1) DevMenuCommand(a, 0);
+            else if (sscanf(line, "menuat %d %d", &dx, &dy) == 2) DevMenuSetCursor((float)dx, (float)dy);
+            else if (sscanf(line, "menu %15s", a) == 1) { if (!strcmp(a, "map")) DevMenuSetPage(0); else if (!strcmp(a, "nearby")) DevMenuSetPage(1); else if (!strcmp(a, "toggle")) DevMenuToggle(); }
             else if (sscanf(line, "cable %x", &id) == 1) GameEnqueueCablePower(id);
             else if (sscanf(line, "solve %x", &id) == 1 || sscanf(line, "dispatch %x", &id) == 1) { Cmd c = {line[0] == 's' ? 5 : 4, id, 0, 0, 0, false, 0, 0, 0}; EnterCriticalSection(&g_lock); if (g_n < 64) g_q[g_n++] = c; LeaveCriticalSection(&g_lock); }
             else if (sscanf(line, "key %15s %15s", a, b) == 2) {       // key W down|up
-                struct { const char* n; unsigned vk, sc; } keys[] = {{"W", 0x57, 0x11}, {"A", 0x41, 0x1E}, {"S", 0x53, 0x1F}, {"D", 0x44, 0x20}, {"SPACE", 0x20, 0x39}, {"ENTER", 0x0D, 0x1C}, {"ESC", 0x1B, 0x01}};
+                struct { const char* n; unsigned vk, sc; } keys[] = {{"W", 0x57, 0x11}, {"A", 0x41, 0x1E}, {"S", 0x53, 0x1F}, {"D", 0x44, 0x20}, {"SPACE", 0x20, 0x39}, {"ENTER", 0x0D, 0x1C}, {"ESC", 0x1B, 0x01}, {"F7", 0x76, 0x41}, {"F8", 0x77, 0x42}, {"TAB", 0x09, 0x0F}, {"UP", 0x26, 0x48}, {"DOWN", 0x28, 0x50}};
                 for (auto& k : keys) if (!_stricmp(a, k.n)) { Cmd c = {1, 0, 0, k.vk, k.sc, !_stricmp(b, "down"), 0, 0, 0}; EnterCriticalSection(&g_lock); if (g_n < 64) g_q[g_n++] = c; LeaveCriticalSection(&g_lock); }
             } else if (sscanf(line, "mouse %d %d", &dx, &dy) == 2) { Cmd c = {2, 0, 0, 0, 0, false, dx, dy, 0}; EnterCriticalSection(&g_lock); if (g_n < 64) g_q[g_n++] = c; LeaveCriticalSection(&g_lock); }
             else if (sscanf(line, "shot %15s", a) == 1) RequestShot(a);
@@ -161,7 +166,7 @@ void GameMarkPanelSolved(unsigned id) {
     for (auto& x : w) memcpy((void*)(e + x.off), &x.v, 4);
 }
 
-bool GameDispatchTargetNow(unsigned panelId) {
+bool GameDispatchTargetNow(unsigned panelId, bool any) {
     uintptr_t e = panelId < 0x40000 ? GameEntity(panelId) : 0;
     if (!e || IsBadReadPtr((void*)(e + 8), 8) || *(uintptr_t*)(e + 8) != Base() + kPanelTypeInfo || IsBadReadPtr((void*)(e + 0x2B4), 4)) return false;
     uintptr_t glob = *(uintptr_t*)(Base() + kGlobals); if (!glob || IsBadReadPtr((void*)(glob + 8), 4)) return false;
@@ -169,7 +174,7 @@ bool GameDispatchTargetNow(unsigned panelId) {
     uintptr_t t = idx < 0x40000 ? GameEntity(idx) : 0;
     if (!t || IsBadReadPtr((void*)(t + 8), 8)) return false;
     uintptr_t ti = *(uintptr_t*)(t + 8);     // panels, cables and doors have their own events; every other target type goes through the game's dispatcher
-    if (ti == Base() + kPanelTypeInfo || ti == Base() + kCableTypeInfo || ti == Base() + kDoorTypeInfo) return false;
+    if (!any && (ti == Base() + kPanelTypeInfo || ti == Base() + kCableTypeInfo || ti == Base() + kDoorTypeInfo)) return false;
     // Build 11370412: exe+0xC24F0(engine id of the target, source entity) switches on the target's type.
     const unsigned char* fn = (const unsigned char*)(Base() + 0xC24F0);
     const unsigned char prologue[] = {0x85, 0xC9, 0x0F, 0x84, 0x89, 0x01, 0x00, 0x00, 0x57, 0x48, 0x83, 0xEC, 0x20};
@@ -194,4 +199,10 @@ void GameEnqueueCableOff(unsigned id) {
     EnterCriticalSection(&g_lock);
     if (g_n < 64) g_q[g_n++] = {6, id, 0, 0, 0, false, 0, 0, 0};
     LeaveCriticalSection(&g_lock);
+}
+
+void GameTeleport(float x, float y, float z, float yaw, float pitch) {
+    if (!g_lockInit) return;
+    Tp t = {}; t.v[0] = x; t.v[1] = y; t.v[2] = z; t.v[3] = yaw; t.v[4] = pitch; t.frames = 12;
+    EnterCriticalSection(&g_lock); g_tp = t; g_tpOn = true; LeaveCriticalSection(&g_lock);
 }
