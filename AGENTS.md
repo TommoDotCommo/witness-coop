@@ -17,6 +17,8 @@ and publishing permissions. Keep shared workflow changes there so agents stay in
   archive's share mode, and the lazily read `witness_coop.cfg`). Build offsets are at the top of those files.
 - `tools/`: WSL scripts (`config.sh`, `install.sh`, `restart.sh`, `qa.sh`, `suite.py`, `solve_bot.py`,
   `state_diff.py`) and `tools/win/` (Windows Python probes and input helpers; `wlib.py` is shared).
+- Puzzle sweep: `tools/sweep.sh` / `tools/sweep.py` (every panel), `tools/puzzle.sh` / `puzzle.py` (one panel), `tools/solver.py` (which line to draw),
+  `tools/psolve/` (the rule solver, C++, `make -C tools/psolve test`), `tools/win/wdraw.py` (teleport, enter, find the start, draw), `tools/win/wpanels.py` (manifest).
 - `local/`: ignored. Only used without the lab (two game copies `witness-1`, `witness-2`, `run/`); in lab mode the game folders,
   pid files and logs live under `C:\coop\lab\` (see `~/source/coop-lab/LAB.md`).
 
