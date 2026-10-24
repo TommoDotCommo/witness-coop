@@ -73,7 +73,15 @@ def menu_teleport():
         pos, ang = p.camera(); dn_, lat_ = standing(pos)
         if 1.0 < dn_ < 8 and abs(lat_) < 2.0 and abs(pos[2] - pz_) < 2.0: return pos      # near enough: everything below is worked out from where we really stand
         time.sleep(3)
-    done(False, 'teleport refused: camera at %.1f %.1f %.1f (panel at %.1f %.1f %.1f)' % (*pos, px_, py_, pz_))
+    # refused three times: no collision is loaded there (the game keeps putting the player back at the spawn point). Hold the player in the air in front of the
+    # panel for the whole run instead (the hover command holds for 10 minutes; `hover off` in done() lets go).
+    nx, ny = NORMAL[0], NORMAL[1]; nn = math.hypot(nx, ny) or 1.0
+    hx, hy = px_ + 3.0 * nx / nn, py_ + 3.0 * ny / nn
+    for attempt in range(3):
+        c.send(['hover %.4f %.4f %.4f %.5f 0.0' % (hx, hy, pz_, math.atan2(-ny, -nx))], 2.5)
+        pos, ang = p.camera(); dn_, lat_ = standing(pos)
+        if 1.0 < dn_ < 8 and abs(lat_) < 2.0 and abs(pos[2] - pz_) < 2.0: dbg('held in the air in front of the panel'); return pos
+    done(False, 'teleport refused and the player could not be held there: camera at %.1f %.1f %.1f (panel at %.1f %.1f %.1f)' % (*pos, px_, py_, pz_))
 
 stamp('start')
 pos = menu_teleport()
@@ -100,11 +108,13 @@ def to_screen(world):      # offset from the screen centre in pixels
     if zc < 0.2: zc = 0.2
     return FOCAL * (d[0] * R[0] + d[1] * R[1] + d[2] * R[2]) / zc, -FOCAL * (d[0] * U[0] + d[1] * U[1] + d[2] * U[2]) / zc
 W = 0.567      # the panel's size in metres (unit 0..1): scanned below
+AX = 1.0       # width/height of a panel unit on the screen: 1 for most panels, found by the scan on the others
+SX, SY = 1.0, 1.0      # -1 where the panel is shown mirrored or turned (1cd3: its start, node data bottom right, is the circle at the top left)
 def node_world(i):
     loc = quat_rot((0.0, (dots[2 * i] - 0.5) * W, (dots[2 * i + 1] - 0.5) * W))
     return (px_ + loc[0], py_ + loc[1], pz_ + loc[2])
 def node_px(i):
-    ox, oy = to_screen((px_, py_, pz_)); x, y = to_screen(node_world(i)); return x - ox, y - oy      # relative to the panel's middle (which is at the screen centre)
+    ox, oy = to_screen((px_, py_, pz_)); x, y = to_screen(node_world(i)); return (x - ox) * AX * SX, (y - oy) * SY      # relative to the panel's middle (which is at the screen centre); AX: some panels are not square
 
 # ---- entering and finding the start circle --------------------------------------------------------------------------------------------------
 def probe_free_look():
@@ -121,32 +131,38 @@ if kcache_path and os.path.exists(kcache_path):
     try: kcache = json.load(open(kcache_path))
     except Exception: kcache = {}
 cands = [(w_, dy_) for dy_ in DY_LIST for w_ in W_LIST]
-if 'w%x' % eid in kcache: cands.insert(0, tuple(kcache['w%x' % eid]))
+cached_ax = None; cached_flip = (1, 1)
+if 'w%x' % eid in kcache:
+    cands.insert(0, tuple(kcache['w%x' % eid][:2])); kc_ = kcache['w%x' % eid]; cached_ax = kc_[2] if len(kc_) > 2 else 1.0; cached_flip = (kc_[3], kc_[4]) if len(kc_) > 4 else (1, 1)
 pskey = 'ws%.3f' % pscale
 if pskey in kcache: cands.insert(0, (kcache[pskey], 0))
 started = None
-for attempt in range(2):
+ROUNDS = [(1.0, 1, 1), (1.0, 1, 1)] + [(ax_, sx_, sy_) for ax_ in (1.0, 1.45, 0.7, 2.0, 0.5) for (sx_, sy_) in ((-1, -1), (1, 1), (1, -1), (-1, 1))][1:]
+for attempt, (ax_, sx_, sy_) in enumerate(ROUNDS):
+    AX = cached_ax if (attempt == 0 and cached_ax) else ax_; SX, SY = cached_flip if attempt == 0 else (sx_, sy_)
     for _ in range(3):
         c.click(settle=1.0)                          # enter: the cursor appears at the screen centre
         if not probe_free_look(): break              # entered (the cursor moved, the view did not)
         rclick()                                     # not entered: leave and click again
     cur = (0.0, 0.0)
-    for w_, dy_ in cands:
+    for w_, dy_ in (cands if attempt < 2 else [(w2, dy2) for dy2 in (0, 20, -20, 40, -40) for w2 in (0.567, 0.645, 0.70, 0.76, 0.88, 1.05)]):
+        if time.time() - T_START > 400: break
         W = w_
         sx, sy = node_px(path[0]); sy += dy_
         ddx, ddy = (sx - cur[0]) * COUNTS_PER_PX, (sy - cur[1]) * COUNTS_PER_PX
         n_ = max(1, int(math.ceil(max(abs(ddx), abs(ddy)) / 14)))
         if abs(ddx) + abs(ddy) >= 1: c.send(['mouse %d %d' % (round(ddx / n_), round(ddy / n_))] * n_, 0.035 * n_ + 0.06)
         cur = (cur[0] + round(ddx / n_) * n_ / COUNTS_PER_PX, cur[1] + round(ddy / n_) * n_ / COUNTS_PER_PX)
+        if os.environ.get('WDRAW_KSHOTS'): c.send(['shot k_%d_%d' % (round(w_ * 1000), dy_)], 0.4)
         c.send(['button L down', 'button L up'], 0.14)      # press and release on the start circle: the line starts
         if traced() >= 1 or state() == 3: started = (w_, dy_); break
     if started: break
     rclick()
 if not started: done(False, 'the line did not start with any panel size or offset tried', traced(), dist)
 W = started[0]
-stamp('line started with W %.3f m, vertical offset %d px' % started)
+stamp('line started with W %.3f m, vertical offset %d px, width factor %.2f, flips %d %d' % (started + (AX, SX, SY)))
 if kcache_path:
-    kcache['w%x' % eid] = list(started); kcache[pskey] = started[0]
+    kcache['w%x' % eid] = list(started) + [AX, SX, SY]; kcache[pskey] = started[0]
     try: json.dump(kcache, open(kcache_path, 'w'))
     except Exception: pass
 

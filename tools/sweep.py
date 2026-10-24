@@ -27,12 +27,15 @@ def draw(panel, path, which, timeout=420):
     gdir = DIR2 if which == 'B' else DIR1
     env = {**os.environ, 'WDRAW_KCACHE': win(KCACHE), 'WSLENV': os.environ.get('WSLENV', '') + ':WDRAW_KCACHE'}
     try:
-        out = subprocess.run([os.environ.get('PYW', '/mnt/c/Python311/python.exe'), '-I', win(os.path.join(TOOLS, 'win', 'wdraw.py')), pid(which), win(gdir),
+        out = subprocess.run([os.environ.get('PYW', '/mnt/c/Python311/python.exe'), '-I', win(os.path.join(TOOLS, 'win', os.environ.get('WDRAW_SCRIPT', 'wdraw.py'))), pid(which), win(gdir),
                               '%x' % panel['id'], ','.join(map(str, path))], capture_output=True, text=True, timeout=timeout, env=env).stdout
     except subprocess.TimeoutExpired:
         return {'solved': False, 'why': 'the drawing script timed out'}
     lines = [l for l in out.splitlines() if l.startswith('{')]
-    return json.loads(lines[-1]) if lines else {'solved': False, 'why': 'the drawing script printed nothing: ' + out[-200:]}
+    return json.loads(lines[-1]) if lines else {'solved': False, 'why': 'the drawing script printed nothing: ' + out[-200:], 'infrastructure': True}
+
+def retry_possible(manifest, results, n_solved):
+    return any(v.get('result') == 'failed' and v.get('tries', 1) < 4 and n_solved > v.get('at', 0) + 6 for v in results.values())
 
 def run(args):
     which = 'B'
@@ -54,7 +57,7 @@ def run(args):
         live = {q['id']: q for q in inventory(which, full=False)}
         for q in manifest:
             if q['id'] in live: q['solved'] = live[q['id']]['solved']; q['powered'] = live[q['id']]['powered']
-        solved_in_pass = 0; skipped_unpowered = 0
+        solved_in_pass = 0; skipped_unpowered = 0; n_solved = sum(1 for q in manifest if q['solved'])
         for p in sorted(manifest, key=lambda q: q['id']):
             if ids is not None and p['id'] not in ids: continue
             key = '%x' % p['id']
@@ -62,7 +65,10 @@ def run(args):
                 if results.get(key, {}).get('result') != 'solved': results[key] = {'result': 'solved', 'why': 'already solved', 'seconds': 0}
                 continue
             if p['id'] % shard[1] != shard[0] - 1: continue
-            if results.get(key, {}).get('result') in ('failed', 'no solver') and not '--retry' in args: continue
+            r0 = results.get(key, {})
+            if r0.get('result') == 'no solver' and not '--retry' in args: continue
+            # a failed panel is tried again when other panels were solved since (that may have opened a door to it or powered it), at most 4 times
+            if r0.get('result') == 'failed' and not '--retry' in args and (r0.get('tries', 1) >= 4 or n_solved <= r0.get('at', 0) + 6): continue
             if done_n >= limit: break
             path = solver.solve(p)
             if path is None:
@@ -71,13 +77,13 @@ def run(args):
                 skipped_unpowered += 1; continue
             else:
                 t0 = time.time(); r = draw(p, path, which)
-                results[key] = {'result': 'solved' if r.get('solved') else 'failed', 'why': r.get('why', ''), 'seconds': round(time.time() - t0), 'path': path}
+                results[key] = {'result': 'solved' if r.get('solved') else 'failed', 'why': r.get('why', ''), 'seconds': round(time.time() - t0), 'path': path, 'tries': r0.get('tries', 0) + 1, 'at': n_solved}
                 solved_in_pass += bool(r.get('solved'))
             done_n += 1
             print('%s: %s %s (%ds)' % (key, results[key]['result'], results[key]['why'], results[key]['seconds']), flush=True)
             json.dump(results, open('%s.%d.json' % (RESULTS_GLOB, shard[0]), 'w'), indent=1)
         print('pass done: %d solved, %d powered-later panels waiting' % (solved_in_pass, skipped_unpowered), flush=True)
-        if done_n >= limit or not solved_in_pass or ids is not None: break
+        if done_n >= limit or ids is not None or (not solved_in_pass and not retry_possible(manifest, results, n_solved + solved_in_pass)): break
         time.sleep(5)
 
 def report(folders=None):
