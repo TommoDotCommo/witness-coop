@@ -17,7 +17,8 @@ No game files are in this repo. You need your own copy of The Witness, Steam bui
   matched to their measured speed (and an idle or run clip when the model has one), and is hidden by walls and doors: the proxy reads
   the game's own depth buffer (4x MSAA, reversed depth stored as `0.0597 / distance`, found by watching which depth view the game
   binds) and discards the model's pixels that are behind it. Three open-licence models are bundled (`assets/models/`, credits in
-  `CREDITS.md`) and `model=<name or .glb path>` in the cfg picks one; `model=none` brings back the old flat puppet. The choice is
+  `CREDITS.md`) and `model=<name or .glb path>` in the cfg picks one; `model=none` brings back the old flat puppet. In game, **F7 / F6** switch to the next / previous model (every `.glb` in
+  `witness_models\`) and a small panel lists them for four seconds; `model <name|next|prev>` does the same from `witness_cmd.txt`. The choice is
   local: it is what *you* see for the other player.
 - **Shared panels and doors.** A detector watches all 594 `Machine_Panel` and 327 `Door` entities. A solved panel is sent to the
   other game and written there as solved; an opened door is opened there by calling the game's own door function, so the
@@ -90,7 +91,7 @@ off by default, so a player's own game is unchanged): `save_dir=instance` (the g
 `<game folder>\appdata`, or give a path; the owner's real saves are then never touched), `cap_fps=N` (frame cap), `share_zip=1`
 (see above), `force_active=1` (the game believes its window is always active: full speed, and it accepts injected input, without taking the focus or the mouse; the real cursor is replaced by a virtual one). Test-only switches: `drop_first_event=1`, `no_resend=1`, `no_echo_guard=1`, `no_resync_on_restart=1`, `skip_entity_zero=1`, `no_panel_power=1`. The log is `witness_proxy.log` next to the DLL.
 
-Player model keys (also optional): `model=<name or path>` (default `cesium-man`; a bundled name is looked up in `witness_models\` next to the DLL, anything else is a `.glb` path; `model=none` draws the flat puppet), `model_height=<m>`, `model_speed=<m/s the walk clip was made for>`, `model_yaw=<degrees>` (each model's own defaults come from its `<file>.glb.txt`), `depth_bias=<fraction>` and `depth_near=<m>` (how the game's depth is compared; `depth_near=0.0597` was measured), and the test mutants `no_model_depth=1` and `no_model_gait=1`. `tools/install.sh` copies `assets/models/` next to the DLL.
+Player model keys (also optional): `model=<name or path>` (default `cesium-man`; a bundled name is looked up in `witness_models\` next to the DLL, anything else is a `.glb` path; `model=none` draws the flat puppet), `model_height=<m>`, `model_speed=<m/s the walk clip was made for>`, `model_yaw=<degrees>` (each model's own defaults come from its `<file>.glb.txt`), `depth_bias=<fraction>` and `depth_near=<m>` (how the game's depth is compared; `depth_near=0.0597` was measured), and the test mutants `no_model_depth=1`, `no_model_gait=1` and `no_model_select=1`. `tools/install.sh` copies `assets/models/` next to the DLL.
 
 Both peers must use the updated DLL. Protocol v2 added panel power-on and v3 adds cable lighting (event kind 4: a cable is lit when `+0xC4` and `+0xC8` are 1.0; applied through the game's own `exe+0x175EE0`, the call its target dispatcher at `exe+0xC24F0` makes for a cable target); each version uses new packet magics, so older peers are ignored.
 
@@ -134,7 +135,7 @@ no echo guard and no restart resync each have a twin the regression must catch.
 first panel, aims, clicks to enter the puzzle, traces the line, clicks to finish), with no window focused and no desktop input, and `tools/state_diff.py` compares the
 solved panels and open doors read from both games' memory. Scenarios marked MUTANT are deliberately broken and must fail.
 
-`tools/qa.sh model` runs the character-model suite (`tools/suite_model.py`, `tools/win/wmodel.py`): the viewer's proxy reports how many pixels of the model passed the depth test, and the check asserts that a player 5 m ahead is visible, a standing one is idle, a walking one has a measured speed of 1.5 to 5 m/s, plays the walk clip and animates, goes idle and still when stopping, is visible in front of the closed first door and has under 2% of those pixels behind it. Mutants: model drawn over walls, model never walks, model off, and a second bundled model selected by name.
+`tools/qa.sh model` runs the character-model suite (`tools/suite_model.py`, `tools/win/wmodel.py`): the viewer's proxy reports how many pixels of the model passed the depth test, and the check asserts that a player 5 m ahead is visible, a standing one is idle, a walking one has a measured speed of 1.5 to 5 m/s, plays the walk clip and animates, goes idle and still when stopping, is visible in front of the closed first door and has under 2% of those pixels behind it. Mutants: model drawn over walls, model never walks, model off, and a second bundled model selected by name. A selector scenario presses F7 / F6 (injected as the game's own key messages) and `model fox`, and asserts which model `modelstat` reports and that it is drawn; its mutant (`no_model_select=1`) must fail exactly the switching checks.
 
 Last character-model run (2026-10-24, one machine, localhost, build 11370412, `tools/qa.sh model`, about 15 minutes), all five scenarios PASS, and the owner's real save folder was byte-identical after each:
 

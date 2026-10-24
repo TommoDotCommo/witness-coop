@@ -84,8 +84,12 @@ static VOID WINAPI HookSleep(DWORD ms) {
 // ---- diagnostic: which window messages the game's loop gets (debug_msgs=1)
 typedef BOOL(WINAPI* PeekMessageAFn)(LPMSG, HWND, UINT, UINT, UINT);
 static PeekMessageAFn g_origPeek;
+void ModelGpuSelect(int delta);     // model_gpu.cpp
 static BOOL WINAPI HookPeekMessageA(LPMSG m, HWND w, UINT a, UINT b, UINT rm) {
     BOOL r = g_origPeek(m, w, a, b, rm);
+    if (r && (rm & PM_REMOVE) && m->message == WM_KEYDOWN && !(m->lParam & (1 << 30))) {      // the model selector: F6 previous, F7 next (the focused window only: the key arrives as a message)
+        if (m->wParam == VK_F6) ModelGpuSelect(-1); else if (m->wParam == VK_F7) ModelGpuSelect(1);
+    }
     if (GetCfg().debugMsgs) {   // every distinct call site of PeekMessageA (there may be a second pump that handles input itself)
         static void* sites[16]; static LONG used; void* ra = __builtin_return_address(0); int k = 0;
         for (; k < used; k++) if (sites[k] == ra) break;

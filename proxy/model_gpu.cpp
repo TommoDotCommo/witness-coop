@@ -15,7 +15,7 @@ extern HMODULE g_selfModule();
 static wm::Model g_model; static wm::Avatar* g_avatar; static wm::Fit g_fit;
 static bool g_ready, g_tried; static float g_yaw, g_height;
 static ID3D11Device* g_dev; static ID3D11DeviceContext* g_ctx;
-static ID3D11VertexShader *g_vs, *g_vsFull; static ID3D11PixelShader *g_psDepth, *g_psProbe; static volatile LONG g_probeReq, g_depthViewCmd;
+static ID3D11VertexShader *g_vs, *g_vsFull; static ID3D11PixelShader *g_psDepth, *g_psProbe, *g_psUi; static volatile LONG g_probeReq, g_depthViewCmd;
 static ID3D11VertexShader* g_vsUnused; static ID3D11PixelShader* g_ps; static ID3D11InputLayout* g_layout;
 static ID3D11Buffer *g_vb, *g_ib, *g_cbFrame, *g_cbBones;
 static ID3D11ShaderResourceView* g_tex; static ID3D11SamplerState* g_samp;
@@ -53,6 +53,9 @@ float PSProbe(FS i) : SV_TARGET {
   int k = (int)i.pos.x; float w = screen.x, h = screen.y; int2 p = int2(w * 0.5, h * 0.5); int smp = 0;
   if (k < 4) smp = k; else if (k == 4) p = int2(w * 0.5, h * 0.8); else if (k == 5) p = int2(w * 0.5, h * 0.2); else if (k == 6) p = int2(w * 0.2, h * 0.5); else p = int2(w * 0.8, h * 0.5);
   return depthp.x < 1.5 ? scene1.Load(int3(p, 0)) : sceneMS.Load(p, smp); }
+// the selector panel: a CPU-drawn texture (GDI text) copied 1:1 to the screen; depthp.xy is the panel's top-left corner
+Texture2D<float4> uiTex : register(t3);
+float4 PSUi(FS i) : SV_TARGET { return uiTex.Load(int3(int2(i.pos.xy - depthp.xy), 0)); }
 // debugging view of the scene depth: red = 1 - z (x10), green = z (x10), blue = untouched (z at 1)
 FS VSFull(uint id : SV_VertexID) { FS o; float2 q = float2((id << 1) & 2, id & 2); o.pos = float4(q * float2(2, -2) + float2(-1, 1), 0, 1); return o; }
 float4 PSDepth(FS i) : SV_TARGET {
@@ -74,17 +77,29 @@ void ModelGpuDepthView(bool on) { InterlockedExchange(&g_depthViewCmd, on); }
 void ModelGpuRequestProbe() { InterlockedExchange(&g_probeReq, 1); }
 ModelDrawStats ModelGpuStats() { return g_stats; }
 
-bool ModelGpuInit(ID3D11Device* dev, ID3D11DeviceContext* ctx) {
-    if (g_tried) return g_ready;
-    g_tried = true; g_dev = dev; g_ctx = ctx;
-    const Cfg& cfg = GetCfg();
-    if (cfg.modelPath.empty()) { Log("model: off (model=none), flat puppet"); return false; }
-    std::wstring path = ResolvePath(cfg.modelPath);
-    HANDLE f = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (f == INVALID_HANDLE_VALUE) return Fail("model: file not found, flat puppet");
-    std::vector<uint8_t> bytes(GetFileSize(f, nullptr)); DWORD got = 0; ReadFile(f, bytes.data(), (DWORD)bytes.size(), &got, nullptr); CloseHandle(f);
-    std::string err;
-    if (got != bytes.size() || !wm::LoadGlb(bytes.data(), bytes.size(), &g_model, &err)) { char m[200]; snprintf(m, sizeof m, "model: cannot load: %s, flat puppet", err.c_str()); return Fail(m); }
+
+// ---- the models on offer: every .glb in witness_models\ next to the DLL (and the configured one, if it is somewhere else)
+struct Entry { std::wstring path; std::string name; };
+static std::vector<Entry> g_list; static int g_cur; static volatile LONG g_selReq; static volatile LONG g_selNamed; static char g_selName[64];
+static std::string NameOf(const std::wstring& p) { size_t s = p.find_last_of(L"\\/"), e = p.rfind(L'.'); std::wstring n = p.substr(s == std::wstring::npos ? 0 : s + 1, e == std::wstring::npos || (s != std::wstring::npos && e < s) ? std::wstring::npos : e - (s == std::wstring::npos ? 0 : s + 1)); return std::string(n.begin(), n.end()); }
+static void BuildList() {
+    const Cfg& cfg = GetCfg(); wchar_t d[MAX_PATH]; GetModuleFileNameW(g_selfModule(), d, MAX_PATH); wchar_t* sl = wcsrchr(d, L'\\'); if (sl) *(sl + 1) = 0;
+    std::wstring dir = std::wstring(d) + L"witness_models\\"; WIN32_FIND_DATAW fd; HANDLE h = FindFirstFileW((dir + L"*.glb").c_str(), &fd);
+    if (h != INVALID_HANDLE_VALUE) { do { g_list.push_back({dir + fd.cFileName, NameOf(fd.cFileName)}); } while (FindNextFileW(h, &fd)); FindClose(h); }
+    std::wstring want = ResolvePath(cfg.modelPath); int at = -1;
+    for (size_t i = 0; i < g_list.size(); i++) if (!_wcsicmp(g_list[i].path.c_str(), want.c_str())) at = (int)i;
+    if (at < 0 && GetFileAttributesW(want.c_str()) != INVALID_FILE_ATTRIBUTES) { g_list.insert(g_list.begin(), {want, NameOf(want)}); at = 0; }
+    g_cur = at < 0 ? 0 : at;
+}
+static void ReleaseModel() { if (g_vb) { g_vb->Release(); g_vb = nullptr; } if (g_ib) { g_ib->Release(); g_ib = nullptr; } if (g_tex) { g_tex->Release(); g_tex = nullptr; } delete g_avatar; g_avatar = nullptr; g_model = wm::Model(); }
+// Loads the model at g_list[g_cur] and puts it on the GPU. On failure the previous one stays (nothing is released before the new one is ready).
+static bool LoadFile(const std::wstring& path, wm::Model* out, std::string* err);
+static bool LoadCurrent() {
+    const Cfg& cfg = GetCfg(); ID3D11Device* dev = g_dev; ID3D11DeviceContext* ctx = g_ctx;
+    const std::wstring path = g_list[g_cur].path;
+    wm::Model nm; std::string err;
+    if (!LoadFile(path, &nm, &err)) { char m[240]; snprintf(m, sizeof m, "model: cannot load %s: %s", g_list[g_cur].name.c_str(), err.c_str()); return Fail(m); }
+    ReleaseModel(); g_model = std::move(nm);
     float height = 1.8f, speed = 1.6f, yaw = cfg.modelYaw;       // the model's own <file>.glb.txt sets its size, walking speed and facing; witness_coop.cfg overrides it
     if (FILE* sc = _wfopen((path + L".txt").c_str(), L"r")) {
         char l[200]; float v; while (fgets(l, sizeof l, sc)) { if (sscanf(l, "height=%f", &v) == 1) height = v; else if (sscanf(l, "speed=%f", &v) == 1) speed = v; else if (sscanf(l, "yaw=%f", &v) == 1) yaw += v; }
@@ -94,6 +109,95 @@ bool ModelGpuInit(ID3D11Device* dev, ID3D11DeviceContext* ctx) {
     g_yaw = yaw * 3.14159265f / 180.0f; g_height = height;
     g_fit = wm::FitToHeight(g_model, height);
     wm::GaitCfg gc; gc.refSpeed = speed; if (cfg.noModelGait) gc.idleBelow = 1e9f; g_avatar = new wm::Avatar(gc);
+    D3D11_BUFFER_DESC bd = {}; D3D11_SUBRESOURCE_DATA sd = {};
+    bd.ByteWidth = (UINT)(g_model.verts.size() * sizeof(wm::Vertex)); bd.BindFlags = D3D11_BIND_VERTEX_BUFFER; sd.pSysMem = g_model.verts.data();
+    if (FAILED(dev->CreateBuffer(&bd, &sd, &g_vb))) return Fail("model: vertex buffer failed");
+    bd.ByteWidth = (UINT)(g_model.idx.size() * 4); bd.BindFlags = D3D11_BIND_INDEX_BUFFER; sd.pSysMem = g_model.idx.data();
+    if (FAILED(dev->CreateBuffer(&bd, &sd, &g_ib))) return Fail("model: index buffer failed");
+    // texture (a 1x1 white one when the model has none), with mip maps
+    uint32_t white = 0xFFFFFFFF; int tw = g_model.texW ? g_model.texW : 1, th = g_model.texW ? g_model.texH : 1; const void* px = g_model.texW ? (const void*)g_model.rgba.data() : &white;
+    D3D11_TEXTURE2D_DESC td = {}; td.Width = tw; td.Height = th; td.MipLevels = 0; td.ArraySize = 1; td.Format = DXGI_FORMAT_R8G8B8A8_UNORM; td.SampleDesc.Count = 1;
+    td.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET; td.MiscFlags = D3D11_RESOURCE_MISC_GENERATE_MIPS;
+    ID3D11Texture2D* tx = nullptr;
+    if (FAILED(dev->CreateTexture2D(&td, nullptr, &tx))) return Fail("model: texture failed");
+    ctx->UpdateSubresource(tx, 0, nullptr, px, tw * 4, 0);
+    if (FAILED(dev->CreateShaderResourceView(tx, nullptr, &g_tex))) return Fail("model: texture view failed");
+    ctx->GenerateMips(g_tex); tx->Release();
+    if (!g_vb || !g_ib || !g_tex) return Fail("model: GPU upload failed");
+    char m[240]; snprintf(m, sizeof m, "model: loaded %zu vertices, %zu triangles, %zu joints, %zu clips, texture %dx%d, bind height %.2f scaled to %.2f", g_model.verts.size(), g_model.idx.size() / 3, g_model.joints.size(), g_model.clips.size(), g_model.texW, g_model.texH, g_model.bmax[1] - g_model.bmin[1], g_height);
+    Log(m);
+    return true;
+}
+static bool LoadFile(const std::wstring& path, wm::Model* out, std::string* err) {
+    HANDLE f = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (f == INVALID_HANDLE_VALUE) { *err = "file not found"; return false; }
+    std::vector<uint8_t> bytes(GetFileSize(f, nullptr)); DWORD got = 0; ReadFile(f, bytes.data(), (DWORD)bytes.size(), &got, nullptr); CloseHandle(f);
+    return got == bytes.size() && wm::LoadGlb(bytes.data(), bytes.size(), out, err);
+}
+
+
+// ---- the selector: F6 / F7 (or the `model` command) change the model; a panel lists them for a few seconds
+void ModelGpuSelect(int delta) { InterlockedExchange(&g_selReq, delta); }
+void ModelGpuSelectName(const char* name) { strncpy(g_selName, name, sizeof g_selName - 1); InterlockedExchange(&g_selNamed, 1); }
+static ID3D11Texture2D* g_uiTex; static ID3D11ShaderResourceView* g_uiSrv; static UINT g_uiW, g_uiH; static ULONGLONG g_toastUntil; static int g_toastScale = 1;
+static void BuildPanel(UINT screenH) {
+    if (g_uiSrv) { g_uiSrv->Release(); g_uiSrv = nullptr; } if (g_uiTex) { g_uiTex->Release(); g_uiTex = nullptr; }
+    int fh = screenH >= 1000 ? 22 : 16, rowH = fh + 10, pad = 14, n = (int)g_list.size();
+    HDC dc = CreateCompatibleDC(nullptr); HFONT font = CreateFontA(-fh, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, 0, 0, NONANTIALIASED_QUALITY, 0, "Segoe UI"), bold = CreateFontA(-fh, 0, 0, 0, FW_BOLD, 0, 0, 0, DEFAULT_CHARSET, 0, 0, NONANTIALIASED_QUALITY, 0, "Segoe UI");
+    SelectObject(dc, font); int width = 0; SIZE sz; const char* title = "Player model    F6 / F7 to change";
+    GetTextExtentPoint32A(dc, title, (int)strlen(title), &sz); width = sz.cx;
+    for (auto& e : g_list) { char l[100]; snprintf(l, sizeof l, "   %s", e.name.c_str()); GetTextExtentPoint32A(dc, l, (int)strlen(l), &sz); if (sz.cx > width) width = sz.cx; }
+    int W = width + pad * 2, H = rowH * (n + 1) + pad * 2 - 4;
+    BITMAPINFO bi = {}; bi.bmiHeader.biSize = sizeof bi.bmiHeader; bi.bmiHeader.biWidth = W; bi.bmiHeader.biHeight = -H; bi.bmiHeader.biPlanes = 1; bi.bmiHeader.biBitCount = 32;
+    void* bits = nullptr; HBITMAP bmp = CreateDIBSection(dc, &bi, DIB_RGB_COLORS, &bits, nullptr, 0); SelectObject(dc, bmp);
+    const COLORREF bg = RGB(22, 24, 32); HBRUSH bb = CreateSolidBrush(bg), hb = CreateSolidBrush(RGB(58, 64, 96)); RECT all = {0, 0, W, H}; FillRect(dc, &all, bb);
+    SetBkMode(dc, TRANSPARENT); SetTextColor(dc, RGB(150, 160, 190)); SelectObject(dc, font); TextOutA(dc, pad, pad - 2, title, (int)strlen(title));
+    for (int i = 0; i < n; i++) {
+        int y = pad + rowH * (i + 1) - 2; bool cur = i == g_cur;
+        if (cur) { RECT r = {pad / 2, y - 2, W - pad / 2, y + rowH - 4}; FillRect(dc, &r, hb); }
+        char l[100]; snprintf(l, sizeof l, "%s %s", cur ? ">" : "  ", g_list[i].name.c_str());
+        SelectObject(dc, cur ? bold : font); SetTextColor(dc, cur ? RGB(255, 214, 96) : RGB(225, 228, 238)); TextOutA(dc, pad, y, l, (int)strlen(l));
+    }
+    GdiFlush(); uint32_t* px = (uint32_t*)bits; uint32_t bgp = (22u << 16) | (24u << 8) | 32u;
+    for (int i = 0; i < W * H; i++) { uint32_t c = px[i] & 0xFFFFFF; px[i] = c | ((c == bgp ? 215u : 255u) << 24); }
+    D3D11_TEXTURE2D_DESC td = {}; td.Width = W; td.Height = H; td.MipLevels = 1; td.ArraySize = 1; td.Format = DXGI_FORMAT_B8G8R8A8_UNORM; td.SampleDesc.Count = 1; td.BindFlags = D3D11_BIND_SHADER_RESOURCE; td.Usage = D3D11_USAGE_IMMUTABLE;
+    D3D11_SUBRESOURCE_DATA sd = {bits, (UINT)W * 4, 0};
+    if (SUCCEEDED(g_dev->CreateTexture2D(&td, &sd, &g_uiTex))) g_dev->CreateShaderResourceView(g_uiTex, nullptr, &g_uiSrv);
+    g_uiW = W; g_uiH = H;
+    DeleteObject(bmp); DeleteObject(bb); DeleteObject(hb); DeleteObject(font); DeleteObject(bold); DeleteDC(dc);
+}
+static void ShowPanel() { g_toastUntil = GetTickCount64() + 4000; if (g_uiSrv) { g_uiSrv->Release(); g_uiSrv = nullptr; } }      // rebuilt at the next draw
+static void DrawPanel(ID3D11RenderTargetView* rtv, UINT w, UINT h) {
+    if (GetTickCount64() > g_toastUntil || g_list.size() < 1) return;
+    if (!g_uiSrv) BuildPanel(h);
+    if (!g_uiSrv) return;
+    int x = (int)(w / 64), y = (int)(h / 40);
+    FrameCB fc = {}; fc.depthp[0] = (float)x; fc.depthp[1] = (float)y; g_ctx->UpdateSubresource(g_cbFrame, 0, nullptr, &fc, 0, 0);
+    D3D11_VIEWPORT vp = {(float)x, (float)y, (float)g_uiW, (float)g_uiH, 0, 1};
+    g_ctx->OMSetRenderTargets(1, &rtv, nullptr); g_ctx->RSSetViewports(1, &vp); g_ctx->RSSetState(g_rs); g_ctx->OMSetBlendState(g_blendAlpha, nullptr, 0xffffffff); g_ctx->OMSetDepthStencilState(g_dss, 0);
+    g_ctx->IASetInputLayout(nullptr); g_ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST); g_ctx->VSSetShader(g_vsFull, nullptr, 0); g_ctx->PSSetShader(g_psUi, nullptr, 0);
+    g_ctx->PSSetConstantBuffers(0, 1, &g_cbFrame); g_ctx->PSSetShaderResources(3, 1, &g_uiSrv);
+    g_ctx->GSSetShader(nullptr, nullptr, 0); g_ctx->HSSetShader(nullptr, nullptr, 0); g_ctx->DSSetShader(nullptr, nullptr, 0);
+    g_ctx->Draw(3, 0);
+    ID3D11ShaderResourceView* z = nullptr; g_ctx->PSSetShaderResources(3, 1, &z);
+}
+struct PanelAtExit { ID3D11RenderTargetView* rtv; UINT w, h; ~PanelAtExit() { if (g_ready) DrawPanel(rtv, w, h); } };
+// Applies a pending selection (render thread). Returns true if the model changed.
+static void ApplySelection() {
+    LONG d = InterlockedExchange(&g_selReq, 0); int n = (int)g_list.size();
+    if (InterlockedExchange(&g_selNamed, 0)) { for (int i = 0; i < n; i++) if (!_stricmp(g_list[i].name.c_str(), g_selName)) { d = 0; int old = g_cur; g_cur = i; if (i != old && !LoadCurrent()) g_cur = old; ShowPanel(); return; } Log("model: no such model"); return; }
+    if (!d || n < 2) { if (d) ShowPanel(); return; }
+    int old = g_cur; g_cur = ((g_cur + (int)d) % n + n) % n;
+    if (!LoadCurrent()) { g_cur = old; }
+    ShowPanel();
+}
+
+bool ModelGpuInit(ID3D11Device* dev, ID3D11DeviceContext* ctx) {
+    if (g_tried) return g_ready;
+    g_tried = true; g_dev = dev; g_ctx = ctx;
+    const Cfg& cfg = GetCfg();
+    if (cfg.modelPath.empty()) { Log("model: off (model=none), flat puppet"); return false; }
+    BuildList(); if (g_list.empty()) return Fail("model: no model file found, flat puppet");
 
     typedef HRESULT(WINAPI* CompileFn)(LPCVOID, SIZE_T, LPCSTR, const D3D_SHADER_MACRO*, ID3DInclude*, LPCSTR, LPCSTR, UINT, UINT, ID3DBlob**, ID3DBlob**);
     HMODULE c = LoadLibraryA("d3dcompiler_47.dll"); CompileFn compile = c ? (CompileFn)GetProcAddress(c, "D3DCompile") : nullptr;
@@ -106,6 +210,8 @@ bool ModelGpuInit(ID3D11Device* dev, ID3D11DeviceContext* ctx) {
     if (FAILED(compile(kHlsl, strlen(kHlsl), "model", nullptr, nullptr, "VSFull", "vs_5_0", 0, 0, &fvb, &eb)) || FAILED(compile(kHlsl, strlen(kHlsl), "model", nullptr, nullptr, "PSDepth", "ps_5_0", 0, 0, &fpb, &eb))) return Fail("model: depth view shaders failed");
     ID3DBlob* ppb = nullptr; if (FAILED(compile(kHlsl, strlen(kHlsl), "model", nullptr, nullptr, "PSProbe", "ps_5_0", 0, 0, &ppb, &eb))) return Fail("model: probe shader failed");
     dev->CreatePixelShader(ppb->GetBufferPointer(), ppb->GetBufferSize(), nullptr, &g_psProbe);
+    ID3DBlob* upb = nullptr; if (FAILED(compile(kHlsl, strlen(kHlsl), "model", nullptr, nullptr, "PSUi", "ps_5_0", 0, 0, &upb, &eb))) return Fail(eb ? (const char*)eb->GetBufferPointer() : "model: UI shader failed");
+    dev->CreatePixelShader(upb->GetBufferPointer(), upb->GetBufferSize(), nullptr, &g_psUi);
     dev->CreateVertexShader(fvb->GetBufferPointer(), fvb->GetBufferSize(), nullptr, &g_vsFull); dev->CreatePixelShader(fpb->GetBufferPointer(), fpb->GetBufferSize(), nullptr, &g_psDepth);
     dev->CreatePixelShader(psb->GetBufferPointer(), psb->GetBufferSize(), nullptr, &g_ps);
     static_assert(sizeof(wm::Vertex) == 52, "vertex layout");
@@ -114,22 +220,9 @@ bool ModelGpuInit(ID3D11Device* dev, ID3D11DeviceContext* ctx) {
         {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 24, D3D11_INPUT_PER_VERTEX_DATA, 0}, {"BLENDINDICES", 0, DXGI_FORMAT_R8G8B8A8_UINT, 0, 32, D3D11_INPUT_PER_VERTEX_DATA, 0},
         {"BLENDWEIGHT", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 36, D3D11_INPUT_PER_VERTEX_DATA, 0}};
     if (FAILED(dev->CreateInputLayout(il, 5, vsb->GetBufferPointer(), vsb->GetBufferSize(), &g_layout))) return Fail("model: input layout failed");
-    D3D11_BUFFER_DESC bd = {}; D3D11_SUBRESOURCE_DATA sd = {};
-    bd.ByteWidth = (UINT)(g_model.verts.size() * sizeof(wm::Vertex)); bd.BindFlags = D3D11_BIND_VERTEX_BUFFER; sd.pSysMem = g_model.verts.data();
-    if (FAILED(dev->CreateBuffer(&bd, &sd, &g_vb))) return Fail("model: vertex buffer failed");
-    bd.ByteWidth = (UINT)(g_model.idx.size() * 4); bd.BindFlags = D3D11_BIND_INDEX_BUFFER; sd.pSysMem = g_model.idx.data();
-    if (FAILED(dev->CreateBuffer(&bd, &sd, &g_ib))) return Fail("model: index buffer failed");
+    D3D11_BUFFER_DESC bd = {};
     bd.ByteWidth = sizeof(FrameCB); bd.BindFlags = D3D11_BIND_CONSTANT_BUFFER; if (FAILED(dev->CreateBuffer(&bd, nullptr, &g_cbFrame))) return Fail("model: cb failed");
     bd.ByteWidth = wm::kMaxJoints * 64; if (FAILED(dev->CreateBuffer(&bd, nullptr, &g_cbBones))) return Fail("model: bone cb failed");
-    // texture (a 1x1 white one when the model has none), with mip maps
-    uint32_t white = 0xFFFFFFFF; int tw = g_model.texW ? g_model.texW : 1, th = g_model.texW ? g_model.texH : 1; const void* px = g_model.texW ? (const void*)g_model.rgba.data() : &white;
-    D3D11_TEXTURE2D_DESC td = {}; td.Width = tw; td.Height = th; td.MipLevels = 0; td.ArraySize = 1; td.Format = DXGI_FORMAT_R8G8B8A8_UNORM; td.SampleDesc.Count = 1;
-    td.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET; td.MiscFlags = D3D11_RESOURCE_MISC_GENERATE_MIPS;
-    ID3D11Texture2D* tx = nullptr;
-    if (FAILED(dev->CreateTexture2D(&td, nullptr, &tx))) return Fail("model: texture failed");
-    ctx->UpdateSubresource(tx, 0, nullptr, px, tw * 4, 0);
-    if (FAILED(dev->CreateShaderResourceView(tx, nullptr, &g_tex))) return Fail("model: texture view failed");
-    ctx->GenerateMips(g_tex); tx->Release();
     D3D11_SAMPLER_DESC ss = {}; ss.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR; ss.AddressU = ss.AddressV = ss.AddressW = D3D11_TEXTURE_ADDRESS_WRAP; ss.MaxLOD = D3D11_FLOAT32_MAX; ss.MaxAnisotropy = 1;
     dev->CreateSamplerState(&ss, &g_samp);
     D3D11_RASTERIZER_DESC rd = {}; rd.FillMode = D3D11_FILL_SOLID; rd.CullMode = D3D11_CULL_NONE; rd.DepthClipEnable = TRUE; dev->CreateRasterizerState(&rd, &g_rs);
@@ -137,9 +230,8 @@ bool ModelGpuInit(ID3D11Device* dev, ID3D11DeviceContext* ctx) {
     D3D11_BLEND_DESC bl = {}; bl.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL; dev->CreateBlendState(&bl, &g_blend);
     bl.RenderTarget[0].BlendEnable = TRUE; bl.RenderTarget[0].SrcBlend = D3D11_BLEND_SRC_ALPHA; bl.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_ALPHA; bl.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
     bl.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ZERO; bl.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ONE; bl.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD; dev->CreateBlendState(&bl, &g_blendAlpha);
-    g_ready = g_vs && g_ps && g_layout && g_vb && g_ib && g_cbFrame && g_cbBones && g_tex && g_samp && g_rs && g_dss && g_blend && g_blendAlpha && g_vsFull && g_psDepth && g_psProbe;
-    char m[240]; snprintf(m, sizeof m, "model: loaded %zu vertices, %zu triangles, %zu joints, %zu clips, texture %dx%d, bind height %.2f scaled to %.2f", g_model.verts.size(), g_model.idx.size() / 3, g_model.joints.size(), g_model.clips.size(), g_model.texW, g_model.texH, g_model.bmax[1] - g_model.bmin[1], g_height);
-    Log(m);
+    g_ready = g_vs && g_ps && g_layout && g_cbFrame && g_cbBones && g_samp && g_rs && g_dss && g_blend && g_blendAlpha && g_vsFull && g_psDepth && g_psProbe && g_psUi;
+    if (g_ready && !LoadCurrent()) g_ready = false;
     return g_ready;
 }
 
@@ -176,6 +268,8 @@ static void RunProbe(UINT w, UINT h, ID3D11ShaderResourceView* sceneSrv, bool ms
 
 bool ModelGpuDraw(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Cam& cam, bool valid, unsigned seq, const float pos[3], float yaw) {
     if (!g_ready) return false;
+    if (!GetCfg().noModelSelect) ApplySelection(); else InterlockedExchange(&g_selReq, 0);
+    PanelAtExit panel{rtv, w, h};
     static unsigned s_frames; g_stats.frames = ++s_frames;
     g_avatar->Update(GetTickCount64(), valid, seq, pos, yaw);
     g_stats.drawn = false;
@@ -225,5 +319,5 @@ bool ModelGpuDraw(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Cam& ca
 
 void ModelGpuLogStats() {
     ModelDrawStats s = ModelGpuStats(); char m[200];
-    snprintf(m, sizeof m, "modelstat: visible_px %u drawn %d clip %d speed %.2f anim %.3f frames %u pos %.2f %.2f %.2f cam %.2f %.2f %.2f", s.visiblePixels, (int)s.drawn, s.clip, s.speed, s.animTime, s.frames, s.pos[0], s.pos[1], s.pos[2], s.cam[0], s.cam[1], s.cam[2]); Log(m);
+    snprintf(m, sizeof m, "modelstat: visible_px %u drawn %d clip %d speed %.2f anim %.3f frames %u model %s %d/%d pos %.2f %.2f %.2f cam %.2f %.2f %.2f", s.visiblePixels, (int)s.drawn, s.clip, s.speed, s.animTime, s.frames, g_list.empty() ? "-" : g_list[g_cur].name.c_str(), g_cur + 1, (int)g_list.size(), s.pos[0], s.pos[1], s.pos[2], s.cam[0], s.cam[1], s.cam[2]); Log(m);
 }

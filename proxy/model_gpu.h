@@ -15,3 +15,5 @@ ModelDrawStats ModelGpuStats();
 void ModelGpuRequestProbe();      // the next frame logs the scene depth at a few pixels (witness_cmd.txt: probe)
 void ModelGpuLogStats();               // witness_cmd.txt: modelstat -> one log line: pixels of the model that survived the depth test (GPU occlusion query), clip, speed
 void ModelGpuDepthView(bool on);          // witness_cmd.txt: depthview on|off (diagnostic: draw the game's depth buffer instead of the model)
+void ModelGpuSelect(int delta);        // F6 (-1) / F7 (+1): next model; takes effect at the next frame
+void ModelGpuSelectName(const char* name);   // witness_cmd.txt: model <name>
