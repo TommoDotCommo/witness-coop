@@ -66,6 +66,7 @@ def scenario(mutant):
         client.start()
         qa.wait(lambda: client.net()['ready'], 'real world reached stable gate', 180)
         state = client.state()
+        assert '0x64' not in state['panels'] and '0x34eda' not in state['doors'], 'bot precondition failed: panel and door must start incomplete'
         panels = [0x64] + sorted(int(k,16) for k in state['power_src'] if k not in state['panels'] and k != '0x64')[:7]
         origin = list(map(float, qa.probe('wcam.py', client.pid).split()))[:3]
         tmp = root / 'start.tmp'

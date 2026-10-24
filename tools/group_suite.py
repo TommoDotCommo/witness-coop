@@ -124,6 +124,8 @@ def run():
                 if any(r['age_ms']>2500 for r in remotes):return False
             return True
         wait(poses,'every client sees every other pose and submits every avatar')
+        before_bot=clients[0].state()
+        assert '0x64' not in before_bot['panels'] and '0x34eda' not in before_bot['doors'], 'bot precondition failed: panel and door must start incomplete'
         # A real input-driven solve proves the normal gameplay -> detector -> group path.
         print(probe('wbot.py',clients[0].pid,win(str(clients[0].directory)),timeout=120),flush=True)
         wait(lambda:all('0x64' in c.state()['panels'] and '0x34eda' in c.state()['doors'] for c in clients),'bot solve and tutorial door reach every world')

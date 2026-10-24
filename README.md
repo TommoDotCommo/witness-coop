@@ -67,6 +67,8 @@ as well (B's `local/witness-2/witness_proxy.log` says `remote panel 0x64 applied
 The `coop16` branch adds a configured full mesh of up to 16 players: independent reliable streams and ACKs,
 all remote poses and avatars, player selection on the map, and shared panel, door, panel-power and cable state.
 Group cable mutations carry logical versions so concurrent changes and old snapshots converge consistently.
+Detection follows the requested power level while the cable glow fades; a genuine local reversal is still sent during
+a remote echo-guard window. New commands are detected before restart snapshots are built.
 The original two-player `peer=<port>` configuration still uses protocol v4. Group mode uses v5; every member must
 use the group DLL and list every other member, with distinct player IDs and UDP endpoints.
 
@@ -90,7 +92,7 @@ Group partner video displays the lowest-ID remote player's stream. Avatar choice
 
 Validation so far: the eight-player game-free test covers lossy links, reordering, duplicates, independent ACKs,
 a temporarily unreachable receiver, progression from every player, all remote poses, cable conflicts and a peer restart.
-Four group mutants must fail, including recovery after 4,200 changes while one receiver is unreachable. `python3 tools/test_group_config.py` checks the 16-entry roster capacity and invalid rosters.
+Five group mutants must fail, including recovery after 4,200 changes while one receiver is unreachable. `python3 tools/test_group_config.py` checks the 16-entry roster capacity and invalid rosters.
 The production Windows UDP layer also passed an eight-client fake-world integration test with 25% loss,
 cable on/off and a restarted client (`make -C proxy/core transport-test`; no game or lab slots).
 A two-real-game group run passed a normal input-driven bot solve, door sync, progress originating on both clients,

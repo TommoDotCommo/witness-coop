@@ -214,7 +214,7 @@ void SyncCore::baseline(bool full) {
         if (full && o) emit(EV_DOOR_OPENED, id, true);
     }
     for (unsigned id : cables_) {
-        bool lit = w_->entityExists(id) && w_->cableLit(id);
+        bool lit = w_->entityExists(id) && (fixedRoster_ && !f_.noGroupCableIntent ? w_->cableRequested(id) : w_->cableLit(id));
         if (lit) knownCable_.insert(id); else knownCable_.erase(id);
         if (full && lit && !f_.noCableSync) emit(EV_CABLE_LIT, id, true);
         if (full && !lit && !f_.noCableSync && !f_.noCableOff && !f_.noOffSnapshot && everOff_.count(id)) emit(EV_CABLE_OFF, id, true);   // a default-lit cable that was switched off
@@ -236,6 +236,7 @@ bool SyncCore::reloadSeen(uint64_t now) {   // doors do not close and one panel 
 
 void SyncCore::pollState(uint64_t now) {
     Guard g(h_);
+    const bool groupIntent = fixedRoster_ && !f_.noGroupCableIntent;
     if (!gateStarted_) { gateStarted_ = true; nextGate_ = now + 3000; }
     if (!ready_) {
         // Wait until the world is stable: camera valid, and the same panel/door counts AND the same set of solved panels and open
@@ -269,7 +270,7 @@ void SyncCore::pollState(uint64_t now) {
         return;
     }
     if (now >= nextScan_) { nextScan_ = now + 3000; if (scanWorld()) { log("state: entity table changed, new baseline"); baseline(false); } }
-    if (resync_) { resync_ = false; baseline(true); log("state: full state queued for the peer"); }
+    if (resync_ && !groupIntent) { resync_ = false; baseline(true); log("state: full state queued for the peer"); }
     for (unsigned id : panels_) {
         if (!w_->entityExists(id)) continue;
         bool s = w_->panelSolved(id); bool known = knownPanel_.count(id) != 0;
@@ -292,9 +293,13 @@ void SyncCore::pollState(uint64_t now) {
     }
     for (unsigned id : cables_) {      // same rules as panel power: a cable that lights during start-up is folded into the baseline
         if (!w_->entityExists(id)) continue;
-        bool lit = w_->cableLit(id), known = knownCable_.count(id) != 0;
+        bool lit = groupIntent ? w_->cableRequested(id) : w_->cableLit(id);
+        bool known = knownCable_.count(id) != 0;
         auto sp = suppressCable_.find(id);
         bool suppressed = sp != suppressCable_.end() && now < sp->second;
+        // The render-thread applier already updated knownCable_ to the remote requested level. A different
+        // requested level is a new local command, even during the echo guard; brightness fading is not.
+        if (groupIntent && lit != known) suppressed = false;
         bool cascade = anyLocalSolve_ && now < lastLocalSolveAt_ + kCascadeMs;
         if (lit && !known && !suppressed && !(now < settleUntil_ && !cascade) && !f_.noCableSync) {
             emit(EV_CABLE_LIT, id, false); st_.emittedCables++;
@@ -317,6 +322,8 @@ void SyncCore::pollState(uint64_t now) {
         if (o && !known) { knownDoor_.insert(id); emit(EV_DOOR_OPENED, id, false); st_.emittedDoors++; char l[100]; std::snprintf(l, sizeof l, "state: local door %#x opened -> event", id); log(l); }
         else if (!o) knownDoor_.erase(id);
     }
+    // Detect new commands before a snapshot can fold them into the baseline with an older version.
+    if (resync_ && groupIntent) { resync_ = false; baseline(true); log("state: full state queued for the peer"); }
     if (now >= nextStats_) {
         nextStats_ = now + 10000;
         char l[320]; std::snprintf(l, sizeof l, "state: emitted panels %u doors %u, applied panels %u doors %u | net sent %u resent %u in-order %u dup %u ooo %u acked %u | power emitted %u applied %u | cable emitted %u applied %u",
@@ -343,8 +350,8 @@ void SyncCore::applyRemote(uint64_t now) {
             auto known = cableVersion_.find(r.entity);
             if (known != cableVersion_.end() && r.version <= known->second) continue;
             bool on = r.kind == EV_CABLE_LIT;
-            if ((on ? !w_->cableLit(r.entity) : w_->cableRequested(r.entity)) &&
-                !(on ? w_->applyCableLit(r.entity) : w_->applyCableOff(r.entity))) {
+            bool needsApply = f_.noGroupCableIntent ? (on ? !w_->cableLit(r.entity) : w_->cableRequested(r.entity)) : w_->cableRequested(r.entity) != on;
+            if (needsApply && !(on ? w_->applyCableLit(r.entity) : w_->applyCableOff(r.entity))) {
                 if (!f_.noApplyRetry) recvQ_.push_back(r);
                 continue;
             }

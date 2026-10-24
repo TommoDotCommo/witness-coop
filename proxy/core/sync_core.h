@@ -54,6 +54,7 @@ struct Flags {   // all off by default
     bool noCableArbiter = false; // twin: no tie-break when both players switch the same cable at the same moment
     bool noBacklogReset = false; // twin: silently discard new events when an absent peer fills the outbox
     bool noIndependentBudget = false; // twin: one absent peer stalls every other peer after 32 events
+    bool noGroupCableIntent = false; // twin: glow/echo bookkeeping hides a genuine new cable command
     bool noGroupVersions = false; // twin: use the two-player cable arbiter in a group
     bool noReloadSync = false;  // twin: ignore a same-process save reload (no re-gate, no resync with the peer)
 };

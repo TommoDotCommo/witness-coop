@@ -52,19 +52,20 @@ int main(int argc,char** argv){
         if(std::fscanf(spec,"%f %f %f",&world.origin[0],&world.origin[1],&world.origin[2])!=3)return 2;
         std::fclose(spec);world.hybrid=true;
     }
-    CoopStart(); uint64_t begin=GetTickCount64(),report=0;bool lit=false,off=false;
+    CoopStart(); uint64_t begin=GetTickCount64(),report=0;bool lit=false,off=false,rapidOff=false;
     for(;;){
         uint64_t now=GetTickCount64(),age=now-begin;
         auto* core=CoopCore();
         if(core){
             if(age>=30000&&!lit){world.panels[world.player]=true;world.powers[world.player]=true;world.doors[world.player]=true;world.cables[world.player]=true;lit=true;}
-            if(age>=37000&&!off){world.cables[world.player]=false;off=true;}
+            if(!world.hybrid && world.player==2 && age>=31000 && !rapidOff && world.cables[1]) { world.cables[1]=false; rapidOff=true; }
+            if(age>=37000&&!off){if(world.hybrid||world.player!=1)world.cables[world.player]=false;off=true;} // client 1 must not rescue a lost remote reversal
             core->pollState(now);core->applyRemote(now);
             if(now>=report){report=now+500;
                 unsigned solved=0,doors=0,power=0,cables=0;
                 for(unsigned i=1;i<=8;++i){solved+=world.panels[i];doors+=world.doors[i];power+=world.powers[i];cables+=world.cables[i];}
                 FILE* f=std::fopen("transport.json.tmp","w");if(!f)return 3;
-                std::fprintf(f,"{\"id\":%u,\"ready\":%s,\"panels\":%u,\"doors\":%u,\"power\":%u,\"lit\":%u,\"poses\":%zu,\"unacked\":%zu,\"queued\":%zu}\n",world.player,core->ready()?"true":"false",solved,doors,power,cables,CoopGetRemotes().size(),core->unacked(),core->queuedRemote());
+                std::fprintf(f,"{\"id\":%u,\"ready\":%s,\"panels\":%u,\"doors\":%u,\"power\":%u,\"lit\":%u,\"shared\":%u,\"rapid_off\":%s,\"poses\":%zu,\"unacked\":%zu,\"queued\":%zu}\n",world.player,core->ready()?"true":"false",solved,doors,power,cables,unsigned(world.cables[1]),rapidOff?"true":"false",CoopGetRemotes().size(),core->unacked(),core->queuedRemote());
                 std::fclose(f);MoveFileExA("transport.json.tmp","transport.json",MOVEFILE_REPLACE_EXISTING);
                 CoopDumpStatus();
             }

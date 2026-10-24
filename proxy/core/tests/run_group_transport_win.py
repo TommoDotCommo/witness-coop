@@ -49,8 +49,19 @@ try:
         (d/'witness_coop.cfg').write_text(cfg)
     for i in range(8):
         reservations[i].close();clients.append(start(i))
+    # Client 2 reverses client 1's cable within its five-second remote echo window.
+    deadline=time.monotonic()+36
+    while time.monotonic()<deadline:
+        if any(p.poll() is not None for p in clients): raise RuntimeError('fixture exited during rapid-reversal stage')
+        try:
+            data=reports()
+            if data[1]['rapid_off'] and all(d['shared']==0 for d in data):break
+        except (OSError,ValueError):pass
+        time.sleep(.2)
+    else: raise RuntimeError('rapid local reversal was suppressed or did not reach all eight clients')
+    print('PASS production UDP rapid local reversal during remote echo guard reaches all eight clients',flush=True)
     # The first full convergence may precede the cable-on stage: wait until each local toggle has happened.
-    time.sleep(40)
+    time.sleep(8)
     wait_all('eight production UDP clients: config, all-player progress, poses, cable on/off, 25% loss and drained queues',40)
     clients[-1].terminate();clients[-1].wait(timeout=10)
     clients[-1]=start(7)
