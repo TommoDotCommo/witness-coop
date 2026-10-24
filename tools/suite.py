@@ -48,8 +48,14 @@ def real_saves():
 def fps(which, secs=4):
     return float(pyw('wfps.py', pid(which), str(secs)).strip() or 0)
 
-def state(which):
-    return json.loads(pyw('wstatedump.py', pid(which)))
+def state(which, patience=90):
+    """One game's state dump. A game that is still loading has no entity table yet and prints nothing: retry for a while instead of crashing the suite."""
+    t0 = time.time()
+    while True:
+        out = pyw('wstatedump.py', pid(which)).strip()
+        if out.startswith('{'): return json.loads(out.splitlines()[-1])
+        if time.time() - t0 > patience: raise RuntimeError('game %s has no readable world after %ds' % (which, patience))
+        time.sleep(3)
 
 def restart_catchup(ca, cb, mutant, include_power=False, expected=None):
     """Discard B's world after the live solve has already been delivered and ACKed.
