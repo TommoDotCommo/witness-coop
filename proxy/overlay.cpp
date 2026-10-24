@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <cmath>
 #include <cstring>
+#include <algorithm>
 
 void Log(const char* msg);   // from ansel_proxy.cpp
 extern HWND g_gameWnd;       // hooks.cpp
@@ -24,11 +25,13 @@ static const float kVFovDeg = 60.0f;                 // calibrated: horizontal ~
 #include "input.h"
 #include "ui.h"
 #include "devmenu.h"
+#include "video.h"
 
 typedef HRESULT(STDMETHODCALLTYPE* PresentFn)(IDXGISwapChain*, UINT, UINT);
 static PresentFn g_origPresent;
 static volatile LONG g_frames;
 static bool g_ready, g_failed, g_uiReady;
+ID3D11Device* g_videoDev; ID3D11DeviceContext* g_videoCtx;
 static ID3D11Device* g_dev; static ID3D11DeviceContext* g_ctx;
 static ID3D11VertexShader* g_vs; static ID3D11PixelShader* g_ps; static ID3D11Buffer* g_cb;
 static ID3D11BlendState* g_blend; static ID3D11RasterizerState* g_rs; static ID3D11DepthStencilState* g_ds;
@@ -113,7 +116,8 @@ static bool InitResources(IDXGISwapChain* sc) {
     DXGI_SWAP_CHAIN_DESC sd; sc->GetDesc(&sd);
     char m[200]; snprintf(m, sizeof m, "overlay: resources ready, backbuffer %ux%u fmt %d", sd.BufferDesc.Width, sd.BufferDesc.Height, (int)sd.BufferDesc.Format);
     Log(m);
-    if (DevMenuEnabled()) g_uiReady = UiInit(g_dev, g_ctx);
+    g_videoDev = g_dev; g_videoCtx = g_ctx;
+    if (DevMenuEnabled() || VideoEnabled()) g_uiReady = UiInit(g_dev, g_ctx);
     return g_vs && g_ps && g_cb && g_blend && g_rs && g_ds;
 }
 
@@ -187,10 +191,18 @@ static void InstallDevWndProc(HWND w) {
 static void DrawDevMenu(IDXGISwapChain* sc) {
     if (!g_uiReady) return;
     DevMenuTick();
-    if (!DevMenuOpen() && !DevMenuToastWanted()) return;
+    if (!DevMenuOpen() && !DevMenuToastWanted() && !VideoViewMode()) return;
     ID3D11Texture2D* bb = nullptr; if (FAILED(sc->GetBuffer(0, __uuidof(ID3D11Texture2D), (void**)&bb))) return;
     D3D11_TEXTURE2D_DESC td; bb->GetDesc(&td); ID3D11RenderTargetView* rtv = nullptr;
-    if (SUCCEEDED(g_dev->CreateRenderTargetView(bb, nullptr, &rtv))) { UiBegin((float)td.Width, (float)td.Height); if (DevMenuOpen()) DevMenuDraw((float)td.Width, (float)td.Height); else DevMenuToast((float)td.Width, (float)td.Height); UiEnd(rtv); rtv->Release(); }
+    if (SUCCEEDED(g_dev->CreateRenderTargetView(bb, nullptr, &rtv))) { UiBegin((float)td.Width, (float)td.Height); if (DevMenuOpen()) DevMenuDraw((float)td.Width, (float)td.Height); else DevMenuToast((float)td.Width, (float)td.Height);
+        if (VideoViewMode()) {      // the partner's screen, in a corner (F9: small, large, off)
+            int vw = 0, vh = 0; unsigned long age = 0; ID3D11ShaderResourceView* srv = VideoRemoteSrv(&vw, &vh, &age);
+            float k = (VideoViewMode() == 2 ? 2.0f : 1.0f) * std::max(1.f, td.Height / 1080.f), iw = (vw ? vw : 480) * k, ih = (vh ? vh : 270) * k, x = td.Width - iw - 14, y = 14;
+            UiRect(x - 3, y - 3, iw + 6, ih + 6 + UiLineHeight(0.85f), Rgba(0, 0, 0, 0.8f));
+            if (srv) UiImage(x, y, iw, ih, srv); else UiText(x + 10, y + ih / 2 - 10, "waiting for the other player's picture", Rgba(1, 0.8f, 0.5f), 0.9f);
+            char b[80]; snprintf(b, sizeof b, "other player's view%s", srv ? (age > 2000 ? "  (stale)" : "") : ""); UiText(x + 2, y + ih + 2, b, Rgba(1, 0.6f, 0.2f), 0.85f);
+        }
+        UiEnd(rtv); rtv->Release(); }
     bb->Release();
 }
 
@@ -201,7 +213,7 @@ static HRESULT STDMETHODCALLTYPE HookPresent(IDXGISwapChain* sc, UINT sync, UINT
     if (f == 1) Log("overlay: Present hook called (first frame)");
     if (!g_ready && !g_failed) { g_ready = InitResources(sc); g_failed = !g_ready; }
     if (g_ready) DrawMarkers(sc);
-    if (g_ready && g_uiReady) DrawDevMenu(sc);
+    if (g_ready && g_uiReady) { VideoFrame(sc, g_dev, g_ctx); DrawDevMenu(sc); }      // the picture for the partner is taken before the menu and the inset are drawn
     if (GetCfg().forceActive) {   // build 11370412: the game's focus state is byte +0x21 of the object at exe+0x469A5B0; its loop does
         // Sleep(100) (about 10 fps) when this and the byte at exe+0x62D394 are both 0, and it ignores WM_INPUT while it is 0
         uintptr_t base = (uintptr_t)GetModuleHandleA(nullptr), p = IsBadReadPtr((void*)(base + 0x469A5B0), 8) ? 0 : *(uintptr_t*)(base + 0x469A5B0);

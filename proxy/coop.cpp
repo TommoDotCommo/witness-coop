@@ -15,6 +15,9 @@ extern HMODULE g_selfModule();
 
 static CRITICAL_SECTION g_lock; static bool g_lockInit;
 static witness::SyncCore* g_core;
+static SOCKET g_sock = INVALID_SOCKET; static sockaddr_in g_peerAddr; static bool g_peerSet;
+void CoopSendRaw(const uint8_t* d, size_t n) { if (g_sock != INVALID_SOCKET && g_peerSet) sendto(g_sock, (const char*)d, (int)n, 0, (sockaddr*)&g_peerAddr, sizeof g_peerAddr); }
+void VideoOnPacket(const uint8_t* data, size_t n);
 
 witness::SyncCore* CoopCore() { return g_core; }
 bool CoopGetRemote(RemotePose* out) {
@@ -55,6 +58,7 @@ static DWORD WINAPI NetThread(LPVOID) {
     if (bind(s, (sockaddr*)&me, sizeof me) != 0) { char m[100]; snprintf(m, sizeof m, "coop: bind %d failed (%d)", listenPort, WSAGetLastError()); Log(m); return 0; }
     u_long nb = 1; ioctlsocket(s, FIONBIO, &nb);
     sockaddr_in peer = {}; peer.sin_family = AF_INET; peer.sin_addr.s_addr = inet_addr(host); peer.sin_port = htons((u_short)peerPort);
+    g_sock = s; g_peerAddr = peer; g_peerSet = true;
     char m[160]; snprintf(m, sizeof m, "coop: id=%d listening %d, sending to %s:%d", id, listenPort, host, peerPort); Log(m);
 
     witness::Hooks h;
@@ -69,8 +73,8 @@ static DWORD WINAPI NetThread(LPVOID) {
     for (;;) {
         uint64_t now = GetTickCount64();
         core->tick(now);
-        uint8_t buf[128]; int n;
-        while ((n = recv(s, (char*)buf, sizeof buf, 0)) > 0) core->onPacket(buf, (size_t)n, now);
+        uint8_t buf[1500]; int n;
+        while ((n = recv(s, (char*)buf, sizeof buf, 0)) > 0) { if (n > 128) VideoOnPacket(buf, (size_t)n); else core->onPacket(buf, (size_t)n, now); }
         Sleep(2);
     }
 }

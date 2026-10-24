@@ -21,12 +21,13 @@ struct VI { float2 p : POSITION; float2 t : TEXCOORD; float4 c : COLOR; };
 struct O { float4 p : SV_POSITION; float2 t : TEXCOORD; float4 c : COLOR; };
 O VS(VI i) { O o; o.p = float4(i.p.x / scr.x * 2 - 1, 1 - i.p.y / scr.y * 2, 0, 1); o.t = i.t; o.c = i.c; return o; }
 float4 PS(O i) : SV_TARGET { float a = tex.Sample(smp, i.t).r; return float4(i.c.rgb, i.c.a * a); }
+float4 PSI(O i) : SV_TARGET { return tex.Sample(smp, i.t) * i.c; }
 )";
 struct Vtx { float x, y, u, v; uint32_t c; };
-struct Seg { size_t first; bool clip; D3D11_RECT r; };
+struct Seg { size_t first; bool clip; D3D11_RECT r; ID3D11ShaderResourceView* img; };
 
 ID3D11Device* g_dev; ID3D11DeviceContext* g_ctx;
-ID3D11VertexShader* g_vs; ID3D11PixelShader* g_ps; ID3D11InputLayout* g_il; ID3D11Buffer *g_vb, *g_cb;
+ID3D11VertexShader* g_vs; ID3D11PixelShader *g_ps, *g_psi; ID3D11InputLayout* g_il; ID3D11Buffer *g_vb, *g_cb;
 ID3D11ShaderResourceView* g_srv; ID3D11SamplerState* g_smp; ID3D11BlendState* g_blend; ID3D11RasterizerState* g_rs; ID3D11DepthStencilState* g_ds;
 const size_t kMaxVerts = 60000;
 std::vector<Vtx> g_v; std::vector<Seg> g_seg; float g_w = 1, g_h = 1; bool g_ok;
@@ -73,6 +74,8 @@ bool UiInit(ID3D11Device* dev, ID3D11DeviceContext* ctx) {
     if (FAILED(compile(kHlsl, strlen(kHlsl), "ui", nullptr, nullptr, "PS", "ps_5_0", 0, 0, &psb, &err))) { Log("ui: PS compile failed"); return false; }
     dev->CreateVertexShader(vsb->GetBufferPointer(), vsb->GetBufferSize(), nullptr, &g_vs);
     dev->CreatePixelShader(psb->GetBufferPointer(), psb->GetBufferSize(), nullptr, &g_ps);
+    ID3DBlob* pib = nullptr; if (FAILED(compile(kHlsl, strlen(kHlsl), "ui", nullptr, nullptr, "PSI", "ps_5_0", 0, 0, &pib, &err))) { Log("ui: PSI compile failed"); return false; }
+    dev->CreatePixelShader(pib->GetBufferPointer(), pib->GetBufferSize(), nullptr, &g_psi);
     D3D11_INPUT_ELEMENT_DESC el[] = {{"POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0},
                                      {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 8, D3D11_INPUT_PER_VERTEX_DATA, 0},
                                      {"COLOR", 0, DXGI_FORMAT_R8G8B8A8_UNORM, 0, 16, D3D11_INPUT_PER_VERTEX_DATA, 0}};
@@ -85,15 +88,22 @@ bool UiInit(ID3D11Device* dev, ID3D11DeviceContext* ctx) {
     rt.SrcBlendAlpha = D3D11_BLEND_ONE; rt.DestBlendAlpha = D3D11_BLEND_INV_SRC_ALPHA; rt.BlendOpAlpha = D3D11_BLEND_OP_ADD; rt.RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL; dev->CreateBlendState(&bl, &g_blend);
     D3D11_RASTERIZER_DESC rd = {}; rd.FillMode = D3D11_FILL_SOLID; rd.CullMode = D3D11_CULL_NONE; rd.ScissorEnable = TRUE; dev->CreateRasterizerState(&rd, &g_rs);
     D3D11_DEPTH_STENCIL_DESC dd = {}; dev->CreateDepthStencilState(&dd, &g_ds);
-    g_ok = g_vs && g_ps && g_il && g_vb && g_cb && g_srv && g_smp && g_blend && g_rs && g_ds;
+    g_ok = g_vs && g_ps && g_psi && g_il && g_vb && g_cb && g_srv && g_smp && g_blend && g_rs && g_ds;
     Log(g_ok ? "ui: ready" : "ui: init failed");
     return g_ok;
 }
 
-void UiBegin(float w, float h) { g_w = w; g_h = h; g_v.clear(); g_seg.clear(); g_seg.push_back({0, false, {}}); }
+void UiBegin(float w, float h) { g_w = w; g_h = h; g_v.clear(); g_seg.clear(); g_seg.push_back({0, false, {}, nullptr}); }
 void UiClip(float x, float y, float w, float h) {
-    Seg s = {g_v.size(), w > 0, {(LONG)x, (LONG)y, (LONG)(x + w), (LONG)(y + h)}};
+    Seg s = {g_v.size(), w > 0, {(LONG)x, (LONG)y, (LONG)(x + w), (LONG)(y + h)}, nullptr};
     if (g_seg.back().first == s.first) g_seg.back() = s; else g_seg.push_back(s);
+}
+void UiImage(float x, float y, float w, float h, ID3D11ShaderResourceView* srv, UiColor tint) {
+    if (!srv || g_v.size() + 6 > kMaxVerts) return;
+    Seg prev = g_seg.back(); Seg a = prev; a.first = g_v.size(); a.img = srv;
+    if (prev.first == a.first) g_seg.back() = a; else g_seg.push_back(a);
+    Quad(x, y, x + w, y + h, 0, 0, 1, 1, Pack(tint));
+    Seg b = prev; b.first = g_v.size(); b.img = nullptr; g_seg.push_back(b);
 }
 void UiRect(float x, float y, float w, float h, UiColor c) { Quad(x, y, x + w, y + h, kWhiteU, kWhiteV, kWhiteU, kWhiteV, Pack(c)); }
 void UiFrame(float x, float y, float w, float h, UiColor c, float t) { UiRect(x, y, w, t, c); UiRect(x, y + h - t, w, t, c); UiRect(x, y + t, t, h - 2 * t, c); UiRect(x + w - t, y + t, t, h - 2 * t, c); }
@@ -141,6 +151,7 @@ void UiEnd(ID3D11RenderTargetView* rtv) {
     for (size_t i = 0; i < g_seg.size(); i++) {
         size_t a = g_seg[i].first, b = i + 1 < g_seg.size() ? g_seg[i + 1].first : g_v.size(); if (b <= a) continue;
         D3D11_RECT r = g_seg[i].clip ? g_seg[i].r : D3D11_RECT{0, 0, (LONG)g_w, (LONG)g_h}; g_ctx->RSSetScissorRects(1, &r);
+        if (g_seg[i].img) { g_ctx->PSSetShader(g_psi, nullptr, 0); g_ctx->PSSetShaderResources(0, 1, &g_seg[i].img); } else { g_ctx->PSSetShader(g_ps, nullptr, 0); g_ctx->PSSetShaderResources(0, 1, &g_srv); }
         g_ctx->Draw((UINT)(b - a), (UINT)a);
     }
 }

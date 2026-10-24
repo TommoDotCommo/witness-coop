@@ -15,6 +15,7 @@
 #include "coop.h"
 #include "game.h"
 #include "config.h"
+#include "video.h"
 
 void Log(const char* msg);
 
@@ -335,7 +336,9 @@ static void Init() { if (!g_csInit) { InitializeCriticalSection(&g_cs); g_csInit
 void DevMenuToggle() { Init(); g_open = !g_open; g_ldown = g_rdown = false; if (g_open) g_built = false; }      // rebuild on open: entities may have been recreated by a load
 void DevMenuSetPage(int p) { Init(); g_page = p; if (!g_open) { g_open = true; g_built = false; } }
 bool DevMenuKey(unsigned vk, bool down) {
-    Init(); if (vk == VK_F8 && down) { DevMenuToggle(); return true; }
+    Init(); if (vk == VK_F9 && down && VideoEnabled()) { VideoToggleView(); return true; }
+    if (!DevMenuEnabled()) return false;
+    if (vk == VK_F8 && down) { DevMenuToggle(); return true; }
     if (vk == VK_F7 && down) { if (g_open && g_page == 1) DevMenuToggle(); else DevMenuSetPage(1); return true; }
     if (!g_open) return false;
     if (down) { EnterCriticalSection(&g_cs); g_ev.push_back({3, (int)vk, 0}); LeaveCriticalSection(&g_cs); }

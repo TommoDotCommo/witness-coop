@@ -7,3 +7,4 @@ bool CoopGetRemote(RemotePose* out);        // latest pose from the peer, with i
 void CoopStart();                           // reads witness_coop.cfg next to the DLL and starts the UDP thread
 witness::SyncCore* CoopCore();              // the sync core; null until the config is read and the socket is bound
 witness::World* GameWorldInstance();        // state.cpp: the core's view of the game's memory
+void CoopSendRaw(const uint8_t* data, size_t n);   // any thread: one datagram to the peer, as is (partner view pictures)

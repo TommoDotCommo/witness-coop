@@ -4,6 +4,7 @@
 #include "input.h"
 #include "config.h"
 #include "devmenu.h"
+#include "video.h"
 
 bool HookImport(const char* dll, const char* fn, void* hook, void** orig);   // hooks.cpp
 void Log(const char* msg);
@@ -92,7 +93,7 @@ typedef BOOL(WINAPI* PeekMessageAFn)(LPMSG, HWND, UINT, UINT, UINT);
 static PeekMessageAFn g_origPeekA;
 static BOOL WINAPI HookPeekMessageA(LPMSG m, HWND w, UINT lo, UINT hi, UINT rm) {
     BOOL r = g_origPeekA(m, w, lo, hi, rm);
-    if (!r || !m || !(rm & PM_REMOVE) || !DevMenuEnabled()) return r;
+    if (!r || !m || !(rm & PM_REMOVE) || !(DevMenuEnabled() || VideoEnabled())) return r;
     bool take = false;
     switch (m->message) {
     case WM_KEYDOWN: case WM_SYSKEYDOWN: take = DevMenuKey((unsigned)m->wParam, true); break;

@@ -201,6 +201,8 @@ SCENARIOS = [   # name, extra cfg for A, extra cfg for B, check(a_stats, b_stats
   ('MUTANT: bot-free effects without snapshot', 'no_off_snapshot=1\nno_snap_reassert=1', '', lambda a, b, ok: (not ok, 'a fresh B must still show the cable lit')),
   ('dev menu', '', '', lambda a, b, ok: (ok and b.get('ep', 9) == 0 and b.get('ecab', 9) == 0, 'the menu teleports, takes the mouse while open, and its solve and cable actions reach B once, without echo')),
   ('MUTANT: dev menu actions without sync', 'no_cable_sync=1', 'no_target_dispatch=1\nno_cable_sync=1', lambda a, b, ok: (not ok, 'B must keep the laser off and the cable dark')),
+  ('partner view', '', '', lambda a, b, ok: (ok, "B receives A's pictures and they show what A sees")),
+  ('MUTANT: partner view without pictures', 'no_partner_video=1', '', lambda a, b, ok: (not ok, 'B must receive no picture')),
   ('MUTANT: panel power chain disabled', 'no_panel_power=1', '', lambda a, b, ok: (not ok, 'target panel must remain dark on B')),
 ]
 args = sys.argv[1:]; shard = None
@@ -228,8 +230,22 @@ while queue:
     chain = 'cable chain' in name
     effects = 'bot-free effects' in name
     devmenu = 'dev menu' in name
+    partner = 'partner view' in name
     maze = chain      # the chain scenario also covers the single maze: its first panel is the one the 'cable maze' scenario used
-    if devmenu:      # everything goes through the dev menu: teleport to a panel, check it owns the mouse while open, solve a laser panel, light a cable
+    if partner:      # B shows what A sees: A goes somewhere with its own look, then B's received picture is compared with A's screenshot
+        def shotfile(d, n): return os.path.join(d, 'shots', n + '.bmp')
+        for d in (DIR1, DIR2):
+            for n in ('a_view', 'b_partner', 'b_own'): shutil.rmtree(shotfile(d, n), ignore_errors=True) if os.path.isdir(shotfile(d, n)) else (os.remove(shotfile(d, n)) if os.path.exists(shotfile(d, n)) else None)
+        pyw('wcmd.py', win(DIR2), 'partner', 'on'); pyw('wtour.py', pid('A'), win(DIR1), win(os.path.join(RUN, 'tourA.txt')), 'go', '4'); time.sleep(5)
+        pyw('wcmd.py', win(DIR1), 'shot', 'a_view'); time.sleep(0.5); pyw('wcmd.py', win(DIR2), 'partnershot', 'b_partner'); pyw('wcmd.py', win(DIR2), 'shot', 'b_own'); time.sleep(1.5)
+        pres = 'missing'
+        if os.path.exists(shotfile(DIR2, 'b_partner')):
+            near = float(pyw('wcompare.py', win(shotfile(DIR1, 'a_view')), win(shotfile(DIR2, 'b_partner'))).strip() or 999)
+            far = float(pyw('wcompare.py', win(shotfile(DIR2, 'b_own')), win(shotfile(DIR2, 'b_partner'))).strip() or 0)
+            print('partner picture vs A screenshot: mean difference %.1f; vs B own screen (control): %.1f' % (near, far), flush=True)
+            pres = 'match' if near < 14 and far > near + 15 else 'mismatch'
+        print('partner result: %s' % pres, flush=True); bot = 'solved: True'
+    elif devmenu:      # everything goes through the dev menu: teleport to a panel, check it owns the mouse while open, solve a laser panel, light a cable
         def cam(): return [float(v) for v in pyw('wcam.py', pid('A')).split()]
         def dm(*steps): return pyw('wmenu.py', win(DIR1), *steps)
         def cmd(*words): return pyw('wcmd.py', win(DIR1), *words)
@@ -299,6 +315,7 @@ while queue:
         if name.startswith('MUTANT:'): cable_ok = all(c in sa['lit_cables'] and c not in sb['lit_cables'] for c in cables) and set(sa['lit_cables']) - set(sb['lit_cables']) == set(cables)
         else: cable_ok = all(c in sa['lit_cables'] for c in cables) and sa['lit_cables'] == sb['lit_cables'] and sa['powered_panels'] == sb['powered_panels']
         ok = ok and solved_ok and cable_ok
+    if partner: ok = pres == ('missing' if name.startswith('MUTANT:') else 'match')
     if devmenu:
         sa, sb = state('A'), state('B')
         if name.startswith('MUTANT:'): ok = bot_ok and sb['lasers']['0x32f9'] != LASER_ON and '0x349' not in sb['lit_cables'] and '0x32f5' in sb['panels']

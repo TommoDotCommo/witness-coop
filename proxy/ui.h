@@ -18,3 +18,4 @@ float UiTextWidth(const char* s, float scale = 1);
 float UiLineHeight(float scale = 1);
 void UiEnd(ID3D11RenderTargetView* rtv);                                         // draw everything queued
 void UiClip(float x, float y, float w, float h);                                 // scissor for the following quads (flushes the batch); w<=0 clears
+void UiImage(float x, float y, float w, float h, ID3D11ShaderResourceView* srv, UiColor tint = {1, 1, 1, 1});   // a whole RGBA texture, stretched into the rectangle

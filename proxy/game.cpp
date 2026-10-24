@@ -9,6 +9,7 @@
 #include "input.h"
 #include "config.h"
 #include "devmenu.h"
+#include "video.h"
 
 void Log(const char* msg);
 void RequestShot(const char* name);
@@ -88,6 +89,8 @@ static DWORD WINAPI CmdThread(LPVOID) {
             char a[16], b[16]; int dx, dy;
             if (sscanf(line, "door %x %f", &id, &amt) >= 1) GameEnqueueDoorOpen(id, amt);
             else if (sscanf(line, "cableoff %x", &id) == 1) GameEnqueueCableOff(id);
+            else if (sscanf(line, "partnershot %15s", a) == 1) VideoSavePartnerShot(a);
+            else if (sscanf(line, "partner %15s", a) == 1) { if (!strcmp(a, "on")) VideoSetMode(1); else if (!strcmp(a, "large")) VideoSetMode(2); else if (!strcmp(a, "off")) VideoSetMode(0); else if (!strcmp(a, "stats")) { unsigned s1, r1, d1; VideoStats(&s1, &r1, &d1); char mm[100]; snprintf(mm, sizeof mm, "video: sent %u received %u decoded %u", s1, r1, d1); Log(mm); } }
             else if (sscanf(line, "menusel %x", &id) == 1) DevMenuCommand("select", id);
             else if (sscanf(line, "menudo %15s", a) == 1) DevMenuCommand(a, 0);
             else if (sscanf(line, "menuat %d %d", &dx, &dy) == 2) DevMenuSetCursor((float)dx, (float)dy);
@@ -95,7 +98,7 @@ static DWORD WINAPI CmdThread(LPVOID) {
             else if (sscanf(line, "cable %x", &id) == 1) GameEnqueueCablePower(id);
             else if (sscanf(line, "solve %x", &id) == 1 || sscanf(line, "dispatch %x", &id) == 1) { Cmd c = {line[0] == 's' ? 5 : 4, id, 0, 0, 0, false, 0, 0, 0}; EnterCriticalSection(&g_lock); if (g_n < 64) g_q[g_n++] = c; LeaveCriticalSection(&g_lock); }
             else if (sscanf(line, "key %15s %15s", a, b) == 2) {       // key W down|up
-                struct { const char* n; unsigned vk, sc; } keys[] = {{"W", 0x57, 0x11}, {"A", 0x41, 0x1E}, {"S", 0x53, 0x1F}, {"D", 0x44, 0x20}, {"SPACE", 0x20, 0x39}, {"ENTER", 0x0D, 0x1C}, {"ESC", 0x1B, 0x01}, {"F7", 0x76, 0x41}, {"F8", 0x77, 0x42}, {"TAB", 0x09, 0x0F}, {"UP", 0x26, 0x48}, {"DOWN", 0x28, 0x50}};
+                struct { const char* n; unsigned vk, sc; } keys[] = {{"W", 0x57, 0x11}, {"A", 0x41, 0x1E}, {"S", 0x53, 0x1F}, {"D", 0x44, 0x20}, {"SPACE", 0x20, 0x39}, {"ENTER", 0x0D, 0x1C}, {"ESC", 0x1B, 0x01}, {"F7", 0x76, 0x41}, {"F8", 0x77, 0x42}, {"TAB", 0x09, 0x0F}, {"F9", 0x78, 0x43}, {"UP", 0x26, 0x48}, {"DOWN", 0x28, 0x50}};
                 for (auto& k : keys) if (!_stricmp(a, k.n)) { Cmd c = {1, 0, 0, k.vk, k.sc, !_stricmp(b, "down"), 0, 0, 0}; EnterCriticalSection(&g_lock); if (g_n < 64) g_q[g_n++] = c; LeaveCriticalSection(&g_lock); }
             } else if (sscanf(line, "mouse %d %d", &dx, &dy) == 2) { Cmd c = {2, 0, 0, 0, 0, false, dx, dy, 0}; EnterCriticalSection(&g_lock); if (g_n < 64) g_q[g_n++] = c; LeaveCriticalSection(&g_lock); }
             else if (sscanf(line, "shot %15s", a) == 1) RequestShot(a);
