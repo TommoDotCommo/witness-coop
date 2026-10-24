@@ -39,7 +39,7 @@ static ID3D11VertexShader* g_vs; static ID3D11PixelShader* g_ps; static ID3D11Bu
 static ID3D11BlendState* g_blend; static ID3D11RasterizerState* g_rs; static ID3D11DepthStencilState* g_ds;
 
 static const char* kHlsl = R"(
-cbuffer C : register(b0) { float4 rects[16]; float4 cols[16]; };
+cbuffer C : register(b0) { float4 rects[32]; float4 cols[32]; };
 struct O { float4 p : SV_POSITION; float4 c : COLOR; };
 O VS(uint vid : SV_VertexID, uint iid : SV_InstanceID) {
   float2 q = float2((vid & 1) ? 1 : -1, (vid & 2) ? 1 : -1);
@@ -110,7 +110,7 @@ static bool InitResources(IDXGISwapChain* sc) {
     if (FAILED(compile(kHlsl, strlen(kHlsl), "ov", nullptr, nullptr, "PS", "ps_5_0", 0, 0, &psb, &err))) { Log("overlay: PS compile failed"); return false; }
     g_dev->CreateVertexShader(vsb->GetBufferPointer(), vsb->GetBufferSize(), nullptr, &g_vs);
     g_dev->CreatePixelShader(psb->GetBufferPointer(), psb->GetBufferSize(), nullptr, &g_ps);
-    D3D11_BUFFER_DESC bd = {}; bd.ByteWidth = 16 * 32; bd.Usage = D3D11_USAGE_DEFAULT; bd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+    D3D11_BUFFER_DESC bd = {}; bd.ByteWidth = 16 * 64; bd.Usage = D3D11_USAGE_DEFAULT; bd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
     g_dev->CreateBuffer(&bd, nullptr, &g_cb);
     D3D11_BLEND_DESC bl = {}; bl.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL; g_dev->CreateBlendState(&bl, &g_blend);
     D3D11_RASTERIZER_DESC rd = {}; rd.FillMode = D3D11_FILL_SOLID; rd.CullMode = D3D11_CULL_NONE; g_dev->CreateRasterizerState(&rd, &g_rs);
@@ -133,21 +133,25 @@ static void DrawMarkers(IDXGISwapChain* sc) {
     if (FAILED(g_dev->CreateRenderTargetView(bb, nullptr, &rtv))) { bb->Release(); return; }
     uintptr_t base = (uintptr_t)GetModuleHandleA(nullptr);
     const float* cam = (const float*)(base + kCamPos); const float* ang = (const float*)(base + kCamAng);
-    float rects[16][4] = {}, cols[16][4] = {}; int n = 0; float aspect = (float)td.Width / (float)td.Height;
+    float rects[32][4] = {}, cols[32][4] = {}; int n = 0; float aspect = (float)td.Width / (float)td.Height;
     uintptr_t glob = Readable((void*)(base + kGlobals), 8) ? *(uintptr_t*)(base + kGlobals) : 0;
     uintptr_t arr = glob && Readable((void*)(glob + 0x18), 8) ? *(uintptr_t*)(glob + 0x18) : 0;
-    RemotePose rp;
-    bool have = CoopGetRemote(&rp) && rp.ageMs < 2000;
+    auto remotes = CoopGetRemotes();
     if (ModelGpuReady()) {      // the character model replaces the flat puppet
         wm::Cam wc = {{cam[0], cam[1], cam[2]}, ang[0], ang[1], kVFovDeg, aspect, 0.1f, 2000.0f};
-        ModelGpuDraw(rtv, td.Width, td.Height, wc, have, rp.seq, rp.pos, rp.ang[0]);
+        bool first = true;
+        for (const auto& rp : remotes) if (rp.ageMs < 2000) {
+            ModelGpuDraw(rtv, td.Width, td.Height, wc, true, rp.seq, rp.pos, rp.ang[0], rp.id, first); first = false;
+        }
+        if (first) { float p[3] = {}; ModelGpuDraw(rtv, td.Width, td.Height, wc, false, 0, p, 0); }
         rtv->Release(); bb->Release(); return;
     }
-    if (have) {
+    for (const auto& rp : remotes) if (rp.ageMs < 2000) {
         float feet[3] = {rp.pos[0], rp.pos[1], rp.pos[2] - 1.71f}, head[3] = {rp.pos[0], rp.pos[1], rp.pos[2] + 0.12f};
         float nfx, nfy, nhx, nhy;
-        if (Project(cam, ang[0], ang[1], feet, aspect, &nfx, &nfy) && Project(cam, ang[0], ang[1], head, aspect, &nhx, &nhy) && n < 15) {
+        if (Project(cam, ang[0], ang[1], feet, aspect, &nfx, &nfy) && Project(cam, ang[0], ang[1], head, aspect, &nhx, &nhy) && n < 31) {
             float hh = fabsf(nhy - nfy) * 0.5f; if (hh < 2.0f / td.Height) hh = 2.0f / td.Height;
+            int bodyIndex = n;
             rects[n][0] = (nfx + nhx) * 0.5f; rects[n][1] = (nfy + nhy) * 0.5f; rects[n][2] = hh * ((float)td.Height / td.Width) * 0.45f; rects[n][3] = hh;
             cols[n][0] = 0.1f; cols[n][1] = 0.9f; cols[n][2] = 0.2f; cols[n][3] = 1; n++;          // body: green
             float nose[3] = {rp.pos[0] + 0.7f*cosf(rp.ang[1])*cosf(rp.ang[0]), rp.pos[1] + 0.7f*cosf(rp.ang[1])*sinf(rp.ang[0]), rp.pos[2] + 0.7f*sinf(rp.ang[1])};
@@ -156,11 +160,11 @@ static void DrawMarkers(IDXGISwapChain* sc) {
                 rects[n][0] = nnx; rects[n][1] = nny; rects[n][2] = 6.0f / td.Width * 2; rects[n][3] = 6.0f / td.Height * 2;
                 cols[n][0] = 1; cols[n][1] = 0.9f; cols[n][2] = 0; cols[n][3] = 1; n++;               // facing: yellow
             }
-            if (g_frames % 300 == 1) { char m[200]; snprintf(m, sizeof m, "overlay: remote id %u age %lums at (%.2f,%.2f,%.2f) body ndc (%.3f,%.3f)", rp.id, rp.ageMs, rp.pos[0], rp.pos[1], rp.pos[2], rects[n-2][0], rects[n-2][1]); Log(m); }
+            if (g_frames % 300 == 1) { char m[200]; snprintf(m, sizeof m, "overlay: remote id %u age %lums at (%.2f,%.2f,%.2f) body ndc (%.3f,%.3f)", rp.id, rp.ageMs, rp.pos[0], rp.pos[1], rp.pos[2], rects[bodyIndex][0], rects[bodyIndex][1]); Log(m); }
         }
     }
     if (n) {
-        float cbdata[32][4] = {}; memcpy(cbdata, rects, sizeof rects); memcpy(cbdata + 16, cols, sizeof cols);
+        float cbdata[64][4] = {}; memcpy(cbdata, rects, sizeof rects); memcpy(cbdata + 32, cols, sizeof cols);
         g_ctx->UpdateSubresource(g_cb, 0, nullptr, cbdata, 0, 0);
         D3D11_VIEWPORT vp = {0, 0, (float)td.Width, (float)td.Height, 0, 1};
         g_ctx->OMSetRenderTargets(1, &rtv, nullptr); g_ctx->RSSetViewports(1, &vp);

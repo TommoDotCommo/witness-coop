@@ -8,6 +8,8 @@ namespace {
 
 // Protocol v4 adds cable power-off (v3 added cable lighting, v2 panel power-on). Distinct magics prevent an older peer from ACKing an incomplete vocabulary.
 constexpr uint32_t kMagicPose = 0x34505457, kMagicEv = 0x34455457, kMagicAck = 0x34415457;   // "WTP4" "WTE4" "WTA4"
+constexpr uint32_t kGroupPose = 0x35505457, kGroupEv = 0x35455457, kGroupAck = 0x35415457;
+constexpr size_t kGroupEvLen = 44;
 constexpr size_t kPoseLen = 40, kEvLen = 32, kAckLen = 24;                                    // with the 4-byte checksum
 constexpr uint32_t kSnapBit = 0x100;      // set in an event's kind word when it is part of a full-state snapshot
 constexpr uint64_t kConflictMs = 1000, kSuppressMs = 5000, kSettleMs = 15000, kCascadeMs = 5000;
@@ -33,10 +35,37 @@ SyncCore::SyncCore(int id, uint32_t session, World* world, Hooks hooks, Flags fl
     : id_(id), session_(session), w_(world), h_(std::move(hooks)), f_(flags) { epoch_ = uint64_t(session) << 16; }
 
 void SyncCore::log(const char* m) { if (h_.log) h_.log(m); }
-void SyncCore::send(Bytes b) { if (h_.send) h_.send(b); }
+void SyncCore::sendTo(unsigned peer, const Bytes& b) {
+    if (h_.sendTo) h_.sendTo(peer, b); else if (h_.send) h_.send(b);
+}
+void SyncCore::send(Bytes b) {
+    if (h_.sendTo) { for (auto& p : peers_) sendTo(p.first, b); }
+    else if (h_.send) h_.send(b);
+}
+bool SyncCore::setPeers(const std::vector<unsigned>& ids) {
+    if (gateStarted_ || poseSeq_ || ids.empty() || ids.size() >= kMaxPlayers || !h_.sendTo) return false;
+    std::map<unsigned, Peer> roster;
+    for (unsigned id : ids) {
+        if (!id || id == unsigned(id_) || !roster.emplace(id, Peer{}).second) return false;
+    }
+    peers_ = std::move(roster); fixedRoster_ = true; return true;
+}
 
 void SyncCore::emit(uint8_t kind, unsigned id, bool resync) {
-    if (sent_.size() < 4096) { sent_.push_back({nextSeq_++, uint32_t(kind) | (resync ? kSnapBit : 0u), id, false, false}); st_.sent++; }
+    // A complete snapshot must itself fit, even if a future entity table is larger than today's build.
+    size_t capacity = fixedRoster_ && !f_.noBacklogReset ? std::max<size_t>(4096, panels_.size() * 2 + doors_.size() + cables_.size() + 64) : 4096;
+    if (fixedRoster_ && sent_.size() >= capacity && !f_.noBacklogReset) {
+        // One absent member cannot make the detector silently forget new progress. Start a new stream and
+        // replace the bounded backlog with a snapshot of current state (including versioned cable OFFs).
+        epoch_ = (uint64_t(session_) << 16) | ++restartsSeen_; nextSeq_ = 1; sent_.clear(); resync_ = true;
+        log("coop: group backlog full, replacing it with a current-state snapshot");
+    }
+    Version version = {};
+    if (fixedRoster_ && (kind == EV_CABLE_LIT || kind == EV_CABLE_OFF)) {
+        if (!resync) cableVersion_[id] = {++clock_, unsigned(id_)};
+        version = cableVersion_[id];
+    }
+    if (sent_.size() < capacity) { sent_.push_back({nextSeq_++, uint32_t(kind) | (resync ? kSnapBit : 0u), id, false, false, {}, {}, version}); st_.sent++; }
     if (h_.onEmit) h_.onEmit(kind, id, resync);
 }
 
@@ -47,24 +76,28 @@ void SyncCore::tick(uint64_t now) {
         nextPose_ = now + 33;
         float pos[3], ang[2];
         if (w_->pose(pos, ang)) {
-            Bytes b; put32(b, kMagicPose); put32(b, uint32_t(id_)); put32(b, ++poseSeq_);
+            Bytes b; put32(b, fixedRoster_ ? kGroupPose : kMagicPose); put32(b, uint32_t(id_)); put32(b, ++poseSeq_);
             for (float f : pos) putF(b, f);
             for (float f : ang) putF(b, f);
             put32(b, session_); send(finish(std::move(b)));
         }
     }
-    if (now >= nextResend_) {   // resend unacknowledged events, oldest first, at most 32 per round
-        nextResend_ = now + 150; int n = 0;
+    if (now >= nextResend_) {   // resend unacknowledged events, oldest first, at most 32 per recipient per round
+        nextResend_ = now + 150; std::map<unsigned, unsigned> budget;
         for (auto& s : sent_) {
-            if (n >= 32) break;
             if (s.acked) continue;
-            if (f_.noResend && s.sentOnce) continue;                        // test: never resend
-            bool drop = f_.dropFirstEvent && !s.sentOnce;                   // test: the first send of each event is lost
-            if (!drop) {
-                Bytes b; put32(b, kMagicEv); put32(b, uint32_t(id_)); put64(b, epoch_); put32(b, s.seq); put32(b, s.kind); put32(b, s.entity);
-                send(finish(std::move(b)));
-            }
-            n++;
+            Bytes b; put32(b, fixedRoster_ ? kGroupEv : kMagicEv); put32(b, uint32_t(id_)); put64(b, epoch_); put32(b, s.seq); put32(b, s.kind); put32(b, s.entity);
+            if (fixedRoster_) { put64(b, s.version.first); put32(b, s.version.second); }
+            b = finish(std::move(b));
+            auto attempt = [&](unsigned peer) {
+                unsigned budgetKey = f_.noIndependentBudget ? 0 : peer;
+                if (budget[budgetKey] >= 32 || (f_.noResend && s.attempted.count(peer))) return;
+                bool first = s.attempted.insert(peer).second;
+                ++budget[budgetKey];
+                if (!(f_.dropFirstEvent && first)) sendTo(peer, b);
+            };
+            if (peers_.empty()) attempt(0);  // legacy transport before the first pose
+            else for (const auto& peer : peers_) if (!s.acknowledgers.count(peer.first)) attempt(peer.first);
             if (s.sentOnce) st_.resent++;
             s.sentOnce = true;
         }
@@ -74,37 +107,60 @@ void SyncCore::tick(uint64_t now) {
 void SyncCore::onPacket(const uint8_t* d, size_t n, uint64_t now) {
     if (n < 8 || (!f_.noChecksum && sum32(d, n - 4) != get32(d + n - 4))) return;   // corrupted or foreign: drop, the sender resends
     uint32_t magic = get32(d);
+    Version version = {};
+    if (fixedRoster_) {
+        if (magic == kGroupEv && n == kGroupEvLen) { version = {get64(d + 28), get32(d + 36)}; magic = kMagicEv; }
+        else if (magic == kGroupAck && n == kAckLen) magic = kMagicAck;
+        else if (magic == kGroupPose && n == kPoseLen) magic = kMagicPose;
+        else return;
+    }
+    if (!((magic == kMagicEv && n == (fixedRoster_ ? kGroupEvLen : kEvLen)) || (magic == kMagicAck && n == kAckLen) || (magic == kMagicPose && n == kPoseLen))) return;
     Guard g(h_);
-    if (magic == kMagicEv && n == kEvLen) {
+    unsigned sender = get32(d + 4);
+    if (sender == unsigned(id_)) return;
+    auto pi = peers_.find(sender);
+    if (pi == peers_.end()) {
+        if (fixedRoster_ || !peers_.empty()) return;
+        pi = peers_.emplace(sender, Peer{}).first;
+    }
+    Peer& peer = pi->second;
+    auto& peerEpoch_ = peer.epoch;
+    auto& peerApplied_ = peer.applied;
+    if (magic == kMagicEv && n == (fixedRoster_ ? kGroupEvLen : kEvLen)) {
         uint32_t from = get32(d + 4), seq = get32(d + 16), kind = get32(d + 20), entity = get32(d + 24); bool snap = (kind & kSnapBit) != 0; kind &= 0xFF; uint64_t epoch = get64(d + 8);
         if (int(from) == id_ || (kind != EV_PANEL_SOLVED && kind != EV_DOOR_OPENED && kind != EV_PANEL_POWERED && kind != EV_CABLE_LIT && kind != EV_CABLE_OFF) || entity >= kMaxEntityId) return;
         if (epoch < peerEpoch_) { st_.ooo++; if (h_.onRejected) h_.onRejected(uint8_t(kind), entity, epoch, seq, "stale epoch"); return; }   // a delayed packet of an earlier run
         if (epoch > peerEpoch_) { peerEpoch_ = epoch; if (!f_.noEpochReset) peerApplied_ = 0; }
         bool ordered = false, dup = false;
-        if (seq == peerApplied_ + 1 && recvQ_.size() < 1024) { recvQ_.push_back({uint8_t(kind), entity, epoch, seq, snap}); peerApplied_ = seq; ordered = true; }
-        else if (f_.applyOutOfOrder && seq > peerApplied_ + 1 && recvQ_.size() < 1024) { recvQ_.push_back({uint8_t(kind), entity, epoch, seq, snap}); peerApplied_ = seq; ordered = true; }
+        if (seq == peerApplied_ + 1 && recvQ_.size() < 1024) { recvQ_.push_back({uint8_t(kind), entity, epoch, seq, snap, version}); peerApplied_ = seq; ordered = true; }
+        else if (f_.applyOutOfOrder && seq > peerApplied_ + 1 && recvQ_.size() < 1024) { recvQ_.push_back({uint8_t(kind), entity, epoch, seq, snap, version}); peerApplied_ = seq; ordered = true; }
         else if (seq <= peerApplied_) {
             dup = true;
-            if (f_.noDedupe && recvQ_.size() < 1024) recvQ_.push_back({uint8_t(kind), entity, epoch, seq, snap});    // twin: duplicates reach the apply step
+            if (f_.noDedupe && recvQ_.size() < 1024) recvQ_.push_back({uint8_t(kind), entity, epoch, seq, snap, version});    // twin: duplicates reach the apply step
         }
-        if (ordered) { st_.inOrder++; if (h_.onAccepted) h_.onAccepted(epoch, seq); } else if (dup) st_.dup++; else st_.ooo++;
+        if (ordered) { clock_ = std::max(clock_, version.first); st_.inOrder++; if (h_.onAccepted) h_.onAccepted(epoch, seq); } else if (dup) st_.dup++; else st_.ooo++;
         if (!ordered && h_.onRejected) h_.onRejected(uint8_t(kind), entity, epoch, seq, dup ? "duplicate" : "out of order");
-        Bytes a; put32(a, kMagicAck); put32(a, uint32_t(id_)); put64(a, peerEpoch_); put32(a, peerApplied_);
-        send(finish(std::move(a)));
+        Bytes a; put32(a, fixedRoster_ ? kGroupAck : kMagicAck); put32(a, uint32_t(id_)); put64(a, peerEpoch_); put32(a, peerApplied_);
+        sendTo(sender, finish(std::move(a)));
         return;
     }
     if (magic == kMagicAck && n == kAckLen) {
         uint32_t from = get32(d + 4), ack = get32(d + 16); uint64_t epoch = get64(d + 8);
         if (int(from) == id_ || (epoch != epoch_ && !f_.wrongAckEpoch)) return;
-        for (auto& s : sent_) if (s.seq <= ack && !s.acked) { s.acked = true; st_.acked++; }
+        for (auto& s : sent_) if (s.seq <= ack && !s.acked) {
+            s.acknowledgers.insert(sender);
+            if (s.acknowledgers.size() == peers_.size()) { s.acked = true; st_.acked++; }
+        }
+        while (!sent_.empty() && sent_.front().acked) sent_.erase(sent_.begin());
         return;
     }
     if (magic == kMagicPose && n == kPoseLen) {
         uint32_t from = get32(d + 4), seq = get32(d + 8), session = get32(d + 32);   // pose: magic id seq pos[3] ang[2] session checksum
         if (int(from) == id_) return;
-        if (session < peerSession_) return;     // a delayed packet from an earlier run of the peer: ignore it completely
-        if (session > peerSession_) {           // the peer (re)started: begin a new stream epoch and resend the full state
-            peerSession_ = session;
+        if (fixedRoster_ && session == peer.session && peer.pose.valid && seq <= peer.pose.seq) return;
+        if (session < peer.session) return;     // a delayed packet from an earlier run of the peer: ignore it completely
+        if (session > peer.session) {           // the peer (re)started: begin a new stream epoch and resend the full state
+            peer.session = session; peerSession_ = session;
             epoch_ = (uint64_t(session_) << 16) | ++restartsSeen_; nextSeq_ = 1; sent_.clear();
             if (!f_.noResyncOnRestart) resync_ = true;
             st_.resyncs++;
@@ -114,7 +170,7 @@ void SyncCore::onPacket(const uint8_t* d, size_t n, uint64_t now) {
         remote_.valid = true; remote_.id = from; remote_.seq = seq;
         for (int i = 0; i < 3; ++i) remote_.pos[i] = getF(d + 12 + 4 * i);
         for (int i = 0; i < 2; ++i) remote_.ang[i] = getF(d + 24 + 4 * i);
-        remoteAt_ = now;
+        remoteAt_ = now; peer.pose = remote_; peer.poseAt = now;
         return;
     }
 }
@@ -206,6 +262,7 @@ void SyncCore::pollState(uint64_t now) {
         // settle again, and publish this world's full state once it has.
         log("state: save reload suspected (known progress vanished), waiting for a stable world");
         ready_ = false; gateSame_ = 0; gateLastPanels_ = gateLastDoors_ = 0; gateLastSig_ = 0; nextGate_ = now + 3000;
+        cableVersion_.clear();
         suppressPanel_.clear(); suppressDoor_.clear(); suppressPower_.clear(); suppressCable_.clear(); anyLocalSolve_ = false;
         session_++; epoch_ = (uint64_t(session_) << 16) | ++restartsSeen_; nextSeq_ = 1; sent_.clear(); resync_ = true;
         st_.reloads++;
@@ -278,6 +335,25 @@ void SyncCore::applyRemote(uint64_t now) {
         char l[140];
         if (r.entity >= kMaxEntityId || !w_->entityExists(r.entity)) {
             if (!f_.noApplyRetry) recvQ_.push_back(r);
+            continue;
+        }
+        if (fixedRoster_ && !f_.noGroupVersions && (r.kind == EV_CABLE_LIT || r.kind == EV_CABLE_OFF) && w_->isCable(r.entity)) {
+            // Snapshots carry the original mutation's version. They cannot resurrect an older on/off state.
+            // A logical clock plus player id gives all receivers the same order without synchronized wall clocks.
+            auto known = cableVersion_.find(r.entity);
+            if (known != cableVersion_.end() && r.version <= known->second) continue;
+            bool on = r.kind == EV_CABLE_LIT;
+            if ((on ? !w_->cableLit(r.entity) : w_->cableRequested(r.entity)) &&
+                !(on ? w_->applyCableLit(r.entity) : w_->applyCableOff(r.entity))) {
+                if (!f_.noApplyRetry) recvQ_.push_back(r);
+                continue;
+            }
+            cableVersion_[r.entity] = r.version;
+            if (on) { knownCable_.insert(r.entity); everOff_.erase(r.entity); }
+            else { knownCable_.erase(r.entity); everOff_.insert(r.entity); }
+            if (!f_.noEchoGuard) suppressCable_[r.entity] = now + kSuppressMs;
+            st_.appliedCables++;
+            if (h_.onApplied) h_.onApplied(r.kind, r.entity, r.epoch, r.seq);
             continue;
         }
         if (r.kind == EV_PANEL_SOLVED && w_->isPanel(r.entity)) {
@@ -366,6 +442,14 @@ bool SyncCore::remotePose(RemotePose* out, uint64_t now) {
     *out = remote_; out->ageMs = remote_.valid ? now - remoteAt_ : 0;
     return out->valid;
 }
+std::vector<RemotePose> SyncCore::remotePoses(uint64_t now) {
+    Guard g(h_); std::vector<RemotePose> poses;
+    for (const auto& p : peers_) if (p.second.pose.valid) {
+        auto pose = p.second.pose; pose.ageMs = now - p.second.poseAt; poses.push_back(pose);
+    }
+    return poses;
+}
+bool SyncCore::ready() const { Guard g(h_); return ready_; }
 Stats SyncCore::stats() const { Guard g(h_); return st_; }
 size_t SyncCore::unacked() const { Guard g(h_); size_t n = 0; for (auto& s : sent_) if (!s.acked) n++; return n; }
 size_t SyncCore::queuedRemote() const { Guard g(h_); return recvQ_.size(); }

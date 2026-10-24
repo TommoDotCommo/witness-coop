@@ -22,7 +22,11 @@ $(BUILD)/cable-sync: tests/cable_sync.cpp sync_core.cpp sync_core.h
 $(BUILD)/cable-off: tests/cable_off.cpp sync_core.cpp sync_core.h
 	mkdir -p $(BUILD)
 	g++ -std=c++17 -O2 -Wall -Wextra -o $@ tests/cable_off.cpp sync_core.cpp
-test: $(BUILD)/coopfuzz-witness $(BUILD)/apply-retry $(BUILD)/power-sync $(BUILD)/reload-sync $(BUILD)/cable-sync $(BUILD)/cable-off
+$(BUILD)/group-sync: tests/group_sync.cpp sync_core.cpp sync_core.h
+	mkdir -p $(BUILD)
+	g++ -std=c++17 -O2 -Wall -Wextra -o $@ tests/group_sync.cpp sync_core.cpp
+test: $(BUILD)/group-sync $(BUILD)/coopfuzz-witness $(BUILD)/apply-retry $(BUILD)/power-sync $(BUILD)/reload-sync $(BUILD)/cable-sync $(BUILD)/cable-off
+	$(BUILD)/group-sync
 	$(BUILD)/apply-retry
 	$(BUILD)/power-sync
 	$(BUILD)/reload-sync
@@ -33,3 +37,10 @@ test: $(BUILD)/coopfuzz-witness $(BUILD)/apply-retry $(BUILD)/power-sync $(BUILD
 clean:
 	rm -rf $(BUILD)
 .PHONY: test clean
+
+$(BUILD)/group-transport.exe: tests/group_transport.cpp ../coop.cpp ../coop.h sync_core.cpp sync_core.h
+	mkdir -p $(BUILD)
+	x86_64-w64-mingw32-g++ -std=c++17 -O2 -D_WIN32_WINNT=0x0601 -static -o $@ tests/group_transport.cpp ../coop.cpp sync_core.cpp -lws2_32
+transport-test: $(BUILD)/group-transport.exe
+	python3 tests/run_group_transport.py
+.PHONY: transport-test

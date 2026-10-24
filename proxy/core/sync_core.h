@@ -1,4 +1,4 @@
-// Game-free sync core: reliable shared-state events (panel solved, door opened) between two players, the stable-world gate, the
+// Game-free sync core: reliable shared-state events (panel solved, door opened) among up to 16 players, the stable-world gate, the
 // start-up settling window and the echo guard. No Windows headers, no globals: time, transport, entropy and the game world come in
 // from outside, so the same code runs in the game (proxy/coop.cpp, proxy/state.cpp) and in the fuzzer (core/tests).
 #pragma once
@@ -13,6 +13,7 @@ namespace witness {
 
 using Bytes = std::vector<uint8_t>;
 enum EvKind : uint8_t { EV_PANEL_SOLVED = 1, EV_DOOR_OPENED = 2, EV_PANEL_POWERED = 3, EV_CABLE_LIT = 4, EV_CABLE_OFF = 5 };
+constexpr unsigned kMaxPlayers = 16;
 constexpr unsigned kMaxEntityId = 0x40000;      // the game's entity table size; ids at or above it are refused
 
 // What the core needs from the game (or a fake of it).
@@ -51,10 +52,14 @@ struct Flags {   // all off by default
     bool noOffSnapshot = false; // twin: snapshots do not tell a fresh peer about cables that were switched off
     bool noSnapReassert = false; // twin: a peer's snapshot that relights a cable this player switched off is ignored but not corrected
     bool noCableArbiter = false; // twin: no tie-break when both players switch the same cable at the same moment
+    bool noBacklogReset = false; // twin: silently discard new events when an absent peer fills the outbox
+    bool noIndependentBudget = false; // twin: one absent peer stalls every other peer after 32 events
+    bool noGroupVersions = false; // twin: use the two-player cable arbiter in a group
     bool noReloadSync = false;  // twin: ignore a same-process save reload (no re-gate, no resync with the peer)
 };
 
 struct Hooks {
+    std::function<void(unsigned, const Bytes&)> sendTo;      // optional addressed transport (required for groups)
     std::function<void(const Bytes&)> send;                // datagram to the peer
     std::function<void(const char*)> log;                  // optional
     std::function<void()> lock, unlock;                    // optional: the game calls the core from three threads
@@ -80,7 +85,10 @@ public:
     void pollState(uint64_t nowMs);                        // detector thread, about every 100 ms
     void applyRemote(uint64_t nowMs);                      // render thread, once per frame: apply queued remote events
     bool remotePose(RemotePose* out, uint64_t nowMs);
-    bool ready() const { return ready_; }
+    std::vector<RemotePose> remotePoses(uint64_t nowMs);
+    // Configure the full remote roster before any threads start. Omit this call for legacy two-player discovery.
+    bool setPeers(const std::vector<unsigned>& ids);
+    bool ready() const;
     Stats stats() const;
     size_t unacked() const;                                // events sent but not yet acknowledged
     size_t queuedRemote() const;                           // received in order, not yet applied
@@ -88,8 +96,10 @@ public:
     uint32_t peerSession() const { return peerSession_; }     // the newest session of the peer seen so far (0: none yet)
 
 private:
-    struct Sent { uint32_t seq, kind, entity; bool acked, sentOnce; };
-    struct Recv { uint8_t kind; uint32_t entity; uint64_t epoch; uint32_t seq; bool snap = false; };   // snap: part of the sender's full-state snapshot
+    using Version = std::pair<uint64_t, unsigned>;  // Lamport clock, then player id
+    uint64_t clock_ = 0; std::map<unsigned, Version> cableVersion_;
+    struct Sent { uint32_t seq, kind, entity; bool acked, sentOnce; std::set<unsigned> acknowledgers, attempted; Version version; };
+    struct Recv { uint8_t kind; uint32_t entity; uint64_t epoch; uint32_t seq; bool snap = false; Version version = {}; };   // snap: part of the sender's full-state snapshot
     struct Guard;                                          // scoped lock
     void emit(uint8_t kind, unsigned id, bool resync);
     void baseline(bool full);
@@ -98,11 +108,14 @@ private:
     uint64_t signature();
     void log(const char* m);
     void send(Bytes b);
+    void sendTo(unsigned peer, const Bytes& b);
+    struct Peer { uint32_t session = 0, applied = 0; uint64_t epoch = 0, poseAt = 0; RemotePose pose; };
+    std::map<unsigned, Peer> peers_; bool fixedRoster_ = false;
 
     int id_; uint32_t session_; World* w_; Hooks h_; Flags f_;
     // reliable stream, mine and the peer's
     std::vector<Sent> sent_; uint64_t epoch_ = 0; uint32_t nextSeq_ = 1, restartsSeen_ = 0;    // epoch = session << 16 | restarts seen: only ever grows
-    uint32_t peerSession_ = 0, peerApplied_ = 0; uint64_t peerEpoch_ = 0; bool resync_ = false;
+    uint32_t peerSession_ = 0; bool resync_ = false;
     std::vector<Recv> recvQ_; RemotePose remote_; uint64_t remoteAt_ = 0; uint32_t poseSeq_ = 0; uint64_t nextPose_ = 0, nextResend_ = 0;
     Stats st_;
     // detector

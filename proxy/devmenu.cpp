@@ -243,8 +243,8 @@ void DetailPane(float x, float y, float w, float sc) {
         UiText(x, y, Wrap(ok ? "Ground height is taken from the nearest panel; you drop in from 6 m above it." : "No panel within 30 m: no known ground here.", w, sc).c_str(), Rgba(0.85f, 0.85f, 0.9f), sc); y += lh * 3.2f;
         if (ok && Button(x, y, 170 * sc, lh + 12, "Teleport here", false, sc)) TeleportToPoint(g_selX, g_selY);
     } else if (g_selKind == SelPlayer) {
-        RemotePose rp; bool have = CoopGetRemote(&rp);
-        UiText(x, y, "The other player", Rgba(1, 0.6f, 0.2f), sc * 1.15f); y += lh * 1.5f;
+        RemotePose rp; bool have = CoopGetRemote(&rp, (unsigned)g_selPlayer);
+        snprintf(b, sizeof b, "Player %d", g_selPlayer); UiText(x, y, b, Rgba(1, 0.6f, 0.2f), sc * 1.15f); y += lh * 1.5f;
         if (have) { snprintf(b, sizeof b, "at %.1f %.1f %.1f\nseen %lu ms ago", rp.pos[0], rp.pos[1], rp.pos[2], (unsigned long)rp.ageMs); UiText(x, y, b, Rgba(0.85f, 0.85f, 0.9f), sc); y += lh * 2.5f; if (Button(x, y, 200 * sc, lh + 12, "Teleport to them", false, sc)) TeleportToPlayer(rp); }
         else UiText(x, y, "Not connected.", Rgba(0.8f, 0.5f, 0.5f), sc);
     } else UiText(x, y, Wrap("Click a dot on the map, a spot in the list, or a panel in the nearby list.", w, sc).c_str(), Rgba(0.7f, 0.7f, 0.75f), sc);
@@ -278,11 +278,15 @@ void MapPage(float x, float y, float w, float h, float sc) {
     if (g_selKind == SelPoint) { UiLine(sx(g_selX) - 9, sy(g_selY), sx(g_selX) + 9, sy(g_selY), Rgba(1, 0.3f, 0.3f), 2); UiLine(sx(g_selX), sy(g_selY) - 9, sx(g_selX), sy(g_selY) + 9, Rgba(1, 0.3f, 0.3f), 2); }
     float pos[3], ang[2];
     if (Camera(pos, ang)) { UiTri(sx(pos[0]), sy(pos[1]), 11, -ang[0], Rgba(0.2f, 0.9f, 1)); UiText(sx(pos[0]) + 10, sy(pos[1]) - 10, "you", Rgba(0.2f, 0.9f, 1), sc); }
-    RemotePose rp; bool have = CoopGetRemote(&rp) && rp.ageMs < 5000; float rpx = 0, rpy = 0;
-    if (have) { rpx = sx(rp.pos[0]); rpy = sy(rp.pos[1]); UiTri(rpx, rpy, 11, -rp.ang[0], Rgba(1, 0.55f, 0.1f)); UiText(rpx + 10, rpy + 4, "other player", Rgba(1, 0.55f, 0.1f), sc); }
+    int hoveredPlayer = -1;
+    for (const auto& rp : CoopGetRemotes()) if (rp.ageMs < 5000) {
+        float rpx = sx(rp.pos[0]), rpy = sy(rp.pos[1]); char label[40]; snprintf(label, sizeof label, "player %u", rp.id);
+        UiTri(rpx, rpy, 11, -rp.ang[0], Rgba(1, 0.55f, 0.1f)); UiText(rpx + 10, rpy + 4, label, Rgba(1, 0.55f, 0.1f), sc);
+        if (hypotf(rpx - g_mx, rpy - g_my) < 12) hoveredPlayer = (int)rp.id;
+    }
     UiClip(0, 0, 0, 0);
     if (over && g_cl) {
-        if (have && hypotf(rpx - g_mx, rpy - g_my) < 12) { g_selKind = SelPlayer; }
+        if (hoveredPlayer >= 0) { g_selKind = SelPlayer; g_selPlayer = hoveredPlayer; }
         else if (hover >= 0) SelectPanel(hover);
         else { g_selKind = SelPoint; g_selX = g_vx + (g_mx - x - w / 2) / g_vscale; g_selY = g_vy - (g_my - y - h / 2) / g_vscale; }
     }
