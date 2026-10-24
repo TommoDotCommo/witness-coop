@@ -3,3 +3,8 @@ proxy/*.dll
 __pycache__/
 proxy/core/build/
 proxy/model/build/
+
+# command and test scratch files the tools write into whatever folder they run from
+witness_cmd.txt
+witness_cmd.txt.tmp
+witness_cmd.taken
