@@ -161,6 +161,7 @@ SCENARIOS = [   # name, extra cfg for A, extra cfg for B, check(a_stats, b_stats
   ('second tutorial door', '', '', lambda a, b, ok: (ok and b.get('ep', 9) == 0 and b.get('ed', 9) == 0, 'both tutorial panels and doors match without B echo')),
   ('MUTANT: second tutorial door skips entity zero', 'skip_entity_zero=1', '', lambda a, b, ok: (not ok, 'door entity zero must be missing on B')),
   ('panel power chain', '', '', lambda a, b, ok: (ok and b.get('epow', 9) == 0 and b.get('apow', 0) >= 1, 'target panel powers on without being solved or echoed')),
+  ('MUTANT: panel power chain without source link', '', 'no_power_link=1', lambda a, b, ok: (not ok, 'B must power the target but lack its source back-link')),
   ('MUTANT: panel power chain disabled', 'no_panel_power=1', '', lambda a, b, ok: (not ok, 'target panel must remain dark on B')),
 ]
 only = sys.argv[1:]; results = []
@@ -226,10 +227,14 @@ for name, ca, cb, check in SCENARIOS:
         sa, sb = state('A'), state('B')
         same_solves = sa['panels'] == sb['panels'] and '0x18af' in sa['panels'] and '0x1b' not in sa['panels']
         powered_a, powered_b = set(sa['powered_panels']), set(sb['powered_panels'])
-        if name.startswith('MUTANT:'):
+        link_a, link_b = sa['power_src'].get('0x1b'), sb['power_src'].get('0x1b')
+        print('power link of 0x1b: A %s B %s' % (link_a, link_b), flush=True)
+        if name.startswith('MUTANT:') and 'source link' not in name:
             target_ok = powered_a - powered_b == {'0x1b'} and not (powered_b - powered_a)
-        else: target_ok = powered_a == powered_b and '0x1b' in powered_b
-        ok = ok and power_ok and same_solves and target_ok and sa['doors'] == sb['doors']
+        else: target_ok = powered_a == powered_b and '0x1b' in powered_b and link_a == '0x18b0' and link_b == link_a
+        if 'source link' in name:      # the state diff cannot see the back-link: this mutant is caught by the link check alone
+            ok = power_ok and same_solves and powered_a == powered_b and '0x1b' in powered_b and link_a == '0x18b0' and link_b is None and sa['doors'] == sb['doors']
+        else: ok = ok and power_ok and same_solves and target_ok and sa['doors'] == sb['doors']
         if not power_ok: why = 'power bot or fresh-chain precondition failed'
     if 'second tutorial door' in name:
         sa, sb = state('A'), state('B')

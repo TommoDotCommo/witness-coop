@@ -7,6 +7,7 @@
 #include <cstring>
 #include "game.h"
 #include "input.h"
+#include "config.h"
 
 void Log(const char* msg);
 void RequestShot(const char* name);
@@ -119,6 +120,18 @@ bool GamePanelPowerOnNow(unsigned id) {
     const unsigned char prologue[] = {0x48, 0x89, 0x5C, 0x24, 0x10};
     if (IsBadReadPtr(fn, sizeof prologue) || memcmp(fn, prologue, sizeof prologue)) return false;
     ((void(__fastcall*)(void*))(fn))((void*)e);
+    // The game's target dispatcher (exe+0xC24F0) also writes the source panel's engine id to the target's +0x2C8. The source is the
+    // panel whose target field (+0x2B4) names this one (engine id = table index + the table's base id); a solved one wins.
+    if (!GetCfg().noPowerLink && !IsBadReadPtr((void*)(Base() + kGlobals), 8)) {
+        uintptr_t glob = *(uintptr_t*)(Base() + kGlobals); unsigned baseId = glob && !IsBadReadPtr((void*)(glob + 8), 4) ? *(unsigned*)(glob + 8) : 0;
+        unsigned want = id + baseId, src = 0;
+        for (unsigned i = 0; i < 0x40000 && glob; i++) {
+            uintptr_t o = GameEntity(i);
+            if (!o || o == e || IsBadReadPtr((void*)(o + 0x2B4), 4) || *(uintptr_t*)(o + 8) != Base() + kPanelTypeInfo || *(unsigned*)(o + 0x2B4) != want) continue;
+            src = i + baseId; if (*(unsigned*)(o + 0x298) == 1) break;
+        }
+        if (src && !*(unsigned*)(e + 0x2C8)) *(unsigned*)(e + 0x2C8) = src;
+    }
     return true;
 }
 
