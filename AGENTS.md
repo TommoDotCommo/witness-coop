@@ -26,7 +26,7 @@ and publishing permissions. Keep shared workflow changes there so agents stay in
 - Put it into the test copies: `tools/install.sh` (checks both exe hashes first and refuses any other build).
 - Restart both games with fresh new games: `tools/restart.sh` (lab mode: your slots; registers and tiles the windows). Close them: `tools/stop.sh`.
 - Full regression: `tools/qa.sh` (leases two slots, runs every scenario one after the other with its mutants, always cleans up; 28 scenarios took 48 minutes on 2026-10-24).
-  Faster: `tools/qa_par.sh` splits the same suite over 3 shards, each its own lab owner with two slots (needs 6 free slots and about 11 GB of free RAM): 23 scenarios in about 13.5 minutes, 4 clean runs in a row after the fixes below.
+  Faster: `tools/qa_par.sh` splits the same suite over 3 shards, each its own lab owner with two slots (needs 6 free slots and about 11 GB of free RAM): 23 scenarios in about 13.5 minutes. Of five parallel runs on 2026-10-24 the last one passed everything; the first four exposed load flakes (a hygiene check that counted on slow scenarios, a late door, a game not yet in the world, a missed click), fixed as listed below.
   A scenario whose bot never reached its precondition (game not in the world yet, a click missed under load) is run once more automatically; that is logged as `RETRY`. Report only what you ran.
 - For documentation changes, check links, paths and `git diff --check`; game runs are unnecessary.
 
