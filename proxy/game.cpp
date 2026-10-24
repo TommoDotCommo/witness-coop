@@ -115,6 +115,8 @@ static DWORD WINAPI CmdThread(LPVOID) {
             else if (!strncmp(line, "fakepose ", 9)) { float f[4]; if (sscanf(line, "fakepose %f %f %f %f", &f[0], &f[1], &f[2], &f[3]) == 4) CoopSetFakeRemote(true, f, f[3]); }
             else if (!strncmp(line, "modelstat", 9)) ModelGpuLogStats();
             else if (sscanf(line, "model %63s", a2) == 1) { if (!strcmp(a2, "next")) ModelGpuSelect(1); else if (!strcmp(a2, "prev")) ModelGpuSelect(-1); else ModelGpuSelectName(a2); }
+            else if (!strncmp(line, "hover off", 9)) GameHoverOff();
+            else if (!strncmp(line, "hover ", 6)) { float f[5]; if (sscanf(line, "hover %f %f %f %f %f", &f[0], &f[1], &f[2], &f[3], &f[4]) == 5) GameHover(f[0], f[1], f[2], f[3], f[4], 600); }
             else if (!strncmp(line, "tp ", 3)) { Tp t = {}; if (sscanf(line, "tp %f %f %f %f %f", &t.v[0], &t.v[1], &t.v[2], &t.v[3], &t.v[4]) == 5) { t.frames = 12; EnterCriticalSection(&g_lock); g_tp = t; g_tpOn = true; LeaveCriticalSection(&g_lock); } }
             else if (!strncmp(line, "stats", 5)) { char m[160]; snprintf(m, sizeof m, "input: posted %u answered %u | GetRawInputData calls: real handles %u, ours %u", InputStats(0), InputStats(1), InputStats(2), InputStats(3)); Log(m); }
             else if (sscanf(line, "button %15s %15s", a, b) == 2) { bool left = !_stricmp(a, "L"), dn = !_stricmp(b, "down"); Cmd c = {2, 0, 0, 0, 0, false, 0, 0, left ? (dn ? 0x1u : 0x2u) : (dn ? 0x4u : 0x8u)}; EnterCriticalSection(&g_lock); if (g_n < 64) g_q[g_n++] = c; LeaveCriticalSection(&g_lock); }
@@ -216,6 +218,37 @@ void GameEnqueueCableOff(unsigned id) {
     if (g_n < 64) g_q[g_n++] = {6, id, 0, 0, 0, false, 0, 0, 0};
     LeaveCriticalSection(&g_lock);
 }
+
+// Hover: the world around a far panel has no collision until the player has been there a while, so a released player falls through it and
+// the game puts it back at the spawn point; and the game's physics resets the player's height once per frame, so a write per frame is
+// not enough. This thread writes the player's position about every millisecond until it is switched off (hover off, another teleport, a
+// real W/A/S/D press, or the time limit), which holds the player where it was put. Angles are not written: mouse look still works.
+static bool OwnForeground() { DWORD p = 0; GetWindowThreadProcessId(GetForegroundWindow(), &p); return p == GetCurrentProcessId(); }      // a real key press only counts while this game has the focus (bots inject input, and never touch it)
+static volatile LONG g_hovOn; static float g_hov[3]; static volatile DWORD g_hovUntil;
+static DWORD WINAPI HoverThread(LPVOID) {
+    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
+    DWORD checked = 0; volatile float* fp = nullptr;
+    for (;;) {
+        if (!g_hovOn) { fp = nullptr; Sleep(10); continue; }
+        DWORD now = GetTickCount();
+        if (now - checked >= 40) {       // the stop conditions are checked 25 times a second; the write below spins
+            checked = now;
+            uintptr_t pl = GameEntity(0x1E465); fp = (pl && !IsBadWritePtr((void*)(pl + 0x24), 12)) ? (volatile float*)(pl + 0x24) : nullptr;      // looked up 25 times a second, not on every write (IsBad*Ptr in a spin is risky)
+            if ((LONG)(now - g_hovUntil) > 0 || (OwnForeground() && ((GetAsyncKeyState('W') | GetAsyncKeyState('A') | GetAsyncKeyState('S') | GetAsyncKeyState('D')) & 0x8000))) { g_hovOn = 0; Log("game: hover off"); continue; }
+        }
+        // The game snaps the player to the ground under it once per frame (to the lowest level where no collision is loaded), and builds the
+        // camera from the player a little later in the same frame: a write every millisecond left a visible share of frames underground.
+        // Spinning keeps the gap between the snap and our write to microseconds.
+        if (fp) { fp[0] = g_hov[0]; fp[1] = g_hov[1]; fp[2] = g_hov[2] - 1.69f; }
+        YieldProcessor();
+    }
+}
+void GameHover(float x, float y, float z, float yaw, float pitch, unsigned seconds) {
+    static bool started; if (!started) { started = true; CreateThread(nullptr, 0, HoverThread, nullptr, 0, nullptr); }
+    g_hov[0] = x; g_hov[1] = y; g_hov[2] = z; g_hovUntil = GetTickCount() + seconds * 1000; InterlockedExchange(&g_hovOn, 1);
+    GameTeleport(x, y, z, yaw, pitch);      // the angles (and the camera for a few frames)
+}
+void GameHoverOff() { InterlockedExchange(&g_hovOn, 0); }
 
 void GameTeleport(float x, float y, float z, float yaw, float pitch) {
     if (!g_lockInit) return;

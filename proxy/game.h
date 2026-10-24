@@ -13,4 +13,6 @@ void GameMarkPanelSolved(unsigned id);                // writes the fields a rea
 bool GameDispatchTargetNow(unsigned panelId, bool any = false);         // runs the game's target dispatcher (exe+0xC24F0) for the panel's target when it is of a type with no dedicated event; render thread only
 bool GameCableOffNow(unsigned id);                  // render thread only; the game's own cable power-off (exe+0x175E50: requested level to 0, the glow fades)
 void GameEnqueueCableOff(unsigned id);                // development command
+void GameHover(float x, float y, float z, float yaw, float pitch, unsigned seconds);   // like GameTeleport, but the player is held there (about every ms) for up to `seconds`: for places with no collision
+void GameHoverOff();
 void GameTeleport(float x, float y, float z, float yaw, float pitch);   // camera position (eye) and angles, held for a few frames like the tp command

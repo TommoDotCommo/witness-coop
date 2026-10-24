@@ -127,9 +127,9 @@ void FireTeleport() {
     int k = g_tp.attempt; float sx = g_tp.px + kTryDist[k] * cosf(g_tp.rz), sy = g_tp.py + kTryDist[k] * sinf(g_tp.rz);
     GameTeleport(sx, sy, g_tp.pz + kTryDz[k], remainderf(g_tp.rz + kPi, 2 * kPi), 0); g_tp.at = GetTickCount();
 }
-void TeleportToPanel(const Pn& p) {
-    g_tp = {true, p.x, p.y, p.z, p.rz, 0, 0, p.id}; FireTeleport();
-    Msg("teleporting in front of panel %#x", p.id); g_open = false;
+void TeleportToPanel(const Pn& p) {      // 3 m in front of the panel at eye level, held for 2 s so the player settles on the ground there instead of being snapped to the lowest level once
+    g_tp.on = false; GameHover(p.x + 3 * cosf(p.rz), p.y + 3 * sinf(p.rz), p.z + 0.3f, remainderf(p.rz + kPi, 2 * kPi), 0, 2);
+    Msg("teleported in front of panel %#x", p.id); g_open = false;
 }
 bool GroundNear(float x, float y, float* z) {
     int best = -1; float bd = 30;
