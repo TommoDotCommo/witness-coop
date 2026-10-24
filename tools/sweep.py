@@ -93,7 +93,7 @@ def run(args):
             path = solver.solve(p)
             if path is None:
                 results[key] = {'result': 'no solver', 'why': ', '.join(solver.unsupported(p)) or 'no path found', 'seconds': 0}
-            elif not (p['powered'] or not p.get('link')):      # waits for power only when a cable is supposed to bring it and it has not come
+            elif not p['powered']:      # a panel without power (+0x2a4) cannot be started: it waits until solving something upstream powers it
 
                 skipped_unpowered += 1; continue
             else:
@@ -128,9 +128,30 @@ def report(folders=None):
     print('  no result yet: %d' % len(missing))
     return results
 
+def export(path):
+    """Write the merged result of every panel (solved, failed with the reason, no solver, not tried) as json: id -> {result, why, how}. `how` says where the line came
+    from: stored (the game's own solution), plain (a shortest path) or rules (psolve)."""
+    results = report([]) if False else None
+    import glob
+    folders = sorted(glob.glob(os.path.join(os.path.dirname(RUN), 'panel-sweep*')))
+    res = {}
+    for fo in folders:
+        for fn in glob.glob(os.path.join(fo, 'sweep_results.*.json')):
+            for k, v in load(fn, {}).items():
+                if res.get(k, {}).get('result') != 'solved': res[k] = v
+    out = {}
+    for q in load(MANIFEST, []):
+        k = '%x' % q['id']; v = res.get(k)
+        how = 'stored' if solver.stored(q) else 'rules' if (any(q['dec']) or any(f & 0x20 for f in q['flags']) or q.get('mirror')) else 'plain'
+        out[k] = {'result': v['result'] if v else 'not tried', 'why': v['why'] if v else '', 'how': how, 'nodes': q['nodes']}
+    json.dump(out, open(path, 'w'), indent=0, sort_keys=True)
+    import collections
+    print(collections.Counter((o['result'], o['how']) for o in out.values()))
+
 if __name__ == '__main__':
     cmd = sys.argv[1] if len(sys.argv) > 1 else 'run'
     if cmd == 'report': report(); sys.exit(0)
+    if cmd == 'export': export(sys.argv[2]); sys.exit(0)
     if cmd == 'inventory':
         inv = inventory(sys.argv[2] if len(sys.argv) > 2 else 'B'); json.dump(inv, open(MANIFEST, 'w'))
         print('%d panels' % len(inv))

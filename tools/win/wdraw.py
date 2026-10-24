@@ -173,22 +173,24 @@ if pskey in kcache: cands.insert(0, (kcache[pskey], 0))
 ckey = 'c%.3f|%d|%d|%d' % (pscale, p.u32(e + 0x440), p.u32(e + 0x444), 1 if p.u64(e + 0x438) > 0x10000 else 0)
 if ckey in kcache:
     kc_ = kcache[ckey]; cached_ax = kc_[2]; cached_flip = (kc_[3], kc_[4])
-    cands[0:0] = [(kc_[0], kc_[1] + d_) for d_ in (0, 12, -12, 24, -24)]
+    class_cands = [(kc_[0], kc_[1] + d_) for d_ in (0, 12, -12, 24, -24)]      # round 0 tries only these (with the class's own flips): a wrong class guess must not eat the time of the real search
+else: class_cands = None
 started = None
 FORCE = os.environ.get('WDRAW_FORCE')      # test: W,dy,AX,SX,SY, only this one
 ROUNDS = [(1.0, 1, 1), (1.0, 1, 1), (1.4, -1, -1)] + [(ax_, sx_, sy_) for ax_ in (1.0, 1.45, 0.7, 2.0, 0.5) for (sx_, sy_) in ((-1, -1), (1, 1), (1, -1), (-1, 1)) if (ax_, sx_, sy_) != (1.0, 1, 1)]
 if FORCE:
     fw, fdy, fax, fsx, fsy = [float(v) for v in FORCE.split(',')]; ROUNDS = [(fax, int(fsx), int(fsy))] * 2; cands = [(fw, int(fdy))]; cached_ax = None
 for attempt, (ax_, sx_, sy_) in enumerate(ROUNDS):
-    if time.time() - T_START > 80 and attempt > 2: break      # the whole search for a start circle is capped: a panel without one is reported, not chased
+    ROUND_END = (time.time() - T_START) + 70      # each round gets its own budget; the whole search is capped below
+    if time.time() - T_START > 230 and attempt > 2: break      # the whole search for a start circle is capped: a panel without one is reported, not chased
     AX = cached_ax if (attempt == 0 and cached_ax) else ax_; SX, SY = cached_flip if attempt == 0 else (sx_, sy_)
     for _ in range(3):
         c.click(settle=1.0)                          # enter: the cursor appears at the screen centre
         if not probe_free_look(): break              # entered (the cursor moved, the view did not)
         rclick()                                     # not entered: leave and click again
     cur = (0.0, 0.0)
-    for w_, dy_ in (cands if (attempt < 2 or FORCE) else [(w2, dy2) for dy2 in (0, 12, -12, 24, -24, 36, -36) for w2 in ((0.70, 0.66, 0.74, 0.62, 0.78, 0.58, 0.82) if attempt == 2 else (0.567, 0.645, 0.70, 0.76, 0.82, 0.88, 0.95, 1.05))]):
-        if time.time() - T_START > 80: break
+    for w_, dy_ in (class_cands if (attempt == 0 and class_cands) else cands if (attempt < 2 or FORCE) else [(w2, dy2) for dy2 in (0, 12, -12, 24, -24, 36, -36) for w2 in ((0.70, 0.66, 0.74, 0.62, 0.78, 0.58, 0.82) if attempt == 2 else (0.567, 0.645, 0.70, 0.76, 0.82, 0.88, 0.95, 1.05))]):
+        if time.time() - T_START > ROUND_END: break
         W = w_
         sx, sy = node_px(path[0]); sy += dy_
         ddx, ddy = (sx - cur[0]) * COUNTS_PER_PX, (sy - cur[1]) * COUNTS_PER_PX
