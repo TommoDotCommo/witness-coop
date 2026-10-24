@@ -13,6 +13,7 @@ struct Cfg {
     bool devMenu = false;        // dev_menu=1: the F8 dev menu (map, teleport, nearby puzzles); off in a normal install
     bool partnerView = false;    // partner_view=1: send a small picture of this screen to the peer and show the peer's (F9)
     bool noPartnerVideo = false; // twin: send no picture
+    bool noRestoreCopy = false;  // twin: a restore does not put the save file in place
     bool noPowerLink = false;    // twin: leave a powered panel's source back-link (+0x2C8) unset
     bool noTargetDispatch = false; // twin: a remote solve does not run the game's target dispatcher for other target types
 };

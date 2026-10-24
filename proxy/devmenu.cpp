@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <cstring>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 #include "devmenu.h"
@@ -16,6 +17,7 @@
 #include "game.h"
 #include "config.h"
 #include "video.h"
+#include "savepoints.h"
 
 void Log(const char* msg);
 
@@ -26,7 +28,7 @@ const float kPi = 3.14159265f;
 
 struct Pn { unsigned id; float x, y, z, rz; bool solved, powered; int target; char ttype[28]; unsigned nodes; };
 struct Dr { unsigned id; float x, y, z; bool open; };
-struct Spot { int pn; int count; };
+struct Spot { int pn; int count; int cx, cy; };
 std::vector<Pn> g_pn; std::vector<Dr> g_dr; std::vector<Spot> g_spots; std::map<unsigned, int> g_pidx;       // panel id -> index
 std::map<int, std::vector<int>> g_rev;                                                                              // target entity index -> panels (indices) that target it
 unsigned g_baseId = 1; bool g_built; DWORD g_lastRefresh;
@@ -95,7 +97,7 @@ void Build() {
     for (auto& kv : cells) {
         float cx = (kv.first.first + .5f) * 80, cy = (kv.first.second + .5f) * 80; int best = kv.second[0];
         for (int i : kv.second) if (hypotf(g_pn[i].x - cx, g_pn[i].y - cy) < hypotf(g_pn[best].x - cx, g_pn[best].y - cy)) best = i;
-        g_spots.push_back({best, (int)kv.second.size()});
+        g_spots.push_back({best, (int)kv.second.size(), kv.first.first, kv.first.second});
     }
     std::sort(g_spots.begin(), g_spots.end(), [&](const Spot& a, const Spot& b) { return hypotf(g_pn[a.pn].x - ox, g_pn[a.pn].y - oy) < hypotf(g_pn[b.pn].x - ox, g_pn[b.pn].y - oy); });
     if (g_pn.size() > 40) {      // fit the view to the bulk of the island: a few panels far away must not shrink the map
@@ -183,10 +185,25 @@ void Chain(float x, float& y, const char* title, bool down, int start, float sc)
     y += UiLineHeight(sc) + 10;
 }
 
+void Refresh();
+std::vector<int> g_solveQ; size_t g_solveTotal;
+void QueueSolveSpots(int n) {      // complete the first n spots: solve every panel in their map cells (a few per frame, with its target)
+    if (!g_built) Build(); g_solveQ.clear();
+    for (int k = 0; k < n && k < (int)g_spots.size(); k++) for (size_t i = 0; i < g_pn.size(); i++) if ((int)floorf(g_pn[i].x / 80) == g_spots[k].cx && (int)floorf(g_pn[i].y / 80) == g_spots[k].cy && !g_pn[i].solved) g_solveQ.push_back((int)i);
+    g_solveTotal = g_solveQ.size(); Msg("solving %zu panels in the first %d spots", g_solveTotal, n);
+}
+std::set<unsigned> g_forced;      // panels the dev tools solved (the game's own save has no solution line for them)
+std::string StateWrite(bool forcedOnly) { Refresh(); std::string t; char b[40]; for (auto& p : g_pn) if (p.solved && (!forcedOnly || g_forced.count(p.id))) { snprintf(b, sizeof b, "S %x\n", p.id); t += b; } return t; }
+void StateApply(const std::string& text) {      // solve every panel the list names that is not solved here yet (a few per frame)
+    if (!g_built) Build(); Refresh(); unsigned id; size_t pos = 0, n = 0; g_solveQ.clear();
+    while (pos < text.size()) { size_t e = text.find('\n', pos); if (e == std::string::npos) e = text.size(); if (sscanf(text.c_str() + pos, "S %x", &id) == 1) { auto it = g_pidx.find(id); if (it != g_pidx.end() && !g_pn[it->second].solved) { g_solveQ.push_back(it->second); n++; } } pos = e + 1; }
+    std::reverse(g_solveQ.begin(), g_solveQ.end()); g_solveTotal = n; Msg("applying a progress list: %zu panels to solve", n);
+}
+std::string ProgressNote() { Refresh(); int s = 0, o = 0; for (auto& p : g_pn) s += p.solved; for (auto& d : g_dr) o += d.open; char b[100]; snprintf(b, sizeof b, "%d of %zu panels solved, %d of %zu doors open", s, g_pn.size(), o, g_dr.size()); return b; }
 bool Do(const char* what, int pi) {      // one action on panel index pi, by name (the buttons and the 'menudo' test command)
     if (pi < 0 || pi >= (int)g_pn.size()) return false; Pn& p = g_pn[pi]; uintptr_t te = p.target >= 0 ? GameEntity(p.target) : 0; const char* tt = te ? TypeName(te) : "";
     if (!strcmp(what, "teleport")) TeleportToPanel(p);
-    else if (!strcmp(what, "solve")) { GameMarkPanelSolved(p.id); GameDispatchTargetNow(p.id, true); Msg("solved panel %#x and ran its target", p.id); }
+    else if (!strcmp(what, "solve")) { g_forced.insert(p.id); GameMarkPanelSolved(p.id); GameDispatchTargetNow(p.id, true); Msg("solved panel %#x and ran its target", p.id); }
     else if (!strcmp(what, "power")) { GamePanelPowerOnNow(p.id); Msg("powered panel %#x", p.id); }
     else if (!strcmp(what, "run") && te) { GameDispatchTargetNow(p.id, true); Msg("ran the target of %#x", p.id); }
     else if (!strcmp(what, "door") && te && !strcmp(tt, "Door")) { GameDoorOpenNow((unsigned)p.target, 1.0f); Msg("opened door %#x", (unsigned)p.target); }
@@ -311,6 +328,27 @@ void NearbyPage(float x, float y, float w, float h, float sc) {
     }
     UiClip(0, 0, 0, 0);
 }
+void SavesPage(float x, float y, float w, float h, float sc) {
+    UiRect(x, y, w, h, Rgba(0.08f, 0.09f, 0.12f, 0.97f)); UiFrame(x, y, w, h, Rgba(0.4f, 0.4f, 0.5f));
+    float lh = UiLineHeight(sc), bh = lh + 14, bx = x + 12, by = y + 12; static int nSpots = 4; static char nm[64];
+    auto act = [&](const char* label) { float bw = UiTextWidth(label, sc) + 26; bool r = Button(bx, by, bw, bh, label, false, sc); bx += bw + 10; return r; };
+    SYSTEMTIME st; GetLocalTime(&st); snprintf(nm, sizeof nm, "%02d%02d%02d-%02d%02d%02d", st.wYear % 100, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
+    if (act("Save point now") && !SaveBusy()) { SaveStartSave(std::string("save-") + nm, false, ProgressNote()); g_open = false; }
+    if (act("Preset from current progress (list only)") && !SaveBusy()) { SaveStartPreset(std::string("preset-") + nm, ProgressNote()); }
+    UiText(x + 12, by + bh + 8, SaveBusy() ? "working... (the pause menu opens and closes by itself; do not touch anything)" : (SaveStatus()[0] ? SaveStatus() : "A save point is a copy of the game's save; a restore loads it through the pause menu. Presets are kept for starting from a given amount of progress."), SaveBusy() ? Rgba(1, 0.8f, 0.4f) : Rgba(0.75f, 0.8f, 0.9f), sc * 0.9f);
+    float ty = by + bh + 8 + lh * 2.2f; char b[120]; snprintf(b, sizeof b, "Make progress for a preset: complete the first %d of %zu spots (all their panels)", nSpots, g_spots.size()); UiText(x + 12, ty, b, Rgba(1, 1, 1), sc);
+    bx = x + 12; by = ty + lh + 6;
+    if (act("-")) nSpots = std::max(1, nSpots - 1); if (act("+")) nSpots = std::min((int)g_spots.size(), nSpots + 1); if (act("Solve them now")) { QueueSolveSpots(nSpots); g_open = false; }
+    if (!g_solveQ.empty()) { snprintf(b, sizeof b, "%zu panels left to solve", g_solveQ.size()); UiText(bx + 20, by + 6, b, Rgba(1, 0.8f, 0.4f), sc); }
+    float ly = by + bh + 16; UiText(x + 12, ly, "Saved:", Rgba(0.7f, 0.8f, 1), sc); ly += lh + 4; float rh = bh;
+    auto& L = SaveList(); if (L.empty()) UiText(x + 12, ly, "nothing yet", Rgba(0.7f, 0.7f, 0.7f), sc);
+    for (size_t i = 0; i < L.size() && ly + rh < y + h; i++) {
+        UiRect(x + 8, ly, w - 16, rh - 2, Rgba(0.12f, 0.12f, 0.16f, 0.9f)); snprintf(b, sizeof b, "%s  %s", L[i].preset ? "[preset]" : "[save]  ", L[i].name.c_str());
+        UiText(x + 16, ly + 7, b, L[i].preset ? Rgba(1, 0.85f, 0.4f) : Rgba(0.9f, 0.9f, 0.95f), sc); UiText(x + 16 + 36 * UiTextWidth("M", sc), ly + 7, L[i].note.c_str(), Rgba(0.7f, 0.75f, 0.8f), sc * 0.9f);
+        const char* lab = L[i].hasGameSave ? "Restore (load save + progress)" : "Apply progress list"; float rw = UiTextWidth(lab, sc) + 26; if (Button(x + w - rw - 14, ly + 1, rw, rh - 4, lab, false, sc) && !SaveBusy()) { SaveStartRestore(L[i]); g_open = false; }
+        ly += rh;
+    }
+}
 struct Cmd { std::string what; unsigned id; };
 std::vector<Cmd> g_cmds;
 }  // namespace
@@ -318,7 +356,25 @@ std::vector<Cmd> g_cmds;
 void DevMenuCommand(const char* what, unsigned id) { Init0(); EnterCriticalSection(&g_cs); g_cmds.push_back({what, id}); LeaveCriticalSection(&g_cs); }
 
 bool DevMenuEnabled() { return GetCfg().devMenu; }
-void DevMenuTick() {      // every frame, open or not: check a pending teleport and retry a refused one
+void ProcessCmds() {
+    Init0();
+    std::vector<Cmd> cmds; EnterCriticalSection(&g_cs); cmds.swap(g_cmds); LeaveCriticalSection(&g_cs);
+    if (!cmds.empty() && !g_built) Build();
+    for (auto& c : cmds) {      // test commands: 'select' picks a panel, anything else is an action on the selected panel (or panel c.id)
+        if (c.what.rfind("save:", 0) == 0) { SaveStartSave(c.what.substr(5), false, ProgressNote()); continue; }
+        if (c.what.rfind("preset:", 0) == 0) { SaveStartPreset(c.what.substr(7), ProgressNote()); continue; }
+        if (c.what.rfind("restore:", 0) == 0) { SaveListRefresh(); std::string n = c.what.substr(8); bool found = false; for (auto& e : SaveList()) if (e.name == n) { SaveStartRestore(e); found = true; break; } if (!found) Msg("no save called '%s'", n.c_str()); continue; }
+        if (c.what == "complete") { QueueSolveSpots((int)c.id); continue; }
+        auto it = g_pidx.find(c.id);
+        if (c.what == "select") { if (it != g_pidx.end()) { SelectPanel(it->second); g_vx = g_pn[it->second].x; g_vy = g_pn[it->second].y; Msg("selected panel %#x", c.id); } else Msg("no such panel %#x", c.id); }
+        else if (!Do(c.what.c_str(), g_selKind == SelPanel ? g_selPanel : -1)) Msg("action '%s' not possible here", c.what.c_str());
+    }
+}
+void DevMenuTick() {      // every frame, open or not: test commands, saves, the solve queue and the check of a pending teleport (retried when refused)
+    { static bool hooked; if (!hooked) { SaveSetHooks(StateWrite, StateApply); hooked = true; } }
+    ProcessCmds(); SaveTick(GetTickCount());
+    { static char last[200]; if (strcmp(last, SaveStatus())) { snprintf(last, sizeof last, "%s", SaveStatus()); if (last[0]) Msg("%s", last); } }
+    for (int k = 0; k < 8 && !g_solveQ.empty(); k++) { int i = g_solveQ.back(); g_solveQ.pop_back(); g_forced.insert(g_pn[i].id); GameMarkPanelSolved(g_pn[i].id); GameDispatchTargetNow(g_pn[i].id, true); if (g_solveQ.empty()) Msg("solved the panels of the chosen spots"); }
     if (!g_tp.on || GetTickCount() - g_tp.at < 1500) return;
     float pos[3], ang[2]; if (!Camera(pos, ang)) return;
     int k = g_tp.attempt;
@@ -326,15 +382,15 @@ void DevMenuTick() {      // every frame, open or not: check a pending teleport 
     if (++g_tp.attempt >= (int)(sizeof kTryDist / sizeof kTryDist[0])) { g_tp.on = false; Msg("teleport to panel %#x refused by the game (it put you back at the spawn point): that place cannot be entered this way", g_tp.id); return; }
     FireTeleport();
 }
-bool DevMenuToastWanted() { return !g_open && g_msg[0] && GetTickCount() - g_msgAt <= 6000; }
+bool DevMenuToastWanted() { return !g_open && g_msg[0] && (GetTickCount() - g_msgAt <= 6000 || SaveBusy()); }
 void DevMenuToast(float W, float H) {      // the last message, for a few seconds after the menu closed
-    if (g_open || !g_msg[0] || GetTickCount() - g_msgAt > 6000) return; float sc = std::max(1.f, H / 1080.f), tw = UiTextWidth(g_msg, sc) + 20;
+    if (g_open || !g_msg[0] || (GetTickCount() - g_msgAt > 6000 && !SaveBusy())) return; float sc = std::max(1.f, H / 1080.f), tw = UiTextWidth(g_msg, sc) + 20;
     UiRect(W / 2 - tw / 2, H - 80 * sc, tw, UiLineHeight(sc) + 12, Rgba(0, 0, 0, 0.75f)); UiText(W / 2 - tw / 2 + 10, H - 80 * sc + 6, g_msg, Rgba(1, 0.95f, 0.5f), sc);
 }
 bool DevMenuOpen() { return g_open; }
 static void Init() { if (!g_csInit) { InitializeCriticalSection(&g_cs); g_csInit = true; } }
 void DevMenuToggle() { Init(); g_open = !g_open; g_ldown = g_rdown = false; if (g_open) g_built = false; }      // rebuild on open: entities may have been recreated by a load
-void DevMenuSetPage(int p) { Init(); g_page = p; if (!g_open) { g_open = true; g_built = false; } }
+void DevMenuSetPage(int p) { Init(); g_page = p; if (p == 2) SaveListRefresh(); if (!g_open) { g_open = true; g_built = false; } }
 bool DevMenuKey(unsigned vk, bool down) {
     Init(); if (vk == VK_F9 && down && VideoEnabled()) { VideoToggleView(); return true; }
     if (!DevMenuEnabled()) return false;
@@ -366,28 +422,23 @@ void DevMenuDraw(float W, float H) {
         else if (e.type == 3) { if (e.a == VK_ESCAPE) g_keyEsc = true; if (e.a == VK_TAB) g_keyTab = true; if (e.a == VK_UP) g_keyUp = true; if (e.a == VK_DOWN) g_keyDown = true; if (e.a == VK_RETURN) g_keyEnter = true; }
     }
     if (g_cl || g_cr) { char m[100]; snprintf(m, sizeof m, "devmenu: click %s at %.0f %.0f", g_cl ? "left" : "right", g_mx, g_my); Log(m); }
-    std::vector<Cmd> cmds; EnterCriticalSection(&g_cs); cmds.swap(g_cmds); LeaveCriticalSection(&g_cs);
-    for (auto& c : cmds) {      // test commands: 'select' picks a panel, anything else is an action on the selected panel (or panel c.id)
-        auto it = g_pidx.find(c.id);
-        if (c.what == "select") { if (it != g_pidx.end()) { SelectPanel(it->second); g_vx = g_pn[it->second].x; g_vy = g_pn[it->second].y; Msg("selected panel %#x", c.id); } else Msg("no such panel %#x", c.id); }
-        else if (!Do(c.what.c_str(), g_selKind == SelPanel ? g_selPanel : -1)) Msg("action '%s' not possible here", c.what.c_str());
-    }
     if (g_keyEsc) { g_open = false; return; }
-    if (g_keyTab) g_page = (g_page + 1) % 2;
+    if (g_keyTab) g_page = (g_page + 1) % 3;
     float sc = std::max(1.f, H / 1080.f), pad = 14 * sc; float x0 = pad, y0 = pad, w = W - 2 * pad, h = H - 2 * pad;
     UiRect(0, 0, W, H, Rgba(0, 0, 0, 0.55f)); UiRect(x0, y0, w, h, Rgba(0.1f, 0.1f, 0.14f, 0.97f)); UiFrame(x0, y0, w, h, Rgba(0.5f, 0.5f, 0.65f), 2);
     UiText(x0 + 12, y0 + 8, "WITNESS CO-OP  DEV MENU", Rgba(1, 1, 1), sc * 1.2f);
     float tx = x0 + 380 * sc, ty = y0 + 6, th = UiLineHeight(sc) + 10;
-    if (Button(tx, ty, 120 * sc, th, "Map", g_page == 0, sc)) g_page = 0; if (Button(tx + 128 * sc, ty, 160 * sc, th, "Nearby puzzles", g_page == 1, sc)) g_page = 1;
+    if (Button(tx, ty, 120 * sc, th, "Map", g_page == 0, sc)) g_page = 0; if (Button(tx + 128 * sc, ty, 160 * sc, th, "Nearby puzzles", g_page == 1, sc)) g_page = 1; if (Button(tx + 296 * sc, ty, 120 * sc, th, "Saves", g_page == 2, sc)) { g_page = 2; SaveListRefresh(); }
     { const char* hint = "F8/Esc close   F7 nearby   Tab page"; UiText(x0 + w - UiTextWidth(hint, sc * 0.9f) - 14, y0 + 10, hint, Rgba(0.6f, 0.6f, 0.65f), sc * 0.9f); }
     float cy0 = y0 + th + 18, ch = h - (cy0 - y0) - UiLineHeight(sc) - 18, lw = 360 * sc, gap = 10;
     if (!g_built) { UiText(x0 + 20, cy0 + 20, "The world is not loaded yet.", Rgba(1, 0.7f, 0.7f), sc); }
     else {
         float rx = x0 + 10 + lw + gap, rw = w - 20 - lw - gap, dh = std::min(ch * 0.46f, 440.f * sc);
-        if (g_page == 0) { SpotList(x0 + 10, cy0, lw, ch - dh - gap, sc); MapPage(rx, cy0, rw, ch, sc); }
-        else { NearbyPage(x0 + 10, cy0, lw, ch, sc); UiRect(rx, cy0, rw, ch, Rgba(0.08f, 0.09f, 0.12f, 0.97f)); UiFrame(rx, cy0, rw, ch, Rgba(0.4f, 0.4f, 0.5f)); }
+        if (g_page == 2) SavesPage(x0 + 10, cy0, w - 20, ch, sc);
+        else if (g_page == 0) { SpotList(x0 + 10, cy0, lw, ch - dh - gap, sc); MapPage(rx, cy0, rw, ch, sc); }
+        else if (g_page == 1) { NearbyPage(x0 + 10, cy0, lw, ch, sc); UiRect(rx, cy0, rw, ch, Rgba(0.08f, 0.09f, 0.12f, 0.97f)); UiFrame(rx, cy0, rw, ch, Rgba(0.4f, 0.4f, 0.5f)); }
         if (g_page == 0) { UiRect(x0 + 10, cy0 + ch - dh, lw, dh, Rgba(0.08f, 0.09f, 0.12f, 0.97f)); UiFrame(x0 + 10, cy0 + ch - dh, lw, dh, Rgba(0.4f, 0.4f, 0.5f)); DetailPane(x0 + 20, cy0 + ch - dh + 8, lw - 20, sc * 0.9f); }
-        else DetailPane(rx + 14, cy0 + 10, rw - 28, sc);
+        else if (g_page == 1) DetailPane(rx + 14, cy0 + 10, rw - 28, sc);
     }
     if (GetTickCount() - g_msgAt < 6000 && g_msg[0]) UiText(x0 + 12, y0 + h - UiLineHeight(sc) - 8, g_msg, Rgba(1, 0.95f, 0.5f), sc);
     UiTri(g_cx + 2, g_cy + 2, 12, 0.9f, Rgba(1, 1, 1)); UiTri(g_cx + 2, g_cy + 2, 8, 0.9f, Rgba(0, 0, 0));

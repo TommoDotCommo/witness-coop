@@ -26,6 +26,7 @@ const Cfg& GetCfg() {
             else if (sscanf(line, "dev_menu=%d", &v) == 1) r.devMenu = v != 0;
             else if (sscanf(line, "partner_view=%d", &v) == 1) r.partnerView = v != 0;
             else if (sscanf(line, "no_partner_video=%d", &v) == 1) r.noPartnerVideo = v != 0;
+            else if (sscanf(line, "no_restore_copy=%d", &v) == 1) r.noRestoreCopy = v != 0;
             else if (sscanf(line, "no_power_link=%d", &v) == 1) r.noPowerLink = v != 0;
             else if (sscanf(line, "no_target_dispatch=%d", &v) == 1) r.noTargetDispatch = v != 0;
             else if (sscanf(line, "save_dir=%299[^\r\n]", s) == 1) {

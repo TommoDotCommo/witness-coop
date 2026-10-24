@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstdint>
 #include <cstring>
+#include <string>
 #include "game.h"
 #include "input.h"
 #include "config.h"
@@ -86,15 +87,19 @@ static DWORD WINAPI CmdThread(LPVOID) {
         char line[160];
         while (fgets(line, sizeof line, f)) {
             unsigned id; float amt = 1.0f;
-            char a[16], b[16]; int dx, dy;
+            char a[16], b[16], nm[64]; int dx, dy;
             if (sscanf(line, "door %x %f", &id, &amt) >= 1) GameEnqueueDoorOpen(id, amt);
             else if (sscanf(line, "cableoff %x", &id) == 1) GameEnqueueCableOff(id);
             else if (sscanf(line, "partnershot %15s", a) == 1) VideoSavePartnerShot(a);
             else if (sscanf(line, "partner %15s", a) == 1) { if (!strcmp(a, "on")) VideoSetMode(1); else if (!strcmp(a, "large")) VideoSetMode(2); else if (!strcmp(a, "off")) VideoSetMode(0); else if (!strcmp(a, "stats")) { unsigned s1, r1, d1; VideoStats(&s1, &r1, &d1); char mm[100]; snprintf(mm, sizeof mm, "video: sent %u received %u decoded %u", s1, r1, d1); Log(mm); } }
+            else if (sscanf(line, "savepoint %63s", nm) == 1) { std::string w2 = std::string("save:") + nm; DevMenuCommand(w2.c_str(), 0); }
+            else if (sscanf(line, "savepreset %63s", nm) == 1) { std::string w2 = std::string("preset:") + nm; DevMenuCommand(w2.c_str(), 0); }
+            else if (sscanf(line, "restore %63s", nm) == 1) { std::string w2 = std::string("restore:") + nm; DevMenuCommand(w2.c_str(), 0); }
+            else if (sscanf(line, "complete %d", &dx) == 1) DevMenuCommand("complete", (unsigned)dx);
             else if (sscanf(line, "menusel %x", &id) == 1) DevMenuCommand("select", id);
             else if (sscanf(line, "menudo %15s", a) == 1) DevMenuCommand(a, 0);
             else if (sscanf(line, "menuat %d %d", &dx, &dy) == 2) DevMenuSetCursor((float)dx, (float)dy);
-            else if (sscanf(line, "menu %15s", a) == 1) { if (!strcmp(a, "map")) DevMenuSetPage(0); else if (!strcmp(a, "nearby")) DevMenuSetPage(1); else if (!strcmp(a, "toggle")) DevMenuToggle(); }
+            else if (sscanf(line, "menu %15s", a) == 1) { if (!strcmp(a, "map")) DevMenuSetPage(0); else if (!strcmp(a, "nearby")) DevMenuSetPage(1); else if (!strcmp(a, "toggle")) DevMenuToggle(); else if (!strcmp(a, "saves")) DevMenuSetPage(2); }
             else if (sscanf(line, "cable %x", &id) == 1) GameEnqueueCablePower(id);
             else if (sscanf(line, "solve %x", &id) == 1 || sscanf(line, "dispatch %x", &id) == 1) { Cmd c = {line[0] == 's' ? 5 : 4, id, 0, 0, 0, false, 0, 0, 0}; EnterCriticalSection(&g_lock); if (g_n < 64) g_q[g_n++] = c; LeaveCriticalSection(&g_lock); }
             else if (sscanf(line, "key %15s %15s", a, b) == 2) {       // key W down|up

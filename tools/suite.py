@@ -39,6 +39,19 @@ def wait_new_stats(dirs, timeout=14):
     n0 = [stats_lines(d) for d in dirs]; t0 = time.time()
     while time.time() - t0 < timeout and any(stats_lines(d) <= n for d, n in zip(dirs, n0)): time.sleep(0.5)
 
+def restart_both(ca, cb):
+    """Throw both games away and start two fresh new games (the save point and preset scenarios restore progress into them)."""
+    subprocess.run([os.path.join(TOOLS, 'restart.sh')], env={**os.environ, 'CFG_A': ca, 'CFG_B': cb}, capture_output=True, text=True, timeout=600, check=True)
+    wait_stable([DIR1, DIR2]); time.sleep(16); open(os.path.join(RUN, 'guard.stop'), 'w').write('restarted')
+
+def wait_panels(which, want, secs):
+    """Poll until game `which` has every panel in `want` solved; returns True when it does."""
+    t0 = time.time()
+    while time.time() - t0 < secs:
+        if set(want) <= set(state(which)['panels']): return True
+        time.sleep(3)
+    return False
+
 def real_saves():
     """Hashes of the owner's real save folder (%APPDATA%\\The Witness), read through Windows Python. Instances must never touch it."""
     code = ("import os,hashlib,json\nd=os.path.join(os.environ['APPDATA'],'The Witness');m={}\n"
@@ -203,6 +216,9 @@ SCENARIOS = [   # name, extra cfg for A, extra cfg for B, check(a_stats, b_stats
   ('MUTANT: dev menu actions without sync', 'no_cable_sync=1', 'no_target_dispatch=1\nno_cable_sync=1', lambda a, b, ok: (not ok, 'B must keep the laser off and the cable dark')),
   ('partner view', '', '', lambda a, b, ok: (ok, "B receives A's pictures and they show what A sees")),
   ('MUTANT: partner view without pictures', 'no_partner_video=1', '', lambda a, b, ok: (not ok, 'B must receive no picture')),
+  ('preset apply', '', '', lambda a, b, ok: (ok and b.get('ep', 9) == 0, 'a list-only preset made from forced progress brings a fresh game to that progress, and the other game follows')),
+  ('save point restore', '', '', lambda a, b, ok: (ok, 'a save point (the game save plus the progress list) brings a fresh game back to the saved progress, and the other game follows')),
+  ('MUTANT: save point restore without the save file', 'no_restore_copy=1', '', lambda a, b, ok: (not ok, 'the natural progress in the game save must be missing after the restore')),
   ('MUTANT: panel power chain disabled', 'no_panel_power=1', '', lambda a, b, ok: (not ok, 'target panel must remain dark on B')),
 ]
 args = sys.argv[1:]; shard = None
@@ -231,7 +247,27 @@ while queue:
     effects = 'bot-free effects' in name
     devmenu = 'dev menu' in name
     partner = 'partner view' in name
+    preset = 'preset apply' in name
+    savept = 'save point restore' in name
     maze = chain      # the chain scenario also covers the single maze: its first panel is the one the 'cable maze' scenario used
+    def progress_flow(natural):      # forced progress (the first 4 spots) is kept, both games are thrown away, and it is restored into fresh ones
+        kind = 'save point' if natural else 'preset'; name_ = 'sp1' if natural else 'p1'
+        pyw('wcmd.py', win(DIR1), 'complete', '4'); want_n = 16
+        t0 = time.time()
+        while time.time() - t0 < 60 and len(state('A')['panels']) < want_n: time.sleep(3)
+        want = list(state('A')['panels'])
+        if len(want) < want_n: return 'the forced solves did not happen (%d panels)' % len(want)
+        pyw('wcmd.py', win(DIR1), 'savepoint' if natural else 'savepreset', name_)
+        folder = os.path.join(DIR1, 'savepoints' if natural else 'presets'); t0 = time.time()
+        while time.time() - t0 < 60 and not (os.path.exists(os.path.join(folder, name_ + '.state')) and (not natural or os.path.exists(os.path.join(folder, name_ + '.witness_campaign')))): time.sleep(2)
+        if not os.path.exists(os.path.join(folder, name_ + '.state')): return 'the %s was not written' % kind
+        time.sleep(3); restart_both(ca, cb)
+        if len(state('A')['panels']): return 'the new game was not fresh'
+        if natural: pyw('wtour.py', pid('A'), win(DIR1), win(os.path.join(RUN, 'tourA.txt')), 'go', '1'); time.sleep(25)     # out of the intro tunnel: the pause menu can load from here
+        pyw('wcmd.py', win(DIR1), 'restore', name_)
+        if name.startswith('MUTANT:'): want = [w for w in want if w != '0x64']      # the mutant never loads the game's save: only the list part can come back
+        if not wait_panels('A', want, 150): return 'A did not get back to the saved progress (%d of %d panels)' % (len(set(want) & set(state('A')['panels'])), len(want))
+        time.sleep(15); return ''
     if partner:      # B shows what A sees: A goes somewhere with its own look, then B's received picture is compared with A's screenshot
         def shotfile(d, n): return os.path.join(d, 'shots', n + '.bmp')
         for d in (DIR1, DIR2):
@@ -245,6 +281,8 @@ while queue:
             print('partner picture vs A screenshot: mean difference %.1f; vs B own screen (control): %.1f' % (near, far), flush=True)
             pres = 'match' if near < 14 and far > near + 15 else 'mismatch'
         print('partner result: %s' % pres, flush=True); bot = 'solved: True'
+    elif preset:      # nothing for a bot to play: forced progress, kept as a list-only preset, restored into fresh games
+        why = progress_flow(False); print('preset flow: %s' % (why or 'ok'), flush=True); bot = 'solved: True' if not why else why
     elif devmenu:      # everything goes through the dev menu: teleport to a panel, check it owns the mouse while open, solve a laser panel, light a cable
         def cam(): return [float(v) for v in pyw('wcam.py', pid('A')).split()]
         def dm(*steps): return pyw('wmenu.py', win(DIR1), *steps)
@@ -273,6 +311,8 @@ while queue:
         time.sleep(6)
         bot = sh('%s -I %s %s %s 0x295 2>&1 | tail -3' % (shlex.quote(PYW), shlex.quote(win(os.path.join(TOOLS, 'win', 'wbot_maze.py'))), pid('A'), shlex.quote(win(DIR1)))).strip()
     print(bot, flush=True)
+    if savept and 'solved: True' in bot:      # the bot played panel 0x64 for real (it is in the game's own save); the rest is forced and kept in the list
+        why = progress_flow(True); print('save point flow: %s' % (why or 'ok'), flush=True); bot = 'solved: True' if not why else why
     bot_ok = 'solved: True' in bot      # a scenario that never solved the panel proves nothing, whatever the state diff says
     second_ok = True
     if 'second tutorial door' in name and bot_ok:
@@ -316,6 +356,10 @@ while queue:
         else: cable_ok = all(c in sa['lit_cables'] for c in cables) and sa['lit_cables'] == sb['lit_cables'] and sa['powered_panels'] == sb['powered_panels']
         ok = ok and solved_ok and cable_ok
     if partner: ok = pres == ('missing' if name.startswith('MUTANT:') else 'match')
+    if savept or preset:
+        sa, sb = state('A'), state('B')
+        if name.startswith('MUTANT:'): ok = bot_ok and '0x64' not in sa['panels'] and len(sa['panels']) >= 15
+        else: ok = ok and sa['panels'] == sb['panels'] and sa['doors'] == sb['doors'] and len(sa['panels']) >= 16 and (not savept or '0x64' in sa['panels'])
     if devmenu:
         sa, sb = state('A'), state('B')
         if name.startswith('MUTANT:'): ok = bot_ok and sb['lasers']['0x32f9'] != LASER_ON and '0x349' not in sb['lit_cables'] and '0x32f5' in sb['panels']
