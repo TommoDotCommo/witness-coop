@@ -7,8 +7,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from witness import ROOT, TOOLS, DIR1, DIR2, RUN, pid, pyw, win
 import solver, sweep
 
-# one panel of each kind: tutorial line (0x64), maze (0x293), stored solution far away (0x139), rule panel with a tilted frame (0x4), polyomino strip (0x469)
-PANELS = [0x64, 0x293, 0x139, 0x4, 0x469]
+# one panel of each kind, all powered in a new game: tutorial lines (0x64, 0x182), maze (0x293), stored solution far away (0x139), polyominoes on a tilted frame (0x2), polyomino strip (0x469)
+PANELS = [0x64, 0x182, 0x293, 0x139, 0x2, 0x469]
 
 def restart(cfg_a='', cfg_b=''):
     subprocess.run([os.path.join(TOOLS, 'restart.sh')], env={**os.environ, 'CFG_A': cfg_a, 'CFG_B': cfg_b}, capture_output=True, text=True, timeout=600, check=True)
