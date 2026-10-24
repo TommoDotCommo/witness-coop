@@ -102,7 +102,7 @@ This uses one game slot; it does not count as eight real game processes. The `mo
 render frame's submitted IDs, positions and gait speeds to `witness_models.json` for these checks.
 Eight-real-game QA is **pending** while other lab tests occupy the available RAM: `tools/qa_group.sh 8` first checks lab activity and RAM, then leases only this
 worktree's slots, runs a normal bot solve, checks every world's process memory, originates progress on every client,
-and verifies restart recovery and drained queues. It refuses insufficient RAM rather than displacing another test.
+and verifies restart recovery and drained queues. It refuses insufficient RAM rather than displacing another test. Groups of three or more also defer while another sweep or suite is live, so a client restart cannot make occupied test capacity look temporarily free.
 Sixteen live clients and remote-PC networking have not been tested.
 
 ## How it works
