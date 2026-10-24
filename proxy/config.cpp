@@ -24,6 +24,7 @@ const Cfg& GetCfg() {
             else if (sscanf(line, "force_active=%d", &v) == 1) r.forceActive = v != 0;
             else if (sscanf(line, "skip_entity_zero=%d", &v) == 1) r.skipEntityZero = v != 0;
             else if (sscanf(line, "no_power_link=%d", &v) == 1) r.noPowerLink = v != 0;
+            else if (sscanf(line, "no_target_dispatch=%d", &v) == 1) r.noTargetDispatch = v != 0;
             else if (sscanf(line, "save_dir=%299[^\r\n]", s) == 1) {
                 if (!strcmp(s, "instance")) r.saveDir = DllDir() + L"appdata";
                 else { wchar_t w[300]; MultiByteToWideChar(CP_UTF8, 0, s, -1, w, 300); r.saveDir = w; }

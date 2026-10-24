@@ -59,6 +59,10 @@ void GameRunQueued() {
     for (int i = 0; i < n; i++) {
         if (batch[i].type == 1) { InputKey(batch[i].vk, batch[i].scan, batch[i].down); continue; }
         if (batch[i].type == 2) { InputMouse(batch[i].dx, batch[i].dy, batch[i].bf); continue; }
+        if (batch[i].type == 4 || batch[i].type == 5) {      // test commands: 'solve' makes the panel solved as a player's solve would (fields + dispatcher), 'dispatch' only runs the dispatcher
+            if (batch[i].type == 5) GameMarkPanelSolved(batch[i].id);
+            char m[100]; snprintf(m, sizeof m, "game: %s %#x -> dispatcher %s", batch[i].type == 5 ? "solve" : "dispatch", batch[i].id, GameDispatchTargetNow(batch[i].id) ? "called" : "not called"); Log(m); continue;
+        }
         if (batch[i].type == 3) { char m[100]; snprintf(m, sizeof m, "game: cable %#x power-on %s", batch[i].id, GameCablePowerOnNow(batch[i].id) ? "called" : "refused"); Log(m); continue; }
         uintptr_t e = GameEntity(batch[i].id); char m[160];
         if (!e) { snprintf(m, sizeof m, "game: door %#x: no such entity", batch[i].id); Log(m); continue; }
@@ -82,6 +86,7 @@ static DWORD WINAPI CmdThread(LPVOID) {
             char a[16], b[16]; int dx, dy;
             if (sscanf(line, "door %x %f", &id, &amt) >= 1) GameEnqueueDoorOpen(id, amt);
             else if (sscanf(line, "cable %x", &id) == 1) GameEnqueueCablePower(id);
+            else if (sscanf(line, "solve %x", &id) == 1 || sscanf(line, "dispatch %x", &id) == 1) { Cmd c = {line[0] == 's' ? 5 : 4, id, 0, 0, 0, false, 0, 0, 0}; EnterCriticalSection(&g_lock); if (g_n < 64) g_q[g_n++] = c; LeaveCriticalSection(&g_lock); }
             else if (sscanf(line, "key %15s %15s", a, b) == 2) {       // key W down|up
                 struct { const char* n; unsigned vk, sc; } keys[] = {{"W", 0x57, 0x11}, {"A", 0x41, 0x1E}, {"S", 0x53, 0x1F}, {"D", 0x44, 0x20}, {"SPACE", 0x20, 0x39}, {"ENTER", 0x0D, 0x1C}, {"ESC", 0x1B, 0x01}};
                 for (auto& k : keys) if (!_stricmp(a, k.n)) { Cmd c = {1, 0, 0, k.vk, k.sc, !_stricmp(b, "down"), 0, 0, 0}; EnterCriticalSection(&g_lock); if (g_n < 64) g_q[g_n++] = c; LeaveCriticalSection(&g_lock); }
@@ -144,5 +149,29 @@ bool GameCablePowerOnNow(unsigned id) {
     const unsigned char prologue[] = {0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48, 0x83, 0xEC, 0x60};
     if (IsBadReadPtr(fn, sizeof prologue) || memcmp(fn, prologue, sizeof prologue)) return false;
     ((void(__fastcall*)(void*, unsigned char))(fn))((void*)e, 0);
+    return true;
+}
+
+void GameMarkPanelSolved(unsigned id) {
+    uintptr_t e = id < 0x40000 ? GameEntity(id) : 0;
+    if (!e || IsBadReadPtr((void*)(e + 8), 8) || *(uintptr_t*)(e + 8) != Base() + kPanelTypeInfo) return;
+    const struct { int off; unsigned v; } w[] = {{0x278, 0x3F800000}, {0x280, 1}, {0x290, 0x3F800000}, {0x294, 0x3F800000}, {0x298, 1}};
+    for (auto& x : w) memcpy((void*)(e + x.off), &x.v, 4);
+}
+
+bool GameDispatchTargetNow(unsigned panelId) {
+    uintptr_t e = panelId < 0x40000 ? GameEntity(panelId) : 0;
+    if (!e || IsBadReadPtr((void*)(e + 8), 8) || *(uintptr_t*)(e + 8) != Base() + kPanelTypeInfo || IsBadReadPtr((void*)(e + 0x2B4), 4)) return false;
+    uintptr_t glob = *(uintptr_t*)(Base() + kGlobals); if (!glob || IsBadReadPtr((void*)(glob + 8), 4)) return false;
+    unsigned target = *(unsigned*)(e + 0x2B4), idx = target - *(unsigned*)(glob + 8);
+    uintptr_t t = idx < 0x40000 ? GameEntity(idx) : 0;
+    if (!t || IsBadReadPtr((void*)(t + 8), 8)) return false;
+    uintptr_t ti = *(uintptr_t*)(t + 8);     // panels, cables and doors have their own events; every other target type goes through the game's dispatcher
+    if (ti == Base() + kPanelTypeInfo || ti == Base() + kCableTypeInfo || ti == Base() + kDoorTypeInfo) return false;
+    // Build 11370412: exe+0xC24F0(engine id of the target, source entity) switches on the target's type.
+    const unsigned char* fn = (const unsigned char*)(Base() + 0xC24F0);
+    const unsigned char prologue[] = {0x85, 0xC9, 0x0F, 0x84, 0x89, 0x01, 0x00, 0x00, 0x57, 0x48, 0x83, 0xEC, 0x20};
+    if (IsBadReadPtr(fn, sizeof prologue) || memcmp(fn, prologue, sizeof prologue)) return false;
+    ((void(__fastcall*)(unsigned, void*))(fn))(target, (void*)e);
     return true;
 }

@@ -55,9 +55,8 @@ public:
     bool panelPowered(unsigned id) override { uintptr_t e = GameEntity(id); return e && Rd32(e + 0x2A4) == kOne; }
     bool applyPanelPower(unsigned id) override { return GamePanelPowerOnNow(id); }
     void applyPanelSolved(unsigned id) override {   // the fields a real solve sets; the door itself is opened by its own event
-        uintptr_t e = GameEntity(id); if (!e) return;
-        const struct { int off; uint32_t v; } w[] = {{0x278, kOne}, {kPanelState, 1}, {0x290, kOne}, {kSolvedF, kOne}, {kEver, 1}};
-        for (auto& x : w) memcpy((void*)(e + x.off), &x.v, 4);
+        GameMarkPanelSolved(id);
+        if (!GetCfg().noTargetDispatch) GameDispatchTargetNow(id);       // targets without a dedicated event (laser, plate, gauge, ...) react as in a native solve
     }
     bool applyDoorOpen(unsigned id) override { return GameDoorOpenNow(id, 1.0f); }
     bool pose(float pos[3], float ang[2]) override {

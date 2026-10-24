@@ -9,6 +9,8 @@ struct Cfg {
     bool debugMsgs = false;   // debug_msgs=1: log the window messages the game's loop receives, once per message id (diagnostic)
     bool debugSleep = false;  // debug_sleep=1: log every distinct Sleep(arg) call and its caller (diagnostic)
     bool shareZip = false;  // share_zip=1: open data-pc.zip with FILE_SHARE_READ so hard-linked copies can run side by side
-    bool skipEntityZero = false; bool noPowerLink = false;   // twin: leave a powered panel's source back-link (+0x2C8) unset // test mutant: restore the old census that lost the second tutorial door
+    bool skipEntityZero = false; // test mutant: restore the old census that lost the second tutorial door
+    bool noPowerLink = false;    // twin: leave a powered panel's source back-link (+0x2C8) unset
+    bool noTargetDispatch = false; // twin: a remote solve does not run the game's target dispatcher for other target types
 };
 const Cfg& GetCfg();

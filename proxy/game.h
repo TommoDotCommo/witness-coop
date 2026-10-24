@@ -9,3 +9,5 @@ bool GameDoorOpenNow(unsigned id, float amount);      // render thread only; ref
 bool GamePanelPowerOnNow(unsigned id);                // render thread only; refuses non-panel entities or a wrong prologue
 bool GameCablePowerOnNow(unsigned id);                // render thread only; refuses non-cable entities or a wrong prologue
 void GameEnqueueCablePower(unsigned id);              // development command: run GameCablePowerOnNow on the render thread
+void GameMarkPanelSolved(unsigned id);                // writes the fields a real solve sets (render thread)
+bool GameDispatchTargetNow(unsigned panelId);         // runs the game's target dispatcher (exe+0xC24F0) for the panel's target when it is of a type with no dedicated event; render thread only
