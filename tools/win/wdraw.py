@@ -169,6 +169,11 @@ if 'w%x' % eid in kcache:
     cands.insert(0, tuple(kcache['w%x' % eid][:2])); kc_ = kcache['w%x' % eid]; cached_ax = kc_[2] if len(kc_) > 2 else 1.0; cached_flip = (kc_[3], kc_[4]) if len(kc_) > 4 else (1, 1)
 pskey = 'ws%.3f' % pscale
 if pskey in kcache: cands.insert(0, (kcache[pskey], 0))
+# panels of one kind (same scale, grid size and symmetry) are found at the same place: the class remembers the whole answer
+ckey = 'c%.3f|%d|%d|%d' % (pscale, p.u32(e + 0x440), p.u32(e + 0x444), 1 if p.u64(e + 0x438) > 0x10000 else 0)
+if ckey in kcache:
+    kc_ = kcache[ckey]; cached_ax = kc_[2]; cached_flip = (kc_[3], kc_[4])
+    cands[0:0] = [(kc_[0], kc_[1] + d_) for d_ in (0, 12, -12, 24, -24)]
 started = None
 FORCE = os.environ.get('WDRAW_FORCE')      # test: W,dy,AX,SX,SY, only this one
 ROUNDS = [(1.0, 1, 1), (1.0, 1, 1), (1.4, -1, -1)] + [(ax_, sx_, sy_) for ax_ in (1.0, 1.45, 0.7, 2.0, 0.5) for (sx_, sy_) in ((-1, -1), (1, 1), (1, -1), (-1, 1)) if (ax_, sx_, sy_) != (1.0, 1, 1)]
@@ -182,7 +187,7 @@ for attempt, (ax_, sx_, sy_) in enumerate(ROUNDS):
         rclick()                                     # not entered: leave and click again
     cur = (0.0, 0.0)
     for w_, dy_ in (cands if (attempt < 2 or FORCE) else [(w2, dy2) for dy2 in (0, 12, -12, 24, -24, 36, -36) for w2 in ((0.70, 0.66, 0.74, 0.62, 0.78, 0.58, 0.82) if attempt == 2 else (0.567, 0.645, 0.70, 0.76, 0.82, 0.88, 0.95, 1.05))]):
-        if time.time() - T_START > 130: break
+        if time.time() - T_START > 80: break
         W = w_
         sx, sy = node_px(path[0]); sy += dy_
         ddx, ddy = (sx - cur[0]) * COUNTS_PER_PX, (sy - cur[1]) * COUNTS_PER_PX
@@ -198,7 +203,7 @@ if not started: done(False, 'the line did not start with any panel size or offse
 W = started[0]
 stamp('line started with W %.3f m, vertical offset %d px, width factor %.2f, flips %d %d' % (started + (AX, SX, SY)))
 if kcache_path:
-    kcache['w%x' % eid] = list(started) + [AX, SX, SY]; kcache[pskey] = started[0]
+    kcache['w%x' % eid] = list(started) + [AX, SX, SY]; kcache[pskey] = started[0]; kcache[ckey] = list(started) + [AX, SX, SY]
     try: json.dump(kcache, open(kcache_path, 'w'))
     except Exception: pass
 

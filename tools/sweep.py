@@ -49,7 +49,7 @@ def draw(panel, path, which, timeout=420):
     return json.loads(lines[-1]) if lines else {'solved': False, 'why': 'the drawing script printed nothing: ' + out[-200:], 'infrastructure': True}
 
 def retry_possible(manifest, results, n_solved):
-    return any(v.get('result') == 'failed' and v.get('tries', 1) < 4 and n_solved > v.get('at', 0) + 6 for v in results.values())
+    return any(v.get('result') == 'failed' and v.get('tries', 1) < 8 and n_solved > v.get('at', 0) + 4 for v in results.values())
 
 def run(args):
     which = 'B'
@@ -82,7 +82,7 @@ def run(args):
             r0 = results.get(key, {})
             if r0.get('result') == 'no solver' and not '--retry' in args: continue
             # a failed panel is tried again when other panels were solved since (that may have opened a door to it or powered it), at most 4 times
-            if r0.get('result') == 'failed' and not '--retry' in args and (r0.get('tries', 1) >= 4 or n_solved <= r0.get('at', 0) + 6): continue
+            if r0.get('result') == 'failed' and not '--retry' in args and (r0.get('tries', 1) >= 8 or n_solved <= r0.get('at', 0) + 4): continue
             if done_n >= limit: break
             path = solver.solve(p)
             if path is None:
