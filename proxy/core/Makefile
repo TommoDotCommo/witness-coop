@@ -28,6 +28,7 @@ test: $(BUILD)/coopfuzz-witness $(BUILD)/apply-retry $(BUILD)/power-sync $(BUILD
 	$(BUILD)/reload-sync
 	$(BUILD)/cable-sync
 	$(BUILD)/cable-off
+	$(MAKE) -C ../model test
 	python3 tests/run_t0.py --hub $(HUB)
 clean:
 	rm -rf $(BUILD)

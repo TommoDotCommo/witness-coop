@@ -20,7 +20,13 @@ void CoopSendRaw(const uint8_t* d, size_t n) { if (g_sock != INVALID_SOCKET && g
 void VideoOnPacket(const uint8_t* data, size_t n);
 
 witness::SyncCore* CoopCore() { return g_core; }
+static volatile LONG g_fakeOn; static float g_fake[4]; static volatile LONG g_fakeSeq;     // test hook (witness_cmd.txt: fakepose): a pose the peer never sent
+void CoopSetFakeRemote(bool on, const float* pos, float yaw) {
+    if (on) { g_fake[0] = pos[0]; g_fake[1] = pos[1]; g_fake[2] = pos[2]; g_fake[3] = yaw; InterlockedIncrement(&g_fakeSeq); }
+    InterlockedExchange(&g_fakeOn, on ? 1 : 0);
+}
 bool CoopGetRemote(RemotePose* out) {
+    if (g_fakeOn) { out->valid = true; memcpy(out->pos, g_fake, 12); out->ang[0] = g_fake[3]; out->ang[1] = 0; out->ageMs = 0; out->seq = (unsigned)g_fakeSeq; out->id = 99; return true; }
     witness::SyncCore* c = g_core; if (!c) return false;
     witness::RemotePose r; bool ok = c->remotePose(&r, GetTickCount64());
     out->valid = r.valid; memcpy(out->pos, r.pos, sizeof out->pos); memcpy(out->ang, r.ang, sizeof out->ang);

@@ -8,3 +8,4 @@ void CoopStart();                           // reads witness_coop.cfg next to th
 witness::SyncCore* CoopCore();              // the sync core; null until the config is read and the socket is bound
 witness::World* GameWorldInstance();        // state.cpp: the core's view of the game's memory
 void CoopSendRaw(const uint8_t* data, size_t n);   // any thread: one datagram to the peer, as is (partner view pictures)
+void CoopSetFakeRemote(bool on, const float* pos, float yaw);   // test hook: show the peer at this eye position instead of where it is (witness_cmd.txt: fakepose x y z yaw | fakepose off)

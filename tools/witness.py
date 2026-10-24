@@ -14,3 +14,10 @@ def pid(which): return open(os.path.join(RUN, 'pid%s.txt' % which)).read().strip
 def pyw(script, *args, timeout=90):
     """Run a tools/win script with Windows Python; returns stdout."""
     return subprocess.run([PYW, '-I', win(os.path.join(TOOLS, 'win', script)), *args], capture_output=True, text=True, timeout=timeout).stdout
+
+def real_saves():
+    """Hashes of the owner's real save folder (%APPDATA%\\The Witness), read through Windows Python. Instances must never touch it."""
+    import json, hashlib
+    code = ("import os,hashlib,json\nd=os.path.join(os.environ['APPDATA'],'The Witness');m={}\n"
+            "for r,_,fs in os.walk(d):\n for f in fs:\n  p=os.path.join(r,f);m[os.path.relpath(p,d)]=hashlib.sha256(open(p,'rb').read()).hexdigest()\nprint(json.dumps(m))")
+    return json.loads(subprocess.run([PYW, '-I', '-c', code], capture_output=True, text=True).stdout)

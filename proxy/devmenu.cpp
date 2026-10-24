@@ -395,7 +395,7 @@ bool DevMenuKey(unsigned vk, bool down) {
     Init(); if (vk == VK_F9 && down && VideoEnabled()) { VideoToggleView(); return true; }
     if (!DevMenuEnabled()) return false;
     if (vk == VK_F8 && down) { DevMenuToggle(); return true; }
-    if (vk == VK_F7 && down) { if (g_open && g_page == 1) DevMenuToggle(); else DevMenuSetPage(1); return true; }
+    if (vk == VK_F4 && down) { if (g_open && g_page == 1) DevMenuToggle(); else DevMenuSetPage(1); return true; }
     if (!g_open) return false;
     if (down) { EnterCriticalSection(&g_cs); g_ev.push_back({3, (int)vk, 0}); LeaveCriticalSection(&g_cs); }
     return down;          // key-ups still reach the game, so a key held when the menu opened is released there
@@ -429,7 +429,7 @@ void DevMenuDraw(float W, float H) {
     UiText(x0 + 12, y0 + 8, "WITNESS CO-OP  DEV MENU", Rgba(1, 1, 1), sc * 1.2f);
     float tx = x0 + 380 * sc, ty = y0 + 6, th = UiLineHeight(sc) + 10;
     if (Button(tx, ty, 120 * sc, th, "Map", g_page == 0, sc)) g_page = 0; if (Button(tx + 128 * sc, ty, 160 * sc, th, "Nearby puzzles", g_page == 1, sc)) g_page = 1; if (Button(tx + 296 * sc, ty, 120 * sc, th, "Saves", g_page == 2, sc)) { g_page = 2; SaveListRefresh(); }
-    { const char* hint = "F8/Esc close   F7 nearby   Tab page"; UiText(x0 + w - UiTextWidth(hint, sc * 0.9f) - 14, y0 + 10, hint, Rgba(0.6f, 0.6f, 0.65f), sc * 0.9f); }
+    { const char* hint = "F8/Esc close   F4 nearby   Tab page"; UiText(x0 + w - UiTextWidth(hint, sc * 0.9f) - 14, y0 + 10, hint, Rgba(0.6f, 0.6f, 0.65f), sc * 0.9f); }
     float cy0 = y0 + th + 18, ch = h - (cy0 - y0) - UiLineHeight(sc) - 18, lw = 360 * sc, gap = 10;
     if (!g_built) { UiText(x0 + 20, cy0 + 20, "The world is not loaded yet.", Rgba(1, 0.7f, 0.7f), sc); }
     else {

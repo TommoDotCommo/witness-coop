@@ -1,4 +1,5 @@
 #!/bin/bash
+# `tools/qa.sh model [filter]` runs the character-model suite (suite_model.py) instead.
 # Shared-state suite (live sync, packet loss, peer restart and two tutorial doors, with mutants). Accepts scenario name filters.
 # Lab mode: leases two slots (without waiting: exit 3 = busy, run game-free tests instead or retry), builds the hard-linked
 # instance folders, runs, and always kills this agent's games and frees the slots. QA_WAIT=<seconds> waits for slots.
@@ -13,4 +14,4 @@ elif [ -x "$LAB" ]; then
   trap '"$LAB" release' EXIT
   "$LAB" provision witness || exit 1
 fi
-python3 "$TOOLS/suite.py" "$@"
+if [ "${1:-}" = model ]; then shift; python3 "$TOOLS/suite_model.py" "$@"; else python3 "$TOOLS/suite.py" "$@"; fi

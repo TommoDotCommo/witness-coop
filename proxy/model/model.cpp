@@ -1,0 +1,306 @@
+// See model.h. Mutants (-DWM_MUT_...) each break one thing on purpose; the T0 test must fail for every one of them.
+#include "model.h"
+#include <algorithm>
+#include <cmath>
+#include <cstring>
+
+#define CGLTF_IMPLEMENTATION
+#include "../third_party/cgltf.h"
+#define STB_IMAGE_IMPLEMENTATION
+#define STBI_ONLY_PNG
+#define STBI_ONLY_JPEG
+#include "../third_party/stb_image.h"
+
+namespace wm {
+
+// ---- small matrix helpers
+static void Identity(float* m) { memset(m, 0, 64); m[0] = m[5] = m[10] = m[15] = 1; }
+static void Mul(const float* a, const float* b, float* out) {      // out = a * b
+    float r[16];
+    for (int c = 0; c < 4; c++) for (int row = 0; row < 4; row++) {
+        float s = 0; for (int k = 0; k < 4; k++) s += a[k * 4 + row] * b[c * 4 + k];
+        r[c * 4 + row] = s;
+    }
+    memcpy(out, r, 64);
+}
+static void FromTRS(const float* t, const float* q, const float* s, float* m) {
+    float x = q[0], y = q[1], z = q[2], w = q[3];
+    m[0] = (1 - 2 * (y * y + z * z)) * s[0]; m[1] = (2 * (x * y + z * w)) * s[0];     m[2] = (2 * (x * z - y * w)) * s[0];     m[3] = 0;
+    m[4] = (2 * (x * y - z * w)) * s[1];     m[5] = (1 - 2 * (x * x + z * z)) * s[1]; m[6] = (2 * (y * z + x * w)) * s[1];     m[7] = 0;
+    m[8] = (2 * (x * z + y * w)) * s[2];     m[9] = (2 * (y * z - x * w)) * s[2];     m[10] = (1 - 2 * (x * x + y * y)) * s[2]; m[11] = 0;
+    m[12] = t[0]; m[13] = t[1]; m[14] = t[2]; m[15] = 1;
+}
+static void Decompose(const float* m, float* t, float* q, float* s) {      // no shear assumed
+    t[0] = m[12]; t[1] = m[13]; t[2] = m[14];
+    for (int c = 0; c < 3; c++) s[c] = sqrtf(m[c * 4] * m[c * 4] + m[c * 4 + 1] * m[c * 4 + 1] + m[c * 4 + 2] * m[c * 4 + 2]);
+    float r[9]; for (int c = 0; c < 3; c++) for (int k = 0; k < 3; k++) r[c * 3 + k] = s[c] > 1e-12f ? m[c * 4 + k] / s[c] : (c == k);
+    // r[c*3+row]; rotation matrix entries R(row, col) = r[col*3+row]
+    float r00 = r[0], r10 = r[1], r20 = r[2], r01 = r[3], r11 = r[4], r21 = r[5], r02 = r[6], r12 = r[7], r22 = r[8];
+    float tr = r00 + r11 + r22;
+    if (tr > 0) { float S = sqrtf(tr + 1) * 2; q[3] = 0.25f * S; q[0] = (r21 - r12) / S; q[1] = (r02 - r20) / S; q[2] = (r10 - r01) / S; }
+    else if (r00 > r11 && r00 > r22) { float S = sqrtf(1 + r00 - r11 - r22) * 2; q[3] = (r21 - r12) / S; q[0] = 0.25f * S; q[1] = (r01 + r10) / S; q[2] = (r02 + r20) / S; }
+    else if (r11 > r22) { float S = sqrtf(1 + r11 - r00 - r22) * 2; q[3] = (r02 - r20) / S; q[0] = (r01 + r10) / S; q[1] = 0.25f * S; q[2] = (r12 + r21) / S; }
+    else { float S = sqrtf(1 + r22 - r00 - r11) * 2; q[3] = (r10 - r01) / S; q[0] = (r02 + r20) / S; q[1] = (r12 + r21) / S; q[2] = 0.25f * S; }
+}
+void Slerp(const float* a, const float* b, float t, float* out) {
+    float d = a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3], bb[4] = {b[0], b[1], b[2], b[3]};
+    if (d < 0) { d = -d; for (float& v : bb) v = -v; }
+    float ka, kb;
+#ifdef WM_MUT_NO_NORMALIZE
+    if (true) { ka = 1 - t; kb = t; }      // plain lerp without renormalising: shrinks the rotation half way
+#else
+    if (d > 0.9995f) { ka = 1 - t; kb = t; }
+#endif
+    else { float th = acosf(d), sn = sinf(th); ka = sinf((1 - t) * th) / sn; kb = sinf(t * th) / sn; }
+    float q[4]; for (int i = 0; i < 4; i++) q[i] = ka * a[i] + kb * bb[i];
+#ifndef WM_MUT_NO_NORMALIZE
+    float l = sqrtf(q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3]); if (l > 0) for (float& v : q) v /= l;
+#endif
+    memcpy(out, q, 16);
+}
+
+// ---- loading
+bool LoadGlb(const uint8_t* data, size_t n, Model* out, std::string* err) {
+    auto fail = [&](const char* m) { if (err) *err = m; return false; };
+    cgltf_options opt = {}; cgltf_data* d = nullptr;
+    if (cgltf_parse(&opt, data, n, &d) != cgltf_result_success) return fail("not a glTF file");
+    struct Free { cgltf_data* d; ~Free() { cgltf_free(d); } } guard{d};
+    if (cgltf_load_buffers(&opt, d, nullptr) != cgltf_result_success) return fail("cannot load buffers (use a .glb with embedded data)");
+    Model m;
+    std::vector<const cgltf_node*> order; order.reserve(d->nodes_count);
+    for (size_t i = 0; i < d->nodes_count; i++) {
+        const cgltf_node* nd = &d->nodes[i]; Node o; o.parent = nd->parent ? (int)(nd->parent - d->nodes) : -1; if (nd->name) o.name = nd->name;
+        float loc[16]; cgltf_node_transform_local(nd, loc);
+        Decompose(loc, o.t, o.r, o.s);
+        m.nodes.push_back(o);
+    }
+    const cgltf_skin* skin = d->skins_count ? &d->skins[0] : nullptr;
+    if (skin) {
+        if (skin->joints_count + 1 > (size_t)kMaxJoints) return fail("too many joints (limit 127)");
+        for (size_t j = 0; j < skin->joints_count; j++) m.joints.push_back((int)(skin->joints[j] - d->nodes));
+        m.ibm.assign(skin->joints_count * 16, 0);
+        for (size_t j = 0; j < skin->joints_count; j++) {
+            if (skin->inverse_bind_matrices) cgltf_accessor_read_float(skin->inverse_bind_matrices, j, &m.ibm[j * 16], 16); else Identity(&m.ibm[j * 16]);
+        }
+    }
+    // global bind transforms, for geometry that is not skinned
+    std::vector<float> g(d->nodes_count * 16);
+    for (size_t i = 0; i < d->nodes_count; i++) cgltf_node_transform_world(&d->nodes[i], &g[i * 16]);
+    const int ident = (int)m.joints.size();
+    const cgltf_image* img = nullptr;
+    for (size_t ni = 0; ni < d->nodes_count; ni++) {
+        const cgltf_node* nd = &d->nodes[ni]; if (!nd->mesh) continue;
+        bool skinned = skin && nd->skin == skin;
+        for (size_t pi = 0; pi < nd->mesh->primitives_count; pi++) {
+            const cgltf_primitive* p = &nd->mesh->primitives[pi];
+            if (p->type != cgltf_primitive_type_triangles) continue;
+            const cgltf_accessor *pos = nullptr, *nrm = nullptr, *uv = nullptr, *jt = nullptr, *wt = nullptr;
+            for (size_t a = 0; a < p->attributes_count; a++) {
+                const cgltf_attribute& at = p->attributes[a];
+                if (at.index != 0) continue;
+                if (at.type == cgltf_attribute_type_position) pos = at.data; else if (at.type == cgltf_attribute_type_normal) nrm = at.data;
+                else if (at.type == cgltf_attribute_type_texcoord) uv = at.data; else if (at.type == cgltf_attribute_type_joints) jt = at.data;
+                else if (at.type == cgltf_attribute_type_weights) wt = at.data;
+            }
+            if (!pos) continue;
+            if (p->material && !img && p->material->has_pbr_metallic_roughness && p->material->pbr_metallic_roughness.base_color_texture.texture) {
+                img = p->material->pbr_metallic_roughness.base_color_texture.texture->image;
+                memcpy(m.baseColor, p->material->pbr_metallic_roughness.base_color_factor, 16);
+            }
+            uint32_t base = (uint32_t)m.verts.size(); bool useSkin = skinned && jt && wt;
+            for (size_t i = 0; i < pos->count; i++) {
+                Vertex v = {}; cgltf_accessor_read_float(pos, i, v.pos, 3);
+                if (nrm) cgltf_accessor_read_float(nrm, i, v.nrm, 3); else v.nrm[1] = 1;
+                if (uv) cgltf_accessor_read_float(uv, i, v.uv, 2);
+                if (useSkin) {
+                    cgltf_uint j4[4] = {0, 0, 0, 0}; cgltf_accessor_read_uint(jt, i, j4, 4); cgltf_accessor_read_float(wt, i, v.weights, 4);
+                    float sum = v.weights[0] + v.weights[1] + v.weights[2] + v.weights[3];
+                    for (int k = 0; k < 4; k++) { v.joints[k] = (uint8_t)j4[k]; if (sum > 0) v.weights[k] /= sum; }
+                    if (sum <= 0) { v.joints[0] = (uint8_t)ident; v.weights[0] = 1; }
+                } else {      // bake the node's bind transform and bind to the identity joint
+                    const float* G = &g[ni * 16]; float p3[3] = {v.pos[0], v.pos[1], v.pos[2]}, n3[3] = {v.nrm[0], v.nrm[1], v.nrm[2]};
+                    for (int k = 0; k < 3; k++) {
+                        v.pos[k] = G[k] * p3[0] + G[4 + k] * p3[1] + G[8 + k] * p3[2] + G[12 + k];
+                        v.nrm[k] = G[k] * n3[0] + G[4 + k] * n3[1] + G[8 + k] * n3[2];
+                    }
+                    v.joints[0] = (uint8_t)ident; v.weights[0] = 1;
+                }
+                m.verts.push_back(v);
+            }
+            if (p->indices) for (size_t i = 0; i < p->indices->count; i++) m.idx.push_back(base + (uint32_t)cgltf_accessor_read_index(p->indices, i));
+            else for (size_t i = 0; i < pos->count; i++) m.idx.push_back(base + (uint32_t)i);
+        }
+    }
+    if (m.verts.empty() || m.idx.size() < 3) return fail("the file has no triangle mesh");
+    if (img && img->buffer_view && img->buffer_view->buffer->data) {
+        int w, h, c; const uint8_t* src = (const uint8_t*)img->buffer_view->buffer->data + img->buffer_view->offset;
+        uint8_t* px = stbi_load_from_memory(src, (int)img->buffer_view->size, &w, &h, &c, 4);
+        if (px) { m.texW = w; m.texH = h; m.rgba.assign(px, px + (size_t)w * h * 4); stbi_image_free(px); }
+    }
+    for (size_t ai = 0; ai < d->animations_count; ai++) {
+        const cgltf_animation* a = &d->animations[ai]; Clip c; c.name = a->name ? a->name : "";
+        for (size_t ci = 0; ci < a->channels_count; ci++) {
+            const cgltf_animation_channel& ch = a->channels[ci]; Channel o; o.node = (int)(ch.target_node - d->nodes);
+            if (ch.target_path == cgltf_animation_path_type_translation) o.path = 0; else if (ch.target_path == cgltf_animation_path_type_rotation) o.path = 1;
+            else if (ch.target_path == cgltf_animation_path_type_scale) o.path = 2; else continue;
+            o.step = ch.sampler->interpolation == cgltf_interpolation_type_step;
+            bool cubic = ch.sampler->interpolation == cgltf_interpolation_type_cubic_spline;     // read as linear, using the key values and ignoring the tangents
+            int comps = o.path == 1 ? 4 : 3;
+            for (size_t k = 0; k < ch.sampler->input->count; k++) {
+                float tm; cgltf_accessor_read_float(ch.sampler->input, k, &tm, 1); o.times.push_back(tm); c.duration = std::max(c.duration, tm);
+                float v[4]; cgltf_accessor_read_float(ch.sampler->output, cubic ? k * 3 + 1 : k, v, comps); for (int q = 0; q < comps; q++) o.values.push_back(v[q]);
+            }
+            if (!o.times.empty()) c.channels.push_back(std::move(o));
+        }
+        if (c.duration > 0) m.clips.push_back(std::move(c));
+    }
+    // bind-pose bounds
+    std::vector<float> jm(kMaxJoints * 16); JointMatrices(m, -1, 0, jm.data());
+    for (int k = 0; k < 3; k++) { m.bmin[k] = 1e30f; m.bmax[k] = -1e30f; }
+    for (const Vertex& v : m.verts) { float p[3]; SkinPosition(m, jm.data(), v, p); for (int k = 0; k < 3; k++) { m.bmin[k] = std::min(m.bmin[k], p[k]); m.bmax[k] = std::max(m.bmax[k], p[k]); } }
+    *out = std::move(m);
+    return true;
+}
+
+// ---- animation
+static void Sample(const Channel& c, float t, float* out) {
+    int comps = c.path == 1 ? 4 : 3; size_t n = c.times.size();
+    if (t <= c.times[0] || n == 1) { memcpy(out, &c.values[0], comps * 4); return; }
+    if (t >= c.times[n - 1]) { memcpy(out, &c.values[(n - 1) * comps], comps * 4); return; }
+    size_t hi = std::upper_bound(c.times.begin(), c.times.end(), t) - c.times.begin(), lo = hi - 1;
+    if (c.step) { memcpy(out, &c.values[lo * comps], comps * 4); return; }
+    float f = (t - c.times[lo]) / (c.times[hi] - c.times[lo]);
+    const float *a = &c.values[lo * comps], *b = &c.values[hi * comps];
+    if (c.path == 1) Slerp(a, b, f, out); else for (int i = 0; i < 3; i++) out[i] = a[i] + (b[i] - a[i]) * f;
+}
+
+void JointMatrices(const Model& m, int clip, float t, float* out) {
+    size_t nn = m.nodes.size();
+    std::vector<float> T(nn * 3), R(nn * 4), S(nn * 3);
+    for (size_t i = 0; i < nn; i++) { memcpy(&T[i * 3], m.nodes[i].t, 12); memcpy(&R[i * 4], m.nodes[i].r, 16); memcpy(&S[i * 3], m.nodes[i].s, 12); }
+    if (clip >= 0 && clip < (int)m.clips.size()) {
+        const Clip& c = m.clips[clip];
+#ifndef WM_MUT_NO_LOOP
+        t = c.duration > 0 ? t - c.duration * floorf(t / c.duration) : 0;
+#endif
+        for (const Channel& ch : c.channels) { float v[4]; Sample(ch, t, v); float* dst = ch.path == 0 ? &T[ch.node * 3] : ch.path == 1 ? &R[ch.node * 4] : &S[ch.node * 3]; memcpy(dst, v, (ch.path == 1 ? 4 : 3) * 4); }
+    }
+    std::vector<float> G(nn * 16); std::vector<char> done(nn, 0);
+    struct Rec { static void Go(const Model& m, size_t i, const float* T, const float* R, const float* S, float* G, char* done) {
+        if (done[i]) return;
+        float l[16]; FromTRS(&T[i * 3], &R[i * 4], &S[i * 3], l);
+        if (m.nodes[i].parent >= 0) { Go(m, m.nodes[i].parent, T, R, S, G, done); Mul(&G[m.nodes[i].parent * 16], l, &G[i * 16]); } else memcpy(&G[i * 16], l, 64);
+        done[i] = 1; } };
+    for (size_t i = 0; i < nn; i++) Rec::Go(m, i, T.data(), R.data(), S.data(), G.data(), done.data());
+    for (size_t j = 0; j < m.joints.size(); j++) {
+#ifdef WM_MUT_IBM_ORDER
+        Mul(&m.ibm[j * 16], &G[m.joints[j] * 16], out + j * 16);
+#else
+        Mul(&G[m.joints[j] * 16], &m.ibm[j * 16], out + j * 16);
+#endif
+    }
+    Identity(out + m.joints.size() * 16);
+}
+
+void SkinPosition(const Model&, const float* jm, const Vertex& v, float out[3]) {
+    out[0] = out[1] = out[2] = 0;
+    for (int k = 0; k < 4; k++) {
+        float w = v.weights[k]; if (w <= 0) continue; const float* M = jm + v.joints[k] * 16;
+        for (int r = 0; r < 3; r++) out[r] += w * (M[r] * v.pos[0] + M[4 + r] * v.pos[1] + M[8 + r] * v.pos[2] + M[12 + r]);
+    }
+}
+
+int FindClip(const Model& m, const char* word) {
+    std::string w(word); for (char& c : w) c = (char)tolower((unsigned char)c);
+    for (size_t i = 0; i < m.clips.size(); i++) { std::string n = m.clips[i].name; for (char& c : n) c = (char)tolower((unsigned char)c); if (n.find(w) != std::string::npos) return (int)i; }
+    return -1;
+}
+
+Fit FitToHeight(const Model& m, float height) {
+    Fit f; float h = m.bmax[1] - m.bmin[1]; f.scale = h > 1e-6f ? height / h : 1;
+    f.offset[0] = (m.bmin[0] + m.bmax[0]) * 0.5f; f.offset[1] = m.bmin[1]; f.offset[2] = (m.bmin[2] + m.bmax[2]) * 0.5f;
+    return f;
+}
+
+// ---- camera
+bool ProjectPoint(const Cam& c, const float* w, float* nx, float* ny) {
+    float d[3] = {w[0] - c.pos[0], w[1] - c.pos[1], w[2] - c.pos[2]}, th = c.theta, ph = c.phi;
+    float fwd[3] = {cosf(ph) * cosf(th), cosf(ph) * sinf(th), sinf(ph)}, right[3] = {sinf(th), -cosf(th), 0}, up[3] = {-sinf(ph) * cosf(th), -sinf(ph) * sinf(th), cosf(ph)};
+    float f = d[0] * fwd[0] + d[1] * fwd[1] + d[2] * fwd[2];
+    if (f < 0.1f) return false;
+    float tv = tanf(c.vfovDeg * 3.14159265f / 360.0f), tu = tv * c.aspect;
+    *nx = ((d[0] * right[0] + d[1] * right[1] + d[2] * right[2]) / f) / tu;
+    *ny = ((d[0] * up[0] + d[1] * up[1] + d[2] * up[2]) / f) / tv;
+    return true;
+}
+
+void ViewProj(const Cam& c, float out[16]) {
+    float th = c.theta, ph = c.phi;
+    float fwd[3] = {cosf(ph) * cosf(th), cosf(ph) * sinf(th), sinf(ph)}, right[3] = {sinf(th), -cosf(th), 0}, up[3] = {-sinf(ph) * cosf(th), -sinf(ph) * sinf(th), cosf(ph)};
+    float tv = tanf(c.vfovDeg * 3.14159265f / 360.0f), tu = tv * c.aspect, n = c.nearZ, f = c.farZ;
+    float A = f / (f - n), B = -f * n / (f - n);
+    // clip.x = (d.right) / tu, clip.y = (d.up) / tv, clip.w = d.fwd, clip.z = A * d.fwd + B, with d = world - cam
+    float rows[4][4];
+    for (int k = 0; k < 3; k++) { rows[0][k] = right[k] / tu; rows[1][k] = up[k] / tv; rows[2][k] = A * fwd[k]; rows[3][k] = fwd[k]; }
+    for (int r = 0; r < 4; r++) {
+        float tr = 0; for (int k = 0; k < 3; k++) tr -= rows[r][k] * c.pos[k];
+        rows[r][3] = tr + (r == 2 ? B : 0);
+    }
+    for (int r = 0; r < 4; r++) for (int col = 0; col < 4; col++) out[col * 4 + r] = rows[r][col];
+}
+
+void ModelMatrix(const float feet[3], float yaw, const Fit& f, float yawOffset, float out[16]) {
+    // model space: x = the model's left, y = up, z = front. World: front = heading, left = (-sin, cos, 0), up = z.
+    float a = yaw + yawOffset, fx = cosf(a), fy = sinf(a);
+#ifdef WM_MUT_MIRROR
+    float lx = sinf(a), ly = -cosf(a);
+#else
+    float lx = -sinf(a), ly = cosf(a);
+#endif
+    float s = f.scale;
+    float cx[3] = {lx * s, ly * s, 0}, cy[3] = {0, 0, s}, cz[3] = {fx * s, fy * s, 0};
+    float tx = -(cx[0] * f.offset[0] + cy[0] * f.offset[1] + cz[0] * f.offset[2]) + feet[0];
+    float ty = -(cx[1] * f.offset[0] + cy[1] * f.offset[1] + cz[1] * f.offset[2]) + feet[1];
+    float tz = -(cx[2] * f.offset[0] + cy[2] * f.offset[1] + cz[2] * f.offset[2]) + feet[2];
+    float m[16] = {cx[0], cx[1], cx[2], 0, cy[0], cy[1], cy[2], 0, cz[0], cz[1], cz[2], 0, tx, ty, tz, 1};
+    memcpy(out, m, 64);
+}
+
+// ---- avatar
+void Avatar::Update(uint64_t nowMs, bool valid, unsigned seq, const float pos[3], float yaw) {
+#ifdef WM_MUT_NO_TELEPORT_GUARD
+    const bool guardTeleport = false;
+#else
+    const bool guardTeleport = true;
+#endif
+    if (!valid) { have_ = false; speed_ = 0; return; }
+    float dt = have_ ? (float)(nowMs - lastMs_) / 1000.0f : 0; lastMs_ = nowMs;
+    if (!have_) { memcpy(target_, pos, 12); memcpy(pos_, pos, 12); memcpy(lastTarget_, pos, 12); lastSeq_ = seq; lastSeqMs_ = nowMs; yaw_ = yaw; have_ = true; speed_ = 0; return; }
+    if (seq != lastSeq_) {                  // a new datagram: measure the speed over the time since the previous one
+        float dx = pos[0] - lastTarget_[0], dy = pos[1] - lastTarget_[1], dz = pos[2] - lastTarget_[2];
+        float dist = sqrtf(dx * dx + dy * dy), tm = (float)(nowMs - lastSeqMs_) / 1000.0f;
+        if (guardTeleport && (dist > 4.0f || fabsf(dz) > 4.0f)) { memcpy(pos_, pos, 12); speed_ = 0; }                 // a teleport or a reload: jump, do not run there
+        else if (tm > 0.001f) { float inst = dist / tm; float k = 1 - expf(-tm / g_.tau); speed_ += (inst - speed_) * k; }
+        memcpy(lastTarget_, pos, 12); lastSeq_ = seq; lastSeqMs_ = nowMs;
+    } else if ((nowMs - lastSeqMs_) > 250) speed_ *= expf(-dt / g_.tau);                           // no news: stop walking
+    memcpy(target_, pos, 12);
+    float k = dt > 0 ? 1 - expf(-dt / 0.05f) : 0;                    // position smoothing between the 30 Hz datagrams
+    for (int i = 0; i < 3; i++) pos_[i] += (target_[i] - pos_[i]) * k;
+    yaw_ = yaw;
+    idlePhase_ += dt;
+    if (speed_ >= g_.idleBelow) phase_ += dt * speed_ / g_.refSpeed;
+}
+
+ClipPick Avatar::Pick(const Model& m) const {
+    if (m.clips.empty()) return {-1, 0};
+    int idle = FindClip(m, "idle"); if (idle < 0) idle = FindClip(m, "stand"); if (idle < 0) idle = FindClip(m, "survey");
+    int walk = FindClip(m, "walk"); int run = FindClip(m, "run"); if (run < 0) run = FindClip(m, "sprint");
+    if (walk < 0) walk = idle >= 0 && m.clips.size() > 1 ? (idle == 0 ? 1 : 0) : 0;      // an unnamed clip is the walk cycle
+    if (speed_ < g_.idleBelow) return idle >= 0 ? ClipPick{idle, idlePhase_} : ClipPick{walk, 0};
+#ifndef WM_MUT_NO_RUN
+    if (run >= 0 && speed_ >= g_.runSpeed) return {run, phase_};
+#endif
+    return {walk, phase_};
+}
+
+}  // namespace wm
