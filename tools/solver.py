@@ -47,7 +47,7 @@ def psolve_text(p):
     return '%d %d %d %d %d\n%s\n%s\n%s\n%d %s\n' % (n, m, p['gx'] if cells or p['gx'] > 1 else 0, p['gy'] if cells or p['gx'] > 1 else 0, len(cells),
         ' '.join(str(f) for f in p['flags']), ' '.join('%d %d' % (a, b) for a, b in zip(p['ca'], p['cb'])), ' '.join(str(v) for v in cells), len(mir), ' '.join(map(str, mir)))
 
-def solve_rules(p, limit=300_000_000, timeout=120):
+def solve_rules(p, limit=3_000_000_000, timeout=180):
     """Run psolve (the rule solver: dots, squares, stars, triangles, polyominoes, erasers on grids); returns the node list or None."""
     if not os.path.exists(PSOLVE): subprocess.run(['make', '-C', os.path.dirname(PSOLVE)], check=True, capture_output=True)
     try: r = subprocess.run([PSOLVE, str(limit)], input=psolve_text(p), capture_output=True, text=True, timeout=timeout)

@@ -27,6 +27,7 @@ static vector<vector<int>> adj;
 static vector<int> eu, ev;
 static vector<int> mirror;
 static vector<int> eid;      // edge id lookup: eid[a * N + b]
+static vector<int> midNode;  // when an edge of the grid is split by a node (a dot or gap marker on it): the node, midNode[a * N + b], else -1
 static const char* MUTANT = getenv("PSOLVE_MUTANT");      // test mutants: a rule that is switched off, which the T0 tests must notice
 static bool mut(const char* n) { return MUTANT && !strcmp(MUTANT, n); }
 static const unsigned T_SQUARE = 0x100, T_STAR = 0x200, T_POLY = 0x400, T_ERASER = 0x500, T_TRI = 0x600;
@@ -51,6 +52,17 @@ static vector<Shape> orientations(unsigned mask, bool rotate) {
 // be covered by shapes sticking outside the region only when a negative shape cancels them, which this search does allow (offsets range over the
 // bounding box plus margin).
 static bool tile(const vector<pair<int, int>>& cells, vector<unsigned> pos, vector<unsigned> neg, vector<bool> posRot, vector<bool> negRot) {
+    // a negative shape cancels a positive one of the same shape (rotations count when either may turn): cancel such pairs first; whatever is left must tile
+    for (size_t j = 0; j < neg.size();) {
+        bool hit = false;
+        for (size_t i = 0; i < pos.size() && !hit; i++) {
+            bool same = false; for (auto& o : orientations(pos[i] & 0xFFFF, true)) if (o == norm(shapeOf(neg[j] & 0xFFFF))) same = true;
+            bool exact = false; for (auto& o : orientations(pos[i] & 0xFFFF, posRot[i] || negRot[j])) if (o == norm(shapeOf(neg[j] & 0xFFFF))) exact = true;
+            if (same && exact) { pos.erase(pos.begin() + i); posRot.erase(posRot.begin() + i); hit = true; }
+        }
+        if (hit) { neg.erase(neg.begin() + j); negRot.erase(negRot.begin() + j); } else j++;
+    }
+    if (pos.empty() && neg.empty()) return true;
     int area = 0; for (auto m : pos) area += __builtin_popcount(m & 0xFFFF); int narea = 0; for (auto m : neg) narea += __builtin_popcount(m & 0xFFFF);
     if (area - narea != (int)cells.size()) return false;
     if (pos.empty() && neg.empty()) return true;
@@ -182,7 +194,7 @@ static bool evaluate() {
     if (!unmet.empty() && !anyEraser) return false;
     if (!gridPanel || NDEC == 0) return unmet.empty();
     // cells separated by used edges: cell (r,c) and (r,c+1) are separated by the edge between node (r,c+1) and (r+1,c+1); (r,c) and (r+1,c) by (r+1,c)-(r+1,c+1)
-    auto edgeUsed = [&](int a, int b) { if (a < 0 || b < 0) return false; int e = eid[a * N + b]; return e >= 0 && usedEdge[e]; };
+    auto edgeUsed = [&](int a, int b) { if (a < 0 || b < 0) return false; int e = eid[a * N + b]; if (e >= 0) return (bool)usedEdge[e]; int m = midNode[a * N + b]; return m >= 0 && visited[m]; };
     vector<int> triOk(NDEC, 1);
     for (int r = 0; r < CH; r++) for (int c = 0; c < CW; c++) {
         int ci = r * CW + c; unsigned v = cellv[ci]; if (ctype(v) != T_TRI) continue;
@@ -252,7 +264,7 @@ static void dfs(int v) {
             for (auto& cc : cells2) {
                 int r = cc[0], c = cc[1]; if (r < 0 || c < 0 || r >= CH || c >= CW) continue; unsigned cv = cellv[r * CW + c]; if (ctype(cv) != T_TRI) continue;
                 int n00 = r * GX + c, n01 = r * GX + c + 1, n10 = (r + 1) * GX + c, n11 = (r + 1) * GX + c + 1, cnt = 0;
-                auto eu_ = [&](int a, int b) { int e2 = eid[a * N + b]; return e2 >= 0 && usedEdge[e2]; };
+                auto eu_ = [&](int a, int b) { int e2 = eid[a * N + b]; if (e2 >= 0) return (bool)usedEdge[e2]; int m = midNode[a * N + b]; return m >= 0 && visited[m]; };
                 cnt = eu_(n00, n01) + eu_(n10, n11) + eu_(n00, n10) + eu_(n01, n11);
                 if (cnt > (int)(cv >> 16)) { ok = false; break; }
             }
@@ -269,6 +281,8 @@ int main(int argc, char** argv) {
     flags.resize(N); for (auto& f : flags) scanf("%u", &f);
     adj.assign(N, {}); eu.resize(M); ev.resize(M); eid.assign((size_t)N * N, -1);
     for (int i = 0; i < M; i++) { scanf("%d %d", &eu[i], &ev[i]); adj[eu[i]].push_back(ev[i]); adj[ev[i]].push_back(eu[i]); eid[eu[i] * N + ev[i]] = eid[ev[i] * N + eu[i]] = i; }
+    midNode.assign((size_t)N * N, -1);
+    for (int m = 0; m < N; m++) if (adj[m].size() == 2) { int a = adj[m][0], b = adj[m][1]; if (eid[a * N + b] < 0) midNode[a * N + b] = midNode[b * N + a] = m; }
     cellv.resize(NDEC); for (auto& v : cellv) scanf("%u", &v);
     int R = 0; scanf("%d", &R); mirror.resize(R); for (auto& m : mirror) scanf("%d", &m);
     gridPanel = GX > 1 && GY > 1; CW = GX - 1; CH = GY - 1;
