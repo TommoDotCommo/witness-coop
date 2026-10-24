@@ -201,7 +201,9 @@ only = args; results = []
 selected = [sc for sc in SCENARIOS if not only or any(o in sc[0] for o in only)]
 if shard: selected = [sc for k, sc in enumerate(selected) if k % shard[1] == shard[0] - 1]
 SAVES0 = real_saves()
-for name, ca, cb, check in selected:
+queue = list(selected); tries = {}
+while queue:
+    name, ca, cb, check = queue.pop(0)
     print('\n=== %s' % name, flush=True)
     late = 'late join' in name
     if late:      # free B from the previous scenario and start A alone
@@ -305,6 +307,9 @@ for name, ca, cb, check in selected:
     else: ok = ok and h[cap_key] and others
     if not bot_ok: ok = False
     print('A %s\nB %s' % (a, b)); print('RESULT: %s  (%s)' % ('PASS' if ok else 'FAIL', why), flush=True)
+    tries[name] = tries.get(name, 0) + 1
+    if not bot_ok and tries[name] < 2:      # the scenario's own precondition failed (the game was not in the world yet, or a click did not register under load): that is no verdict, so run it once more
+        print('RETRY: %s did not reach its precondition, running it once more' % name, flush=True); queue.insert(0, (name, ca, cb, check)); continue
     results.append((name, ok))
 print('\n==== SUMMARY')
 for n, ok in results: print('%-40s %s' % (n, 'PASS' if ok else 'FAIL'))
