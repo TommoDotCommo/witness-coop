@@ -63,8 +63,24 @@ def stored(p):
     if len(seq) >= 2 and seq[0] in [i for i, f in enumerate(p['flags']) if f & START] and p['flags'][seq[-1]] & END: return list(seq)
     return None
 
+def with_only_edges(p, edges):
+    """A copy of the panel that has only the given edges (a floor puzzle: an edge without a pressure plate cannot be walked). An edge that a marker node splits in two
+    (a dot or a gap on it) counts as one edge between the nodes at its ends; the stubs at the start and the end are always kept."""
+    adj = collections.defaultdict(list)
+    for a_, b_ in zip(p['ca'], p['cb']): adj[a_].append(b_); adj[b_].append(a_)
+    direct = {frozenset(x) for x in zip(p['ca'], p['cb'])}
+    mid = {}
+    for m_, ns in adj.items():
+        if len(ns) == 2 and frozenset(ns) not in direct and not p['flags'][m_] & 3: mid[m_] = frozenset(ns)
+    keep = []
+    for a_, b_ in zip(p['ca'], p['cb']):
+        fa = frozenset((a_, b_)); ends = p['flags'][a_] & 1 or p['flags'][b_] & 1
+        if ends or fa in edges or (a_ in mid and mid[a_] in edges) or (b_ in mid and mid[b_] in edges): keep.append((a_, b_))
+    q = dict(p); q['ca'] = [x for x, y in keep]; q['cb'] = [y for x, y in keep]; q['edges'] = len(keep); return q
+
 def solve(p):
     """A node list the bot should draw for this panel, or None (see unsupported). Order: the game's stored solution, then a plain path."""
+    if p.get("only_edges") is not None: p = with_only_edges(p, p["only_edges"])
     s = stored(p)
     if s: return s
     if not unsupported(p):

@@ -42,15 +42,20 @@ def floor_panels():
         FLOOR = {}
         for d_ in (RUN, os.path.join(os.path.dirname(RUN), 'panel-sweep')):
             fn = os.path.join(d_, 'plates_by_panel.json')
-            if os.path.exists(fn): FLOOR = {int(k) for k in load(fn, {})}; break
+            if os.path.exists(fn): FLOOR = dict(load(fn, {})); break
     return FLOOR
+
+def floor_edges(panel_id):
+    """The edges of a floor puzzle that have a plate: the others cannot be walked, whatever the graph says."""
+    v = floor_panels().get(str(panel_id))
+    return {frozenset(e_) for e_ in v['edges']} if isinstance(v, dict) else None
 
 def draw(panel, path, which, timeout=420):
     """One drawn attempt on one panel: returns the JSON record wdraw.py prints, or a record saying why there is none."""
     gdir = DIR2 if which == 'B' else DIR1
     env = {**os.environ, 'WDRAW_KCACHE': win(KCACHE), 'WSLENV': os.environ.get('WSLENV', '') + ':WDRAW_KCACHE'}
     try:
-        out = subprocess.run([os.environ.get('PYW', '/mnt/c/Python311/python.exe'), '-I', win(os.path.join(TOOLS, 'win', 'wwalk.py' if panel['id'] in floor_panels() else os.environ.get('WDRAW_SCRIPT', 'wdraw.py'))), pid(which), win(gdir),
+        out = subprocess.run([os.environ.get('PYW', '/mnt/c/Python311/python.exe'), '-I', win(os.path.join(TOOLS, 'win', 'wwalk.py' if str(panel['id']) in floor_panels() else os.environ.get('WDRAW_SCRIPT', 'wdraw.py'))), pid(which), win(gdir),
                               '%x' % panel['id'], ','.join(map(str, path))], capture_output=True, text=True, timeout=timeout, env=env).stdout
     except subprocess.TimeoutExpired:
         if not alive(which): restart_game(which)
@@ -101,6 +106,7 @@ def run(args):
             # a failed panel is tried again when other panels were solved since (that may have opened a door to it or powered it), at most 4 times
             if r0.get('result') == 'failed' and not '--retry' in args and (r0.get('tries', 1) >= 8 or n_solved <= r0.get('at', 0) + 4): continue
             if done_n >= limit: break
+            p['only_edges'] = floor_edges(p['id'])
             path = solver.solve(p)
             if path is None:
                 results[key] = {'result': 'no solver', 'why': ', '.join(solver.unsupported(p)) or 'no path found', 'seconds': 0}

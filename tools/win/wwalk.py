@@ -30,16 +30,21 @@ for i, pe in enumerate(tab):
     elif f[1] == 0: node_plate[f[3]] = (x, y, z)
 print('plates: %d nodes, %d edges' % (len(node_plate), len(edge_plate)), file=sys.stderr)
 if not node_plate: done(False, 'this panel has no pressure plates')
-steps = []
+# nodes in the middle of the path that have no plate are markers on an edge (a dot or a gap): the plate of the edge between its neighbours is the one to step on
+path = [nd for kk, nd in enumerate(path) if nd in node_plate or kk == 0 or kk == len(path) - 1]
+steps = []      # (name, position, traced count expected after it, or None)
 for kk, nd in enumerate(path):
-    if nd in node_plate: steps.append(('node %d' % nd, node_plate[nd]))
+    if nd in node_plate: steps.append(('node %d' % nd, node_plate[nd], kk + 1))
     if kk + 1 < len(path):
         ed = frozenset((nd, path[kk + 1]))
-        if ed in edge_plate: steps.append(("edge %d-%d" % (nd, path[kk + 1]), edge_plate[ed]))
+        if ed in edge_plate: steps.append(("edge %d-%d" % (nd, path[kk + 1]), edge_plate[ed], None))
 print('walking %d plates' % len(steps), file=sys.stderr)
-for n_, (name, (x, y, z)) in enumerate(steps):
-    c.send(['hover %.3f %.3f %.3f 0 0' % (x, y, z + 2.2)], DWELL)
-    if os.environ.get('WWALK_DEBUG'): print(n_, name, 'traced', traced(), file=sys.stderr)
+for n_, (name, (x, y, z), expect) in enumerate(steps):
+    for attempt in range(4):      # a plate that did not take the step (the count did not move on) is walked on again, a little off-centre
+        jx, jy = (0.0, 0.0) if attempt == 0 else ((0.12, 0.0), (-0.12, 0.0), (0.0, 0.12))[attempt - 1]
+        c.send(['hover %.3f %.3f %.3f 0 0' % (x + jx, y + jy, z + 2.2)], DWELL)
+        if expect is None or traced() >= expect: break
+    if os.environ.get('WWALK_DEBUG'): print(n_, name, 'traced', traced(), 'expected', expect, file=sys.stderr)
     if is_solved(): break
 t0 = time.time()
 while time.time() - t0 < 6 and not is_solved(): time.sleep(0.3)

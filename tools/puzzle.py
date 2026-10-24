@@ -24,8 +24,11 @@ def describe(q):
     if any(f & 0x20 for f in q['flags']): kinds.add('dots')
     if q.get('refl'): kinds.add('symmetry')
     if solver.stored(q): kinds.add('stored solution')
-    if q['id'] in sweep.floor_panels(): kinds.add('floor puzzle: walk over the pressure plates')
+    if str(q['id']) in sweep.floor_panels(): kinds.add('floor puzzle: walk over the pressure plates')
     return '%dx%d nodes %s%s' % (q['gx'], q['gy'], ','.join(sorted(kinds)) or 'plain', '' if not solver.unsupported(q) else '  [solver: ' + ', '.join(solver.unsupported(q)) + ']')
+
+def prepared(q):
+    q['only_edges'] = sweep.floor_edges(q['id']); return q
 
 def main(argv):
     if not argv: print(__doc__); return 0
@@ -39,6 +42,7 @@ def main(argv):
     which = argv[2] if len(argv) > 2 and not argv[2].startswith('--') else 'B'
     pid_hex = int(argv[1], 16) if len(argv) > 1 else None
     q = P.get(pid_hex)
+    if q is not None: prepared(q)
     if q is None: sys.exit('no such panel %s' % argv[1:2])
     if cmd == 'show':
         print('panel %#x at %.1f %.1f %.1f  %s' % (pid_hex, q['x'], q['y'], q['z'], describe(q)))
