@@ -24,6 +24,7 @@ def describe(q):
     if any(f & 0x20 for f in q['flags']): kinds.add('dots')
     if q.get('refl'): kinds.add('symmetry')
     if solver.stored(q): kinds.add('stored solution')
+    if q['id'] in sweep.floor_panels(): kinds.add('floor puzzle: walk over the pressure plates')
     return '%dx%d nodes %s%s' % (q['gx'], q['gy'], ','.join(sorted(kinds)) or 'plain', '' if not solver.unsupported(q) else '  [solver: ' + ', '.join(solver.unsupported(q)) + ']')
 
 def main(argv):
@@ -49,7 +50,8 @@ def main(argv):
         if '--start' in argv: os.environ['WDRAW_FORCE'] = argv[argv.index('--start') + 1]; os.environ['WSLENV'] = os.environ.get('WSLENV', '') + ':WDRAW_FORCE'
         path = solver.solve(q)
         if path is None: print('no solution known for this panel (%s)' % describe(q)); return 2
-        r = sweep.draw(q, path, which); print(json.dumps({k: r.get(k) for k in ('solved', 'why')})); return 0 if r.get('solved') else 1
+        r = sweep.draw(q, path, which)      # floor puzzles (pressure plates) are walked, everything else drawn: sweep.draw chooses
+        print(json.dumps({k: r.get(k) for k in ('solved', 'why')})); return 0 if r.get('solved') else 1
     print(__doc__); return 2
 
 if __name__ == '__main__': sys.exit(main(sys.argv[1:]))
