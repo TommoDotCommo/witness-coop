@@ -12,6 +12,9 @@ pid, gdir, eid = int(sys.argv[1]), sys.argv[2], int(sys.argv[3], 16)
 path = [int(v) for v in sys.argv[4].split(',')]
 PX_PER_UNIT_3M, COUNTS_PER_PX, STEP = 222.0, 2.0, 16
 p = attach(pid); c = Control(gdir); e = p.entity(eid)
+T_START = time.time()
+def stamp(what):
+    if os.environ.get('WDRAW_TIMING'): print('%6.1f s  %s' % (time.time() - T_START, what), file=sys.stderr)
 
 def sequence():      # the nodes the game says are traced (panel +0x454 length, +0x458 array)
     n_ = p.u32(e + 0x454); ptr = p.u64(e + 0x458)
@@ -38,17 +41,18 @@ def stand_point(d_): return (px_ + d_ * math.cos(rz), py_ + d_ * math.sin(rz))
 def menu_teleport():
     """The dev menu's teleport (the feature under test): 3 m in front of the panel, held 2 s while the player settles on the ground there."""
     for attempt in range(3):
-        c.send(['menusel %x' % eid, 'menudo teleport'], 4.0)
+        c.send(['menusel %x' % eid, 'menudo teleport'], 3.2)
         pos, ang = p.camera()
-        if math.dist(pos[:2], stand_point(3.0)) < 0.5 and abs(pos[2] - pz_) < 0.6: return pos
+        dn_, lat_ = standing(pos)
+        if 1.2 < dn_ < 7 and abs(lat_) < 1.6 and abs(pos[2] - pz_) < 1.6: return pos      # near enough: the pixel size and the shift of the panel on the screen are worked out from where we really stand
         time.sleep(3)
     done(False, 'teleport refused: camera at %.1f %.1f %.1f (wanted %.1f %.1f %.1f)' % (*pos, *stand_point(3.0), pz_))
 
 pscale = struct.unpack('<f', p.rd(e + 0x44, 4))[0]      # panel scale: 0.484 is the tutorial panel, seen at 3 m
 if not 0.05 < pscale < 20: pscale = 0.484
 yaw = math.remainder(rz + math.pi, 2 * math.pi)
-pos = menu_teleport() if '--no-teleport' not in sys.argv else p.camera()[0]
-dist = math.dist(pos[:2], (px_, py_))
+stamp('start'); pos = menu_teleport() if '--no-teleport' not in sys.argv else p.camera()[0]
+stamp('teleported'); dist = math.dist(pos[:2], (px_, py_))
 hz = [pos[0], pos[1], pos[2]]
 def look_back():      # face the panel again (free look moves the yaw): the angles are set by a teleport to where we already stand
     c.send(['tp %.4f %.4f %.4f %.5f 0.0' % (pos[0], pos[1], pos[2], yaw)], 1.0)
@@ -76,24 +80,24 @@ centre_shift = (lat_m * 1033.0 / dist, -up_m * 1033.0 / dist)
 if os.environ.get('WDRAW_SHOTS'): print('panel centre shifted on screen by %.1f, %.1f px (camera %.2f m below the panel centre, %.2f m aside)' % (*centre_shift, up_m, lat_m), file=sys.stderr)
 def start_off(sc): return (centre_shift[0] + (dots[2 * path[0]] - 0.5) * sc, centre_shift[1] - (dots[2 * path[0] + 1] - 0.5) * sc)
 for attempt in range(3):
-    if in_puzzle(): rclick()                                  # already entered (a previous run, or the click below): leave, so the cursor starts at the centre again
-    if in_puzzle(): continue
-    c.click(settle=2.0)                                       # enter the puzzle: the cursor appears at the screen centre
-    if not in_puzzle(): continue
-    rclick(); c.click(settle=2.0)                             # (the test above moved the cursor: leave and enter once more so it is at the centre)
+    # Every run leaves the puzzle at its end (a right click), so the panel starts un-entered: one click enters it and puts the cursor at the
+    # centre. If the scan finds no start, the state is doubtful: leave with a right click and enter again.
+    c.click(settle=1.0)
     cur = (0.0, 0.0); started = None
     for kc in K_CANDIDATES:
         sc = kc / dist; tx, ty = start_off(sc)
         ddx, ddy = (tx - cur[0]) * COUNTS_PER_PX, (ty - cur[1]) * COUNTS_PER_PX
         n_ = max(1, int(math.ceil(max(abs(ddx), abs(ddy)) / 10)))
-        if abs(ddx) + abs(ddy) >= 1: c.send(['mouse %d %d' % (round(ddx / n_), round(ddy / n_))] * n_, 0.5)
+        if abs(ddx) + abs(ddy) >= 1: c.send(['mouse %d %d' % (round(ddx / n_), round(ddy / n_))] * n_, 0.3)
         cur = (cur[0] + round(ddx / n_) * n_ / COUNTS_PER_PX, cur[1] + round(ddy / n_) * n_ / COUNTS_PER_PX)
+        stamp('try K %d (attempt %d)' % (kc, attempt))
         if os.environ.get('WDRAW_KSHOTS'): c.send(['shot k_%d' % kc], 0.5)
-        c.click(settle=0.6)                                   # press and release on the start circle: the line starts
+        c.click(settle=0.5)                                   # press and release on the start circle: the line starts
         if traced() >= 1: started = kc; break
     if started: break
+    rclick()
 else: done(False, 'the line did not start with any panel size tried', traced(), dist)
-scale = started / dist
+stamp('line started with K %s' % started); scale = started / dist
 if kcache_path:
     kcache['%x' % eid] = started
     try: json.dump(kcache, open(kcache_path, 'w'))
@@ -107,13 +111,19 @@ def node_px(i): return (dots[2 * i] - 0.5) * scale, -(dots[2 * i + 1] - 0.5) * s
 # closes the loop: each edge moves 85 % of its expected counts at once and finishes one count at a time, so the line stops at the node it is
 # aiming at (an overshoot onto a straight-on edge would be the next node's count). The end stub counts too once the line is at the end.
 carry = [0.0, 0.0]
+def mouse_lines(vx, vy, counts, chunk=14):
+    """'mouse dx dy' lines for a move of `counts` along (vx, vy): the rounding error is carried to the next move."""
+    n_ = max(1, int(math.ceil(counts / chunk))); lines = []
+    for _ in range(n_):
+        carry[0] += vx * counts / n_; carry[1] += vy * counts / n_
+        mx, my = round(carry[0]), round(carry[1]); carry[0] -= mx; carry[1] -= my
+        if mx or my: lines.append('mouse %d %d' % (mx, my))
+    return lines
 def mouse(vx, vy, counts):
-    carry[0] += vx * counts; carry[1] += vy * counts
-    mx, my = round(carry[0]), round(carry[1]); carry[0] -= mx; carry[1] -= my
-    if mx or my: c.send(['mouse %d %d' % (mx, my)], 0.1)
-def move_edge(vx, vy, counts):      # in chunks of at most 14 counts (a delta is one event per frame)
-    n_ = max(1, int(math.ceil(counts / 14)))
-    for _ in range(n_): mouse(vx, vy, counts / n_)
+    """One batch: the proxy takes a file's lines in order, one event per frame, so a whole edge goes in one file."""
+    lines = mouse_lines(vx, vy, counts)
+    if lines: c.send(lines, 0.04 * len(lines) + 0.05)
+def move_edge(vx, vy, counts): mouse(vx, vy, counts)
 m_ = p.u32(e + 0x3b8)
 conn_a = struct.unpack('<%dI' % m_, p.rd(p.u64(e + 0x3d0), 4 * m_)); conn_b = struct.unpack('<%dI' % m_, p.rd(p.u64(e + 0x3d8), 4 * m_))
 neigh = {}
@@ -135,16 +145,16 @@ for i in range(1, len(path)):
         continue
     used = 0.0
     if per_unit:
-        first = 0.85 * per_unit * units; move_edge(vx, vy, first); used += first
-    for _ in range(700):
+        first = 0.9 * per_unit * units; move_edge(vx, vy, first); used += first
+    for _ in range(250):
         if traced() >= i + 1: break
-        mouse(vx, vy, 1); used += 1
+        mouse(vx, vy, 3); used += 3
     else: done(False, 'stuck before node %d (path index %d)' % (path[i], i), traced(), dist)
     if traced() > i + 1: done(False, 'overshot node %d: the line ran past it (traced %d, wanted %d)' % (path[i], traced(), i + 1), traced(), dist)
     if not straight_on(path[i], vx, vy): mouse(vx, vy, 2)      # the count flips as the tip reaches the node: go a hair further so a turn is taken at the node, not before it (only where no edge goes straight on)
     if per_unit is None and units > 0.12: per_unit = used / units      # not from the start stub: the click that started the line leaves the cursor a few pixels off along it
     if os.environ.get('WDRAW_SHOTS'): print('segment', path[i - 1], '->', path[i], 'counts %.0f' % used, 'per unit', per_unit and round(per_unit), 'traced', traced(), file=sys.stderr)
-c.send(['mouse 0 0'], 1.0)
+stamp('path drawn'); c.send(['mouse 0 0'], 1.0)
 if os.environ.get('WDRAW_SHOTS'): c.send(['shot draw_end'], 0.8); print('before the finishing click: state +0x280 =', p.u32(e + 0x280), ' +0x37c =', p.u32(e + 0x37c), ' traced', traced(), file=sys.stderr)
 c.send(['button L down'], 0.12)
 if os.environ.get('WDRAW_SHOTS'): c.send(['shot draw_down'], 0.05)
@@ -154,4 +164,4 @@ time.sleep(0.3)
 t_end = time.time()
 while time.time() - t_end < 8 and not is_solved(): time.sleep(0.25)      # the solve animation runs a few seconds before the flags change
 if os.environ.get('WDRAW_SHOTS'): c.send(['shot draw_after'], 0.8); print('state +0x280', p.u32(e + 0x280), 'traced', traced(), file=sys.stderr)
-done(is_solved(), '' if is_solved() else 'finished but the game did not accept it', traced(), dist)
+stamp('finished'); done(is_solved(), '' if is_solved() else 'finished but the game did not accept it', traced(), dist)

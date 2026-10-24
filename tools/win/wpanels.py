@@ -25,6 +25,6 @@ for i, e in enumerate(p.entity_table()):
         d.update({'flags': flags, 'pos': arr(e, 0x3c0, 'f', 2 * n), 'ca': arr(e, 0x3d0, 'I', m), 'cb': arr(e, 0x3d8, 'I', m),
                   'dec': arr(e, 0x418, 'I', d['ndec']), 'decf': arr(e, 0x420, 'I', d['ndec']),
                   'deccol': arr(e, 0x428, 'I', d['ndec']), 'refl': p.u32(e + 0x438), 'pw': p.u32(e + 0x39c),
-                  'seq': arr(e, 0x458, 'I', p.u32(e + 0x454)), 'dseq': arr(e, 0x468, 'I', p.u32(e + 0x460))})
+                  'mirror': [v if v < 0x7fffffff else -1 for v in arr(e, 0x438, 'i', n)] if p.u64(e + 0x438) > 0x10000 else [], 'seq': arr(e, 0x458, 'I', p.u32(e + 0x454)), 'dseq': arr(e, 0x468, 'I', p.u32(e + 0x460))})
     out.append(d)
 print(json.dumps(out))

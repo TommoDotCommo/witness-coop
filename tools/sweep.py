@@ -11,8 +11,8 @@ from witness import DIR1, DIR2, RUN, pid, pyw, win, TOOLS
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import solver
 
-RESULTS = os.path.join(RUN, 'sweep_results.json')
-MANIFEST = os.path.join(RUN, 'panels.json')
+RESULTS_GLOB = os.path.join(RUN, 'sweep_results')      # sweep_results.<shard>.json, one per shard so parallel runs never write the same file
+MANIFEST = os.path.join(RUN, 'panels.json')      # master copy, taken from a game before any line was drawn (a drawn line overwrites the stored solution)
 KCACHE = os.path.join(RUN, 'panel_k.json')
 
 def inventory(which='B', full=True):
@@ -37,26 +37,48 @@ def draw(panel, path, which, timeout=420):
 def run(args):
     which = 'B'
     if '--game' in args: which = args[args.index('--game') + 1]
-    manifest = inventory(which); json.dump(manifest, open(MANIFEST, 'w'))
-    results = load(RESULTS, {})
+    manifest = load(MANIFEST, None)
+    if manifest is None:      # first time: the game must be fresh (see MANIFEST)
+        manifest = inventory(which); json.dump(manifest, open(MANIFEST, 'w'))
+    live = {q['id']: q for q in inventory(which, full=False)}      # what changes: solved and powered
+    for q in manifest:
+        if q['id'] in live: q['solved'] = live[q['id']]['solved']; q['powered'] = live[q['id']]['powered']
+    results = {}
+    import glob
+    for fn in glob.glob(RESULTS_GLOB + '.*.json'): results.update(load(fn, {}))
     ids = [int(v, 16) for v in args[args.index('--ids') + 1].split(',')] if '--ids' in args else None
     limit = int(args[args.index('--limit') + 1]) if '--limit' in args else 10 ** 9
+    shard = tuple(map(int, args[args.index('--shard') + 1].split('/'))) if '--shard' in args else (1, 1)
     done_n = 0
-    for p in sorted(manifest, key=lambda q: (not q['powered'], solver.solve(q) is None, q['id'])):      # powered and solvable first
-        if ids is not None and p['id'] not in ids: continue
-        key = '%x' % p['id']
-        if key in results and results[key].get('result') == 'solved': continue
-        if done_n >= limit: break
-        t0 = time.time()
-        path = solver.solve(p)
-        if path is None:
-            results[key] = {'result': 'no solver', 'why': ', '.join(solver.unsupported(p)) or 'no path found', 'seconds': 0}
-        else:
-            r = draw(p, path, which)
-            results[key] = {'result': 'solved' if r.get('solved') else 'failed', 'why': r.get('why', ''), 'seconds': round(time.time() - t0), 'path': path}
-        done_n += 1
-        print('%s: %s %s (%ds)' % (key, results[key]['result'], results[key]['why'], results[key]['seconds']), flush=True)
-        json.dump(results, open(RESULTS, 'w'), indent=1)
+    while True:      # passes: solving a panel can power others, so go again until a pass solves nothing
+        live = {q['id']: q for q in inventory(which, full=False)}
+        for q in manifest:
+            if q['id'] in live: q['solved'] = live[q['id']]['solved']; q['powered'] = live[q['id']]['powered']
+        solved_in_pass = 0; skipped_unpowered = 0
+        for p in sorted(manifest, key=lambda q: q['id']):
+            if ids is not None and p['id'] not in ids: continue
+            key = '%x' % p['id']
+            if p['solved']:
+                if results.get(key, {}).get('result') != 'solved': results[key] = {'result': 'solved', 'why': 'already solved', 'seconds': 0}
+                continue
+            if p['id'] % shard[1] != shard[0] - 1: continue
+            if results.get(key, {}).get('result') in ('failed', 'no solver') and not '--retry' in args: continue
+            if done_n >= limit: break
+            path = solver.solve(p)
+            if path is None:
+                results[key] = {'result': 'no solver', 'why': ', '.join(solver.unsupported(p)) or 'no path found', 'seconds': 0}
+            elif not p['powered']:
+                skipped_unpowered += 1; continue
+            else:
+                t0 = time.time(); r = draw(p, path, which)
+                results[key] = {'result': 'solved' if r.get('solved') else 'failed', 'why': r.get('why', ''), 'seconds': round(time.time() - t0), 'path': path}
+                solved_in_pass += bool(r.get('solved'))
+            done_n += 1
+            print('%s: %s %s (%ds)' % (key, results[key]['result'], results[key]['why'], results[key]['seconds']), flush=True)
+            json.dump(results, open('%s.%d.json' % (RESULTS_GLOB, shard[0]), 'w'), indent=1)
+        print('pass done: %d solved, %d powered-later panels waiting' % (solved_in_pass, skipped_unpowered), flush=True)
+        if done_n >= limit or not solved_in_pass or ids is not None: break
+        time.sleep(5)
 
 if __name__ == '__main__':
     cmd = sys.argv[1] if len(sys.argv) > 1 else 'run'

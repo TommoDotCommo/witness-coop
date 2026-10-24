@@ -8,3 +8,4 @@ proxy/model/build/
 witness_cmd.txt
 witness_cmd.txt.tmp
 witness_cmd.taken
+tools/psolve/psolve
