@@ -30,12 +30,24 @@ def solve_plain(p, limit=2_000_000):
 def unsupported(p):
     """Rules on this panel that the solver does not model (empty = a plain path is a full solution)."""
     why = set()
+    if stored(p): return []
     if any(p['dec']): why.add('decorations')
     for f in p['flags']:
         if f & ~(0x600000 | 0x400000 | 0x200000 | 0x100000 | 0x40000 | 0x3): why.add('node flags %#x' % (f & ~0x700003))
     return sorted(why)
 
+def stored(p):
+    """The game ships a solution line (panel +0x454 length, +0x458 nodes) for 97 panels, present from the first frame of a new game: the
+    ones whose rule is not in the cell decorations (the plain-looking grids that reject a shortest path). It is data of the game, not a flag
+    we set: the bot still has to draw it with the mouse. Returns the nodes, or None."""
+    seq = p.get('seq') or []
+    if len(seq) >= 2 and seq[0] in [i for i, f in enumerate(p['flags']) if f & START] and p['flags'][seq[-1]] & END: return list(seq)
+    return None
+
 def solve(p):
+    """A node list the bot should draw for this panel, or None (see unsupported). Order: the game's stored solution, then a plain path."""
+    s = stored(p)
+    if s: return s
     return solve_plain(p) if not unsupported(p) else None
 
 if __name__ == '__main__':
