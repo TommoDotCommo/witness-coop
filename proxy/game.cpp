@@ -63,6 +63,7 @@ void GameRunQueued() {
             if (batch[i].type == 5) GameMarkPanelSolved(batch[i].id);
             char m[100]; snprintf(m, sizeof m, "game: %s %#x -> dispatcher %s", batch[i].type == 5 ? "solve" : "dispatch", batch[i].id, GameDispatchTargetNow(batch[i].id) ? "called" : "not called"); Log(m); continue;
         }
+        if (batch[i].type == 6) { char m[100]; snprintf(m, sizeof m, "game: cable %#x power-off %s", batch[i].id, GameCableOffNow(batch[i].id) ? "called" : "refused"); Log(m); continue; }
         if (batch[i].type == 3) { char m[100]; snprintf(m, sizeof m, "game: cable %#x power-on %s", batch[i].id, GameCablePowerOnNow(batch[i].id) ? "called" : "refused"); Log(m); continue; }
         uintptr_t e = GameEntity(batch[i].id); char m[160];
         if (!e) { snprintf(m, sizeof m, "game: door %#x: no such entity", batch[i].id); Log(m); continue; }
@@ -85,6 +86,7 @@ static DWORD WINAPI CmdThread(LPVOID) {
             unsigned id; float amt = 1.0f;
             char a[16], b[16]; int dx, dy;
             if (sscanf(line, "door %x %f", &id, &amt) >= 1) GameEnqueueDoorOpen(id, amt);
+            else if (sscanf(line, "cableoff %x", &id) == 1) GameEnqueueCableOff(id);
             else if (sscanf(line, "cable %x", &id) == 1) GameEnqueueCablePower(id);
             else if (sscanf(line, "solve %x", &id) == 1 || sscanf(line, "dispatch %x", &id) == 1) { Cmd c = {line[0] == 's' ? 5 : 4, id, 0, 0, 0, false, 0, 0, 0}; EnterCriticalSection(&g_lock); if (g_n < 64) g_q[g_n++] = c; LeaveCriticalSection(&g_lock); }
             else if (sscanf(line, "key %15s %15s", a, b) == 2) {       // key W down|up
@@ -174,4 +176,22 @@ bool GameDispatchTargetNow(unsigned panelId) {
     if (IsBadReadPtr(fn, sizeof prologue) || memcmp(fn, prologue, sizeof prologue)) return false;
     ((void(__fastcall*)(unsigned, void*))(fn))(target, (void*)e);
     return true;
+}
+
+bool GameCableOffNow(unsigned id) {
+    uintptr_t e = id < 0x40000 ? GameEntity(id) : 0;
+    if (!e || IsBadReadPtr((void*)(e + 8), 8) || *(uintptr_t*)(e + 8) != Base() + kCableTypeInfo) return false;
+    // Build 11370412: the counterpart of exe+0x175EE0, called by the game's own switches (Double_Ramp) with the same type check.
+    const unsigned char* fn = (const unsigned char*)(Base() + 0x175E50);
+    const unsigned char prologue[] = {0x40, 0x53, 0x48, 0x83, 0xEC, 0x60, 0x48, 0x8B, 0xD9};
+    if (IsBadReadPtr(fn, sizeof prologue) || memcmp(fn, prologue, sizeof prologue)) return false;
+    ((void(__fastcall*)(void*))(fn))((void*)e);
+    return true;
+}
+
+void GameEnqueueCableOff(unsigned id) {
+    if (!g_lockInit) return;
+    EnterCriticalSection(&g_lock);
+    if (g_n < 64) g_q[g_n++] = {6, id, 0, 0, 0, false, 0, 0, 0};
+    LeaveCriticalSection(&g_lock);
 }

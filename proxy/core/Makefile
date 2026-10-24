@@ -19,11 +19,15 @@ $(BUILD)/reload-sync: tests/reload_sync.cpp sync_core.cpp sync_core.h
 $(BUILD)/cable-sync: tests/cable_sync.cpp sync_core.cpp sync_core.h
 	mkdir -p $(BUILD)
 	g++ -std=c++17 -O2 -Wall -Wextra -o $@ tests/cable_sync.cpp sync_core.cpp
-test: $(BUILD)/coopfuzz-witness $(BUILD)/apply-retry $(BUILD)/power-sync $(BUILD)/reload-sync $(BUILD)/cable-sync
+$(BUILD)/cable-off: tests/cable_off.cpp sync_core.cpp sync_core.h
+	mkdir -p $(BUILD)
+	g++ -std=c++17 -O2 -Wall -Wextra -o $@ tests/cable_off.cpp sync_core.cpp
+test: $(BUILD)/coopfuzz-witness $(BUILD)/apply-retry $(BUILD)/power-sync $(BUILD)/reload-sync $(BUILD)/cable-sync $(BUILD)/cable-off
 	$(BUILD)/apply-retry
 	$(BUILD)/power-sync
 	$(BUILD)/reload-sync
 	$(BUILD)/cable-sync
+	$(BUILD)/cable-off
 	python3 tests/run_t0.py --hub $(HUB)
 clean:
 	rm -rf $(BUILD)

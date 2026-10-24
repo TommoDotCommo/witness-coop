@@ -11,3 +11,5 @@ bool GameCablePowerOnNow(unsigned id);                // render thread only; ref
 void GameEnqueueCablePower(unsigned id);              // development command: run GameCablePowerOnNow on the render thread
 void GameMarkPanelSolved(unsigned id);                // writes the fields a real solve sets (render thread)
 bool GameDispatchTargetNow(unsigned panelId);         // runs the game's target dispatcher (exe+0xC24F0) for the panel's target when it is of a type with no dedicated event; render thread only
+bool GameCableOffNow(unsigned id);                  // render thread only; the game's own cable power-off (exe+0x175E50: requested level to 0, the glow fades)
+void GameEnqueueCableOff(unsigned id);                // development command

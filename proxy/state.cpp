@@ -46,7 +46,9 @@ public:
     bool scanCables(std::vector<unsigned>& cables) override { cables = cables_; return true; }       // filled by the last scan()
     bool isCable(unsigned id) override { uintptr_t e = id < kMaxId ? GameEntity(id) : 0; return e && Type(e) == Base() + kCableTI; }
     bool cableLit(unsigned id) override { uintptr_t e = GameEntity(id); return e && Rd32(e + 0xC4) == kOne && Rd32(e + 0xC8) == kOne; }
+    bool cableRequested(unsigned id) override { uintptr_t e = GameEntity(id); return e && Rd32(e + 0xC8) == kOne; }
     bool applyCableLit(unsigned id) override { return GameCablePowerOnNow(id); }
+    bool applyCableOff(unsigned id) override { return GameCableOffNow(id); }
     bool entityExists(unsigned id) override { return id < kMaxId && GameEntity(id) != 0; }
     bool isPanel(unsigned id) override { uintptr_t e = id < kMaxId ? GameEntity(id) : 0; return e && Type(e) == Base() + kPanelTI; }
     bool isDoor(unsigned id) override { uintptr_t e = id < kMaxId ? GameEntity(id) : 0; return e && Type(e) == Base() + kDoorTI; }

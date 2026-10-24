@@ -6,10 +6,11 @@
 namespace witness {
 namespace {
 
-// Protocol v3 adds cable lighting (v2 added panel power-on). Distinct magics prevent an older peer from ACKing an incomplete vocabulary.
-constexpr uint32_t kMagicPose = 0x33505457, kMagicEv = 0x33455457, kMagicAck = 0x33415457;   // "WTP3" "WTE3" "WTA3"
+// Protocol v4 adds cable power-off (v3 added cable lighting, v2 panel power-on). Distinct magics prevent an older peer from ACKing an incomplete vocabulary.
+constexpr uint32_t kMagicPose = 0x34505457, kMagicEv = 0x34455457, kMagicAck = 0x34415457;   // "WTP4" "WTE4" "WTA4"
 constexpr size_t kPoseLen = 40, kEvLen = 32, kAckLen = 24;                                    // with the 4-byte checksum
-constexpr uint64_t kSuppressMs = 5000, kSettleMs = 15000, kCascadeMs = 5000;
+constexpr uint32_t kSnapBit = 0x100;      // set in an event's kind word when it is part of a full-state snapshot
+constexpr uint64_t kConflictMs = 1000, kSuppressMs = 5000, kSettleMs = 15000, kCascadeMs = 5000;
 
 uint32_t sum32(const uint8_t* p, size_t n) { uint32_t h = 2166136261u; for (size_t i = 0; i < n; ++i) { h ^= p[i]; h *= 16777619u; } return h; }
 void put32(Bytes& b, uint32_t v) { for (int i = 0; i < 4; ++i) b.push_back(uint8_t(v >> (8 * i))); }
@@ -35,7 +36,7 @@ void SyncCore::log(const char* m) { if (h_.log) h_.log(m); }
 void SyncCore::send(Bytes b) { if (h_.send) h_.send(b); }
 
 void SyncCore::emit(uint8_t kind, unsigned id, bool resync) {
-    if (sent_.size() < 4096) { sent_.push_back({nextSeq_++, kind, id, false, false}); st_.sent++; }
+    if (sent_.size() < 4096) { sent_.push_back({nextSeq_++, uint32_t(kind) | (resync ? kSnapBit : 0u), id, false, false}); st_.sent++; }
     if (h_.onEmit) h_.onEmit(kind, id, resync);
 }
 
@@ -75,16 +76,16 @@ void SyncCore::onPacket(const uint8_t* d, size_t n, uint64_t now) {
     uint32_t magic = get32(d);
     Guard g(h_);
     if (magic == kMagicEv && n == kEvLen) {
-        uint32_t from = get32(d + 4), seq = get32(d + 16), kind = get32(d + 20), entity = get32(d + 24); uint64_t epoch = get64(d + 8);
-        if (int(from) == id_ || (kind != EV_PANEL_SOLVED && kind != EV_DOOR_OPENED && kind != EV_PANEL_POWERED && kind != EV_CABLE_LIT) || entity >= kMaxEntityId) return;
+        uint32_t from = get32(d + 4), seq = get32(d + 16), kind = get32(d + 20), entity = get32(d + 24); bool snap = (kind & kSnapBit) != 0; kind &= 0xFF; uint64_t epoch = get64(d + 8);
+        if (int(from) == id_ || (kind != EV_PANEL_SOLVED && kind != EV_DOOR_OPENED && kind != EV_PANEL_POWERED && kind != EV_CABLE_LIT && kind != EV_CABLE_OFF) || entity >= kMaxEntityId) return;
         if (epoch < peerEpoch_) { st_.ooo++; if (h_.onRejected) h_.onRejected(uint8_t(kind), entity, epoch, seq, "stale epoch"); return; }   // a delayed packet of an earlier run
         if (epoch > peerEpoch_) { peerEpoch_ = epoch; if (!f_.noEpochReset) peerApplied_ = 0; }
         bool ordered = false, dup = false;
-        if (seq == peerApplied_ + 1 && recvQ_.size() < 1024) { recvQ_.push_back({uint8_t(kind), entity, epoch, seq}); peerApplied_ = seq; ordered = true; }
-        else if (f_.applyOutOfOrder && seq > peerApplied_ + 1 && recvQ_.size() < 1024) { recvQ_.push_back({uint8_t(kind), entity, epoch, seq}); peerApplied_ = seq; ordered = true; }
+        if (seq == peerApplied_ + 1 && recvQ_.size() < 1024) { recvQ_.push_back({uint8_t(kind), entity, epoch, seq, snap}); peerApplied_ = seq; ordered = true; }
+        else if (f_.applyOutOfOrder && seq > peerApplied_ + 1 && recvQ_.size() < 1024) { recvQ_.push_back({uint8_t(kind), entity, epoch, seq, snap}); peerApplied_ = seq; ordered = true; }
         else if (seq <= peerApplied_) {
             dup = true;
-            if (f_.noDedupe && recvQ_.size() < 1024) recvQ_.push_back({uint8_t(kind), entity, epoch, seq});    // twin: duplicates reach the apply step
+            if (f_.noDedupe && recvQ_.size() < 1024) recvQ_.push_back({uint8_t(kind), entity, epoch, seq, snap});    // twin: duplicates reach the apply step
         }
         if (ordered) { st_.inOrder++; if (h_.onAccepted) h_.onAccepted(epoch, seq); } else if (dup) st_.dup++; else st_.ooo++;
         if (!ordered && h_.onRejected) h_.onRejected(uint8_t(kind), entity, epoch, seq, dup ? "duplicate" : "out of order");
@@ -160,6 +161,7 @@ void SyncCore::baseline(bool full) {
         bool lit = w_->entityExists(id) && w_->cableLit(id);
         if (lit) knownCable_.insert(id); else knownCable_.erase(id);
         if (full && lit && !f_.noCableSync) emit(EV_CABLE_LIT, id, true);
+        if (full && !lit && !f_.noCableSync && !f_.noCableOff && !f_.noOffSnapshot && everOff_.count(id)) emit(EV_CABLE_OFF, id, true);   // a default-lit cable that was switched off
     }
 }
 
@@ -241,7 +243,12 @@ void SyncCore::pollState(uint64_t now) {
             emit(EV_CABLE_LIT, id, false); st_.emittedCables++;
             char l[100]; std::snprintf(l, sizeof l, "state: local cable %#x lit -> event", id); log(l);
         }
-        if (lit) knownCable_.insert(id); else knownCable_.erase(id);
+        if (!lit && known && !suppressed && !(now < settleUntil_ && !cascade) && !f_.noCableSync && !f_.noCableOff) {     // lit before, dark now: the game's power-off call
+            emit(EV_CABLE_OFF, id, false); st_.emittedCables++; everOff_.insert(id); cableToggledAt_[id] = now;
+            char l[100]; std::snprintf(l, sizeof l, "state: local cable %#x dark -> event", id); log(l);
+        }
+        if (lit && !known && !suppressed) cableToggledAt_[id] = now;
+        if (lit) { knownCable_.insert(id); everOff_.erase(id); } else knownCable_.erase(id);
     }
     for (unsigned id : doors_) {
         if (!w_->entityExists(id)) continue;
@@ -295,15 +302,42 @@ void SyncCore::applyRemote(uint64_t now) {
             if (h_.onApplied) h_.onApplied(r.kind, r.entity, r.epoch, r.seq);
             std::snprintf(l, sizeof l, "state: remote panel %#x powered", r.entity); log(l);
         } else if (r.kind == EV_CABLE_LIT && w_->isCable(r.entity)) {
-            if (w_->cableLit(r.entity) && !f_.noDedupe) { knownCable_.insert(r.entity); continue; }
+            if (w_->cableLit(r.entity) && !f_.noDedupe) { knownCable_.insert(r.entity); everOff_.erase(r.entity); continue; }
+            auto ct = cableToggledAt_.find(r.entity);
+            // A peer's snapshot only says what its world looks like (a fresh process has its default-lit cables on): it never
+            // overrides a cable this player switched off; a live event can.
+            if (!f_.noCableArbiter && everOff_.count(r.entity) && (r.snap || (id_ == 1 && ct != cableToggledAt_.end() && now < ct->second + kConflictMs))) {     // this player switched it off: that wins, and the peer is told
+                if (!f_.noSnapReassert) emit(EV_CABLE_OFF, r.entity, true);
+                continue;
+            }
             if (!w_->applyCableLit(r.entity)) {
                 if (!f_.noApplyRetry) recvQ_.push_back(r);
                 continue;
             }
+            everOff_.erase(r.entity);
             if (!f_.noEchoGuard) { knownCable_.insert(r.entity); suppressCable_[r.entity] = now + kSuppressMs; }
             st_.appliedCables++;
             if (h_.onApplied) h_.onApplied(r.kind, r.entity, r.epoch, r.seq);
             std::snprintf(l, sizeof l, "state: remote cable %#x lit", r.entity); log(l);
+        } else if (r.kind == EV_CABLE_OFF && w_->isCable(r.entity)) {
+            if (f_.noCableOff) continue;
+            bool lit = w_->cableRequested(r.entity);
+            if (!lit && !f_.noDedupe) { knownCable_.erase(r.entity); everOff_.insert(r.entity); continue; }
+            // Both players may switch the same cable at the same moment: the lower player id wins, so both worlds end the same.
+            auto ct = cableToggledAt_.find(r.entity);
+            if (!f_.noCableArbiter && id_ == 1 && ct != cableToggledAt_.end() && now < ct->second + kConflictMs) {
+                emit(EV_CABLE_LIT, r.entity, true);      // keep this world's state and tell the peer, who just switched the same cable the other way
+                continue;
+            }
+            if (!w_->applyCableOff(r.entity)) {
+                if (!f_.noApplyRetry) recvQ_.push_back(r);
+                continue;
+            }
+            knownCable_.erase(r.entity); everOff_.insert(r.entity);
+            if (!f_.noEchoGuard) suppressCable_[r.entity] = now + kSuppressMs;
+            st_.appliedCables++;
+            if (h_.onApplied) h_.onApplied(r.kind, r.entity, r.epoch, r.seq);
+            std::snprintf(l, sizeof l, "state: remote cable %#x dark", r.entity); log(l);
         } else if (r.kind == EV_DOOR_OPENED && w_->isDoor(r.entity)) {
             if (w_->doorOpen(r.entity) && !f_.noDedupe) {
                 knownDoor_.insert(r.entity);

@@ -12,7 +12,7 @@
 namespace witness {
 
 using Bytes = std::vector<uint8_t>;
-enum EvKind : uint8_t { EV_PANEL_SOLVED = 1, EV_DOOR_OPENED = 2, EV_PANEL_POWERED = 3, EV_CABLE_LIT = 4 };
+enum EvKind : uint8_t { EV_PANEL_SOLVED = 1, EV_DOOR_OPENED = 2, EV_PANEL_POWERED = 3, EV_CABLE_LIT = 4, EV_CABLE_OFF = 5 };
 constexpr unsigned kMaxEntityId = 0x40000;      // the game's entity table size; ids at or above it are refused
 
 // What the core needs from the game (or a fake of it).
@@ -33,7 +33,9 @@ public:
     virtual bool scanCables(std::vector<unsigned>&) { return true; }              // all Power_Cable entities (none by default)
     virtual bool isCable(unsigned) { return false; }
     virtual bool cableLit(unsigned) { return false; }                            // the cable's lit state (+0xC4 and +0xC8 at 1.0)
+    virtual bool cableRequested(unsigned id) { return cableLit(id); }            // the cable was switched on (the lit state may still be fading in)
     virtual bool applyCableLit(unsigned) { return false; }                       // render thread only; false: retry later
+    virtual bool applyCableOff(unsigned) { return false; }                       // render thread only; false: retry later (the game's own power-off call)
     virtual bool pose(float pos[3], float ang[2]) = 0;                          // local player pose; false when not available
 };
 
@@ -45,6 +47,10 @@ struct Flags {   // all off by default
     bool noApplyRetry = false;  // twin: discard ACKed events when the game cannot apply them yet
     bool noPanelPower = false;  // twin: omit panel power-on progression from live sync and snapshots
     bool noCableSync = false;   // twin: omit cable lighting from live sync and snapshots
+    bool noCableOff = false;    // twin: a cable that goes dark stays lit on the peer
+    bool noOffSnapshot = false; // twin: snapshots do not tell a fresh peer about cables that were switched off
+    bool noSnapReassert = false; // twin: a peer's snapshot that relights a cable this player switched off is ignored but not corrected
+    bool noCableArbiter = false; // twin: no tie-break when both players switch the same cable at the same moment
     bool noReloadSync = false;  // twin: ignore a same-process save reload (no re-gate, no resync with the peer)
 };
 
@@ -83,7 +89,7 @@ public:
 
 private:
     struct Sent { uint32_t seq, kind, entity; bool acked, sentOnce; };
-    struct Recv { uint8_t kind; uint32_t entity; uint64_t epoch; uint32_t seq; };
+    struct Recv { uint8_t kind; uint32_t entity; uint64_t epoch; uint32_t seq; bool snap = false; };   // snap: part of the sender's full-state snapshot
     struct Guard;                                          // scoped lock
     void emit(uint8_t kind, unsigned id, bool resync);
     void baseline(bool full);
@@ -103,7 +109,7 @@ private:
     std::vector<unsigned> panels_, doors_; uint64_t tableId_ = 0;
     std::set<unsigned> knownPanel_, knownDoor_; std::map<unsigned, uint64_t> suppressPanel_, suppressDoor_;
     std::set<unsigned> knownPower_; std::map<unsigned, uint64_t> suppressPower_;
-    std::vector<unsigned> cables_; std::set<unsigned> knownCable_; std::map<unsigned, uint64_t> suppressCable_;
+    std::vector<unsigned> cables_; std::set<unsigned> knownCable_; std::map<unsigned, uint64_t> suppressCable_; std::set<unsigned> everOff_; std::map<unsigned, uint64_t> cableToggledAt_;
     uint64_t lastLocalSolveAt_ = 0; bool anyLocalSolve_ = false;     // a door opening soon after a local solve is that solve's cascade, not a start-up flip
     bool ready_ = false, gateStarted_ = false; uint64_t nextGate_ = 0, settleUntil_ = 0, nextScan_ = 0, nextStats_ = 0;
     size_t gateLastPanels_ = 0, gateLastDoors_ = 0; uint64_t gateLastSig_ = 0; int gateSame_ = 0;

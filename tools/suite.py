@@ -64,7 +64,7 @@ def restart_catchup(ca, cb, mutant, include_power=False, expected=None):
         return False, 'B entity census is incomplete after restart'
     if mutant:
         ok = all(expected[kind] not in after_b[kind] for kind in expected)
-        return ok, 'catch-up disabled: fresh B must lack every effect of the solve'
+        return ok, 'catch-up disabled: fresh B must lack every effect of the solve (B has: %s; lit cables A %s B %s)' % ({k_: expected[k_] in after_b[k_] for k_ in expected}, sorted(after_a['lit_cables']), sorted(after_b['lit_cables']))
     ok = all(after_a[kind] == after_b[kind] for kind in expected)
     return ok, 'fresh B restored all progress from surviving A after original events were ACKed'
 
@@ -168,6 +168,9 @@ SCENARIOS = [   # name, extra cfg for A, extra cfg for B, check(a_stats, b_stats
   ('MUTANT: panel power chain without source link', '', 'no_power_link=1', lambda a, b, ok: (not ok, 'B must power the target but lack its source back-link')),
   ('laser target', '', '', lambda a, b, ok: (ok and b.get('ep', 9) == 0, 'a solved panel that targets a laser leaves the laser in the same state on both, and a fresh B recovers it')),
   ('MUTANT: laser target without dispatch', '', 'no_target_dispatch=1', lambda a, b, ok: (not ok, 'B must keep the laser off')),
+  ('cable off', '', '', lambda a, b, ok: (ok and b.get('ecab', 9) == 0, 'a default-lit cable switched off on A goes dark on B too, once, without echo, and a fresh B learns it')),
+  ('MUTANT: cable off without power-off sync', '', 'no_cable_off=1', lambda a, b, ok: (not ok, 'B must keep the cable lit')),
+  ('MUTANT: cable off without snapshot', 'no_off_snapshot=1\nno_snap_reassert=1', '', lambda a, b, ok: (not ok, 'a fresh B must still show the cable lit')),
   ('MUTANT: panel power chain disabled', 'no_panel_power=1', '', lambda a, b, ok: (not ok, 'target panel must remain dark on B')),
 ]
 only = sys.argv[1:]; results = []
@@ -189,11 +192,16 @@ for name, ca, cb, check in SCENARIOS:
     open(os.path.join(RUN, 'guard.stop'), 'w').write('bot starting')      # the focus guard (for the game grabbing the foreground while loading) ends
     chain = 'cable chain' in name
     laser = 'laser target' in name
+    cableoff = 'cable off' in name
     maze = 'cable maze' in name or chain
     if laser:      # the laser panel is out of the bot's reach: make it solved on A as a native solve would (fields and dispatcher)
         bot = pyw('wsolve.py', win(DIR1), '0x32f5').strip(); time.sleep(6)
         bot += '\n' + ('panel solved: True' if state('A')['lasers'].get('0x32f9') == LASER_ON else 'laser did not change on A')
         bot = bot.replace('panel solved: True', 'solved: True')
+    elif cableoff:      # cable 0x18458 is lit from the start in every world: switch it off with the game's own power-off call
+        before = state('A')['lit_cables'].get('0x18458') and state('B')['lit_cables'].get('0x18458')
+        bot = pyw('wcmd.py', win(DIR1), 'cableoff', '18458').strip(); time.sleep(8)
+        bot = 'solved: True' if before and '0x18458' not in state('A')['lit_cables'] else 'cable was not lit at the start, or did not go dark on A'
     else: bot = sh('%s -I %s %s %s %s 2>&1 | tail -3' % (shlex.quote(PYW), shlex.quote(win(os.path.join(TOOLS, 'win', 'wbot_maze.py' if maze else 'wbot.py'))), pid('A'), shlex.quote(win(DIR1)), '0x293' if maze else '')).strip()
     if chain and 'solved: True' in bot:       # the first cable powers the second maze: wait for its power, then solve it too
         time.sleep(6)
@@ -220,6 +228,8 @@ for name, ca, cb, check in SCENARIOS:
     elif late: pass
     elif 'restart catch-up' in name and bot_ok:
         catchup = restart_catchup(ca, cb, name.startswith('MUTANT:'))
+    elif cableoff and bot_ok and name != 'MUTANT: cable off without power-off sync':
+        catchup = restart_catchup(ca, cb, name.startswith('MUTANT:'), expected={'dark_cables': '0x18458'})
     elif laser and bot_ok and not name.startswith('MUTANT:'):
         catchup = restart_catchup(ca, cb, False, expected={'panels': '0x32f5', 'lasers': '0x32f9'})
     elif maze and bot_ok and not name.startswith('MUTANT:'):
@@ -237,6 +247,11 @@ for name, ca, cb, check in SCENARIOS:
         if name.startswith('MUTANT:'): cable_ok = all(c in sa['lit_cables'] and c not in sb['lit_cables'] for c in cables) and set(sa['lit_cables']) - set(sb['lit_cables']) == set(cables)
         else: cable_ok = all(c in sa['lit_cables'] for c in cables) and sa['lit_cables'] == sb['lit_cables'] and sa['powered_panels'] == sb['powered_panels']
         ok = ok and solved_ok and cable_ok
+    if cableoff:
+        sa, sb = state('A'), state('B'); gone = '0x18458' not in sa['lit_cables']
+        if name == 'MUTANT: cable off without power-off sync': ok = bot_ok and gone and '0x18458' in sb['lit_cables']
+        elif name == 'MUTANT: cable off without snapshot': ok = bot_ok and gone      # the restart check below (B restarted before this point) must see the cable lit again on a fresh B
+        else: ok = ok and gone and sa['lit_cables'] == sb['lit_cables']
     if laser:
         sa, sb = state('A'), state('B')
         same = sa['lasers'] == sb['lasers'] and sa['lasers']['0x32f9'] == LASER_ON and sa['panels'] == sb['panels']

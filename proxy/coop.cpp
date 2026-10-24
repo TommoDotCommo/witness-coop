@@ -42,6 +42,10 @@ static DWORD WINAPI NetThread(LPVOID) {
         if (sscanf(line, "no_panel_power=%d", &v) == 1) flags.noPanelPower = v;
         if (sscanf(line, "no_reload_sync=%d", &v) == 1) flags.noReloadSync = v;
         if (sscanf(line, "no_cable_sync=%d", &v) == 1) flags.noCableSync = v;
+        if (sscanf(line, "no_cable_off=%d", &v) == 1) flags.noCableOff = v;
+        if (sscanf(line, "no_off_snapshot=%d", &v) == 1) flags.noOffSnapshot = v;
+        if (sscanf(line, "no_cable_arbiter=%d", &v) == 1) flags.noCableArbiter = v;
+        if (sscanf(line, "no_snap_reassert=%d", &v) == 1) flags.noSnapReassert = v;
     }
     fclose(f);
     WSADATA wd; WSAStartup(MAKEWORD(2, 2), &wd);

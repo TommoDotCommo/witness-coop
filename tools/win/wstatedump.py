@@ -2,7 +2,7 @@
 #                              a cable is lit when its +0xc4 and +0xc8 are 1.0)
 import os, sys, json
 exec(compile(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'wlib.py')).read(), 'wlib.py', 'exec'))
-p = attach(int(sys.argv[1])); panels, doors, powered, cables, links, lasers = {}, {}, {}, {}, {}, {}
+p = attach(int(sys.argv[1])); panels, doors, powered, cables, links, lasers, dark = {}, {}, {}, {}, {}, {}, {}
 for i, e in enumerate(p.entity_table()):
     if not e: continue
     t = p.type_of(e)
@@ -12,5 +12,5 @@ for i, e in enumerate(p.entity_table()):
         powered[i] = p.u32(e + 0x2a0) == 0x3f800000 and p.u32(e + 0x2a4) == 0x3f800000
     elif t == TI_LASER: lasers[i] = p.u32(e + 0x12c)       # 0 until the laser is switched on (-1.0 after); +0xd4 is a state number that keeps advancing, so it is not compared
     elif t == TI_DOOR: doors[i] = p.u32(e + 0x1d0) == 0x3f800000
-    elif t == TI_CABLE: cables[i] = p.u32(e + 0xc4) == 0x3f800000 and p.u32(e + 0xc8) == 0x3f800000
-print(json.dumps({'panels': {hex(k_): True for k_, v in panels.items() if v}, 'doors': {hex(k_): True for k_, v in doors.items() if v}, 'powered_panels': {hex(k_): True for k_, v in powered.items() if v}, 'lit_cables': {hex(k_): True for k_, v in cables.items() if v}, 'power_src': {hex(k_): hex(v) for k_, v in links.items() if v}, 'lasers': {hex(k_): v for k_, v in lasers.items()}, 'n_panels': len(panels), 'n_doors': len(doors), 'n_cables': len(cables)}))
+    elif t == TI_CABLE: dark[i] = p.u32(e + 0xc8) == 0; cables[i] = p.u32(e + 0xc4) == 0x3f800000 and p.u32(e + 0xc8) == 0x3f800000
+print(json.dumps({'panels': {hex(k_): True for k_, v in panels.items() if v}, 'doors': {hex(k_): True for k_, v in doors.items() if v}, 'powered_panels': {hex(k_): True for k_, v in powered.items() if v}, 'lit_cables': {hex(k_): True for k_, v in cables.items() if v}, 'power_src': {hex(k_): hex(v) for k_, v in links.items() if v}, 'lasers': {hex(k_): v for k_, v in lasers.items()}, 'dark_cables': {hex(k_): True for k_, v in dark.items() if v}, 'n_panels': len(panels), 'n_doors': len(doors), 'n_cables': len(cables)}))
