@@ -19,7 +19,7 @@ for i, e in enumerate(p.entity_table()):
     d = {'id': i, 'x': x, 'y': y, 'z': z, 'rz': 2 * math.atan2(qz, qw), 'nodes': n, 'edges': m,
          'starts': sum(1 for f in flags if f & 2 and not f & 1), 'ends': sum(1 for f in flags if f & 1),
          'solved': p.u32(e + 0x294) == 0x3f800000 and p.u32(e + 0x298) == 1,
-         'powered': p.u32(e + 0x2a0) == 0x3f800000 and p.u32(e + 0x2a4) == 0x3f800000, 'target': p.u32(e + 0x2b4),
+         'powered': p.u32(e + 0x2a0) == 0x3f800000 and p.u32(e + 0x2a4) == 0x3f800000, 'target': p.u32(e + 0x2b4), 'link': p.u32(e + 0x2c8),
          'gx': p.u32(e + 0x440), 'gy': p.u32(e + 0x444), 'style': p.u32(e + 0x448), 'ndec': p.u32(e + 0x430)}
     if full:
         d.update({'flags': flags, 'pos': arr(e, 0x3c0, 'f', 2 * n), 'ca': arr(e, 0x3d0, 'I', m), 'cb': arr(e, 0x3d8, 'I', m),

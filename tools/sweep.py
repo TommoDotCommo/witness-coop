@@ -59,7 +59,7 @@ def run(args):
         manifest = inventory(which); json.dump(manifest, open(MANIFEST, 'w'))
     live = {q['id']: q for q in inventory(which, full=False)}      # what changes: solved and powered
     for q in manifest:
-        if q['id'] in live: q['solved'] = live[q['id']]['solved']; q['powered'] = live[q['id']]['powered']
+        if q['id'] in live: q['solved'] = live[q['id']]['solved']; q['powered'] = live[q['id']]['powered']; q['link'] = live[q['id']].get('link', q.get('link'))
     results = {}
     import glob
     for fn in glob.glob(RESULTS_GLOB + '.*.json'): results.update(load(fn, {}))
@@ -70,7 +70,7 @@ def run(args):
     while True:      # passes: solving a panel can power others, so go again until a pass solves nothing
         live = {q['id']: q for q in inventory(which, full=False)}
         for q in manifest:
-            if q['id'] in live: q['solved'] = live[q['id']]['solved']; q['powered'] = live[q['id']]['powered']
+            if q['id'] in live: q['solved'] = live[q['id']]['solved']; q['powered'] = live[q['id']]['powered']; q['link'] = live[q['id']].get('link', q.get('link'))
         solved_in_pass = 0; skipped_unpowered = 0; n_solved = sum(1 for q in manifest if q['solved'])
         for p in sorted(manifest, key=lambda q: q['id']):
             if ids is not None and p['id'] not in ids: continue
@@ -87,7 +87,8 @@ def run(args):
             path = solver.solve(p)
             if path is None:
                 results[key] = {'result': 'no solver', 'why': ', '.join(solver.unsupported(p)) or 'no path found', 'seconds': 0}
-            elif not p['powered']:
+            elif not (p['powered'] or not p.get('link')):      # waits for power only when a cable is supposed to bring it and it has not come
+
                 skipped_unpowered += 1; continue
             else:
                 t0 = time.time(); r = draw(p, path, which)
