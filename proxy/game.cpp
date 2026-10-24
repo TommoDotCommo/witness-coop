@@ -244,6 +244,7 @@ static DWORD WINAPI HoverThread(LPVOID) {
     }
 }
 void GameHover(float x, float y, float z, float yaw, float pitch, unsigned seconds) {
+    if (GetCfg().noTeleportHold) { GameTeleport(x, y, z + 8.0f, yaw, pitch); return; }      // twin: the old drop from above
     static bool started; if (!started) { started = true; CreateThread(nullptr, 0, HoverThread, nullptr, 0, nullptr); }
     g_hov[0] = x; g_hov[1] = y; g_hov[2] = z; g_hovUntil = GetTickCount() + seconds * 1000; InterlockedExchange(&g_hovOn, 1);
     GameTeleport(x, y, z, yaw, pitch);      // the angles (and the camera for a few frames)

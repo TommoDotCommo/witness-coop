@@ -26,6 +26,7 @@ struct Cfg {
     bool noPartnerVideo = false; // twin: send no picture
     bool noRestoreCopy = false;  // twin: a restore does not put the save file in place
     bool noPowerLink = false;    // twin: leave a powered panel's source back-link (+0x2C8) unset
+    bool noTeleportHold = false;   // twin: the menu teleport does not hold the player (the old 12-frame write): far panels end at the spawn point
     bool noTargetDispatch = false; // twin: a remote solve does not run the game's target dispatcher for other target types
 };
 const Cfg& GetCfg();

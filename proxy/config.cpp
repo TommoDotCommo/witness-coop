@@ -30,6 +30,7 @@ const Cfg& GetCfg() {
             else if (sscanf(line, "no_restore_copy=%d", &v) == 1) r.noRestoreCopy = v != 0;
             else if (sscanf(line, "no_power_link=%d", &v) == 1) r.noPowerLink = v != 0;
             else if (sscanf(line, "no_target_dispatch=%d", &v) == 1) r.noTargetDispatch = v != 0;
+            else if (sscanf(line, "no_teleport_hold=%d", &v) == 1) r.noTeleportHold = v != 0;
             else if (sscanf(line, "depth_bias=%f", &fv) == 1) r.depthBias = fv;
             else if (sscanf(line, "depth_near=%f", &fv) == 1) r.depthNear = fv;
             else if (sscanf(line, "depth_view=%d", &v) == 1) r.depthView = v != 0;
