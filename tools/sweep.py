@@ -128,6 +128,37 @@ def report(folders=None):
     print('  no result yet: %d' % len(missing))
     return results
 
+def gating(graph_json):
+    """Why panels were not tried: follow what powers each untried panel (cables and panels that target it, through any number of cables) back to panels, and look at
+    what the sweep did with those. `graph_json` comes from tools/win/wgraph.py run on a fresh game."""
+    import glob, collections
+    g = load(graph_json, None)
+    if g is None: sys.exit('no graph: run wgraph.py <pid> <file> first')
+    ct = {int(k): v for k, v in g['cable_target'].items()}; pt = {int(k): v for k, v in g['panel_target'].items()}; ty = {int(k): v for k, v in g['types'].items()}
+    res = {}
+    for fo in sorted(glob.glob(os.path.join(os.path.dirname(RUN), 'panel-sweep*'))):
+        for fn in glob.glob(os.path.join(fo, 'sweep_results.*.json')):
+            for k, v in load(fn, {}).items():
+                if res.get(k, {}).get('result') != 'solved': res[k] = v
+    src = collections.defaultdict(list)
+    for c_, t_ in ct.items(): src[t_].append(c_)
+    for q_, t_ in pt.items(): src[t_].append(q_)
+    def feeders(i, seen):
+        out = set()
+        for s_ in src.get(i, []):
+            if s_ in seen: continue
+            seen.add(s_)
+            if ty.get(s_) == 'panel': out.add(s_)
+            else: out |= feeders(s_, seen)
+        return out
+    cnt = collections.Counter(); ex = collections.defaultdict(list)
+    for q in load(MANIFEST, []):
+        if '%x' % q['id'] in res or q['nodes'] == 0: continue
+        fs = feeders(q['id'], set())
+        st = ('its power comes from panels that are ' + ' / '.join(sorted(set(res.get('%x' % f, {}).get('result', 'not tried') for f in fs)))) if fs else 'no panel or cable that powers it found (plates, levers, lasers or something else)'
+        cnt[st] += 1; ex[st].append('%x' % q['id'])
+    for k_, n_ in cnt.most_common(): print('%4d  %s   e.g. %s' % (n_, k_, ' '.join(ex[k_][:6])))
+
 def export(path):
     """Write the merged result of every panel (solved, failed with the reason, no solver, not tried) as json: id -> {result, why, how}. `how` says where the line came
     from: stored (the game's own solution), plain (a shortest path) or rules (psolve)."""
@@ -152,6 +183,7 @@ if __name__ == '__main__':
     cmd = sys.argv[1] if len(sys.argv) > 1 else 'run'
     if cmd == 'report': report(); sys.exit(0)
     if cmd == 'export': export(sys.argv[2]); sys.exit(0)
+    if cmd == 'gating': gating(sys.argv[2]); sys.exit(0)
     if cmd == 'inventory':
         inv = inventory(sys.argv[2] if len(sys.argv) > 2 else 'B'); json.dump(inv, open(MANIFEST, 'w'))
         print('%d panels' % len(inv))
