@@ -155,6 +155,8 @@ SCENARIOS = [   # name, extra cfg for A, extra cfg for B, check(a_stats, b_stats
   ('same-process reload', '', '', lambda a, b, ok: (b.get('ep', 9) == 0 and b.get('ed', 9) == 0, 'B reloads an older save in the same process and catches up from A')),
   ('MUTANT: same-process reload ignored', '', 'no_reload_sync=1', lambda a, b, ok: (True, 'B must stay diverged after the reload')),
   ('cable maze', '', '', lambda a, b, ok: (ok and b.get('ecab', 9) == 0 and b.get('acab', 0) >= 1 and b.get('ep', 9) == 0, 'solving a maze lights its cable in both games, once, without echo, and a fresh B recovers it')),
+  ('cable chain', '', '', lambda a, b, ok: (ok and b.get('ecab', 9) == 0 and b.get('acab', 0) >= 2 and b.get('ep', 9) == 0, 'solving a maze powers the next one through its cable; both mazes and both cables match on B, once, without echo, and a fresh B recovers them')),
+  ('MUTANT: cable chain without cable sync', 'no_cable_sync=1', 'no_cable_sync=1', lambda a, b, ok: (not ok, 'both cables must stay dark on B')),
   ('MUTANT: cable maze without cable sync', 'no_cable_sync=1', 'no_cable_sync=1', lambda a, b, ok: (not ok, 'the cable must stay dark on B')),
   ('second tutorial door', '', '', lambda a, b, ok: (ok and b.get('ep', 9) == 0 and b.get('ed', 9) == 0, 'both tutorial panels and doors match without B echo')),
   ('MUTANT: second tutorial door skips entity zero', 'skip_entity_zero=1', '', lambda a, b, ok: (not ok, 'door entity zero must be missing on B')),
@@ -178,8 +180,12 @@ for name, ca, cb, check in SCENARIOS:
     if 'same-process reload' in name and not backup: print('no first save appeared on B', flush=True)
     # The bot is in-process (tp, mouse and button commands to the proxy): no focus, no desktop input, no lock; several can run at once.
     open(os.path.join(RUN, 'guard.stop'), 'w').write('bot starting')      # the focus guard (for the game grabbing the foreground while loading) ends
-    maze = 'cable maze' in name
+    chain = 'cable chain' in name
+    maze = 'cable maze' in name or chain
     bot = sh('%s -I %s %s %s %s 2>&1 | tail -3' % (shlex.quote(PYW), shlex.quote(win(os.path.join(TOOLS, 'win', 'wbot_maze.py' if maze else 'wbot.py'))), pid('A'), shlex.quote(win(DIR1)), '0x293' if maze else '')).strip()
+    if chain and 'solved: True' in bot:       # the first cable powers the second maze: wait for its power, then solve it too
+        time.sleep(6)
+        bot = sh('%s -I %s %s %s 0x295 2>&1 | tail -3' % (shlex.quote(PYW), shlex.quote(win(os.path.join(TOOLS, 'win', 'wbot_maze.py'))), pid('A'), shlex.quote(win(DIR1)))).strip()
     print(bot, flush=True)
     bot_ok = 'solved: True' in bot      # a scenario that never solved the panel proves nothing, whatever the state diff says
     second_ok = True
@@ -202,7 +208,7 @@ for name, ca, cb, check in SCENARIOS:
     elif 'restart catch-up' in name and bot_ok:
         catchup = restart_catchup(ca, cb, name.startswith('MUTANT:'))
     elif maze and bot_ok and not name.startswith('MUTANT:'):
-        catchup = restart_catchup(ca, cb, False, expected={'panels': '0x293', 'lit_cables': '0x349'})
+        catchup = restart_catchup(ca, cb, False, expected={'panels': '0x295' if chain else '0x293', 'lit_cables': '0x45c' if chain else '0x349'})
     elif 'panel power chain' in name and bot_ok and power_ok and not name.startswith('MUTANT:'):
         catchup = restart_catchup(ca, cb, False, include_power=True)
     if late and bot_ok: catchup = late_join(ca, cb, name.startswith('MUTANT:'))
@@ -211,9 +217,10 @@ for name, ca, cb, check in SCENARIOS:
     ok, why = check(a, b, 'IDENTICAL' in out)
     if maze:
         sa, sb = state('A'), state('B')
-        solved_ok = '0x293' in sa['panels'] and '0x293' in sb['panels'] and sa['panels'] == sb['panels']
-        if name.startswith('MUTANT:'): cable_ok = '0x349' in sa['lit_cables'] and '0x349' not in sb['lit_cables'] and set(sa['lit_cables']) - set(sb['lit_cables']) == {'0x349'}
-        else: cable_ok = '0x349' in sa['lit_cables'] and sa['lit_cables'] == sb['lit_cables']
+        first = ['0x293', '0x295'] if chain else ['0x293']; cables = ['0x349', '0x45c'] if chain else ['0x349']
+        solved_ok = all(x in sa['panels'] and x in sb['panels'] for x in first) and sa['panels'] == sb['panels']
+        if name.startswith('MUTANT:'): cable_ok = all(c in sa['lit_cables'] and c not in sb['lit_cables'] for c in cables) and set(sa['lit_cables']) - set(sb['lit_cables']) == set(cables)
+        else: cable_ok = all(c in sa['lit_cables'] for c in cables) and sa['lit_cables'] == sb['lit_cables'] and sa['powered_panels'] == sb['powered_panels']
         ok = ok and solved_ok and cable_ok
     if 'panel power chain' in name:
         sa, sb = state('A'), state('B')
