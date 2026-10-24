@@ -3,7 +3,9 @@
   puzzle.py list [text]            panels of the manifest with their size, rules and what the solver says (filter by text, id or 'unsolved')
   puzzle.py show ID                everything known about a panel and the line the solver would draw
   puzzle.py go ID [A|B]            teleport the player of that game in front of the panel with the dev menu (what a tester does before playing it)
-  puzzle.py solve ID [A|B]         teleport there and draw the solution with the mouse, then say what the game says
+  puzzle.py solve ID [A|B] [--start W,dy,AX,SX,SY]   teleport there and draw the solution with the mouse, then say what the game says; --start gives the bot
+                                   where the start circle is when its own search cannot find it (panel size in metres, vertical shift in pixels,
+                                   width factor, and -1 for a mirrored axis), as read from a screenshot
 IDs are the hex entity ids the dev menu shows (F8, or `menusel`)."""
 import json, os, sys, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -33,7 +35,7 @@ def main(argv):
             line = '%#7x  z %6.1f  %s' % (i, q['z'], describe(q))
             if not flt or flt in line.lower() or flt == '%x' % i: print(line)
         return 0
-    which = argv[2] if len(argv) > 2 else 'B'
+    which = argv[2] if len(argv) > 2 and not argv[2].startswith('--') else 'B'
     pid_hex = int(argv[1], 16) if len(argv) > 1 else None
     q = P.get(pid_hex)
     if q is None: sys.exit('no such panel %s' % argv[1:2])
@@ -44,6 +46,7 @@ def main(argv):
     if cmd == 'go':
         pyw('wcmd.py', win(gdir), 'menusel %x' % pid_hex); pyw('wcmd.py', win(gdir), 'menudo teleport'); print('teleporting game %s to panel %#x' % (which, pid_hex)); return 0
     if cmd == 'solve':
+        if '--start' in argv: os.environ['WDRAW_FORCE'] = argv[argv.index('--start') + 1]; os.environ['WSLENV'] = os.environ.get('WSLENV', '') + ':WDRAW_FORCE'
         path = solver.solve(q)
         if path is None: print('no solution known for this panel (%s)' % describe(q)); return 2
         r = sweep.draw(q, path, which); print(json.dumps({k: r.get(k) for k in ('solved', 'why')})); return 0 if r.get('solved') else 1
