@@ -38,6 +38,7 @@ const Cfg& GetCfg() {
             else if (sscanf(line, "model_speed=%f", &fv) == 1) r.modelStride = fv;
             else if (sscanf(line, "no_model_depth=%d", &v) == 1) r.noModelDepth = v != 0;
             else if (sscanf(line, "no_model_select=%d", &v) == 1) r.noModelSelect = v != 0;
+            else if (sscanf(line, "no_group_avatar_state=%d", &v) == 1) r.noGroupAvatarState = v != 0;
             else if (sscanf(line, "no_model_gait=%d", &v) == 1) r.noModelGait = v != 0;
             else if (sscanf(line, "model=%299[^\r\n]", s) == 1) {
                 if (!strcmp(s, "none")) r.modelPath.clear();

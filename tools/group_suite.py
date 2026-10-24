@@ -85,6 +85,25 @@ def wait(predicate,description,timeout=180):
     raise RuntimeError('FAIL '+description)
 
 
+def prepare(c, config):
+    d=c.directory
+    assert digest(d/'witness64_d3d11.exe')==EXE_HASH,'unsupported game build'
+    if not (d/'AnselSDK64_real.dll').exists():
+        assert digest(d/'AnselSDK64.dll')==DLL_HASH,'unrecognized original DLL'
+        (d/'AnselSDK64.dll').rename(d/'AnselSDK64_real.dll')
+    replace_copy(Path(ROOT)/'proxy/AnselSDK64.dll',d/'AnselSDK64.dll')
+    models=d/'witness_models';models.mkdir(exist_ok=True)
+    for asset in (Path(ROOT)/'assets/models').iterdir():
+        if asset.suffix in ('.glb','.txt'):replace_copy(asset,models/asset.name)
+    config=config+'force_active=1\ncap_fps=20\ndev_menu=1\nno_partner_video=1\ndrop_pct=25\ndrop_seed='+str(c.id)+'\n'
+    cfg=d/'witness_coop.cfg';cfg.unlink(missing_ok=True);cfg.write_text(config)
+    for name in ('witness_cmd.txt','witness_proxy.log','witness_net.json'):(d/name).unlink(missing_ok=True)
+    saves=d/'appdata/The Witness'
+    if saves.exists():
+        for file in saves.iterdir():
+            if file.suffix in ('.witness_campaign','.png'):file.unlink()
+
+
 def run():
     count=int(sys.argv[1]);assert 2<=count<=8
     clients=[Client(i) for i in range(1,count+1)]
@@ -93,22 +112,7 @@ def run():
     before=real_saves()
     try:
         for c in clients:
-            d=c.directory
-            assert digest(d/'witness64_d3d11.exe')==EXE_HASH,'unsupported game build'
-            if not (d/'AnselSDK64_real.dll').exists():
-                assert digest(d/'AnselSDK64.dll')==DLL_HASH,'unrecognized original DLL'
-                (d/'AnselSDK64.dll').rename(d/'AnselSDK64_real.dll')
-            replace_copy(Path(ROOT)/'proxy/AnselSDK64.dll',d/'AnselSDK64.dll')
-            models=d/'witness_models';models.mkdir(exist_ok=True)
-            for asset in (Path(ROOT)/'assets/models').iterdir():
-                if asset.suffix in ('.glb','.txt'):replace_copy(asset,models/asset.name)
-            config=generated[c.id]+'force_active=1\ncap_fps=20\ndev_menu=1\nno_partner_video=1\ndrop_pct=25\ndrop_seed='+str(c.id)+'\n'
-            cfg=d/'witness_coop.cfg';cfg.unlink(missing_ok=True);cfg.write_text(config)
-            for name in ('witness_cmd.txt','witness_proxy.log','witness_net.json'):(d/name).unlink(missing_ok=True)
-            saves=d/'appdata/The Witness'
-            if saves.exists():
-                for file in saves.iterdir():
-                    if file.suffix in ('.witness_campaign','.png'):file.unlink()
+            prepare(c, generated[c.id])
             c.start()
         wait(lambda:all(c.net()['ready'] for c in clients),'all clients reached stable-world gate',240)
         time.sleep(16)

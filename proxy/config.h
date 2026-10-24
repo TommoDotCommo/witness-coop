@@ -18,6 +18,7 @@ struct Cfg {
     float depthNear = 0.0597f;   // depth_near=<m>: the game stores depth as near / distance (reversed, no far plane); 0.0597 was measured, see NOTES
     bool depthView = false;      // depth_view=1: draw the game's depth buffer instead of the model (diagnostic)
     bool noModelSelect = false;  // test mutant: F6 / F7 and the model command do nothing
+    bool noGroupAvatarState = false; // mutant: share one gait state across all remote players
     bool noModelGait = false;    // test mutant: the figure never walks, whatever the player does
     bool noModelDepth = false;   // test mutant: draw the model over walls
     bool skipEntityZero = false; // test mutant: restore the old census that lost the second tutorial door

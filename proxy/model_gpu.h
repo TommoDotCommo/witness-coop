@@ -12,6 +12,7 @@ bool ModelGpuReady();
 // sceneDepth: a shader resource view of a copy of the game's depth buffer, or null (nothing hides the model).
 bool ModelGpuDraw(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Cam& cam, bool valid, unsigned seq, const float pos[3], float yaw, unsigned playerId = 0, bool first = true);
 ModelDrawStats ModelGpuStats();
+void ModelGpuDumpPlayers(); // render-thread test bridge: submitted ids, positions and gait speeds
 void ModelGpuRequestProbe();      // the next frame logs the scene depth at a few pixels (witness_cmd.txt: probe)
 void ModelGpuLogStats();               // witness_cmd.txt: modelstat -> one log line: pixels of the model that survived the depth test (GPU occlusion query), clip, speed
 void ModelGpuDepthView(bool on);          // witness_cmd.txt: depthview on|off (diagnostic: draw the game's depth buffer instead of the model)

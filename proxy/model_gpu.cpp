@@ -23,6 +23,8 @@ static ID3D11Buffer *g_vb, *g_ib, *g_cbFrame, *g_cbBones;
 static ID3D11ShaderResourceView* g_tex; static ID3D11SamplerState* g_samp;
 static ID3D11RasterizerState* g_rs; static ID3D11DepthStencilState* g_dss; static ID3D11BlendState *g_blend, *g_blendAlpha;
 static ID3D11Texture2D* g_depthTex; static ID3D11DepthStencilView* g_dsv; static UINT g_depthW, g_depthH;
+struct PlayerDraw { unsigned id, seq; float pos[3], speed; int clip; };
+static std::vector<PlayerDraw> g_playerDraws;
 static ModelDrawStats g_stats; static ID3D11Query* g_query; static bool g_queryPending;
 
 struct FrameCB { float viewProj[16], model[16]; float light[4]; float tint[4]; float depthp[4]; float screen[4]; };       // 192 bytes
@@ -272,8 +274,8 @@ bool ModelGpuDraw(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Cam& ca
     if (!g_ready) return false;
     if (!GetCfg().noModelSelect) ApplySelection(); else InterlockedExchange(&g_selReq, 0);
     PanelAtExit panel{rtv, w, h};
-    static unsigned s_frames; if (first) { g_stats.frames = ++s_frames; g_stats.submittedPlayers = 0; }
-    auto& avatar = g_avatars[playerId]; if (!avatar) avatar = std::make_unique<wm::Avatar>(g_gait);
+    static unsigned s_frames; if (first) { g_stats.frames = ++s_frames; g_stats.submittedPlayers = 0; g_playerDraws.clear(); }
+    auto& avatar = g_avatars[GetCfg().noGroupAvatarState ? 0 : playerId]; if (!avatar) avatar = std::make_unique<wm::Avatar>(g_gait);
     wm::Avatar* g_avatar = avatar.get();
     g_avatar->Update(GetTickCount64(), valid, seq, pos, yaw);
     g_stats.drawn = false;
@@ -315,10 +317,23 @@ bool ModelGpuDraw(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Cam& ca
     if (g_queryPending) { UINT64 n; if (g_ctx->GetData(g_query, &n, sizeof n, D3D11_ASYNC_GETDATA_DONOTFLUSH) == S_OK) { g_stats.visiblePixels = (unsigned)n; g_queryPending = false; } }
     bool timed = g_query && !g_queryPending; if (timed) g_ctx->Begin(g_query);
     g_ctx->DrawIndexed((UINT)g_model.idx.size(), 0, 0); ++g_stats.submittedPlayers;
+    PlayerDraw record = {}; record.id = playerId; record.seq = seq; memcpy(record.pos, g_avatar->pos(), 12); record.speed = g_avatar->speed(); record.clip = pk.clip; g_playerDraws.push_back(record);
     if (timed) { g_ctx->End(g_query); g_queryPending = true; }
     ID3D11ShaderResourceView* z3[3] = {nullptr, nullptr, nullptr}; g_ctx->PSSetShaderResources(0, 3, z3); (void)nul;      // the game's depth buffer must not stay bound as an input
     g_stats.drawn = true; g_stats.clip = pk.clip; g_stats.speed = g_avatar->speed(); g_stats.animTime = pk.time; memcpy(g_stats.pos, g_avatar->pos(), 12); memcpy(g_stats.cam, cam.pos, 12);
     return true;
+}
+
+void ModelGpuDumpPlayers() {
+    wchar_t path[MAX_PATH]; GetModuleFileNameW(g_selfModule(), path, MAX_PATH);
+    wchar_t* slash = wcsrchr(path, L'\\'); if (slash) *(slash + 1) = 0;
+    wcscat_s(path, L"witness_models.json"); wchar_t tmp[MAX_PATH]; wcscpy_s(tmp, path); wcscat_s(tmp, L".tmp");
+    FILE* f = _wfopen(tmp, L"w"); if (!f) return;
+    fprintf(f, "{\"frame\":%u,\"players\":[", g_stats.frames); bool comma = false;
+    for (const auto& p : g_playerDraws) {
+        fprintf(f, "%s{\"id\":%u,\"seq\":%u,\"pos\":[%.5f,%.5f,%.5f],\"speed\":%.5f,\"clip\":%d}", comma ? "," : "", p.id, p.seq, p.pos[0], p.pos[1], p.pos[2], p.speed, p.clip); comma = true;
+    }
+    fprintf(f, "]}\n"); fclose(f); MoveFileExW(tmp, path, MOVEFILE_REPLACE_EXISTING);
 }
 
 void ModelGpuLogStats() {

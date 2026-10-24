@@ -95,6 +95,11 @@ The production Windows UDP layer also passed an eight-client fake-world integrat
 cable on/off and a restarted client (`make -C proxy/core transport-test`; no game or lab slots).
 A two-real-game group run passed a normal input-driven bot solve, door sync, progress originating on both clients,
 pose/avatar submission, packet loss, restart catch-up, empty queues and byte-identical real saves.
+`tools/qa_group_render.sh` also passed with one real game and seven lightweight protocol clients: seven actual D3D
+avatar submissions with distinct positions, one moving gait and six stationary gaits, bidirectional panel progression,
+a normal local bot solve and drained queues under 25% packet loss. Its shared-avatar-state mutant was caught.
+This uses one game slot; it does not count as eight real game processes. The `modelstate` command writes the latest
+render frame's submitted IDs, positions and gait speeds to `witness_models.json` for these checks.
 Eight-real-game QA is **pending** while other lab tests occupy the available RAM: `tools/qa_group.sh 8` first checks lab activity and RAM, then leases only this
 worktree's slots, runs a normal bot solve, checks every world's process memory, originates progress on every client,
 and verifies restart recovery and drained queues. It refuses insufficient RAM rather than displacing another test.
