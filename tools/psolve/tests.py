@@ -44,8 +44,8 @@ def cells_of(path, gx, gy):
 SQ_B, SQ_W = 0x101, 0x102
 
 def test_plain_and_dots():
-    p = grid(3, 3, extra_flags={4: 0x20})                  # a black dot in the middle: the line must pass through it
-    path = solver.solve_rules(p); check_path(p, path); assert 4 in path
+    p = grid(3, 3, extra_flags={6: 0x20}, end=2)           # the end is two steps away, but the dot in the far corner has to be visited first
+    path = solver.solve_rules(p); check_path(p, path); assert 6 in path
     p = grid(3, 3, extra_flags={1: 0x20, 3: 0x20})         # dots on two edge midpoints of the corner: the line must visit both
     path = solver.solve_rules(p); check_path(p, path); assert 1 in path and 3 in path
 
@@ -61,11 +61,10 @@ def test_stars():
     p = grid(3, 3, cells=[star(1), SQ_B, 0, 0])            # a black star needs exactly one black partner in its region
     path = solver.solve_rules(p); check_path(p, path)
     regs = cells_of(path, 3, 3); reg = {ci: k for k, r in enumerate(regs) for ci in r}; assert reg[0] == reg[1]
-    p = grid(3, 3, cells=[star(1), star(1), SQ_B, 0])      # three black elements cannot share a region with one star pair: impossible to keep exactly 2... but 2 stars pair each other
-    path = solver.solve_rules(p)
-    if path:
-        check_path(p, path); regs = cells_of(path, 3, 3); reg = {ci: k for k, r in enumerate(regs) for ci in r}
-        assert not (reg[0] == reg[1] == reg[2])
+    p = grid(3, 3, cells=[star(1), SQ_B, SQ_B, 0], end=2)  # a star with two black partners in one region is wrong: the line must split them (the short line to the end does not)
+    path = solver.solve_rules(p); check_path(p, path)
+    regs = cells_of(path, 3, 3); reg = {ci: k for k, r in enumerate(regs) for ci in r}
+    assert [reg[1] == reg[0], reg[2] == reg[0]].count(True) == 1
 
 def test_triangles():
     tri = lambda n: (n << 16) | 0x600 | 0xA
@@ -89,4 +88,15 @@ def run():
         if name.startswith('test_'): fn(); n += 1; print('ok', name)
     print('%d psolve tests passed' % n)
 
-if __name__ == '__main__': run()
+def run_mutants():
+    """Every rule switched off in turn (PSOLVE_MUTANT=<rule>) must make at least one test fail."""
+    bad = []
+    for rule in ('dots', 'squares', 'stars', 'triangles', 'poly'):
+        r = subprocess.run([sys.executable, os.path.abspath(__file__)], env={**os.environ, 'PSOLVE_MUTANT': rule}, capture_output=True, text=True)
+        print('mutant %-9s %s' % (rule, 'caught' if r.returncode else 'NOT CAUGHT'))
+        if r.returncode == 0: bad.append(rule)
+    assert not bad, 'mutants not caught: %s' % bad
+
+if __name__ == '__main__':
+    if '--mutants' in sys.argv: run_mutants()
+    else: run()

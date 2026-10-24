@@ -26,6 +26,8 @@ static vector<vector<int>> adj;
 static vector<int> eu, ev;
 static vector<int> mirror;
 static vector<int> eid;      // edge id lookup: eid[a * N + b]
+static const char* MUTANT = getenv("PSOLVE_MUTANT");      // test mutants: a rule that is switched off, which the T0 tests must notice
+static bool mut(const char* n) { return MUTANT && !strcmp(MUTANT, n); }
 static const unsigned T_SQUARE = 0x100, T_STAR = 0x200, T_POLY = 0x400, T_ERASER = 0x500, T_TRI = 0x600;
 
 static int ctype(unsigned v) { return (v & 0xF00); }
@@ -82,8 +84,8 @@ static bool regionOk(const vector<int>& cellsIdx, const vector<unsigned char>& e
 static bool checkNoErasers(const vector<Elem>& els, const vector<int>& cellsIdx) {
     // squares: one colour; stars: exactly one partner of the colour; polys: tile
     int sqCol = -1;
-    for (auto& e : els) if (ctype(e.v) == T_SQUARE) { if (sqCol < 0) sqCol = ccol(e.v); else if (sqCol != ccol(e.v)) return false; }
-    for (auto& e : els) if (ctype(e.v) == T_STAR) {
+    if (!mut("squares")) for (auto& e : els) if (ctype(e.v) == T_SQUARE) { if (sqCol < 0) sqCol = ccol(e.v); else if (sqCol != ccol(e.v)) return false; }
+    if (!mut("stars")) for (auto& e : els) if (ctype(e.v) == T_STAR) {
         int c = ccol(e.v), n = 0; for (auto& o : els) if (&o != &e && ccol(o.v) == c && ctype(o.v) != T_ERASER) n++;
         if (n != 1) return false;
     }
@@ -91,7 +93,7 @@ static bool checkNoErasers(const vector<Elem>& els, const vector<int>& cellsIdx)
     for (auto& e : els) if (isPoly(e.v) || (e.v & 0x2000 && (e.v & 0xF00) == T_POLY)) {
         unsigned mask = e.v >> 16; if (e.v & 0x2000) { neg.push_back(mask); nr.push_back(e.v & 0x1000); } else { pos.push_back(mask); pr.push_back(e.v & 0x1000); }
     }
-    if (!pos.empty() || !neg.empty()) {
+    if (!mut("poly") && (!pos.empty() || !neg.empty())) {
         vector<pair<int, int>> cs; for (int ci : cellsIdx) cs.push_back({ci / CW, ci % CW});
         if (!tile(cs, pos, neg, pr, nr)) return false;
     }
@@ -136,7 +138,7 @@ static bool gridPanel;
 
 static bool evaluate() {
     // dots
-    for (int d : dots) {
+    if (!mut("dots")) for (int d : dots) {
         if (!sym) { if (!visited[d]) return false; continue; }
         unsigned f = flags[d]; if ((f & 0x100) ? !vis1[d] : (f & 0x200) ? !vis2[d] : !(vis1[d] || vis2[d])) return false;      // blue dots belong to the drawn line, yellow to its mirror
     }
@@ -148,7 +150,7 @@ static bool evaluate() {
         int ci = r * CW + c; unsigned v = cellv[ci]; if (ctype(v) != T_TRI) continue;
         int n00 = r * GX + c, n01 = r * GX + c + 1, n10 = (r + 1) * GX + c, n11 = (r + 1) * GX + c + 1, cnt = 0;
         cnt += edgeUsed(n00, n01) + edgeUsed(n10, n11) + edgeUsed(n00, n10) + edgeUsed(n01, n11);
-        triOk[ci] = cnt == (int)(v >> 16);
+        triOk[ci] = mut("triangles") || cnt == (int)(v >> 16);
     }
     vector<int> comp(NDEC, -1); int nc = 0;
     for (int s = 0; s < NDEC; s++) {

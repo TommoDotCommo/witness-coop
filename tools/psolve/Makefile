@@ -4,5 +4,6 @@ psolve: psolve.cpp
 	$(CXX) -O2 -std=c++17 -o psolve psolve.cpp
 test: psolve tests.py
 	python3 tests.py
+	python3 tests.py --mutants
 clean:
 	rm -f psolve
