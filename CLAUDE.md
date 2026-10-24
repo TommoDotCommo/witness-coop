@@ -41,16 +41,15 @@ games, not on logs or screenshots.
   `gh issue create`, `gh pr create --draft`, or anything new on GitHub. PRs are always drafts, one
   game per PR, with the owner-review box left for the owner.
 - Pre-approved by the owner (2026-10-22, told to the agent directly: "you have approval", and asked it to write this line itself):
-  agents push commits to this repo (`git push origin main`, or their own branch of it) and add commits to the open hub PR #116
-  (`git push fork game/the-witness`) without asking each time, provided every pushed commit has the identity below and no real
+  agents push commits to this repo (`git push origin main`, or their own branch of it) and add commits to an open hub PR of theirs
+  without asking each time, provided every pushed commit has the identity below and no real
   names, emails, tokens, game files or usernamed paths (check `git log --format='%an %ae %cn %ce' origin/main..HEAD` and the
   diff). Never force-push, and never `push --all` / `--mirror`. Still ask first: new repos, new issues or PRs, releases, and
   anything touching the real game install or the owner's saves.
 - Match the hub's conventions: look at recent `gh issue list` / `gh pr list` titles first. Claims are
   titled "Claim: <Game> (<year>) - <approach>", PRs "<Game>: <what it adds>".
-- Already published: claim issue cranebeaker/coop-anything#117 and draft PR #116 (branch `game/the-witness`
-  on the fork, remote `fork`). Add to that PR while it is open (commit + `git push fork game/the-witness`)
-  instead of opening a new one.
+- Already published: claim issue cranebeaker/coop-anything#117. Draft PR #116 was merged by the hub owner on 2026-10-22
+  (5b86e5b), so it is closed: later notes go on a new branch off `origin/main` of the hub, and a new PR needs the owner's OK.
 
 ## Public repo and identity
 - This repo is public at github.com/TommoDotCommo/witness-coop (MIT; `origin`, branch `main`).
