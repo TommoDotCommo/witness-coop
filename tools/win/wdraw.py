@@ -180,6 +180,7 @@ ROUNDS = [(1.0, 1, 1), (1.0, 1, 1), (1.4, -1, -1)] + [(ax_, sx_, sy_) for ax_ in
 if FORCE:
     fw, fdy, fax, fsx, fsy = [float(v) for v in FORCE.split(',')]; ROUNDS = [(fax, int(fsx), int(fsy))] * 2; cands = [(fw, int(fdy))]; cached_ax = None
 for attempt, (ax_, sx_, sy_) in enumerate(ROUNDS):
+    if time.time() - T_START > 80 and attempt > 2: break      # the whole search for a start circle is capped: a panel without one is reported, not chased
     AX = cached_ax if (attempt == 0 and cached_ax) else ax_; SX, SY = cached_flip if attempt == 0 else (sx_, sy_)
     for _ in range(3):
         c.click(settle=1.0)                          # enter: the cursor appears at the screen centre

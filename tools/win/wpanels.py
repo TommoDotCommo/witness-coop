@@ -4,6 +4,12 @@ Offsets for build 11370412 (the randomizer's layout B): grid 0x440/0x444, decora
 import os, sys, json, math, struct
 exec(compile(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'wlib.py')).read(), 'wlib.py', 'exec'))
 p = attach(int(sys.argv[1])); full = '--full' in sys.argv; out = []
+base_id = p.u32(p.u64(p.base + GLOBALS) + 8)
+def target_type(e):      # what the panel opens or lights: 'door', 'cable', 'panel', 'laser' or other (the entity at the target id minus the table's base id)
+    t = p.u32(e + 0x2b4) - base_id
+    te = p.entity(t) if 0 <= t < MAX_ID else None
+    if not te: return ''
+    ty = p.type_of(te); return {TI_DOOR: 'door', TI_CABLE: 'cable', TI_PANEL: 'panel', TI_LASER: 'laser'}.get(ty, 'other')
 
 def arr(e, off, fmt, count):
     if not 0 < count < 20000: return []
@@ -19,7 +25,7 @@ for i, e in enumerate(p.entity_table()):
     d = {'id': i, 'x': x, 'y': y, 'z': z, 'rz': 2 * math.atan2(qz, qw), 'nodes': n, 'edges': m,
          'starts': sum(1 for f in flags if f & 2 and not f & 1), 'ends': sum(1 for f in flags if f & 1),
          'solved': p.u32(e + 0x294) == 0x3f800000 and p.u32(e + 0x298) == 1,
-         'powered': p.u32(e + 0x2a0) == 0x3f800000 and p.u32(e + 0x2a4) == 0x3f800000, 'target': p.u32(e + 0x2b4), 'link': p.u32(e + 0x2c8),
+         'powered': p.u32(e + 0x2a0) == 0x3f800000 and p.u32(e + 0x2a4) == 0x3f800000, 'target': p.u32(e + 0x2b4), 'ttype': target_type(e), 'link': p.u32(e + 0x2c8),
          'gx': p.u32(e + 0x440), 'gy': p.u32(e + 0x444), 'style': p.u32(e + 0x448), 'ndec': p.u32(e + 0x430)}
     if full:
         d.update({'flags': flags, 'pos': arr(e, 0x3c0, 'f', 2 * n), 'ca': arr(e, 0x3d0, 'I', m), 'cb': arr(e, 0x3d8, 'I', m),

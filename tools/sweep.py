@@ -48,6 +48,12 @@ def draw(panel, path, which, timeout=420):
     if not lines and not alive(which): restart_game(which); return {'solved': False, 'why': 'the game died (restarted)', 'infrastructure': True}
     return json.loads(lines[-1]) if lines else {'solved': False, 'why': 'the drawing script printed nothing: ' + out[-200:], 'infrastructure': True}
 
+SPAWN = (-187.0, -159.0)
+def order_key(q):
+    """Progress runs outwards from the start and goes through doors and cables: panels that open a door come first among their neighbours, then by distance."""
+    d = ((q['x'] - SPAWN[0]) ** 2 + (q['y'] - SPAWN[1]) ** 2) ** 0.5
+    return d - (120 if q.get('ttype') == 'door' else 40 if q.get('ttype') == 'cable' else 0)
+
 def retry_possible(manifest, results, n_solved):
     return any(v.get('result') == 'failed' and v.get('tries', 1) < 8 and n_solved > v.get('at', 0) + 4 for v in results.values())
 
@@ -59,7 +65,7 @@ def run(args):
         manifest = inventory(which); json.dump(manifest, open(MANIFEST, 'w'))
     live = {q['id']: q for q in inventory(which, full=False)}      # what changes: solved and powered
     for q in manifest:
-        if q['id'] in live: q['solved'] = live[q['id']]['solved']; q['powered'] = live[q['id']]['powered']; q['link'] = live[q['id']].get('link', q.get('link'))
+        if q['id'] in live: q['solved'] = live[q['id']]['solved']; q['powered'] = live[q['id']]['powered']; q['link'] = live[q['id']].get('link', q.get('link')); q['ttype'] = live[q['id']].get('ttype', q.get('ttype', ''))
     results = {}
     import glob
     for fn in glob.glob(RESULTS_GLOB + '.*.json'): results.update(load(fn, {}))
@@ -70,9 +76,9 @@ def run(args):
     while True:      # passes: solving a panel can power others, so go again until a pass solves nothing
         live = {q['id']: q for q in inventory(which, full=False)}
         for q in manifest:
-            if q['id'] in live: q['solved'] = live[q['id']]['solved']; q['powered'] = live[q['id']]['powered']; q['link'] = live[q['id']].get('link', q.get('link'))
+            if q['id'] in live: q['solved'] = live[q['id']]['solved']; q['powered'] = live[q['id']]['powered']; q['link'] = live[q['id']].get('link', q.get('link')); q['ttype'] = live[q['id']].get('ttype', q.get('ttype', ''))
         solved_in_pass = 0; skipped_unpowered = 0; n_solved = sum(1 for q in manifest if q['solved'])
-        for p in sorted(manifest, key=lambda q: q['id']):
+        for p in sorted(manifest, key=order_key):
             if ids is not None and p['id'] not in ids: continue
             key = '%x' % p['id']
             if p['solved']:
