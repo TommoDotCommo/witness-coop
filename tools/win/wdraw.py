@@ -124,7 +124,13 @@ if not 0.7 < r_ < 1.45:
         if math.hypot(cx - px_, cy - py_) > 12: continue            # put back at the spawn point: nothing to stand on there
         aim(); r_ = depth_ratio(); stamp('view check at (%.1f, %.1f): depth ratio %.2f' % (hx, hy, r_))
         if 0.7 < r_ < 1.45: ok_view = True; break
-    if not ok_view: done(False, 'the panel cannot be seen from any of the places tried (something is in the way, or there is nothing to stand on)', 0, dist)
+    if not ok_view:
+        # glass panels (the symmetry strips on the shore) read the depth of what is behind the glass, so the check says "blocked" for a panel that is in plain view;
+        # a camera that really stands in front of the panel (within 12 m, checked above) draws anyway, and a line that does not start is reported as that
+        cx, cy, cz = p.camera()[0]
+        if math.hypot(cx - px_, cy - py_) > 12 or os.environ.get('WDRAW_STRICT_VIEW'):
+            done(False, 'the panel cannot be seen from any of the places tried (something is in the way, or there is nothing to stand on)', 0, dist)
+        stamp('depth check failed everywhere; drawing anyway (glass or a thin cover?)')
     dist = math.dist(p.camera()[0], (px_, py_, pz_))
 
 # ---- projection -----------------------------------------------------------------------------------------------------------------------------
@@ -143,8 +149,11 @@ def to_screen(world):      # offset from the screen centre in pixels
 W = 0.567      # the panel's size in metres (unit 0..1): scanned below
 AX = 1.0       # width/height of a panel unit on the screen: 1 for most panels, found by the scan on the others
 SX, SY = 1.0, 1.0      # -1 where the panel is shown mirrored or turned (1cd3: its start, node data bottom right, is the circle at the top left)
+ROLL = math.radians(float(os.environ.get('WDRAW_ROLL', '0')))      # some panels (290) draw their grid turned in the panel's plane, with nothing in the rotation fields: found by the scan, or forced
 def node_world(i):
-    loc = quat_rot((0.0, (dots[2 * i] - 0.5) * W, (dots[2 * i + 1] - 0.5) * W))
+    lx, ly = (dots[2 * i] - 0.5) * W, (dots[2 * i + 1] - 0.5) * W
+    if ROLL: lx, ly = lx * math.cos(ROLL) - ly * math.sin(ROLL), lx * math.sin(ROLL) + ly * math.cos(ROLL)
+    loc = quat_rot((0.0, lx, ly))
     return (px_ + loc[0], py_ + loc[1], pz_ + loc[2])
 def node_px(i):
     ox, oy = to_screen((px_, py_, pz_)); x, y = to_screen(node_world(i)); return (x - ox) * AX * SX, (y - oy) * SY      # relative to the panel's middle (which is at the screen centre); AX: some panels are not square
@@ -157,7 +166,7 @@ def probe_free_look():
     if abs(y1 - y0) > 1e-5: aim(); return True
     return False
 
-W_LIST = [0.567, 0.645, 0.76, 0.88, 0.50, 0.70, 0.82, 0.60, 0.95, 0.45, 1.05, 1.2]
+W_LIST = [0.567, 0.645, 0.76, 0.88, 0.50, 0.70, 0.82, 0.60, 0.95, 0.45, 1.05, 1.2, 1.35, 1.5]
 DY_LIST = [0, 12, -12, 24, -24, 36, -36, 48, -48]
 kcache_path = os.environ.get('WDRAW_KCACHE'); kcache = {}
 if kcache_path and os.path.exists(kcache_path):
@@ -177,10 +186,13 @@ if ckey in kcache:
 else: class_cands = None
 started = None
 FORCE = os.environ.get('WDRAW_FORCE')      # test: W,dy,AX,SX,SY, only this one
-ROUNDS = [(1.0, 1, 1), (1.0, 1, 1), (1.4, -1, -1)] + [(ax_, sx_, sy_) for ax_ in (1.0, 1.45, 0.7, 2.0, 0.5) for (sx_, sy_) in ((-1, -1), (1, 1), (1, -1), (-1, 1)) if (ax_, sx_, sy_) != (1.0, 1, 1)]
+ROLL0 = ROLL; ROLL_CANDS = [(w2, dy2) for dy2 in (0, 12, -12, 24, -24) for w2 in (1.88, 1.75, 2.0, 1.6, 2.15, 1.45, 1.3)]
+if 'r%x' % eid in kcache: ROLL0 = ROLL = math.radians(kcache['r%x' % eid]); cands.insert(0, tuple(kcache['w%x' % eid][:2])) if 'w%x' % eid in kcache else None
+ROUNDS = [(1.0, 1, 1), (1.0, 1, 1), (1.4, -1, -1), (1.0, 1, 1, 45), (1.0, -1, -1, 45)] + [(ax_, sx_, sy_) for ax_ in (1.0, 1.45, 0.7, 2.0, 0.5) for (sx_, sy_) in ((-1, -1), (1, 1), (1, -1), (-1, 1)) if (ax_, sx_, sy_) != (1.0, 1, 1)]
 if FORCE:
     fw, fdy, fax, fsx, fsy = [float(v) for v in FORCE.split(',')]; ROUNDS = [(fax, int(fsx), int(fsy))] * 2; cands = [(fw, int(fdy))]; cached_ax = None
-for attempt, (ax_, sx_, sy_) in enumerate(ROUNDS):
+for attempt, rd_ in enumerate(ROUNDS):
+    ax_, sx_, sy_ = rd_[:3]; ROLL = math.radians(rd_[3]) if len(rd_) > 3 else ROLL0
     ROUND_END = (time.time() - T_START) + 70      # each round gets its own budget; the whole search is capped below
     if time.time() - T_START > 230 and attempt > 2: break      # the whole search for a start circle is capped: a panel without one is reported, not chased
     AX = cached_ax if (attempt == 0 and cached_ax) else ax_; SX, SY = cached_flip if attempt == 0 else (sx_, sy_)
@@ -189,7 +201,7 @@ for attempt, (ax_, sx_, sy_) in enumerate(ROUNDS):
         if not probe_free_look(): break              # entered (the cursor moved, the view did not)
         rclick()                                     # not entered: leave and click again
     cur = (0.0, 0.0)
-    for w_, dy_ in (class_cands if (attempt == 0 and class_cands) else cands if (attempt < 2 or FORCE) else [(w2, dy2) for dy2 in (0, 12, -12, 24, -24, 36, -36) for w2 in ((0.70, 0.66, 0.74, 0.62, 0.78, 0.58, 0.82) if attempt == 2 else (0.567, 0.645, 0.70, 0.76, 0.82, 0.88, 0.95, 1.05))]):
+    for w_, dy_ in (class_cands if (attempt == 0 and class_cands) else cands if (attempt < 2 or FORCE) else ROLL_CANDS if len(rd_) > 3 else [(w2, dy2) for dy2 in (0, 12, -12, 24, -24, 36, -36) for w2 in ((0.70, 0.66, 0.74, 0.62, 0.78, 0.58, 0.82) if attempt == 2 else (0.567, 0.645, 0.70, 0.76, 0.82, 0.88, 0.95, 1.05))]):
         if time.time() - T_START > ROUND_END: break
         W = w_
         sx, sy = node_px(path[0]); sy += dy_
@@ -206,7 +218,7 @@ if not started: done(False, 'the line did not start with any panel size or offse
 W = started[0]
 stamp('line started with W %.3f m, vertical offset %d px, width factor %.2f, flips %d %d' % (started + (AX, SX, SY)))
 if kcache_path:
-    kcache['w%x' % eid] = list(started) + [AX, SX, SY]; kcache[pskey] = started[0]; kcache[ckey] = list(started) + [AX, SX, SY]
+    kcache['w%x' % eid] = list(started) + [AX, SX, SY]; kcache['r%x' % eid] = round(math.degrees(ROLL)); kcache[pskey] = started[0]; kcache[ckey] = list(started) + [AX, SX, SY]
     try: json.dump(kcache, open(kcache_path, 'w'))
     except Exception: pass
 
