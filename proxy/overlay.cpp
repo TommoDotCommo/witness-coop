@@ -352,6 +352,7 @@ void OverlayLogTags() {       // witness_cmd.txt: tagstat -> one log line per re
 void SaveMetaTick();      // savemeta_game.cpp
 #include "mapgen.h"
 void MapGenCountOverlayFrame();
+unsigned OverlayFrames() { return (unsigned)g_frames; }
 static void DrawDevMenu(IDXGISwapChain* sc) {
     if (!g_uiReady) return;
     DevMenuTick(); SaveMetaTick();

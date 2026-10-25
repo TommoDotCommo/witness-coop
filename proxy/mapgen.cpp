@@ -12,6 +12,7 @@
 
 void Log(const char* msg);
 bool GamePaused();      // overlay.cpp
+unsigned OverlayFrames();
 extern HMODULE g_selfModule();
 bool OverlayCaptureRgba(IDXGISwapChain* sc, std::vector<uint8_t>* px, unsigned* w, unsigned* h);      // overlay.cpp
 bool DevMenuMapInfo(float* minx, float* miny, float* maxx, float* maxy);                               // devmenu.cpp
@@ -75,7 +76,7 @@ void Plan() {
     while ((size_t)g_W * g_H > 3200u * 3200u) { g_res *= 1.25f; g_W = (int)ceilf((g_maxx - g_minx) / g_res); g_H = (int)ceilf((g_maxy - g_miny) / g_res); }
     g_acc.assign((size_t)g_W * g_H * 3, 0.0f); g_wt.assign((size_t)g_W * g_H, 0.0f); g_plan.clear(); g_nccSum = 0; g_nccN = 0; g_overlayFrames = 0;
     int row = 0; for (float y = g_miny; y < g_maxy + stepY; y += stepY, ++row) {
-        std::vector<Tile> line; for (float x = g_minx; x < g_maxx + stepX; x += stepX) { float z; if (DevMenuGroundNear(x, y, 140.0f, &z)) line.push_back({x, y - ahead, z}); }      // (cx, cy): where the camera is; the tile's own ground is `ahead` further on
+        std::vector<Tile> line; for (float x = g_minx; x < g_maxx + stepX; x += stepX) { float z, zc; if (DevMenuGroundNear(x, y, 140.0f, &z) && DevMenuGroundNear(x, y - ahead, 90.0f, &zc)) line.push_back({x, y - ahead, z}); }      // (and the player itself stays within 90 m of known ground: further out over the sea the game moves it back, again and again)      // (cx, cy): where the camera is; the tile's own ground is `ahead` further on
         if (row & 1) std::reverse(line.begin(), line.end()); g_plan.insert(g_plan.end(), line.begin(), line.end());
     }
     char m[200]; snprintf(m, sizeof m, "mapgen: %zu tiles over %.0f x %.0f m, %dx%d pixels (%.2f m each), flying %.0f m above the ground, looking %.0f m ahead", g_plan.size(), g_maxx - g_minx, g_maxy - g_miny, g_W, g_H, g_res, height, ahead); Log(m);
@@ -106,25 +107,41 @@ void Composite(const std::vector<uint8_t>& px, unsigned W, unsigned H, const Til
 }  // namespace
 
 bool MapGenActive() { return g_phase != Idle; }
+volatile LONG g_tickMs; volatile LONG g_watch;
+DWORD WINAPI Watchdog(LPVOID) {      // a fly-over that stops moving says where: is the game still presenting frames, and in which phase is the plan
+    unsigned lastFrames = OverlayFrames(); size_t lastTile = g_i; int still = 0;
+    while (g_phase != Idle) {
+        Sleep(5000); unsigned f = OverlayFrames();
+        if (g_i == lastTile && g_phase != Idle) { if (++still >= 2) { char m[200]; snprintf(m, sizeof m, "mapgen: watchdog: no progress for %d s at tile %zu of %zu, phase %d, frames +%u, last tick %ld ms ago", still * 5, g_i, g_plan.size(), (int)g_phase, f - lastFrames, (long)(GetTickCount() - (DWORD)g_tickMs)); Log(m); } } else still = 0;
+        lastTile = g_i; lastFrames = f;
+    }
+    InterlockedExchange(&g_watch, 0); return 0;
+}
 volatile LONG g_cmd;      // 1 start, 2 stop, 3 status: taken by the render thread
 void MapGenCommand(const char* args) { g_cmd = !strncmp(args, "start", 5) ? 1 : (!strncmp(args, "stop", 4) ? 2 : 3); }
 static void RunCommand(int cmd) {
     if (cmd == 1) {
         if (g_phase != Idle) { Log("mapgen: already running"); return; }
         if (GamePaused()) { Log("mapgen: the game is paused: nothing to take a picture of"); return; }
-        if (!Camera(g_home, g_homeAng)) return; Plan(); if (g_plan.empty()) return; g_i = 0; g_phase = Moving; g_t0 = 0; g_started = GetTickCount();
+        if (!Camera(g_home, g_homeAng)) return; Plan(); if (g_plan.empty()) return; g_i = 0; g_phase = Moving; g_t0 = 0; g_started = GetTickCount(); if (!InterlockedExchange(&g_watch, 1)) { HANDLE h = CreateThread(nullptr, 0, Watchdog, nullptr, 0, nullptr); if (h) CloseHandle(h); }
     } else if (cmd == 2) { if (g_phase != Idle) Finish(false); }
     else { char m[160]; snprintf(m, sizeof m, "mapgen: phase %d tile %zu of %zu serial %u", (int)g_phase, g_i, g_plan.size(), g_serial); Log(m); }
 }
 void MapGenTick(IDXGISwapChain* sc) {
     if (LONG cmd = InterlockedExchange(&g_cmd, 0)) RunCommand((int)cmd);
-    if (g_phase == Idle) return; DWORD now = GetTickCount(); const Cfg& c = GetCfg();
+    if (g_phase == Idle) return; DWORD now = GetTickCount(); const Cfg& c = GetCfg(); g_tickMs = (LONG)now;
     if (g_phase == Moving) {      // fly to the tile and hold there; the picture is taken after the game has had time to draw the ground in
         if (g_i % 10 == 0) { char m[100]; snprintf(m, sizeof m, "mapgen: tile %zu of %zu", g_i, g_plan.size()); Log(m); }
         const Tile& t = g_plan[g_i]; GameHover(t.cx, t.cy, t.gz + c.mapgenHeight, kYaw, kPitch, 6); g_t0 = now; g_phase = Capturing; return;
     }
     if (g_phase == Capturing) {
         if (now - g_t0 < (DWORD)c.mapgenSettleMs) return;      // (a tile always ends: the frame after the wait is taken whatever is on it)
+        { float cam[3], ang[2]; static int bad; const Tile& t = g_plan[g_i];
+          if (Camera(cam, ang) && (fabsf(cam[0] - t.cx) > 8.0f || fabsf(cam[1] - t.cy) > 8.0f || fabsf(cam[2] - (t.gz + c.mapgenHeight)) > 20.0f)) {      // the game moved the player (it resets one that is somewhere it does not allow): this tile is skipped; a game that keeps doing it ends the fly-over
+              char m[160]; snprintf(m, sizeof m, "mapgen: tile %zu: the player is at (%.1f, %.1f, %.1f), not where it was put: skipped", g_i, cam[0], cam[1], cam[2]); Log(m);
+              if (++bad >= 6) { Log("mapgen: the game keeps moving the player away: stopped"); bad = 0; Finish(false); return; }
+              if (++g_i >= g_plan.size()) { Finish(true); return; } g_phase = Moving; return;
+          } else bad = 0; }
         std::vector<uint8_t> px; unsigned W, H; if (!GamePaused() && OverlayCaptureRgba(sc, &px, &W, &H)) Composite(px, W, H, g_plan[g_i]);      // (a pause menu is not part of the island)
         if (++g_i >= g_plan.size()) { Finish(true); return; }
         g_phase = Moving;
