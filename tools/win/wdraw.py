@@ -70,10 +70,8 @@ def menu_teleport():
     """The dev menu's teleport (the feature under test): 3 m in front of the panel, held 2 s while the player settles on the ground there."""
     if os.environ.get('WDRAW_NO_TELEPORT'): return p.camera()[0]      # a human is standing in front of the panel: draw from where they are (the menu teleport may land off the platform they are on)
     for attempt in range(3):
-        c.send(['menusel %x' % eid, 'menudo teleport'], 0.0)
-        for _w in range(34):      # the teleport holds the player for 2 s while it settles on the ground: look every 0.1 s instead of waiting a fixed 3.2 s
-            time.sleep(0.1); pos, ang = p.camera(); dn_, lat_ = standing(pos)
-            if _w >= 8 and 1.0 < dn_ < 8 and abs(lat_) < 2.0 and abs(pos[2] - pz_) < 2.0: break
+        c.send(['menusel %x' % eid, 'menudo teleport'], 3.2)
+        pos, ang = p.camera(); dn_, lat_ = standing(pos)
         if 1.0 < dn_ < 8 and abs(lat_) < 2.0 and abs(pos[2] - pz_) < 2.0: return pos      # near enough: everything below is worked out from where we really stand
         time.sleep(3)
     # refused three times: no collision is loaded there (the game keeps putting the player back at the spawn point). Hold the player in the air in front of the
