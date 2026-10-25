@@ -22,6 +22,8 @@
 using namespace std;
 
 static int N, M, GX, GY, NDEC, CW, CH;
+static bool WRAP = false;      // a pillar: the last column of cells is next to the first (cell array GX x (GY-1)), and the row of nodes closes on itself
+static int nc1(int c) { return WRAP ? (c + 1) % GX : c + 1; }
 static vector<unsigned> flags, cellv;
 static vector<vector<int>> adj;
 static vector<int> eu, ev;
@@ -30,6 +32,7 @@ static vector<int> eid;      // edge id lookup: eid[a * N + b]
 static vector<int> midNode;  // when an edge of the grid is split by a node (a dot or gap marker on it): the node, midNode[a * N + b], else -1
 static const char* MUTANT = getenv("PSOLVE_MUTANT");      // test mutants: a rule that is switched off, which the T0 tests must notice
 static bool mut(const char* n) { return MUTANT && !strcmp(MUTANT, n); }
+static const unsigned T_HOLE = 0xA00;      // a cell that is not there (the corners next to the start of the theater doors): no region, no rule
 static const unsigned T_SQUARE = 0x100, T_STAR = 0x200, T_POLY = 0x400, T_ERASER = 0x500, T_TRI = 0x600;
 
 static int ctype(unsigned v) { return (v & 0xF00); }
@@ -177,6 +180,7 @@ static bool regionValidRaw(const vector<int>& cellsIdx, const vector<int>& triOk
 
 // ---- path search ------------------------------------------------------------------------------------------------------------------------
 static vector<char> usedEdge, visited, vis1, vis2; static vector<int> path;
+static vector<array<int, 2>> chainEnd;      // for a marker node on a chain between two grid nodes: those two nodes
 static bool sym = false;
 static vector<int> dots;                 // nodes that must be visited
 static int nodeCellRow(int n) { return n / GX; }
@@ -198,32 +202,34 @@ static bool evaluate() {
     vector<int> triOk(NDEC, 1);
     for (int r = 0; r < CH; r++) for (int c = 0; c < CW; c++) {
         int ci = r * CW + c; unsigned v = cellv[ci]; if (ctype(v) != T_TRI) continue;
-        int n00 = r * GX + c, n01 = r * GX + c + 1, n10 = (r + 1) * GX + c, n11 = (r + 1) * GX + c + 1, cnt = 0;
+        int n00 = r * GX + c, n01 = r * GX + nc1(c), n10 = (r + 1) * GX + c, n11 = (r + 1) * GX + nc1(c), cnt = 0;
         cnt += edgeUsed(n00, n01) + edgeUsed(n10, n11) + edgeUsed(n00, n10) + edgeUsed(n01, n11);
         triOk[ci] = mut("triangles") || cnt == (int)(v >> 16);
     }
     vector<int> comp(NDEC, -1); int nc = 0; vector<vector<int>> regs;
+    if (!mut("hole")) for (int s = 0; s < NDEC; s++) if (ctype(cellv[s]) == T_HOLE) comp[s] = -2;
     for (int s = 0; s < NDEC; s++) {
-        if (comp[s] >= 0) continue; vector<int> st = {s}, cells; comp[s] = nc;
+        if (comp[s] != -1) continue; vector<int> st = {s}, cells; comp[s] = nc;
         while (!st.empty()) {
             int ci = st.back(); st.pop_back(); cells.push_back(ci); int r = ci / CW, c = ci % CW;
-            if (c + 1 < CW && comp[ci + 1] < 0 && !edgeUsed((r) * GX + c + 1, (r + 1) * GX + c + 1)) { comp[ci + 1] = nc; st.push_back(ci + 1); }
-            if (c > 0 && comp[ci - 1] < 0 && !edgeUsed(r * GX + c, (r + 1) * GX + c)) { comp[ci - 1] = nc; st.push_back(ci - 1); }
-            if (r + 1 < CH && comp[ci + CW] < 0 && !edgeUsed((r + 1) * GX + c, (r + 1) * GX + c + 1)) { comp[ci + CW] = nc; st.push_back(ci + CW); }
-            if (r > 0 && comp[ci - CW] < 0 && !edgeUsed(r * GX + c, r * GX + c + 1)) { comp[ci - CW] = nc; st.push_back(ci - CW); }
+            int cr = WRAP ? (c + 1) % CW : c + 1, cl = WRAP ? (c + CW - 1) % CW : c - 1;
+            if ((WRAP || c + 1 < CW) && comp[r * CW + cr] == -1 && !edgeUsed(r * GX + nc1(c), (r + 1) * GX + nc1(c))) { comp[r * CW + cr] = nc; st.push_back(r * CW + cr); }
+            if ((WRAP || c > 0) && comp[r * CW + cl] == -1 && !edgeUsed(r * GX + c, (r + 1) * GX + c)) { comp[r * CW + cl] = nc; st.push_back(r * CW + cl); }
+            if (r + 1 < CH && comp[ci + CW] == -1 && !edgeUsed((r + 1) * GX + c, (r + 1) * GX + nc1(c))) { comp[ci + CW] = nc; st.push_back(ci + CW); }
+            if (r > 0 && comp[ci - CW] == -1 && !edgeUsed(r * GX + c, r * GX + nc1(c))) { comp[ci - CW] = nc; st.push_back(ci - CW); }
         }
         regs.push_back(cells); nc++;
     }
     // erasers available per region, and the regions each unmet dot touches
-    vector<int> cap(nc, 0); for (int ci = 0; ci < NDEC; ci++) if (ctype(cellv[ci]) == T_ERASER) cap[comp[ci]]++;
+    vector<int> cap(nc, 0); for (int ci = 0; ci < NDEC; ci++) if (ctype(cellv[ci]) == T_ERASER && comp[ci] >= 0) cap[comp[ci]]++;
     vector<vector<int>> touch;
     for (int d : unmet) {
-        vector<int> rs; auto addCell = [&](int r, int c) { if (r >= 0 && c >= 0 && r < CH && c < CW) { int g = comp[r * CW + c]; if (find(rs.begin(), rs.end(), g) == rs.end()) rs.push_back(g); } };
+        vector<int> rs; auto addCell = [&](int r, int c) { if (WRAP) c = (c % CW + CW) % CW; if (r >= 0 && c >= 0 && r < CH && c < CW) { int g = comp[r * CW + c]; if (g >= 0 && find(rs.begin(), rs.end(), g) == rs.end()) rs.push_back(g); } };
         if (d < GX * GY) { int r = d / GX, c = d % GX; addCell(r - 1, c - 1); addCell(r - 1, c); addCell(r, c - 1); addCell(r, c); }
         else if (adj[d].size() == 2) {
-            int a = adj[d][0], b = adj[d][1]; if (a < GX * GY && b < GX * GY) {
+            int a = chainEnd[d][0], b = chainEnd[d][1]; if (a >= 0 && b >= 0 && a < GX * GY && b < GX * GY) {
                 int ar = a / GX, ac = a % GX, br = b / GX, bc = b % GX;
-                if (ar == br) { int c = min(ac, bc); addCell(ar - 1, c); addCell(ar, c); } else { int r = min(ar, br); addCell(r, ac - 1); addCell(r, ac); }
+                if (ar == br) { int c = (WRAP && abs(ac - bc) > 1) ? max(ac, bc) : min(ac, bc); addCell(ar - 1, c); addCell(ar, c); } else { int r = min(ar, br); addCell(r, ac - 1); addCell(r, ac); }
             }
         }
         touch.push_back(rs);
@@ -266,7 +272,7 @@ static void dfs(int v) {
             else { int r = min(vr, wr); cells2[0][0] = r; cells2[0][1] = vc - 1; cells2[1][0] = r; cells2[1][1] = vc; }
             for (auto& cc : cells2) {
                 int r = cc[0], c = cc[1]; if (r < 0 || c < 0 || r >= CH || c >= CW) continue; unsigned cv = cellv[r * CW + c]; if (ctype(cv) != T_TRI) continue;
-                int n00 = r * GX + c, n01 = r * GX + c + 1, n10 = (r + 1) * GX + c, n11 = (r + 1) * GX + c + 1, cnt = 0;
+                int n00 = r * GX + c, n01 = r * GX + nc1(c), n10 = (r + 1) * GX + c, n11 = (r + 1) * GX + nc1(c), cnt = 0;
                 auto eu_ = [&](int a, int b) { int e2 = eid[a * N + b]; if (e2 >= 0) return (bool)usedEdge[e2]; int m = midNode[a * N + b]; return m >= 0 && visited[m]; };
                 cnt = eu_(n00, n01) + eu_(n10, n11) + eu_(n00, n10) + eu_(n01, n11);
                 if (cnt > (int)(cv >> 16)) { ok = false; break; }
@@ -284,12 +290,19 @@ int main(int argc, char** argv) {
     flags.resize(N); for (auto& f : flags) scanf("%u", &f);
     adj.assign(N, {}); eu.resize(M); ev.resize(M); eid.assign((size_t)N * N, -1);
     for (int i = 0; i < M; i++) { scanf("%d %d", &eu[i], &ev[i]); adj[eu[i]].push_back(ev[i]); adj[ev[i]].push_back(eu[i]); eid[eu[i] * N + ev[i]] = eid[ev[i] * N + eu[i]] = i; }
-    midNode.assign((size_t)N * N, -1);
-    for (int m = 0; m < N; m++) if (adj[m].size() == 2) { int a = adj[m][0], b = adj[m][1]; if (eid[a * N + b] < 0) midNode[a * N + b] = midNode[b * N + a] = m; }
+    midNode.assign((size_t)N * N, -1); chainEnd.assign(N, {-1, -1});
+    // a grid edge may be a chain of marker nodes (dots, gaps, split lines): walk it from either end; midNode[a][b] is the chain's first node seen from a
+    for (int a = 0; a < min(N, GX * GY); a++) for (int n : adj[a]) {
+        if (n < GX * GY || adj[n].size() != 2) continue;
+        int prev = a, cur = n; vector<int> chain;
+        while (cur >= GX * GY && adj[cur].size() == 2) { chain.push_back(cur); int nx = adj[cur][0] == prev ? adj[cur][1] : adj[cur][0]; prev = cur; cur = nx; }
+        if (cur < GX * GY) { midNode[a * N + cur] = n; midNode[cur * N + a] = chain.back(); for (int m : chain) { chainEnd[m] = {a, cur}; } }
+    }
     cellv.resize(NDEC); for (auto& v : cellv) scanf("%u", &v);
     int R = 0; scanf("%d", &R); mirror.resize(R); for (auto& m : mirror) scanf("%d", &m);
     { int K = 0; if (scanf("%d", &K) == 1) { dseq.resize(K); for (auto& d : dseq) scanf("%d", &d); } }
     gridPanel = GX > 1 && GY > 1; CW = GX - 1; CH = GY - 1;
+    if (gridPanel && NDEC == GX * (GY - 1) && NDEC != CW * CH) { WRAP = true; CW = GX; }
     if (gridPanel && NDEC != CW * CH) { gridPanel = NDEC == 0 ? gridPanel : false; }
     usedEdge.assign(M, 0); visited.assign(N, 0); vis1.assign(N, 0); vis2.assign(N, 0); isEnd.assign(N, 0);
     sym = R == N;
