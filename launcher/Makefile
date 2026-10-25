@@ -28,3 +28,17 @@ $(BUILD)/launcher_res.o: launcher.rc launcher.manifest
 $(BUILD)/witness_launcher.exe: main.cpp core.cpp core.h $(BUILD)/launcher_res.o ../proxy/progress/progress.cpp ../proxy/progress/progress_data.cpp ../proxy/progress/savemeta.cpp
 	$(CXX) -std=c++17 -O2 -Wall -mwindows -municode -static -o $@ main.cpp core.cpp ../proxy/progress/progress.cpp ../proxy/progress/progress_data.cpp ../proxy/progress/savemeta.cpp $(BUILD)/launcher_res.o -lcomctl32 -lshell32 -lole32 -luuid
 .PHONY: launcher
+
+# the lobby (game-free): the same kind of test and mutants
+LSRC = lobby.cpp lobby_test.cpp core.cpp ../proxy/voice/voice.cpp ../proxy/progress/savemeta.cpp ../proxy/progress/progress.cpp ../proxy/progress/progress_data.cpp
+LOBBY_MUTANTS = NO_CHECKSUM
+$(BUILD)/lobby-test.exe: $(LSRC) lobby.h core.h ../proxy/voice/voice.h
+	mkdir -p $(BUILD)
+	$(CXX) -std=c++17 -O2 -Wall -Wextra -static -o $@ $(LSRC)
+$(BUILD)/lobby-mutant-%.exe: $(LSRC) lobby.h core.h ../proxy/voice/voice.h
+	mkdir -p $(BUILD)
+	$(CXX) -std=c++17 -O2 -Wno-unused-parameter -static -DWLB_MUT_$* -o $@ $(LSRC)
+lobby-test: $(BUILD)/lobby-test.exe $(addsuffix .exe,$(addprefix $(BUILD)/lobby-mutant-,$(LOBBY_MUTANTS)))
+	$(BUILD)/lobby-test.exe
+	@for m in $(LOBBY_MUTANTS); do if $(BUILD)/lobby-mutant-$$m.exe >/dev/null; then echo "MUTANT $$m SURVIVED (the test cannot fail for it)"; exit 1; else echo "lobby mutant $$m killed"; fi; done
+.PHONY: lobby-test
