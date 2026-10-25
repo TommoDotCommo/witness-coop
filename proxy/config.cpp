@@ -32,6 +32,7 @@ const Cfg& GetCfg() {
             else if (sscanf(line, "no_target_dispatch=%d", &v) == 1) r.noTargetDispatch = v != 0;
             else if (sscanf(line, "no_line_draw=%d", &v) == 1) r.noLineDraw = v != 0;
             else if (sscanf(line, "no_name_tags=%d", &v) == 1) r.noNameTags = v != 0;
+            else if (sscanf(line, "ui_tight_atlas=%d", &v) == 1) r.uiTightAtlas = v != 0;
             else if (sscanf(line, "no_pov_request=%d", &v) == 1) r.noPovRequest = v != 0;
             else if (sscanf(line, "no_line_depth=%d", &v) == 1) r.noLineDepth = v != 0;
             else if (sscanf(line, "no_teleport_hold=%d", &v) == 1) r.noTeleportHold = v != 0;

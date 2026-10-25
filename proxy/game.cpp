@@ -17,6 +17,7 @@
 void Log(const char* msg);
 void RequestShot(const char* name);
 void OverlayLogTags();
+#include "ui.h"
 void OverlayPovState(unsigned* aimed, int* rosterOpen);
 extern HMODULE g_selfModule();
 
@@ -119,6 +120,7 @@ static DWORD WINAPI CmdThread(LPVOID) {
             else if (!strncmp(line, "fakepose ", 9)) { float f[4]; if (sscanf(line, "fakepose %f %f %f %f", &f[0], &f[1], &f[2], &f[3]) == 4) CoopSetFakeRemote(true, f, f[3]); }
             else if (!strncmp(line, "modelstate", 10)) { EnterCriticalSection(&g_lock); if (g_n < 64) g_q[g_n++] = {8, 0, 0, 0, 0, false, 0, 0, 0}; LeaveCriticalSection(&g_lock); }
             else if (!strncmp(line, "netstate", 8)) { EnterCriticalSection(&g_lock); if (g_n < 64) g_q[g_n++] = {7, 0, 0, 0, 0, false, 0, 0, 0}; LeaveCriticalSection(&g_lock); }
+            else if (sscanf(line, "atlasdump %15s", a) == 1) UiDumpAtlas(a);
             else if (!strncmp(line, "tagstat", 7)) OverlayLogTags();
             else if (!strncmp(line, "povstat", 7)) { unsigned w, s, rq, aimed; int ro; unsigned sent, recv, dec; VideoPovStats(&w, &s, &rq); VideoStats(&sent, &recv, &dec); OverlayPovState(&aimed, &ro); char m[200]; snprintf(m, sizeof m, "povstat: watching %u subscribers %u requests_sent %u pictures_sent %u received %u decoded %u aimed %u roster %d", w, s, rq, sent, recv, dec, aimed, ro); Log(m); }
             else if (sscanf(line, "pov %15s", a) == 1) { if (!strcmp(a, "off")) VideoClear(); else if (!strcmp(a, "next")) { std::vector<unsigned> ids; for (const auto& r : CoopGetRemotes()) if (r.valid) ids.push_back(r.id); VideoNext(ids); } else VideoWatch((unsigned)atoi(a)); }

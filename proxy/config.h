@@ -31,6 +31,7 @@ struct Cfg {
     float panelMouseGain = 3.0f;   // panel_mouse_gain=<f>: factor on the REAL mouse motion while the panel boost is on (F3): the game's panel cursor moves ~1/3 pixel per count, the owner's pointer 1 pixel
     bool panelMouseBoost = false;  // panel_mouse_boost=1: start with the boost on
     bool noPovRequest = false;     // twin: this game watches a player but never asks for the pictures
+    bool uiTightAtlas = false;     // twin: the old glyph atlas (no room under the glyphs, no clipping): '[' and ']' leave bits over 't' and 'v'
     bool noNameTags = false;       // twin: no name tags over the other players
     bool noLineDraw = false;       // twin: remote lines are received but not drawn
     bool noLineDepth = false;      // twin: remote lines are drawn without the depth test (they show through walls)
