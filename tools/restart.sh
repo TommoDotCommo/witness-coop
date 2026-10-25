@@ -11,7 +11,10 @@ case "${1:-both}" in
   *) echo 'usage: restart.sh [A|B|both]' >&2; exit 2;;
 esac
 PREV_FG=$(timeout 20 "$PYW" -I "$(win "$TOOLS/win/wfocus.py")" save)      # who has the focus now (the game grabs it when it starts)
-for p in "${peers[@]}"; do [ -f "$RUN/pid$p.txt" ] && taskkill.exe /PID "$(cat "$RUN/pid$p.txt")" /F >/dev/null 2>&1; done; sleep 4
+for p in "${peers[@]}"; do [ -f "$RUN/pid$p.txt" ] && taskkill.exe /PID "$(cat "$RUN/pid$p.txt")" /F >/dev/null 2>&1; done
+for p in "${peers[@]}"; do      # wait until the old game is really gone (its files and ports are free) instead of a fixed pause
+  [ -f "$RUN/pid$p.txt" ] || continue; for i in $(seq 1 40); do tasklist.exe /FI "PID eq $(cat "$RUN/pid$p.txt")" /NH 2>/dev/null | grep -q "$(cat "$RUN/pid$p.txt")" || break; sleep 0.25; done
+done
 "$TOOLS/install.sh" "${1:-both}" >/dev/null || exit 1
 launch() {   # dir -> pid; the game opens an options dialog unless -skip_config_dialog is given
   timeout 30 "$PYW" -I "$(win "$TOOLS/win/launch.py")" "$(win "$1")" -skip_config_dialog -windowed -new_game | tail -1 | tr -d '\r'; }
@@ -23,7 +26,7 @@ for p in "${peers[@]}"; do
   [ -d "$d/appdata/The Witness" ] && rm -f "$d/appdata/The Witness/"*.witness_campaign "$d/appdata/The Witness/"*.png   # this instance's own saves only: reloads must start from known saves
   game_pid=$(launch "$d"); echo "$game_pid" > "$RUN/pid$p.txt"
   [ -x "$LAB" ] && "$LAB" register-pid "$game_pid" >/dev/null 2>&1
-  for i in $(seq 1 45); do grep -q "overlay: resources ready" "$d/witness_proxy.log" 2>/dev/null && break; sleep 2; done
+  for i in $(seq 1 180); do grep -q "overlay: resources ready" "$d/witness_proxy.log" 2>/dev/null && break; sleep 0.5; done
 done
 PA=$(cat "$RUN/pidA.txt" 2>/dev/null); PB=$(cat "$RUN/pidB.txt" 2>/dev/null)     # a peer that was never started (late join) has no pid file
 # every game is registered with the lab (only registered pids are ever killed for this agent) and placed on the second monitor

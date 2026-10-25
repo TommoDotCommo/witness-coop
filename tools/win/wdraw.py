@@ -70,8 +70,10 @@ def menu_teleport():
     """The dev menu's teleport (the feature under test): 3 m in front of the panel, held 2 s while the player settles on the ground there."""
     if os.environ.get('WDRAW_NO_TELEPORT'): return p.camera()[0]      # a human is standing in front of the panel: draw from where they are (the menu teleport may land off the platform they are on)
     for attempt in range(3):
-        c.send(['menusel %x' % eid, 'menudo teleport'], 3.2)
-        pos, ang = p.camera(); dn_, lat_ = standing(pos)
+        c.send(['menusel %x' % eid, 'menudo teleport'], 0.0)
+        for _w in range(34):      # the teleport holds the player for 2 s while it settles on the ground: look every 0.1 s instead of waiting a fixed 3.2 s
+            time.sleep(0.1); pos, ang = p.camera(); dn_, lat_ = standing(pos)
+            if _w >= 8 and 1.0 < dn_ < 8 and abs(lat_) < 2.0 and abs(pos[2] - pz_) < 2.0: break
         if 1.0 < dn_ < 8 and abs(lat_) < 2.0 and abs(pos[2] - pz_) < 2.0: return pos      # near enough: everything below is worked out from where we really stand
         time.sleep(3)
     # refused three times: no collision is loaded there (the game keeps putting the player back at the spawn point). Hold the player in the air in front of the
@@ -92,7 +94,7 @@ stamp('teleported')
 def aim():
     """Point the camera at the middle of the panel (the angles are set by a teleport to where we already stand)."""
     cx, cy, cz = p.camera()[0]; hd = math.hypot(px_ - cx, py_ - cy) or 1.0
-    c.send(['tp %.4f %.4f %.4f %.5f %.5f' % (cx, cy, cz, math.atan2(py_ - cy, px_ - cx), math.atan2(pz_ - cz, hd))], 1.2)
+    c.send(['tp %.4f %.4f %.4f %.5f %.5f' % (cx, cy, cz, math.atan2(py_ - cy, px_ - cx), math.atan2(pz_ - cz, hd))], 0.4)
 aim()
 
 def depth_ratio():
@@ -208,7 +210,7 @@ for attempt, rd_ in enumerate(ROUNDS):
         sx, sy = node_px(path[0]); sy += dy_
         ddx, ddy = (sx - cur[0]) * COUNTS_PER_PX, (sy - cur[1]) * COUNTS_PER_PX
         n_ = max(1, int(math.ceil(max(abs(ddx), abs(ddy)) / 14)))
-        if abs(ddx) + abs(ddy) >= 1: c.send(['mouse %d %d' % (round(ddx / n_), round(ddy / n_))] * n_, 0.035 * n_ + 0.06)
+        if abs(ddx) + abs(ddy) >= 1: c.send(['mouse %d %d' % (round(ddx / n_), round(ddy / n_))] * n_, 1.1 * c.frame * n_ + 0.02)
         cur = (cur[0] + round(ddx / n_) * n_ / COUNTS_PER_PX, cur[1] + round(ddy / n_) * n_ / COUNTS_PER_PX)
         if os.environ.get('WDRAW_KSHOTS'): c.send(['shot k_%d_%d' % (round(w_ * 1000), dy_)], 0.4)
         c.send(['button L down', 'button L up'], 0.14)      # press and release on the start circle: the line starts
@@ -234,7 +236,7 @@ def mouse_lines(vx, vy, counts, chunk=14):
     return lines
 def mouse(vx, vy, counts):      # one batch: the proxy takes a file's lines in order, one event per frame
     lines = mouse_lines(vx, vy, counts)
-    if lines: c.send(lines, 0.04 * len(lines) + 0.05)
+    if lines: c.send(lines, 1.15 * c.frame * len(lines) + 0.015)      # one event per frame: the next look at the traced count comes a frame after the last event
 def straight_on(node, vx, vy):      # does an edge leave this node in (about) the direction we arrived in? (screen directions)
     x0_, y0_ = node_px(node)
     for w_ in neigh.get(node, []):

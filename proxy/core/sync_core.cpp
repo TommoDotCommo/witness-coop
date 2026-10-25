@@ -104,14 +104,17 @@ void SyncCore::tick(uint64_t now) {
         nextResend_ = now + 150; std::map<unsigned, unsigned> budget;
         for (auto& s : sent_) {
             if (s.acked) continue;
-            Bytes b; put32(b, fixedRoster_ ? kGroupEv : kMagicEv); put32(b, uint32_t(id_)); put64(b, epoch_); put32(b, s.seq); put32(b, s.kind); put32(b, s.entity);
-            if (fixedRoster_) { put64(b, s.version.first); put32(b, s.version.second); }
-            b = finish(std::move(b));
+            Bytes b; bool built = false;      // the datagram is only built when some peer is actually sent to this round (a stalled peer's backlog is long and its budget is spent after 32)
             auto attempt = [&](unsigned peer) {
                 unsigned budgetKey = f_.noIndependentBudget ? 0 : peer;
                 if (budget[budgetKey] >= 32 || (f_.noResend && s.attempted.count(peer))) return;
                 bool first = s.attempted.insert(peer).second;
                 ++budget[budgetKey];
+                if (!built) {
+                    b.reserve(48); put32(b, fixedRoster_ ? kGroupEv : kMagicEv); put32(b, uint32_t(id_)); put64(b, epoch_); put32(b, s.seq); put32(b, s.kind); put32(b, s.entity);
+                    if (fixedRoster_) { put64(b, s.version.first); put32(b, s.version.second); }
+                    b = finish(std::move(b)); built = true;
+                }
                 if (!(f_.dropFirstEvent && first)) sendTo(peer, b);
             };
             if (peers_.empty()) attempt(0);  // legacy transport before the first pose
@@ -366,6 +369,7 @@ void SyncCore::pollState(uint64_t now) {
         ready_ = true; settleUntil_ = f_.noSettle ? now : now + kSettleMs; nextScan_ = now + 3000; nextStats_ = now + 10000;
         return;
     }
+    if (!settledLogged_ && now >= settleUntil_) { settledLogged_ = true; log("state: settled"); }      // the start-up window is over: from here local changes are shared as they happen (tests wait for this line)
     if (!f_.noReloadSync && reloadSeen(now)) {
         // The process and the link are up, but the world lost progress it had: a save was loaded. Nothing told the peer, so
         // announce a new session (the peer then resends its full state, as for a restart), wait for the loading world to

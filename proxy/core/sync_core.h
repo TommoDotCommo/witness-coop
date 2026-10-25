@@ -150,6 +150,7 @@ private:
     std::set<unsigned> knownPower_; std::map<unsigned, uint64_t> suppressPower_;
     std::vector<unsigned> cables_; std::set<unsigned> knownCable_; std::map<unsigned, uint64_t> suppressCable_; std::set<unsigned> everOff_; std::map<unsigned, uint64_t> cableToggledAt_;
     uint64_t lastLocalSolveAt_ = 0; bool anyLocalSolve_ = false;     // a door opening soon after a local solve is that solve's cascade, not a start-up flip
+    bool settledLogged_ = false;
     bool ready_ = false, gateStarted_ = false; uint64_t nextGate_ = 0, settleUntil_ = 0, nextScan_ = 0, nextStats_ = 0;
     size_t gateLastPanels_ = 0, gateLastDoors_ = 0; uint64_t gateLastSig_ = 0; int gateSame_ = 0;
 };

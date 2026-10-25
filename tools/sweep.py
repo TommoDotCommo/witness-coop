@@ -6,13 +6,17 @@ reported as such (with the reason), never forced.
 usage: sweep.py inventory                  write the panel manifest (id, pose, graph, decorations) of the running game A or B
        sweep.py run [--ids 139,293] [--limit N] [--game B]
 Results go to <run folder>/sweep_results.json (one record per panel: id, result, why, seconds) and are resumed on the next run."""
-import json, os, subprocess, sys, time
+import glob, json, os, subprocess, sys, time
 from witness import DIR1, DIR2, RUN, pid, pyw, win, TOOLS
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import solver
 
 RESULTS_GLOB = os.path.join(RUN, 'sweep_results')      # sweep_results.<shard>.json, one per shard so parallel runs never write the same file
-MANIFEST = os.path.join(RUN, 'panels.json')      # master copy, taken from a game before any line was drawn (a drawn line overwrites the stored solution)
+MANIFEST = os.path.join(RUN, 'panels.json')
+if not os.path.exists(MANIFEST):      # a fresh lab owner (a parallel shard) has none: take the first one another owner made (the manifest is the same for every fresh game)
+    _c = sorted(glob.glob(os.path.join(os.path.dirname(RUN), '*', 'panels.json')))
+    if _c: MANIFEST = _c[0]
+      # master copy, taken from a game before any line was drawn (a drawn line overwrites the stored solution)
 KCACHE = os.path.join(RUN, 'panel_k.json')
 
 def inventory(which='B', full=True):

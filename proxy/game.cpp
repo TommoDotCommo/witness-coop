@@ -88,7 +88,7 @@ static DWORD WINAPI CmdThread(LPVOID) {
     wchar_t* sl = wcsrchr(p, L'\\'); if (sl) *(sl + 1) = 0;
     wchar_t cmd[MAX_PATH], taken[MAX_PATH]; wcscpy_s(cmd, p); wcscat_s(cmd, L"witness_cmd.txt"); wcscpy_s(taken, p); wcscat_s(taken, L"witness_cmd.taken");
     for (;;) {
-        Sleep(250);
+        Sleep(10);      // was 250: every command a bot sent waited for the next poll, and a drawn line is hundreds of commands
         if (!MoveFileExW(cmd, taken, MOVEFILE_REPLACE_EXISTING)) continue;
         FILE* f = _wfopen(taken, L"r"); if (!f) continue;
         char line[160];

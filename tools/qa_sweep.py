@@ -10,9 +10,19 @@ import solver, sweep
 # one panel of each kind, all powered in a new game: tutorial lines (0x64, 0x182), maze (0x293), stored solution far away (0x139), polyominoes on a tilted frame (0x2), polyomino strip (0x469)
 PANELS = [0x64, 0x182, 0x293, 0x139, 0x2, 0x469]
 
-def restart(cfg_a='', cfg_b=''):
-    subprocess.run([os.path.join(TOOLS, 'restart.sh')], env={**os.environ, 'CFG_A': cfg_a, 'CFG_B': cfg_b}, capture_output=True, text=True, timeout=600, check=True)
-    time.sleep(45); open(os.path.join(RUN, 'guard.stop'), 'w').write('bot starting')
+def wait_settled(dirs, timeout=240):
+    """Wait until every game has logged `state: settled` (the world is stable and the start-up window of the sync is over): about 25 s after the launch, instead of a fixed 45 s."""
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        if all('state: settled' in open(os.path.join(d, 'witness_proxy.log'), errors='ignore').read() for d in dirs if os.path.exists(os.path.join(d, 'witness_proxy.log'))): return True
+        time.sleep(0.5)
+    return False
+
+def restart(cfg_a='', cfg_b='', which='both'):
+    """Fresh games (`which`: both, A or B: a scenario that needs no shared world can restart only the side whose configuration changes), ready when the sync has settled."""
+    subprocess.run([os.path.join(TOOLS, 'restart.sh')] + ([] if which == 'both' else [which]), env={**os.environ, 'CFG_A': cfg_a, 'CFG_B': cfg_b}, capture_output=True, text=True, timeout=600, check=True)
+    open(os.path.join(RUN, 'guard.stop'), 'w').write('bot starting')
+    wait_settled([DIR1, DIR2] if which == 'both' else [DIR1 if which == 'A' else DIR2])
 
 def solved_set(which):
     return {int(k_, 16) for k_ in json.loads(pyw('wstatedump.py', pid(which)).strip().splitlines()[-1])['panels']}
@@ -31,7 +41,8 @@ def main():
     if not manifest: sys.exit('no manifest: run tools/sweep.py inventory on a fresh game first')
     print('=== sweep: clean build', flush=True); restart()
     got = run_panels('A', PANELS, manifest)
-    time.sleep(12); on_a, on_b = solved_set('A'), solved_set('B')
+    t0 = time.time(); on_a, on_b = solved_set('A'), solved_set('B')
+    while not (set(PANELS) <= on_b) and time.time() - t0 < 25: time.sleep(0.5); on_a, on_b = solved_set('A'), solved_set('B')      # the other game follows within a moment
     ok = all(r.get('solved') for r in got.values()) and set(PANELS) <= on_a and set(PANELS) <= on_b
     print('clean: %s (A has %d solved panels, B has %d)' % ('PASS' if ok else 'FAIL', len(on_a), len(on_b)), flush=True); results.append(('clean', ok))
     print('=== sweep: MUTANT no_teleport_hold (the far panel must not be reachable)', flush=True); restart(cfg_a='no_teleport_hold=1')

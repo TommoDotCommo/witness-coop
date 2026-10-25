@@ -34,18 +34,21 @@ def main():
     def run(*extra):
         return subprocess.run([exe, "--target", "witness", "--count", str(a.count), "--players", "2", "--duration", "150000",
                                "--no-shrink", "--out", os.path.join(core, "build", "out"), *extra], capture_output=True, text=True).stdout
-    bad = 0
-    out = run()
-    ok = "RESULT: ALL OK" in out
-    m = re.search(r"(\d+) sessions, (\d+) failed", out)
-    print(f"{'PASS' if ok else 'FAIL'}  clean: {m.group(0) if m else out[-200:]}")
-    bad += not ok
-    for twin, want in TWINS.items():
-        out = run("--bug", twin)
-        got = set(re.findall(r"^FAIL seed \d+ \(\d+ machines\): ([a-z_]+):", out, re.M))
-        ok = bool(got & want)
-        print(f"{'PASS' if ok else 'FAIL'}  twin {twin:<22} {'caught by ' + ', '.join(sorted(got)) if got else 'NOT CAUGHT'}")
+    from concurrent.futures import ThreadPoolExecutor      # the clean run and every twin are independent processes: run them side by side
+    with ThreadPoolExecutor(max_workers=len(TWINS) + 1) as pool:
+        clean = pool.submit(run); twins = {t: pool.submit(run, "--bug", t) for t in TWINS}
+        bad = 0
+        out = clean.result()
+        ok = "RESULT: ALL OK" in out
+        m = re.search(r"(\d+) sessions, (\d+) failed", out)
+        print(f"{'PASS' if ok else 'FAIL'}  clean: {m.group(0) if m else out[-200:]}")
         bad += not ok
+        for twin, want in TWINS.items():
+            out = twins[twin].result()
+            got = set(re.findall(r"^FAIL seed \d+ \(\d+ machines\): ([a-z_]+):", out, re.M))
+            ok = bool(got & want)
+            print(f"{'PASS' if ok else 'FAIL'}  twin {twin:<22} {'caught by ' + ', '.join(sorted(got)) if got else 'NOT CAUGHT'}")
+            bad += not ok
     print("ALL OK" if not bad else f"{bad} FAILED")
     return 1 if bad else 0
 

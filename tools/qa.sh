@@ -3,6 +3,9 @@
 # Shared-state suite (live sync, packet loss, peer restart and two tutorial doors, with mutants). Accepts scenario name filters.
 # Lab mode: leases two slots (without waiting: exit 3 = busy, run game-free tests instead or retry), builds the hard-linked
 # instance folders, runs, and always kills this agent's games and frees the slots. QA_WAIT=<seconds> waits for slots.
+# (the whole body is one brace group: bash reads it completely before running, so editing this file while a run is in progress cannot break that run)
+export WITNESS_FPS="${WITNESS_FPS:-60}"      # injected mouse events are taken one per frame: the bots draw about twice as fast at 60 fps as at 30 (a pair of games costs little)
+{
 . "$(dirname "$0")/config.sh"
 if [ -x "$LAB" ] && [ -z "${LAB_SLOTS:-}" ]; then
   "$LAB" acquire --slots 2 --ttl 3600 --wait "${QA_WAIT:-0}" || { echo "no game slots free (lab status); not waiting"; exit 3; }
@@ -15,3 +18,5 @@ elif [ -x "$LAB" ]; then
   "$LAB" provision witness || exit 1
 fi
 if [ "${1:-}" = model ]; then shift; python3 "$TOOLS/suite_model.py" "$@"; elif [ "${1:-}" = sweep ]; then shift; python3 "$TOOLS/qa_sweep.py" "$@"; elif [ "${1:-}" = lines ]; then shift; python3 "$TOOLS/qa_lines.py" "$@"; elif [ "${1:-}" = tags ]; then shift; python3 "$TOOLS/qa_tags.py" "$@"; elif [ "${1:-}" = pov ]; then shift; python3 "$TOOLS/qa_pov.py" "$@"; elif [ "${1:-}" = ui ]; then shift; python3 "$TOOLS/qa_ui.py" "$@"; else python3 "$TOOLS/suite.py" "$@"; fi
+exit $?
+}

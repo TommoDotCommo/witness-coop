@@ -7,12 +7,12 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from witness import TOOLS, DIR1, DIR2, RUN, pyw, win
 import qa_sweep, sweep
 
-PANELS = [0x64, 0x182, 0x293]
+PANELS = [0x293]      # the maze: powered from the start and the most telling line; the two tutorial panels before it only cost time
 
 def linestat(gdir):
     log = os.path.join(gdir, 'witness_proxy.log')
     n0 = sum(1 for l in open(log, errors='ignore') if l.startswith('linestat:'))
-    pyw('wcmd.py', win(gdir), 'linestat'); time.sleep(1.5)
+    pyw('wcmd.py', win(gdir), 'linestat'); time.sleep(0.6)
     rows = [l for l in open(log, errors='ignore') if l.startswith('linestat:')]
     if len(rows) <= n0: return None
     m = re.search(r'lines (\d+) verts (\d+) visible_px (\d+)', rows[-1]); return tuple(int(x) for x in m.groups()) if m else None
@@ -20,14 +20,16 @@ def linestat(gdir):
 def scenario(cfg_a='', cfg_b=''):
     manifest = {q['id']: q for q in sweep.load(sweep.MANIFEST, [])}
     if not manifest: sys.exit('no manifest: run tools/sweep.py inventory on a fresh game first')
-    qa_sweep.restart(cfg_a, cfg_b); qa_sweep.run_panels('A', PANELS, manifest); time.sleep(8)
-    pyw('wcmd.py', win(DIR2), 'menusel 293'); pyw('wcmd.py', win(DIR2), 'menudo teleport'); time.sleep(10)
-    b = linestat(DIR2); a = linestat(DIR1)
+    qa_sweep.restart(cfg_a, cfg_b); qa_sweep.run_panels('A', PANELS, manifest)
+    pyw('wcmd.py', win(DIR2), 'menusel 293'); pyw('wcmd.py', win(DIR2), 'menudo teleport'); time.sleep(3)
+    t0 = time.time(); b = linestat(DIR2)
+    while not clean_ok(b, (0, 0, 0)) and time.time() - t0 < 25: time.sleep(0.5); b = linestat(DIR2)      # the line arrives, the ribbon is drawn: a few frames
+    a = linestat(DIR1)
     print('  B holds %s (lines, verts, visible px); A holds %s' % (b, a), flush=True)
     return b, a
 
 def clean_ok(b, a):
-    return bool(b) and b[0] >= 3 and b[2] > 500 and bool(a) and a[0] == 0
+    return bool(b) and b[0] >= 1 and b[2] > 500 and bool(a) and a[0] == 0
 
 def main():
     results = []
