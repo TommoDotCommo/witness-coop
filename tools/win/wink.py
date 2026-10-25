@@ -41,7 +41,7 @@ def marks(d):
     return [tuple(float(x) for x in re.match(r'socialstat: mark from \d+ kind \d+ pos ' + ' '.join([FL] * 3), l).groups()) for l in b if l.startswith('socialstat: mark')]
 def close(a, b, tol): return all(abs(x - y) <= tol for x, y in zip(a, b))
 ok = True
-def check(name, cond, detail):
+def check(name, cond, detail=''):
     global ok; ok = ok and bool(cond); print('  %-76s %s  (%s)' % (name, 'ok' if cond else 'FAILED', detail), flush=True)
 send(da, ['menusel c335', 'menudo teleport'], 4.0)
 (cx, cy, cz), (th, ph) = A.camera()
@@ -83,5 +83,35 @@ check('B draws a stroke and A holds it (from player 2)', sa['strokes'] == 3 and 
 # 7. Shift + X clears all of mine (not B's), in both games
 send(da, ['key SHIFT down'], 0.15); send(da, ['key X down'], 0.15); send(da, ['key X up'], 0.15); send(da, ['key SHIFT up'], 1.2); sa = draw(da); sb = draw(db)
 check('Shift+X clears my strokes in both games and leaves the other player\'s', sa['strokes'] == 1 and sb['strokes'] == 1 and all(s['frm'] == 2 for s in sa['list'] + sb['list']), (sa['strokes'], sb['strokes']))
+
+# 8. In a puzzle: A enters the cable-driving maze 0x293 (a click: the game's cursor appears), draws across the panel with the canvas pen. The ink must lie on the panel (near its middle and as far
+# from the camera as the panel is), B must hold it, and the puzzle must not have been touched (no node traced, not solved): the mouse belongs to the pen while the canvas is on.
+import struct
+e = A.entity(0x293); px, py, pz = struct.unpack('<3f', A.rd(e + 0x24, 12))
+send(da, ['canvas off', 'key X up', 'drawclear'], 0.5); send(da, ['menusel 293', 'menudo teleport'], 4.0)
+def aim():
+    (cx, cy, cz), _ = A.camera(); hd = math.hypot(px - cx, py - cy) or 1.0
+    send(da, ['tp %.4f %.4f %.4f %.5f %.5f' % (cx, cy, cz, math.atan2(py - cy, px - cx), math.atan2(pz - cz, hd))], 0.4)
+aim(); entered = False
+for _ in range(3):
+    send(da, ['button L down'], 0.15); send(da, ['button L up'], 1.0)
+    y0 = A.camera()[1][0]; send(da, ['mouse 4 0'], 0.2); y1 = A.camera()[1][0]; send(da, ['mouse -4 0'], 0.1)
+    if abs(y1 - y0) < 1e-5: entered = True; break
+    aim(); send(da, ['button R down'], 0.12); send(da, ['button R up'], 0.7)
+check('8. A is in the puzzle (the mouse no longer turns the view)', entered)
+(ax, ay, az), _ = A.camera(); d0 = math.dist((ax, ay, az), (px, py, pz))
+sa0 = draw(da); n0 = sa0['strokes']
+send(da, ['canvas on', 'reticle 0.44 0.5'], 0.4); send(da, ['key X down'], 0.3)
+for fx, fy in ((0.47, 0.46), (0.50, 0.5), (0.53, 0.46), (0.56, 0.5), (0.53, 0.54), (0.50, 0.5)): send(da, ['reticle %.3f %.3f' % (fx, fy)], 0.2)
+send(da, ['key X up'], 1.0); sa = draw(da)
+st = [s for s in sa['list'] if s['frm'] == 1][-1] if sa['list'] else None
+traced = A.u32(e + 0x228); solved = A.u32(e + 0x294) == 0x3f800000 and A.u32(e + 0x298) == 1
+check('   a stroke was drawn in the puzzle (several points)', sa['strokes'] > n0 and st and st['n'] >= 5, (sa['strokes'], n0, st and st['n']))
+check('   its last point is on the panel: within 1.5 m of its middle and as far from the camera as the panel is', st and math.dist(st['last'], (px, py, pz)) < 1.5 and abs(st['dist'] - d0) < 0.4, st and (round(math.dist(st['last'], (px, py, pz)), 2), round(st['dist'], 2), round(d0, 2)))
+check('   the puzzle itself was not touched: no node traced, not solved', traced == 0 and not solved, (traced, solved))
+(bx, by, bz), (bth, bph) = B.camera()
+sb = draw(db); bt = [s for s in sb['list'] if st and s['id'] == st['id'] and s['frm'] == 1]
+check('   B holds the same stroke', st and bt and bt[0]['n'] == st['n'] and close(bt[0]['last'], st['last'], 0.002), (bt and bt[0]['n'], st and st['n']))
+send(da, ['canvas off', 'button R down'], 0.12); send(da, ['button R up'], 0.5)
 send(da, ['canvas off'], 0.3)
 print('ALL OK' if ok else 'FAILED'); sys.exit(0 if ok else 1)

@@ -10,7 +10,7 @@ import qa_sweep
 def run(cfg_a='', cfg_b=''):
     qa_sweep.restart(('name=Alpha\n' + cfg_a).strip(), ('name=Beta\n' + cfg_b).strip())
     r = subprocess.run([PYW, '-I', win(os.path.join(TOOLS, 'win', 'wink.py')), str(pid('A')), win(DIR1), str(pid('B')), win(DIR2)], capture_output=True, text=True, timeout=600)
-    print(r.stdout, end=''); return r.returncode == 0 and 'ALL OK' in r.stdout
+    print(r.stdout, end=''); print(r.stderr[-1500:], end='') if r.returncode else None; return r.returncode == 0 and 'ALL OK' in r.stdout
 
 def main():
     results = []
