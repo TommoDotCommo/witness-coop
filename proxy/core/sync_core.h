@@ -7,6 +7,7 @@
 #include <functional>
 #include <map>
 #include <set>
+#include <string>
 #include <vector>
 
 namespace witness {
@@ -65,6 +66,9 @@ struct Flags {   // all off by default
     bool noGroupCableIntent = false; // twin: glow/echo bookkeeping hides a genuine new cable command
     bool noGroupVersions = false; // twin: use the two-player cable arbiter in a group
     bool noReloadSync = false;  // twin: ignore a same-process save reload (no re-gate, no resync with the peer)
+    bool noPingReply = false;   // twin: this game never answers a ping (the peers cannot measure it)
+    bool noPingExpiry = false;  // twin: a ping measured once stays on show for ever, even when the peer is gone
+    bool noNameSend = false;    // twin: names are not sent
     bool noLineSend = false;    // twin: drawn lines are never sent (the other game shows nothing)
     bool noLineResend = false;  // twin: a line is sent once when it changes and never again (a lost packet is lost for good)
     bool noLineSeqCheck = false; // twin: a delayed older line overwrites a newer one
@@ -83,7 +87,7 @@ struct Hooks {
     std::function<void()> onRestartSeen;                                                              // the peer (re)started
 };
 
-struct RemotePose { bool valid = false; float pos[3] = {0, 0, 0}, ang[2] = {0, 0}; uint64_t ageMs = 0; unsigned seq = 0, id = 0; };
+struct RemotePose { bool valid = false; float pos[3] = {0, 0, 0}, ang[2] = {0, 0}; uint64_t ageMs = 0; unsigned seq = 0, id = 0; int pingMs = -1; std::string name; };   // pingMs: round trip in ms, -1 until measured or when the peer went quiet
 
 struct Stats { uint32_t sent = 0, resent = 0, inOrder = 0, dup = 0, ooo = 0, acked = 0, emittedPanels = 0, emittedDoors = 0, appliedPanels = 0, appliedDoors = 0, resyncs = 0, emittedPowers = 0, appliedPowers = 0, reloads = 0, emittedCables = 0, appliedCables = 0; };
 
@@ -101,6 +105,7 @@ public:
     std::vector<RemoteLine> remoteLines(uint64_t nowMs);    // the latest line each peer has on each panel (an empty line is dropped)
     // Configure the full remote roster before any threads start. Omit this call for legacy two-player discovery.
     bool setPeers(const std::vector<unsigned>& ids);
+    void setName(const std::string& name);                  // this player's name, sent with every ping (24 bytes at most)
     bool ready() const;
     Stats stats() const;
     size_t unacked() const;                                // events sent but not yet acknowledged
@@ -124,11 +129,13 @@ private:
     void sendTo(unsigned peer, const Bytes& b);
     struct LineState { uint32_t seq = 0; uint64_t hash = 0; bool final = false, dirty = false; std::vector<LinePoint> pts; uint64_t sentAt = 0; };
     struct LineIn { uint32_t seq = 0; uint32_t session = 0; bool final = false; std::vector<LinePoint> pts; uint64_t at = 0; };
+    std::string name_; uint32_t pingNonce_ = 0; uint64_t nextPing_ = 0;
+    void onPing(const uint8_t* data, size_t n, uint64_t now);
     std::map<unsigned, LineState> lines_; size_t lineCursor_ = 0; uint64_t nextLineResend_ = 0;
     void scanLines(uint64_t now);
     void onLine(const uint8_t* data, size_t n, uint64_t now);
     void sendLine(unsigned panel, const LineState& s);
-    struct Peer { uint32_t session = 0, applied = 0; uint64_t epoch = 0, poseAt = 0; RemotePose pose; std::map<unsigned, LineIn> lines; };
+    struct Peer { uint32_t session = 0, applied = 0; uint64_t epoch = 0, poseAt = 0; RemotePose pose; std::map<unsigned, LineIn> lines; std::string name; uint32_t lastNonce = 0, lastT0 = 0; float ping = -1; uint64_t pongAt = 0; };
     std::map<unsigned, Peer> peers_; bool fixedRoster_ = false;
 
     int id_; uint32_t session_; World* w_; Hooks h_; Flags f_;

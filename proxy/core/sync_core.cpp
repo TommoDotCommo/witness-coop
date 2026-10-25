@@ -8,6 +8,8 @@ namespace {
 
 // Protocol v4 adds cable power-off (v3 added cable lighting, v2 panel power-on). Distinct magics prevent an older peer from ACKing an incomplete vocabulary.
 constexpr uint32_t kMagicPose = 0x34505457, kMagicEv = 0x34455457, kMagicAck = 0x34415457;   // "WTP4" "WTE4" "WTA4"
+constexpr uint32_t kMagicPing = 0x34515457;   // "WTQ4": ping and pong, carry the sender's name
+constexpr size_t kPingLen = 48, kNameLen = 24;
 constexpr uint32_t kMagicLine = 0x344C5457;   // "WTL4": a drawn line, best effort, the whole line every time
 constexpr uint32_t kGroupPose = 0x35505457, kGroupEv = 0x35455457, kGroupAck = 0x35415457;
 constexpr size_t kGroupEvLen = 44;
@@ -83,6 +85,12 @@ void SyncCore::tick(uint64_t now) {
             put32(b, session_); send(finish(std::move(b)));
         }
     }
+    if (now >= nextPing_) {        // a ping to every peer once a second; it carries this player's name, the pong brings the round trip back
+        nextPing_ = now + 1000; ++pingNonce_;
+        Bytes b; put32(b, kMagicPing); put32(b, uint32_t(id_)); put32(b, 1); put32(b, pingNonce_); put32(b, uint32_t(now));
+        for (size_t i = 0; i < kNameLen; ++i) b.push_back(!f_.noNameSend && i < name_.size() ? uint8_t(name_[i]) : 0);
+        send(finish(std::move(b)));
+    }
     for (auto& kv : lines_) {      // a changed line goes out at once while it is being drawn at most every 100 ms, a finished or cleared one immediately
         LineState& s = kv.second;
         if (s.dirty && (s.final || s.pts.empty() || now >= s.sentAt + 100)) { sendLine(kv.first, s); s.dirty = false; s.sentAt = now; }
@@ -118,6 +126,7 @@ void SyncCore::onPacket(const uint8_t* d, size_t n, uint64_t now) {
     if (n < 8 || (!f_.noChecksum && sum32(d, n - 4) != get32(d + n - 4))) return;   // corrupted or foreign: drop, the sender resends
     uint32_t magic = get32(d);
     if (magic == kMagicLine) { onLine(d, n, now); return; }
+    if (magic == kMagicPing) { onPing(d, n, now); return; }
     Version version = {};
     if (fixedRoster_) {
         if (magic == kGroupEv && n == kGroupEvLen) { version = {get64(d + 28), get32(d + 36)}; magic = kMagicEv; }
@@ -184,6 +193,30 @@ void SyncCore::onPacket(const uint8_t* d, size_t n, uint64_t now) {
         remoteAt_ = now; peer.pose = remote_; peer.poseAt = now;
         return;
     }
+}
+
+// ------------------------------------------------------------------------------------------------ names and ping
+void SyncCore::setName(const std::string& name) { Guard g(h_); name_ = name.substr(0, kNameLen); }
+
+void SyncCore::onPing(const uint8_t* d, size_t n, uint64_t now) {
+    if (n != kPingLen || sum32(d, n - 4) != get32(d + n - 4)) return;
+    uint32_t from = get32(d + 4), kind = get32(d + 8), nonce = get32(d + 12), t0 = get32(d + 16);
+    if (int(from) == id_ || (kind != 1 && kind != 2)) return;
+    Guard g(h_);
+    auto pi = peers_.find(from);
+    if (pi == peers_.end()) { if (fixedRoster_ || !peers_.empty()) return; pi = peers_.emplace(from, Peer{}).first; }
+    Peer& peer = pi->second;
+    if (kind == 1) {                // a ping: remember the name, answer with the same nonce and time
+        char nm[kNameLen + 1] = {}; memcpy(nm, d + 20, kNameLen); peer.name = nm;
+        if (f_.noPingReply) return;
+        Bytes b; put32(b, kMagicPing); put32(b, uint32_t(id_)); put32(b, 2); put32(b, nonce); put32(b, t0); for (size_t i = 0; i < kNameLen; ++i) b.push_back(0);
+        sendTo(from, finish(std::move(b)));
+        return;
+    }
+    if (nonce != pingNonce_) return;       // a pong for an older ping, or none of ours: the round trip would be wrong
+    if (nonce == peer.lastNonce) return;   // one pong per ping (and per peer)
+    peer.lastNonce = nonce; float rtt = float(uint32_t(uint32_t(now) - t0));
+    peer.ping = peer.ping < 0 ? rtt : 0.7f * peer.ping + 0.3f * rtt; peer.pongAt = now;
 }
 
 // ------------------------------------------------------------------------------------------------ drawn lines
@@ -528,7 +561,9 @@ bool SyncCore::remotePose(RemotePose* out, uint64_t now) {
 std::vector<RemotePose> SyncCore::remotePoses(uint64_t now) {
     Guard g(h_); std::vector<RemotePose> poses;
     for (const auto& p : peers_) if (p.second.pose.valid) {
-        auto pose = p.second.pose; pose.ageMs = now - p.second.poseAt; poses.push_back(pose);
+        auto pose = p.second.pose; pose.ageMs = now - p.second.poseAt;
+        bool fresh = f_.noPingExpiry || (p.second.pongAt && now - p.second.pongAt < 10000);
+        pose.pingMs = (p.second.ping >= 0 && fresh) ? int(p.second.ping + 0.5f) : -1; pose.name = p.second.name; poses.push_back(pose);
     }
     return poses;
 }

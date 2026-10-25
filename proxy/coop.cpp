@@ -37,7 +37,7 @@ std::vector<RemotePose> CoopGetRemotes() {
     if (g_fakeOn) { RemotePose p; CoopGetRemote(&p); return {p}; }
     std::vector<RemotePose> out;
     if (auto* c = CoopCore()) for (const auto& r : c->remotePoses(GetTickCount64())) {
-        RemotePose p; p.valid = r.valid; memcpy(p.pos, r.pos, sizeof p.pos); memcpy(p.ang, r.ang, sizeof p.ang);
+        RemotePose p; memset(&p, 0, sizeof p); p.pingMs = r.pingMs; strncpy(p.name, r.name.c_str(), sizeof p.name - 1); p.valid = r.valid; memcpy(p.pos, r.pos, sizeof p.pos); memcpy(p.ang, r.ang, sizeof p.ang);
         p.ageMs = (DWORD)r.ageMs; p.seq = r.seq; p.id = r.id; out.push_back(p);
     }
     return out;
@@ -73,7 +73,7 @@ static DWORD WINAPI NetThread(LPVOID) {
     wchar_t* sl = wcsrchr(wp, L'\\'); if (sl) *(sl + 1) = 0; wcscat_s(wp, L"witness_coop.cfg");
     FILE* f = _wfopen(wp, L"r");
     if (!f) { Log("coop: no witness_coop.cfg, networking off"); return 0; }
-    witness::Flags flags; int id = 0, listenPort = 0, peerPort = 0; char host[64] = "127.0.0.1", line[200]; int dropPct = 0; uint32_t dropState = 1;
+    witness::Flags flags; int id = 0, listenPort = 0, peerPort = 0; char host[64] = "127.0.0.1", line[200], name[32] = ""; int dropPct = 0; uint32_t dropState = 1;
     std::map<unsigned, sockaddr_in> endpoints; bool badConfig = false;
     while (fgets(line, sizeof line, f)) {
         unsigned peerId; int port; char peerHost[64];
@@ -83,6 +83,7 @@ static DWORD WINAPI NetThread(LPVOID) {
             continue;
         }
         if (!strncmp(line, "peer=", 5) && strchr(line, ',')) { badConfig = true; continue; }
+        { char nm[64]; if (sscanf(line, "name=%23[^\r\n]", nm) == 1) strncpy(name, nm, sizeof name - 1); }
         int v; sscanf(line, "id=%d", &id); sscanf(line, "listen=%d", &listenPort); sscanf(line, "peer=%d", &peerPort); sscanf(line, "peer_host=%63s", host);
         if (sscanf(line, "drop_first_event=%d", &v) == 1) flags.dropFirstEvent = v;
         if (sscanf(line, "drop_pct=%d", &v) == 1) dropPct = v;
@@ -98,6 +99,8 @@ static DWORD WINAPI NetThread(LPVOID) {
         if (sscanf(line, "no_cable_arbiter=%d", &v) == 1) flags.noCableArbiter = v;
         if (sscanf(line, "no_snap_reassert=%d", &v) == 1) flags.noSnapReassert = v;
         if (sscanf(line, "no_line_send=%d", &v) == 1) flags.noLineSend = v;
+        if (sscanf(line, "no_ping_reply=%d", &v) == 1) flags.noPingReply = v;
+        if (sscanf(line, "no_name_send=%d", &v) == 1) flags.noNameSend = v;
         if (sscanf(line, "no_line_resend=%d", &v) == 1) flags.noLineResend = v;
     }
     fclose(f);
@@ -129,6 +132,7 @@ static DWORD WINAPI NetThread(LPVOID) {
     h.lock = [] { EnterCriticalSection(&g_lock); }; h.unlock = [] { LeaveCriticalSection(&g_lock); };
     uint32_t session = (uint32_t)time(nullptr);     // must grow with every start: the core ignores packets from an older session
     witness::SyncCore* core = new witness::SyncCore(id, session, GameWorldInstance(), h, flags);
+    { char nm[40]; if (name[0]) snprintf(nm, sizeof nm, "%s", name); else snprintf(nm, sizeof nm, "Player %d", id); core->setName(nm); }
     if (!endpoints.empty()) {
         std::vector<unsigned> ids; for (const auto& p : endpoints) ids.push_back(p.first);
         if (!core->setPeers(ids)) { Log("coop: invalid roster"); delete core; closesocket(s); return 0; }

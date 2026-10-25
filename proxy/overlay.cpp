@@ -122,7 +122,7 @@ static bool InitResources(IDXGISwapChain* sc) {
     char m[200]; snprintf(m, sizeof m, "overlay: resources ready, backbuffer %ux%u fmt %d", sd.BufferDesc.Width, sd.BufferDesc.Height, (int)sd.BufferDesc.Format);
     Log(m);
     g_videoDev = g_dev; g_videoCtx = g_ctx;
-    if (DevMenuEnabled() || VideoEnabled()) g_uiReady = UiInit(g_dev, g_ctx);
+    if (DevMenuEnabled() || VideoEnabled() || !GetCfg().noNameTags) g_uiReady = UiInit(g_dev, g_ctx);
     return g_vs && g_ps && g_cb && g_blend && g_rs && g_ds;
 }
 
@@ -231,13 +231,45 @@ static void InstallDevWndProc(HWND w) {
     g_origWndProc = (WNDPROC)(g_wndUnicode ? SetWindowLongPtrW(w, GWLP_WNDPROC, (LONG_PTR)DevWndProc) : SetWindowLongPtrA(w, GWLP_WNDPROC, (LONG_PTR)DevWndProc));
     Log(g_origWndProc ? "devmenu: window procedure hooked" : "devmenu: window procedure hook FAILED");
 }
+// Name tags: every other player's name and ping over their head, in their colour, visible through walls (so a friend can always be found).
+struct TagInfo { unsigned id; char name[25]; int ping; bool onScreen; float dist; };
+static CRITICAL_SECTION g_tagLock; static bool g_tagLockInit; static std::vector<TagInfo> g_tags;
+static bool TagsWanted() { return !GetCfg().noNameTags; }
+static void DrawNameTags(float W, float H) {
+    if (!g_tagLockInit) { InitializeCriticalSection(&g_tagLock); g_tagLockInit = true; }
+    uintptr_t base = (uintptr_t)GetModuleHandleA(nullptr);
+    const float* cam = (const float*)(base + kCamPos); const float* ang = (const float*)(base + kCamAng);
+    std::vector<TagInfo> now;
+    if (TagsWanted() && !IsBadReadPtr(cam, 12) && !IsBadReadPtr(ang, 8)) for (const auto& rp : CoopGetRemotes()) if (rp.ageMs < 2000) {
+        TagInfo t = {}; t.id = rp.id; strncpy(t.name, rp.name[0] ? rp.name : "?", sizeof t.name - 1); t.ping = rp.pingMs;
+        float head[3] = {rp.pos[0], rp.pos[1], rp.pos[2] + 0.38f}, nx, ny, d[3] = {rp.pos[0] - cam[0], rp.pos[1] - cam[1], rp.pos[2] - cam[2]};
+        t.dist = sqrtf(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+        if (Project(cam, ang[0], ang[1], head, W / H, &nx, &ny) && fabsf(nx) < 1.05f && fabsf(ny) < 1.05f) {
+            t.onScreen = true; float col[3]; PlayerColor(rp.id, col);
+            float k = std::max(1.0f, H / 1080.0f) * std::min(1.0f, std::max(0.7f, 10.0f / std::max(t.dist, 1.0f)));
+            char b[64]; if (t.ping >= 0) snprintf(b, sizeof b, "%s  %d ms", t.name, t.ping); else snprintf(b, sizeof b, "%s  - ms", t.name);
+            float tw = UiTextWidth(b, k), th = UiLineHeight(k), x = (nx * 0.5f + 0.5f) * W - tw / 2, y = (0.5f - ny * 0.5f) * H - th;
+            UiRect(x - 5 * k, y - 3 * k, tw + 10 * k, th + 6 * k, Rgba(0, 0, 0, 0.55f)); UiRect(x - 5 * k, y + th + 3 * k, tw + 10 * k, 3 * k, Rgba(col[0], col[1], col[2], 1));
+            UiText(x, y, b, Rgba(col[0], col[1], col[2], 1), k);
+        }
+        now.push_back(t);
+    }
+    EnterCriticalSection(&g_tagLock); g_tags = std::move(now); LeaveCriticalSection(&g_tagLock);
+}
+void OverlayLogTags() {       // witness_cmd.txt: tagstat -> one log line per remote player: name, ping, whether its tag is on screen
+    if (!g_tagLockInit) return;
+    EnterCriticalSection(&g_tagLock); std::vector<TagInfo> t = g_tags; LeaveCriticalSection(&g_tagLock);
+    char m[200]; snprintf(m, sizeof m, "tagstat: players %zu", t.size()); Log(m);
+    for (const auto& x : t) { snprintf(m, sizeof m, "tagstat: id %u name %s ping %d onscreen %d dist %.1f", x.id, x.name, x.ping, (int)x.onScreen, x.dist); Log(m); }
+}
+
 static void DrawDevMenu(IDXGISwapChain* sc) {
     if (!g_uiReady) return;
     DevMenuTick();
-    if (!DevMenuOpen() && !DevMenuToastWanted() && !VideoViewMode()) return;
+    if (!DevMenuOpen() && !DevMenuToastWanted() && !VideoViewMode() && !TagsWanted()) return;
     ID3D11Texture2D* bb = nullptr; if (FAILED(sc->GetBuffer(0, __uuidof(ID3D11Texture2D), (void**)&bb))) return;
     D3D11_TEXTURE2D_DESC td; bb->GetDesc(&td); ID3D11RenderTargetView* rtv = nullptr;
-    if (SUCCEEDED(g_dev->CreateRenderTargetView(bb, nullptr, &rtv))) { UiBegin((float)td.Width, (float)td.Height); if (DevMenuOpen()) DevMenuDraw((float)td.Width, (float)td.Height); else DevMenuToast((float)td.Width, (float)td.Height);
+    if (SUCCEEDED(g_dev->CreateRenderTargetView(bb, nullptr, &rtv))) { UiBegin((float)td.Width, (float)td.Height); DrawNameTags((float)td.Width, (float)td.Height); if (DevMenuOpen()) DevMenuDraw((float)td.Width, (float)td.Height); else DevMenuToast((float)td.Width, (float)td.Height);
         if (VideoViewMode()) {      // the partner's screen, in a corner (F9: small, large, off)
             int vw = 0, vh = 0; unsigned long age = 0; ID3D11ShaderResourceView* srv = VideoRemoteSrv(&vw, &vh, &age);
             float k = (VideoViewMode() == 2 ? 2.0f : 1.0f) * std::max(1.f, td.Height / 1080.f), iw = (vw ? vw : 480) * k, ih = (vh ? vh : 270) * k, x = td.Width - iw - 14, y = 14;
