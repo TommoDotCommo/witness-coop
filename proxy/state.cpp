@@ -33,13 +33,13 @@ public:
     bool scan(std::vector<unsigned>& panels, std::vector<unsigned>& doors, uint64_t* tableId) override {   // all Machine_Panel and Door entities from the live table
         uintptr_t glob = 0; if (!Rd(Base() + kGlobals, &glob, 8) || !glob) return false;
         uintptr_t arr = 0; if (!Rd(glob + 0x18, &arr, 8) || !arr) return false;
-        tbl_.assign(kMaxId, 0); cables_.clear();
+        tbl_.assign(kMaxId, 0); cables_.clear(); panelIds_.clear();
         if (!Rd(arr, tbl_.data(), kMaxId * 8)) return false;
         // Table index zero is valid: it is the door opened by Tutorial Bend (panel index 0x182).
         for (unsigned id = GetCfg().skipEntityZero ? 1u : 0u; id < kMaxId; id++) {
             if (!tbl_[id]) continue;
             uintptr_t ti = 0; if (!Rd(tbl_[id] + 8, &ti, 8)) continue;
-            if (ti == Base() + kPanelTI) panels.push_back(id); else if (ti == Base() + kDoorTI) doors.push_back(id); else if (ti == Base() + kCableTI) cables_.push_back(id);
+            if (ti == Base() + kPanelTI) { panels.push_back(id); panelIds_.push_back(id); } else if (ti == Base() + kDoorTI) doors.push_back(id); else if (ti == Base() + kCableTI) cables_.push_back(id);
         }
         *tableId = arr; return true;
     }
@@ -61,6 +61,33 @@ public:
         if (!GetCfg().noTargetDispatch) GameDispatchTargetNow(id);       // targets without a dedicated event (laser, plate, gauge, ...) react as in a native solve
     }
     bool applyDoorOpen(unsigned id) override { return GameDoorOpenNow(id, 1.0f); }
+    // The game keeps a drawn line as an array of segment records at +0x230 (count at +0x228, 13 dwords each: node a, node b, the panel's engine id twice,
+    // 1.0, 1.0, the world position of a (3 floats), of b (3 floats), a zero). It stays after the panel is solved. Each node goes out with its place in
+    // millimetres from the panel's own position, so the other game never has to know how the panel's graph sits in the world.
+    bool scanLines(std::vector<witness::LineOut>& out) override {
+        for (unsigned id : panelIds_) {
+            uintptr_t e = GameEntity(id); if (!e) continue;
+            uint32_t n = Rd32(e + 0x228); if (n == 0 || n > 600) continue;
+            uintptr_t ptr = 0; if (!Rd(e + 0x230, &ptr, 8) || !ptr) continue;
+            std::vector<uint32_t> rec(size_t(n) * 13); if (!Rd(ptr, rec.data(), rec.size() * 4)) continue;
+            float pp[3]; if (!Rd(e + 0x24, pp, 12)) continue;
+            witness::LineOut l; l.panel = id; l.final = PanelSolved(e);
+            auto point = [&](uint32_t node, const uint32_t* w) {
+                witness::LinePoint p; p.node = uint16_t(node);
+                for (int k = 0; k < 3; ++k) { float f; memcpy(&f, w + k, 4); float mm = (f - pp[k]) * 1000.0f; p.d[k] = int16_t(mm > 32000 ? 32000 : mm < -32000 ? -32000 : mm); }
+                l.pts.push_back(p);
+            };
+            bool bad = false;
+            for (uint32_t i = 0; i < n && !bad; ++i) {
+                const uint32_t* r = rec.data() + size_t(i) * 13;
+                if (r[0] > 4000 || r[1] > 4000) { bad = true; break; }
+                if (i == 0) point(r[0], r + 6);
+                point(r[1], r + 9);
+            }
+            if (!bad) out.push_back(std::move(l));
+        }
+        return true;
+    }
     bool pose(float pos[3], float ang[2]) override {
         const float* cam = (const float*)(Base() + 0x6304B0 + 0x10); const float* a = (const float*)(Base() + 0x6303EC);
         if (IsBadReadPtr(cam, 12) || IsBadReadPtr(a, 8) || (cam[0] == 0 && cam[1] == 0)) return false;
@@ -68,7 +95,7 @@ public:
         ang[0] = a[0]; ang[1] = a[1]; return true;
     }
 private:
-    std::vector<uintptr_t> tbl_; std::vector<unsigned> cables_;
+    std::vector<uintptr_t> tbl_; std::vector<unsigned> cables_, panelIds_;
 };
 
 static GameWorld g_world;

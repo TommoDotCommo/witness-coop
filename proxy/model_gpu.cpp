@@ -25,6 +25,8 @@ static ID3D11RasterizerState* g_rs; static ID3D11DepthStencilState* g_dss; stati
 static ID3D11Texture2D* g_depthTex; static ID3D11DepthStencilView* g_dsv; static UINT g_depthW, g_depthH;
 struct PlayerDraw { unsigned id, seq; float pos[3], speed; int clip; };
 static std::vector<PlayerDraw> g_playerDraws;
+static ID3D11VertexShader* g_vsLine; static ID3D11PixelShader* g_psLine; static ID3D11InputLayout* g_layoutLine; static ID3D11Buffer* g_vbLine; static ID3D11Query* g_qLine; static bool g_qLinePending; static LineDrawStats g_lineStats;
+static const size_t kLineVerts = 65536;
 static ModelDrawStats g_stats; static ID3D11Query* g_query; static bool g_queryPending;
 
 struct FrameCB { float viewProj[16], model[16]; float light[4]; float tint[4]; float depthp[4]; float screen[4]; };       // 192 bytes
@@ -51,6 +53,17 @@ float4 PS(VOut i) : SV_TARGET {
     if (vis <= 0) discard;
   }
   return float4(c, vis); }
+struct LIn { float3 p : POSITION; float4 c : COLOR0; };
+struct LOut { float4 pos : SV_POSITION; float4 c : COLOR0; float dist : TEXCOORD1; };
+LOut VSLine(LIn v) { LOut o; o.pos = mul(viewProj, float4(v.p, 1)); o.dist = o.pos.w; o.c = v.c; return o; }
+float4 PSLine(LOut i) : SV_TARGET {      // a line lies in the panel's own surface: it counts as 1.5% nearer than the scene so it is not hidden by the panel it is drawn on
+  if (depthp.x > 0.5) {
+    int2 px = int2(i.pos.xy); float zm = depthp.w / i.dist * (1 + depthp.z + 0.015); float vis = 1;
+    if (depthp.x < 1.5) vis = (scene1.Load(int3(px, 0)) <= zm) ? 1 : 0;
+    else { int ns = (int)depthp.y; float s = 0; for (int k = 0; k < ns; k++) s += (sceneMS.Load(px, k) <= zm) ? 1 : 0; vis = s / ns; }
+    if (vis <= 0) discard;
+  }
+  return float4(i.c.rgb, 1); }
 struct FS { float4 pos : SV_POSITION; };
 // depth probe: renders into an 8x1 float target; pixel i holds the scene depth at the i-th probe position (centre, 4 samples of it, then four other points)
 float PSProbe(FS i) : SV_TARGET {
@@ -214,6 +227,16 @@ bool ModelGpuInit(ID3D11Device* dev, ID3D11DeviceContext* ctx) {
     if (FAILED(compile(kHlsl, strlen(kHlsl), "model", nullptr, nullptr, "VSFull", "vs_5_0", 0, 0, &fvb, &eb)) || FAILED(compile(kHlsl, strlen(kHlsl), "model", nullptr, nullptr, "PSDepth", "ps_5_0", 0, 0, &fpb, &eb))) return Fail("model: depth view shaders failed");
     ID3DBlob* ppb = nullptr; if (FAILED(compile(kHlsl, strlen(kHlsl), "model", nullptr, nullptr, "PSProbe", "ps_5_0", 0, 0, &ppb, &eb))) return Fail("model: probe shader failed");
     dev->CreatePixelShader(ppb->GetBufferPointer(), ppb->GetBufferSize(), nullptr, &g_psProbe);
+    {   // the other players' lines
+        ID3DBlob *lvb = nullptr, *lpb = nullptr;
+        if (SUCCEEDED(compile(kHlsl, strlen(kHlsl), "model", nullptr, nullptr, "VSLine", "vs_5_0", 0, 0, &lvb, &eb)) && SUCCEEDED(compile(kHlsl, strlen(kHlsl), "model", nullptr, nullptr, "PSLine", "ps_5_0", 0, 0, &lpb, &eb))) {
+            dev->CreateVertexShader(lvb->GetBufferPointer(), lvb->GetBufferSize(), nullptr, &g_vsLine); dev->CreatePixelShader(lpb->GetBufferPointer(), lpb->GetBufferSize(), nullptr, &g_psLine);
+            D3D11_INPUT_ELEMENT_DESC li[] = {{"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0}, {"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D11_INPUT_PER_VERTEX_DATA, 0}};
+            dev->CreateInputLayout(li, 2, lvb->GetBufferPointer(), lvb->GetBufferSize(), &g_layoutLine);
+            D3D11_BUFFER_DESC vb = {}; vb.ByteWidth = UINT(kLineVerts * sizeof(LineVert)); vb.Usage = D3D11_USAGE_DYNAMIC; vb.BindFlags = D3D11_BIND_VERTEX_BUFFER; vb.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+            dev->CreateBuffer(&vb, nullptr, &g_vbLine);
+        } else Log(eb ? (const char*)eb->GetBufferPointer() : "model: line shaders failed");
+    }
     ID3DBlob* upb = nullptr; if (FAILED(compile(kHlsl, strlen(kHlsl), "model", nullptr, nullptr, "PSUi", "ps_5_0", 0, 0, &upb, &eb))) return Fail(eb ? (const char*)eb->GetBufferPointer() : "model: UI shader failed");
     dev->CreatePixelShader(upb->GetBufferPointer(), upb->GetBufferSize(), nullptr, &g_psUi);
     dev->CreateVertexShader(fvb->GetBufferPointer(), fvb->GetBufferSize(), nullptr, &g_vsFull); dev->CreatePixelShader(fpb->GetBufferPointer(), fpb->GetBufferSize(), nullptr, &g_psDepth);
@@ -323,6 +346,40 @@ bool ModelGpuDraw(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Cam& ca
     g_stats.drawn = true; g_stats.clip = pk.clip; g_stats.speed = g_avatar->speed(); g_stats.animTime = pk.time; memcpy(g_stats.pos, g_avatar->pos(), 12); memcpy(g_stats.cam, cam.pos, 12);
     return true;
 }
+
+bool ModelGpuDrawLines(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Cam& cam, const LineVert* verts, size_t count, unsigned lineCount) {
+    static unsigned frames; g_lineStats.frames = ++frames; g_lineStats.lines = lineCount; g_lineStats.verts = (unsigned)count;
+    if (!g_ready || !g_vsLine || !g_psLine || !g_layoutLine || !g_vbLine) return false;
+    if (count == 0) { g_lineStats.visiblePixels = 0; g_qLinePending = false; return true; }
+    if (count > kLineVerts) count = kLineVerts - kLineVerts % 3;
+    const Cfg& cfg = GetCfg();
+    D3D11_MAPPED_SUBRESOURCE ms2; if (FAILED(g_ctx->Map(g_vbLine, 0, D3D11_MAP_WRITE_DISCARD, 0, &ms2))) return false;
+    memcpy(ms2.pData, verts, count * sizeof(LineVert)); g_ctx->Unmap(g_vbLine, 0);
+    FrameCB fc; memset(&fc, 0, sizeof fc); wm::ViewProj(cam, fc.viewProj);
+    ID3D11ShaderResourceView* sceneSrv = nullptr; bool ms = false;
+    bool haveScene = !cfg.noLineDepth && DepthScene(&sceneSrv, &ms);
+    fc.screen[0] = (float)w; fc.screen[1] = (float)h;
+    fc.depthp[0] = haveScene ? (ms ? 2.0f : 1.0f) : 0.0f; fc.depthp[1] = 4; fc.depthp[2] = cfg.depthBias; fc.depthp[3] = cfg.depthNear;
+    g_ctx->UpdateSubresource(g_cbFrame, 0, nullptr, &fc, 0, 0);
+    D3D11_VIEWPORT vp = {0, 0, (float)w, (float)h, 0, 1};
+    g_ctx->OMSetRenderTargets(1, &rtv, nullptr); g_ctx->RSSetViewports(1, &vp); g_ctx->RSSetState(g_rs);
+    g_ctx->OMSetBlendState(g_blend, nullptr, 0xffffffff); g_ctx->OMSetDepthStencilState(nullptr, 0);
+    UINT stride = sizeof(LineVert), off = 0;
+    g_ctx->IASetInputLayout(g_layoutLine); g_ctx->IASetVertexBuffers(0, 1, &g_vbLine, &stride, &off); g_ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    g_ctx->VSSetShader(g_vsLine, nullptr, 0); g_ctx->PSSetShader(g_psLine, nullptr, 0);
+    g_ctx->VSSetConstantBuffers(0, 1, &g_cbFrame); g_ctx->PSSetConstantBuffers(0, 1, &g_cbFrame);
+    if (haveScene) g_ctx->PSSetShaderResources(ms ? 1 : 2, 1, &sceneSrv);
+    g_ctx->GSSetShader(nullptr, nullptr, 0); g_ctx->HSSetShader(nullptr, nullptr, 0); g_ctx->DSSetShader(nullptr, nullptr, 0);
+    if (!g_qLine) { D3D11_QUERY_DESC qd = {D3D11_QUERY_OCCLUSION, 0}; g_dev->CreateQuery(&qd, &g_qLine); }
+    if (g_qLinePending) { UINT64 n; if (g_ctx->GetData(g_qLine, &n, sizeof n, D3D11_ASYNC_GETDATA_DONOTFLUSH) == S_OK) { g_lineStats.visiblePixels = (unsigned)n; g_qLinePending = false; } }
+    bool timed = g_qLine && !g_qLinePending; if (timed) g_ctx->Begin(g_qLine);
+    g_ctx->Draw((UINT)count, 0);
+    if (timed) { g_ctx->End(g_qLine); g_qLinePending = true; }
+    ID3D11ShaderResourceView* z3[3] = {nullptr, nullptr, nullptr}; g_ctx->PSSetShaderResources(0, 3, z3);
+    return true;
+}
+LineDrawStats ModelGpuLineStats() { return g_lineStats; }
+void ModelGpuLogLineStats() { char m[160]; snprintf(m, sizeof m, "linestat: lines %u verts %u visible_px %u frames %u", g_lineStats.lines, g_lineStats.verts, g_lineStats.visiblePixels, g_lineStats.frames); Log(m); }
 
 void ModelGpuDumpPlayers() {
     wchar_t path[MAX_PATH]; GetModuleFileNameW(g_selfModule(), path, MAX_PATH);

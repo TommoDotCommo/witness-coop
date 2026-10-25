@@ -28,6 +28,7 @@ static const float kVFovDeg = 60.0f;                 // calibrated: horizontal ~
 #include "video.h"
 #include "model_gpu.h"
 #include "depth.h"
+#include "playercolor.h"
 
 typedef HRESULT(STDMETHODCALLTYPE* PresentFn)(IDXGISwapChain*, UINT, UINT);
 static PresentFn g_origPresent;
@@ -125,6 +126,32 @@ static bool InitResources(IDXGISwapChain* sc) {
     return g_vs && g_ps && g_cb && g_blend && g_rs && g_ds;
 }
 
+// The other players' lines: each is a list of points in millimetres from its panel's position; drawn as ribbons of the owner's colour, 2.4 cm wide, turned to face the camera.
+static unsigned BuildLineVerts(const float cam[3], std::vector<LineVert>& out) {
+    unsigned lines = 0;
+    for (const auto& r : CoopGetRemoteLines()) {
+        uintptr_t e = r.panel < 0x40000 ? GameEntity(r.panel) : 0; if (!e || !Readable((void*)(e + 0x24), 12)) continue;
+        const float* pp = (const float*)(e + 0x24); float col[3]; PlayerColor(r.from, col); bool any = false;
+        for (size_t i = 0; i + 1 < r.pts.size(); ++i) {
+            float a[3], b[3];
+            for (int k = 0; k < 3; ++k) { a[k] = pp[k] + r.pts[i].d[k] * 0.001f; b[k] = pp[k] + r.pts[i + 1].d[k] * 0.001f; }
+            float d[3] = {b[0] - a[0], b[1] - a[1], b[2] - a[2]}, len = sqrtf(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+            if (len < 1e-5f || len > 3.0f) continue;
+            float v[3] = {(a[0] + b[0]) * 0.5f - cam[0], (a[1] + b[1]) * 0.5f - cam[1], (a[2] + b[2]) * 0.5f - cam[2]};
+            float s[3] = {d[1] * v[2] - d[2] * v[1], d[2] * v[0] - d[0] * v[2], d[0] * v[1] - d[1] * v[0]}, sl = sqrtf(s[0] * s[0] + s[1] * s[1] + s[2] * s[2]);
+            if (sl < 1e-9f) continue;
+            float hw = 0.012f / sl, o[3] = {s[0] * hw, s[1] * hw, s[2] * hw};
+            float ext = 0.012f / len; float a2[3] = {a[0] - d[0] * ext, a[1] - d[1] * ext, a[2] - d[2] * ext}, b2[3] = {b[0] + d[0] * ext, b[1] + d[1] * ext, b[2] + d[2] * ext};     // square ends so corners join
+            float q[4][3] = {{a2[0] - o[0], a2[1] - o[1], a2[2] - o[2]}, {a2[0] + o[0], a2[1] + o[1], a2[2] + o[2]}, {b2[0] - o[0], b2[1] - o[1], b2[2] - o[2]}, {b2[0] + o[0], b2[1] + o[1], b2[2] + o[2]}};
+            static const int idx[6] = {0, 1, 2, 1, 3, 2};
+            for (int k : idx) { LineVert lv; memcpy(lv.p, q[k], 12); lv.c[0] = col[0]; lv.c[1] = col[1]; lv.c[2] = col[2]; lv.c[3] = 1; out.push_back(lv); }
+            any = true;
+        }
+        if (any) ++lines;
+    }
+    return lines;
+}
+
 static void DrawMarkers(IDXGISwapChain* sc) {
     ID3D11Texture2D* bb = nullptr;
     if (FAILED(sc->GetBuffer(0, __uuidof(ID3D11Texture2D), (void**)&bb))) return;
@@ -144,6 +171,8 @@ static void DrawMarkers(IDXGISwapChain* sc) {
             ModelGpuDraw(rtv, td.Width, td.Height, wc, true, rp.seq, rp.pos, rp.ang[0], rp.id, first); first = false;
         }
         if (first) { float p[3] = {}; ModelGpuDraw(rtv, td.Width, td.Height, wc, false, 0, p, 0); }
+        std::vector<LineVert> lv; unsigned nl = 0; if (!GetCfg().noLineDraw) nl = BuildLineVerts(wc.pos, lv);
+        ModelGpuDrawLines(rtv, td.Width, td.Height, wc, lv.data(), lv.size(), nl);
         rtv->Release(); bb->Release(); return;
     }
     for (const auto& rp : remotes) if (rp.ageMs < 2000) {

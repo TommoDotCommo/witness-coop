@@ -8,6 +8,7 @@ namespace {
 
 // Protocol v4 adds cable power-off (v3 added cable lighting, v2 panel power-on). Distinct magics prevent an older peer from ACKing an incomplete vocabulary.
 constexpr uint32_t kMagicPose = 0x34505457, kMagicEv = 0x34455457, kMagicAck = 0x34415457;   // "WTP4" "WTE4" "WTA4"
+constexpr uint32_t kMagicLine = 0x344C5457;   // "WTL4": a drawn line, best effort, the whole line every time
 constexpr uint32_t kGroupPose = 0x35505457, kGroupEv = 0x35455457, kGroupAck = 0x35415457;
 constexpr size_t kGroupEvLen = 44;
 constexpr size_t kPoseLen = 40, kEvLen = 32, kAckLen = 24;                                    // with the 4-byte checksum
@@ -82,6 +83,15 @@ void SyncCore::tick(uint64_t now) {
             put32(b, session_); send(finish(std::move(b)));
         }
     }
+    for (auto& kv : lines_) {      // a changed line goes out at once while it is being drawn at most every 100 ms, a finished or cleared one immediately
+        LineState& s = kv.second;
+        if (s.dirty && (s.final || s.pts.empty() || now >= s.sentAt + 100)) { sendLine(kv.first, s); s.dirty = false; s.sentAt = now; }
+    }
+    if (!f_.noLineResend && now >= nextLineResend_ && !lines_.empty()) {      // anti-entropy: one stored line per second, round robin
+        nextLineResend_ = now + 1000;
+        auto it = lines_.begin(); std::advance(it, lineCursor_ % lines_.size()); ++lineCursor_;
+        if (!it->second.pts.empty() || it->second.seq) sendLine(it->first, it->second);
+    }
     if (now >= nextResend_) {   // resend unacknowledged events, oldest first, at most 32 per recipient per round
         nextResend_ = now + 150; std::map<unsigned, unsigned> budget;
         for (auto& s : sent_) {
@@ -107,6 +117,7 @@ void SyncCore::tick(uint64_t now) {
 void SyncCore::onPacket(const uint8_t* d, size_t n, uint64_t now) {
     if (n < 8 || (!f_.noChecksum && sum32(d, n - 4) != get32(d + n - 4))) return;   // corrupted or foreign: drop, the sender resends
     uint32_t magic = get32(d);
+    if (magic == kMagicLine) { onLine(d, n, now); return; }
     Version version = {};
     if (fixedRoster_) {
         if (magic == kGroupEv && n == kGroupEvLen) { version = {get64(d + 28), get32(d + 36)}; magic = kMagicEv; }
@@ -175,6 +186,70 @@ void SyncCore::onPacket(const uint8_t* d, size_t n, uint64_t now) {
     }
 }
 
+// ------------------------------------------------------------------------------------------------ drawn lines
+// Line packet: magic, from, session, panel, seq, flags (bit 0: finished), n, then n x (node u16, dx dy dz i16), checksum. The whole line travels every
+// time and the highest seq wins, so a lost or reordered packet costs nothing once any later one arrives; every stored line is repeated about once a
+// second (round robin) so a restarted peer, or one that missed everything, catches up.
+void SyncCore::sendLine(unsigned panel, const LineState& s) {
+    if (f_.noLineSend) return;
+    Bytes b; put32(b, kMagicLine); put32(b, uint32_t(id_)); put32(b, session_); put32(b, panel); put32(b, s.seq); put32(b, s.final ? 1u : 0u);
+    size_t n = std::min<size_t>(s.pts.size(), kMaxLinePoints); put32(b, uint32_t(n));
+    for (size_t i = 0; i < n; ++i) {
+        const LinePoint& p = s.pts[i];
+        b.push_back(uint8_t(p.node)); b.push_back(uint8_t(p.node >> 8));
+        for (int k = 0; k < 3; ++k) { b.push_back(uint8_t(uint16_t(p.d[k]))); b.push_back(uint8_t(uint16_t(p.d[k]) >> 8)); }
+    }
+    send(finish(std::move(b)));
+}
+
+void SyncCore::scanLines(uint64_t now) {
+    std::vector<LineOut> out;
+    if (!w_->scanLines(out)) return;
+    std::set<unsigned> present;
+    for (auto& l : out) {
+        if (l.panel >= kMaxEntityId || l.pts.empty()) continue;
+        if (l.pts.size() > kMaxLinePoints) {       // keep the ends and an even spread of the points between them
+            std::vector<LinePoint> thin; size_t keep = kMaxLinePoints;
+            for (size_t i = 0; i < keep; ++i) thin.push_back(l.pts[i * (l.pts.size() - 1) / (keep - 1)]);
+            l.pts = std::move(thin);
+        }
+        present.insert(l.panel);
+        uint64_t h = 1469598103934665603ull; auto mix = [&](uint64_t v) { h ^= v; h *= 1099511628211ull; };
+        mix(l.final ? 1 : 0); for (auto& p : l.pts) { mix(p.node); for (int k = 0; k < 3; ++k) mix(uint16_t(p.d[k])); }
+        LineState& s = lines_[l.panel];
+        if (s.hash != h || s.seq == 0) { s.hash = h; s.final = l.final; s.pts = std::move(l.pts); ++s.seq; s.dirty = true; }
+    }
+    for (auto& kv : lines_) if (!present.count(kv.first) && !kv.second.pts.empty()) { kv.second.pts.clear(); kv.second.final = false; kv.second.hash = 0; ++kv.second.seq; kv.second.dirty = true; }   // the panel was reset: tell the peers
+    (void)now;
+}
+
+void SyncCore::onLine(const uint8_t* d, size_t n, uint64_t now) {
+    if (n < 32 || sum32(d, n - 4) != get32(d + n - 4)) return;
+    uint32_t from = get32(d + 4), session = get32(d + 8), panel = get32(d + 12), seq = get32(d + 16), flags = get32(d + 20), cnt = get32(d + 24);
+    if (int(from) == id_ || panel >= kMaxEntityId || cnt > kMaxLinePoints || n != size_t(32 + 8 * cnt)) return;
+    Guard g(h_);
+    if (!w_->isPanel(panel)) return;
+    auto pi = peers_.find(from);
+    if (pi == peers_.end()) { if (fixedRoster_ || !peers_.empty()) return; pi = peers_.emplace(from, Peer{}).first; }
+    LineIn& l = pi->second.lines[panel];
+    if (!f_.noLineSeqCheck && l.at && (session < l.session || (session == l.session && seq <= l.seq))) return;     // older or the same: already have it
+    if (pi->second.lines.size() > 256) return;
+    l.seq = seq; l.session = session; l.final = (flags & 1) != 0; l.at = now ? now : 1; l.pts.clear();
+    for (uint32_t i = 0; i < cnt; ++i) {
+        const uint8_t* p = d + 28 + 8 * i; LinePoint pt; pt.node = uint16_t(p[0] | p[1] << 8);
+        for (int k = 0; k < 3; ++k) pt.d[k] = int16_t(uint16_t(p[2 + 2 * k] | p[3 + 2 * k] << 8));
+        l.pts.push_back(pt);
+    }
+}
+
+std::vector<RemoteLine> SyncCore::remoteLines(uint64_t now) {
+    Guard g(h_); std::vector<RemoteLine> out;
+    for (const auto& p : peers_) for (const auto& kv : p.second.lines) if (!kv.second.pts.empty()) {
+        RemoteLine r; r.from = p.first; r.panel = kv.first; r.seq = kv.second.seq; r.final = kv.second.final; r.pts = kv.second.pts; r.ageMs = now - kv.second.at; out.push_back(std::move(r));
+    }
+    return out;
+}
+
 // ------------------------------------------------------------------------------------------------ detector side
 bool SyncCore::scanWorld() {
     std::vector<unsigned> p, d; uint64_t tid = 0;
@@ -237,6 +312,7 @@ bool SyncCore::reloadSeen(uint64_t now) {   // doors do not close and one panel 
 void SyncCore::pollState(uint64_t now) {
     Guard g(h_);
     const bool groupIntent = fixedRoster_ && !f_.noGroupCableIntent;
+    scanLines(now);
     if (!gateStarted_) { gateStarted_ = true; nextGate_ = now + 3000; }
     if (!ready_) {
         // Wait until the world is stable: camera valid, and the same panel/door counts AND the same set of solved panels and open

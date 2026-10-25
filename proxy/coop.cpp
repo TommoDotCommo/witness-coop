@@ -32,6 +32,7 @@ void CoopSetFakeRemote(bool on, const float* pos, float yaw) {
     if (on) { g_fake[0] = pos[0]; g_fake[1] = pos[1]; g_fake[2] = pos[2]; g_fake[3] = yaw; InterlockedIncrement(&g_fakeSeq); }
     InterlockedExchange(&g_fakeOn, on ? 1 : 0);
 }
+std::vector<witness::RemoteLine> CoopGetRemoteLines() { if (auto* c = CoopCore()) return c->remoteLines(GetTickCount64()); return {}; }
 std::vector<RemotePose> CoopGetRemotes() {
     if (g_fakeOn) { RemotePose p; CoopGetRemote(&p); return {p}; }
     std::vector<RemotePose> out;
@@ -96,6 +97,8 @@ static DWORD WINAPI NetThread(LPVOID) {
         if (sscanf(line, "no_off_snapshot=%d", &v) == 1) flags.noOffSnapshot = v;
         if (sscanf(line, "no_cable_arbiter=%d", &v) == 1) flags.noCableArbiter = v;
         if (sscanf(line, "no_snap_reassert=%d", &v) == 1) flags.noSnapReassert = v;
+        if (sscanf(line, "no_line_send=%d", &v) == 1) flags.noLineSend = v;
+        if (sscanf(line, "no_line_resend=%d", &v) == 1) flags.noLineResend = v;
     }
     fclose(f);
     if (id < 1 || listenPort < 1 || listenPort > 65535 || badConfig || endpoints.count((unsigned)id) || (endpoints.empty() && (peerPort < 1 || peerPort > 65535))) {
@@ -149,7 +152,8 @@ static DWORD WINAPI NetThread(LPVOID) {
                 else { auto it = endpoints.find(from); if (it == endpoints.end()) continue; expected = &it->second; }
             }
             if (source.sin_port != expected->sin_port || source.sin_addr.s_addr != expected->sin_addr.s_addr) continue;
-            if (n > 128) VideoOnPacket(buf, (size_t)n); else core->onPacket(buf, (size_t)n, now);
+            if (n >= 4 && !memcmp(buf, "WTL4", 4)) core->onPacket(buf, (size_t)n, now);      // a drawn line (can be longer than a pose or an event)
+            else if (n > 128) VideoOnPacket(buf, (size_t)n); else core->onPacket(buf, (size_t)n, now);
             sourceLen = sizeof source;
         }
         Sleep(2);

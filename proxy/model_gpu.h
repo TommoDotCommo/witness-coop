@@ -11,6 +11,12 @@ bool ModelGpuReady();
 // Draws the player at `pos` (eye position), heading `yaw`. `valid` false: the peer is gone, nothing is drawn.
 // sceneDepth: a shader resource view of a copy of the game's depth buffer, or null (nothing hides the model).
 bool ModelGpuDraw(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Cam& cam, bool valid, unsigned seq, const float pos[3], float yaw, unsigned playerId = 0, bool first = true);
+// Coloured ribbons in world space (the other players' drawn lines), depth-tested against the game's scene. Triangle list; each vertex: position, rgba.
+struct LineVert { float p[3]; float c[4]; };
+struct LineDrawStats { unsigned lines, verts, visiblePixels, frames; };
+bool ModelGpuDrawLines(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Cam& cam, const LineVert* verts, size_t count, unsigned lineCount);
+LineDrawStats ModelGpuLineStats();
+void ModelGpuLogLineStats();          // witness_cmd.txt: linestat -> one log line
 ModelDrawStats ModelGpuStats();
 void ModelGpuDumpPlayers(); // render-thread test bridge: submitted ids, positions and gait speeds
 void ModelGpuRequestProbe();      // the next frame logs the scene depth at a few pixels (witness_cmd.txt: probe)

@@ -117,6 +117,7 @@ static DWORD WINAPI CmdThread(LPVOID) {
             else if (!strncmp(line, "fakepose ", 9)) { float f[4]; if (sscanf(line, "fakepose %f %f %f %f", &f[0], &f[1], &f[2], &f[3]) == 4) CoopSetFakeRemote(true, f, f[3]); }
             else if (!strncmp(line, "modelstate", 10)) { EnterCriticalSection(&g_lock); if (g_n < 64) g_q[g_n++] = {8, 0, 0, 0, 0, false, 0, 0, 0}; LeaveCriticalSection(&g_lock); }
             else if (!strncmp(line, "netstate", 8)) { EnterCriticalSection(&g_lock); if (g_n < 64) g_q[g_n++] = {7, 0, 0, 0, 0, false, 0, 0, 0}; LeaveCriticalSection(&g_lock); }
+            else if (!strncmp(line, "linestat", 8)) ModelGpuLogLineStats();
             else if (!strncmp(line, "modelstat", 9)) ModelGpuLogStats();
             else if (sscanf(line, "model %63s", a2) == 1) { if (!strcmp(a2, "next")) ModelGpuSelect(1); else if (!strcmp(a2, "prev")) ModelGpuSelect(-1); else ModelGpuSelectName(a2); }
             else if (!strncmp(line, "hover off", 9)) GameHoverOff();

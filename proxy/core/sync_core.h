@@ -16,6 +16,13 @@ enum EvKind : uint8_t { EV_PANEL_SOLVED = 1, EV_DOOR_OPENED = 2, EV_PANEL_POWERE
 constexpr unsigned kMaxPlayers = 16;
 constexpr unsigned kMaxEntityId = 0x40000;      // the game's entity table size; ids at or above it are refused
 
+// A drawn line as it travels: the nodes of the panel's graph in order, each with its place on the panel in millimetres from the panel's own position
+// (so the receiving game needs no idea how a panel's graph is laid out in the world).
+constexpr unsigned kMaxLinePoints = 140;      // a datagram stays under ~1.2 KB: header 28 + 8 per point + checksum
+struct LinePoint { uint16_t node = 0; int16_t d[3] = {0, 0, 0}; bool operator==(const LinePoint& o) const { return node == o.node && d[0] == o.d[0] && d[1] == o.d[1] && d[2] == o.d[2]; } };
+struct LineOut { unsigned panel = 0; bool final = false; std::vector<LinePoint> pts; };      // local: a panel whose trace buffer is not empty (final: the panel is solved)
+struct RemoteLine { unsigned from = 0, panel = 0, seq = 0; bool final = false; std::vector<LinePoint> pts; uint64_t ageMs = 0; };
+
 // What the core needs from the game (or a fake of it).
 class World {
 public:
@@ -37,6 +44,7 @@ public:
     virtual bool cableRequested(unsigned id) { return cableLit(id); }            // the cable was switched on (the lit state may still be fading in)
     virtual bool applyCableLit(unsigned) { return false; }                       // render thread only; false: retry later
     virtual bool applyCableOff(unsigned) { return false; }                       // render thread only; false: retry later (the game's own power-off call)
+    virtual bool scanLines(std::vector<LineOut>&) { return true; }                // every local panel that has a drawn line (in progress or finished); empty by default
     virtual bool pose(float pos[3], float ang[2]) = 0;                          // local player pose; false when not available
 };
 
@@ -57,6 +65,9 @@ struct Flags {   // all off by default
     bool noGroupCableIntent = false; // twin: glow/echo bookkeeping hides a genuine new cable command
     bool noGroupVersions = false; // twin: use the two-player cable arbiter in a group
     bool noReloadSync = false;  // twin: ignore a same-process save reload (no re-gate, no resync with the peer)
+    bool noLineSend = false;    // twin: drawn lines are never sent (the other game shows nothing)
+    bool noLineResend = false;  // twin: a line is sent once when it changes and never again (a lost packet is lost for good)
+    bool noLineSeqCheck = false; // twin: a delayed older line overwrites a newer one
 };
 
 struct Hooks {
@@ -87,6 +98,7 @@ public:
     void applyRemote(uint64_t nowMs);                      // render thread, once per frame: apply queued remote events
     bool remotePose(RemotePose* out, uint64_t nowMs);
     std::vector<RemotePose> remotePoses(uint64_t nowMs);
+    std::vector<RemoteLine> remoteLines(uint64_t nowMs);    // the latest line each peer has on each panel (an empty line is dropped)
     // Configure the full remote roster before any threads start. Omit this call for legacy two-player discovery.
     bool setPeers(const std::vector<unsigned>& ids);
     bool ready() const;
@@ -110,7 +122,13 @@ private:
     void log(const char* m);
     void send(Bytes b);
     void sendTo(unsigned peer, const Bytes& b);
-    struct Peer { uint32_t session = 0, applied = 0; uint64_t epoch = 0, poseAt = 0; RemotePose pose; };
+    struct LineState { uint32_t seq = 0; uint64_t hash = 0; bool final = false, dirty = false; std::vector<LinePoint> pts; uint64_t sentAt = 0; };
+    struct LineIn { uint32_t seq = 0; uint32_t session = 0; bool final = false; std::vector<LinePoint> pts; uint64_t at = 0; };
+    std::map<unsigned, LineState> lines_; size_t lineCursor_ = 0; uint64_t nextLineResend_ = 0;
+    void scanLines(uint64_t now);
+    void onLine(const uint8_t* data, size_t n, uint64_t now);
+    void sendLine(unsigned panel, const LineState& s);
+    struct Peer { uint32_t session = 0, applied = 0; uint64_t epoch = 0, poseAt = 0; RemotePose pose; std::map<unsigned, LineIn> lines; };
     std::map<unsigned, Peer> peers_; bool fixedRoster_ = false;
 
     int id_; uint32_t session_; World* w_; Hooks h_; Flags f_;
