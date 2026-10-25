@@ -28,6 +28,23 @@ static std::vector<uint8_t> ChainGlb(int n) {
     q += 20 + jl; memcpy(q, &bl, 4); memcpy(q + 4, &bt, 4); memcpy(q + 8, bin.data(), bl); return out;
 }
 
+// A synthetic model with two meshes, each with its own skin on the same two joints (listed in the other order), and two flat-colour materials (red, blue).
+static std::vector<uint8_t> TwoSkinGlb() {
+    std::vector<uint8_t> bin(208, 0); float pos[9] = {0, 0, 0, 0.1f, 0, 0, 0, 0.1f, 0}, wt[12] = {1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0}; uint16_t ix[3] = {0, 1, 2};
+    for (int m = 0; m < 2; m++) { uint8_t* b = &bin[m * 104]; memcpy(b, pos, 36); for (int v = 0; v < 3; v++) b[36 + v * 4] = m == 0 ? 1 : 0; memcpy(b + 48, wt, 48); memcpy(b + 96, ix, 6); }
+    std::string j = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"buffers\":[{\"byteLength\":208}],\"bufferViews\":[";
+    for (int m = 0; m < 2; m++) { int o = m * 104; char s[400]; snprintf(s, sizeof s, "%s{\"buffer\":0,\"byteOffset\":%d,\"byteLength\":36},{\"buffer\":0,\"byteOffset\":%d,\"byteLength\":12},{\"buffer\":0,\"byteOffset\":%d,\"byteLength\":48},{\"buffer\":0,\"byteOffset\":%d,\"byteLength\":6}", m ? "," : "", o, o + 36, o + 48, o + 96); j += s; }
+    j += "],\"accessors\":[";
+    for (int m = 0; m < 2; m++) { int b = m * 4; char s[600]; snprintf(s, sizeof s, "%s{\"bufferView\":%d,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\",\"min\":[0,0,0],\"max\":[0.1,0.1,0]},{\"bufferView\":%d,\"componentType\":5121,\"count\":3,\"type\":\"VEC4\"},{\"bufferView\":%d,\"componentType\":5126,\"count\":3,\"type\":\"VEC4\"},{\"bufferView\":%d,\"componentType\":5123,\"count\":3,\"type\":\"SCALAR\"}", m ? "," : "", b, b + 1, b + 2, b + 3); j += s; }
+    j += "],\"materials\":[{\"pbrMetallicRoughness\":{\"baseColorFactor\":[1,0,0,1]}},{\"pbrMetallicRoughness\":{\"baseColorFactor\":[0,0,1,1]}}],"
+         "\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0,\"JOINTS_0\":1,\"WEIGHTS_0\":2},\"indices\":3,\"material\":0}]},{\"primitives\":[{\"attributes\":{\"POSITION\":4,\"JOINTS_0\":5,\"WEIGHTS_0\":6},\"indices\":7,\"material\":1}]}],"
+         "\"nodes\":[{\"children\":[1]},{\"translation\":[1,0,0],\"children\":[2]},{\"translation\":[1,0,0]},{\"mesh\":0,\"skin\":0},{\"mesh\":1,\"skin\":1}],"
+         "\"skins\":[{\"joints\":[1,2]},{\"joints\":[2,1]}],\"scenes\":[{\"nodes\":[0,3,4]}]}"; while (j.size() % 4) j += ' ';
+    std::vector<uint8_t> out(12 + 8 + j.size() + 8 + bin.size()); uint32_t total = (uint32_t)out.size(), jl = (uint32_t)j.size(), bl = (uint32_t)bin.size(), mg = 0x46546C67, ver = 2, jt = 0x4E4F534A, bt = 0x004E4942;
+    uint8_t* q = out.data(); memcpy(q, &mg, 4); memcpy(q + 4, &ver, 4); memcpy(q + 8, &total, 4); memcpy(q + 12, &jl, 4); memcpy(q + 16, &jt, 4); memcpy(q + 20, j.data(), jl);
+    q += 20 + jl; memcpy(q, &bl, 4); memcpy(q + 4, &bt, 4); memcpy(q + 8, bin.data(), bl); return out;
+}
+
 int main(int argc, char** argv) {
     std::ifstream f(argv[1], std::ios::binary); std::vector<uint8_t> file((std::istreambuf_iterator<char>(f)), {});
     wm::Model m; std::string err;
@@ -214,6 +231,17 @@ int main(int argc, char** argv) {
           CHECK(Near(M2[6] * en + M2[14], wm::kCameraEye, 2e-3f), "negative: the eyes are %.3f m above the feet, the camera is %.3f", M2[6] * en + M2[14], wm::kCameraEye);
         }
         wm::Fit nf = wm::FitToEye(em, 1.0f, "nothing"); CHECK(Near((em.bmax[1] - em.bmin[1]) * nf.scale, 1.0f / 0.92f, 1e-3f), "no eye joints: the model is %.3f m high", (em.bmax[1] - em.bmin[1]) * nf.scale);
+    }
+
+    // several skins on one skeleton feed one joint list, and every mesh is bound through its own skin's order; flat-colour materials keep their colour per vertex
+    {
+        std::vector<uint8_t> g = TwoSkinGlb(); wm::Model sm; std::string se; bool ok = wm::LoadGlb(g.data(), g.size(), &sm, &se); CHECK(ok, "two skins: %s", se.c_str());
+        if (ok) {
+            CHECK(sm.joints.size() == 2 && sm.joints[0] == 1 && sm.joints[1] == 2 && sm.verts.size() == 6, "two skins: %zu joints (nodes %d %d), %zu vertices", sm.joints.size(), sm.joints.size() > 0 ? sm.joints[0] : -1, sm.joints.size() > 1 ? sm.joints[1] : -1, sm.verts.size());
+            CHECK(sm.verts[0].joints[0] == 1 && sm.verts[3].joints[0] == 1, "two skins: the first mesh (skin joint 1 = node 2) is bound to joint %d, the second (skin joint 0 = node 2) to joint %d, both wanted 1", sm.verts[0].joints[0], sm.verts[3].joints[0]);
+            CHECK(sm.verts[0].col[0] == 255 && sm.verts[0].col[1] == 0 && sm.verts[0].col[2] == 0 && sm.verts[0].col[3] == 0 && sm.verts[3].col[0] == 0 && sm.verts[3].col[2] == 255 && sm.verts[3].col[3] == 0,
+                  "flat colours: first mesh (%d %d %d %d), second (%d %d %d %d), wanted red and blue with no texture", sm.verts[0].col[0], sm.verts[0].col[1], sm.verts[0].col[2], sm.verts[0].col[3], sm.verts[3].col[0], sm.verts[3].col[1], sm.verts[3].col[2], sm.verts[3].col[3]);
+        }
     }
     printf("%s: %d checks, %d failed\n", g_fail ? "FAILED" : "ok", g_n, g_fail);
     return g_fail ? 1 : 0;

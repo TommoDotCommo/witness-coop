@@ -3,7 +3,7 @@ MODELS = ../../assets/models
 GLB = $(MODELS)/cesium-man.glb $(MODELS)/fox.glb $(MODELS)/rigged-figure.glb
 BUILD = build
 SRC = model.cpp tests/model_test.cpp
-MUTANTS = IBM_ORDER NO_LOOP NO_NORMALIZE MIRROR NO_TELEPORT_GUARD NO_RUN MAX_JOINTS NO_BLEND NO_RUNREF EYE_IBM EYE_BIND EYE_NEG
+MUTANTS = IBM_ORDER NO_LOOP NO_NORMALIZE MIRROR NO_TELEPORT_GUARD NO_RUN MAX_JOINTS NO_BLEND NO_RUNREF EYE_IBM EYE_BIND EYE_NEG ONE_SKIN NO_FLAT_COLOR
 $(BUILD)/model-test: $(SRC) model.h ../third_party/cgltf.h
 	mkdir -p $(BUILD)
 	g++ -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter -o $@ $(SRC)

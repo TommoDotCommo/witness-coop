@@ -17,6 +17,7 @@ for d in "${dirs[@]}"; do
     mv "$d/AnselSDK64.dll" "$d/AnselSDK64_real.dll"
   fi
   cp "$ROOT/proxy/AnselSDK64.dll" "$d/AnselSDK64.dll"
-  mkdir -p "$d/witness_models" && cp -f "$ROOT"/assets/models/*.glb "$ROOT"/assets/models/*.txt "$d/witness_models/"      # the character models (model=<name> in the cfg picks one, model=none the flat puppet)
+  mkdir -p "$d/witness_models" && rm -f "$d/witness_models/"* && cp -f "$ROOT"/assets/models/*.glb "$ROOT"/assets/models/*.txt "$d/witness_models/"
+  if [ -n "${WITNESS_EXTRA_MODELS:-}" ] && [ -d "$WITNESS_EXTRA_MODELS" ]; then cp -f "$WITNESS_EXTRA_MODELS"/*.glb "$WITNESS_EXTRA_MODELS"/*.txt "$d/witness_models/" 2>/dev/null || true; fi      # more models from a folder of your own (not part of the repo): WITNESS_EXTRA_MODELS=<folder>      # the character models (model=<name> in the cfg picks one, model=none the flat puppet)
   echo "installed into $d"
 done

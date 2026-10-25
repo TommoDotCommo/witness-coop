@@ -17,6 +17,8 @@ extern HMODULE g_selfModule();
 
 // Offsets from the module base, build 11370412 (verified by static scan and live reads).
 static const uintptr_t kGlobals = 0x62D0A0, kCamPos = 0x6304B0 + 0x10, kCamAng = 0x6303EC;
+static const uintptr_t kPauseDimA = 0x630070, kPauseDimB = 0x62FF3C;      // two floats: 0.0 in every state but the pause menu, where they are 1.0 (a state table: walking, dev menu, at a panel, in and out of a puzzle, after F7, pause menu)
+static const uintptr_t kPausedOld = 0x62DAC4;      // the first candidate, WRONG: it flips with F6 / F7 and with entering a puzzle; only kept for the mutant pause_wrong_flag=1
 static const float kVFovDeg = 60.0f;                 // calibrated: horizontal ~89 deg at 16:9
 #include "coop.h"
 #include "game.h"
@@ -86,6 +88,13 @@ static void TakeShot(IDXGISwapChain* sc, const char* name) {
 }
 
 static bool Readable(const void* p, size_t n) { return !IsBadReadPtr(p, n); }
+// The game's pause menu is open: nothing of ours may be drawn over it (puppets, shared lines, name tags).
+static bool GamePaused() {
+    if (GetCfg().noPauseHide) return false; uintptr_t base = (uintptr_t)GetModuleHandleA(nullptr);
+    if (GetCfg().pauseWrongFlag) { const DWORD* p = (const DWORD*)(base + kPausedOld); return Readable(p, 4) && *p == 1; }
+    const float *a = (const float*)(base + kPauseDimA), *b = (const float*)(base + kPauseDimB);
+    return Readable(a, 4) && Readable(b, 4) && *a > 0.01f && *b > 0.01f;
+}
 
 // Fills ndc center for a world position. Returns false if behind the camera.
 static bool Project(const float* cam, float th, float ph, const float* w, float aspect, float* nx, float* ny) {
@@ -166,6 +175,10 @@ static void DrawMarkers(IDXGISwapChain* sc) {
     uintptr_t glob = Readable((void*)(base + kGlobals), 8) ? *(uintptr_t*)(base + kGlobals) : 0;
     uintptr_t arr = glob && Readable((void*)(glob + 0x18), 8) ? *(uintptr_t*)(glob + 0x18) : 0;
     auto remotes = CoopGetRemotes();
+    if (GamePaused()) {
+        if (ModelGpuReady()) { wm::Cam wc = {{cam[0], cam[1], cam[2]}, ang[0], ang[1], kVFovDeg, aspect, 0.1f, 2000.0f}; float p[3] = {}; ModelGpuDraw(rtv, td.Width, td.Height, wc, false, 0, p, 0); }      // draws nothing and says so in the stats
+        rtv->Release(); bb->Release(); return;
+    }
     if (ModelGpuReady()) {      // the character model replaces the flat puppet
         wm::Cam wc = {{cam[0], cam[1], cam[2]}, ang[0], ang[1], kVFovDeg, aspect, 0.1f, 2000.0f};
         bool first = true;
@@ -266,7 +279,7 @@ static void DrawNameTags(float W, float H) {
     uintptr_t base = (uintptr_t)GetModuleHandleA(nullptr);
     const float* cam = (const float*)(base + kCamPos); const float* ang = (const float*)(base + kCamAng);
     std::vector<TagInfo> now;
-    if (TagsWanted() && !IsBadReadPtr(cam, 12) && !IsBadReadPtr(ang, 8)) for (const auto& rp : CoopGetRemotes()) if (rp.ageMs < 2000) {
+    if (TagsWanted() && !GamePaused() && !IsBadReadPtr(cam, 12) && !IsBadReadPtr(ang, 8)) for (const auto& rp : CoopGetRemotes()) if (rp.ageMs < 2000) {
         TagInfo t = {}; t.id = rp.id; strncpy(t.name, rp.name[0] ? rp.name : "?", sizeof t.name - 1); t.ping = rp.pingMs;
         float head[3] = {rp.pos[0], rp.pos[1], rp.pos[2] + 0.38f}, nx, ny, d[3] = {rp.pos[0] - cam[0], rp.pos[1] - cam[1], rp.pos[2] - cam[2]};
         t.dist = sqrtf(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
@@ -282,7 +295,7 @@ static void DrawNameTags(float W, float H) {
     }
     // the player the crosshair is on: close to the screen centre and not too far; the nearest such player gets the "press V" prompt
     unsigned aimed = 0; float best = 1e9f; const char* aimedName = nullptr; int aimedPing = -1;
-    if (TagsWanted() && !IsBadReadPtr(cam, 12) && !IsBadReadPtr(ang, 8)) for (const auto& rp : CoopGetRemotes()) if (rp.ageMs < 2000) {
+    if (TagsWanted() && !GamePaused() && !IsBadReadPtr(cam, 12) && !IsBadReadPtr(ang, 8)) for (const auto& rp : CoopGetRemotes()) if (rp.ageMs < 2000) {
         float body[3] = {rp.pos[0], rp.pos[1], rp.pos[2] - 0.55f}, nx, ny, d[3] = {rp.pos[0] - cam[0], rp.pos[1] - cam[1], rp.pos[2] - cam[2]};
         float dist = sqrtf(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
         if (dist < 60.0f && Project(cam, ang[0], ang[1], body, W / H, &nx, &ny) && fabsf(nx) < 0.07f * 9.0f / std::max(dist, 9.0f) + 0.035f && fabsf(ny) < 0.30f && dist < best) { best = dist; aimed = rp.id; aimedName = rp.name; aimedPing = rp.pingMs; }

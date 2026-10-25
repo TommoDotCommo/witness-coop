@@ -74,23 +74,37 @@ bool LoadGlb(const uint8_t* data, size_t n, Model* out, std::string* err) {
         Decompose(loc, o.t, o.r, o.s);
         m.nodes.push_back(o);
     }
-    const cgltf_skin* skin = d->skins_count ? &d->skins[0] : nullptr;
-    if (skin) {
-        if (skin->joints_count + 1 > (size_t)kMaxJoints) return fail("too many joints (limit 255)");
-        for (size_t j = 0; j < skin->joints_count; j++) m.joints.push_back((int)(skin->joints[j] - d->nodes));
-        m.ibm.assign(skin->joints_count * 16, 0);
-        for (size_t j = 0; j < skin->joints_count; j++) {
-            if (skin->inverse_bind_matrices) cgltf_accessor_read_float(skin->inverse_bind_matrices, j, &m.ibm[j * 16], 16); else Identity(&m.ibm[j * 16]);
+    // Every skin of the file feeds one joint list (a model may have one skin per mesh, all on the same skeleton): a joint is a node, taken once, with the first inverse bind matrix seen.
+    std::vector<std::vector<int>> skinJoint(d->skins_count);
+    for (size_t si = 0; si < d->skins_count; si++) {
+        const cgltf_skin* sk = &d->skins[si];
+        for (size_t j = 0; j < sk->joints_count; j++) {
+            int node = (int)(sk->joints[j] - d->nodes), at = -1;
+            for (size_t q = 0; q < m.joints.size(); q++) if (m.joints[q] == node) { at = (int)q; break; }
+#ifdef WM_MUT_ONE_SKIN
+            if (si > 0) at = 0;       // only the first skin counts: the other meshes are bound to the wrong joints
+#endif
+            if (at < 0) {
+                if (m.joints.size() + 2 > (size_t)kMaxJoints) return fail("too many joints (limit 255)");
+                at = (int)m.joints.size(); m.joints.push_back(node); m.ibm.resize((at + 1) * 16);
+                if (sk->inverse_bind_matrices) cgltf_accessor_read_float(sk->inverse_bind_matrices, j, &m.ibm[at * 16], 16); else Identity(&m.ibm[at * 16]);
+            }
+            skinJoint[si].push_back(at);
         }
     }
     // global bind transforms, for geometry that is not skinned
     std::vector<float> g(d->nodes_count * 16);
     for (size_t i = 0; i < d->nodes_count; i++) cgltf_node_transform_world(&d->nodes[i], &g[i * 16]);
     const int ident = (int)m.joints.size();
+    // the model has one texture: the base colour image of the first textured material; the other materials are flat colour (their base colour factor)
     const cgltf_image* img = nullptr;
+    for (size_t ni = 0; ni < d->nodes_count && !img; ni++) if (d->nodes[ni].mesh) for (size_t pi = 0; pi < d->nodes[ni].mesh->primitives_count && !img; pi++) {
+        const cgltf_material* mt = d->nodes[ni].mesh->primitives[pi].material;
+        if (mt && mt->has_pbr_metallic_roughness && mt->pbr_metallic_roughness.base_color_texture.texture) { img = mt->pbr_metallic_roughness.base_color_texture.texture->image; memcpy(m.baseColor, mt->pbr_metallic_roughness.base_color_factor, 16); }
+    }
     for (size_t ni = 0; ni < d->nodes_count; ni++) {
         const cgltf_node* nd = &d->nodes[ni]; if (!nd->mesh) continue;
-        bool skinned = skin && nd->skin == skin;
+        bool skinned = nd->skin != nullptr; const std::vector<int>* sj = skinned ? &skinJoint[nd->skin - d->skins] : nullptr;
         for (size_t pi = 0; pi < nd->mesh->primitives_count; pi++) {
             const cgltf_primitive* p = &nd->mesh->primitives[pi];
             if (p->type != cgltf_primitive_type_triangles) continue;
@@ -103,19 +117,25 @@ bool LoadGlb(const uint8_t* data, size_t n, Model* out, std::string* err) {
                 else if (at.type == cgltf_attribute_type_weights) wt = at.data;
             }
             if (!pos) continue;
-            if (p->material && !img && p->material->has_pbr_metallic_roughness && p->material->pbr_metallic_roughness.base_color_texture.texture) {
-                img = p->material->pbr_metallic_roughness.base_color_texture.texture->image;
-                memcpy(m.baseColor, p->material->pbr_metallic_roughness.base_color_factor, 16);
+            float colf[4] = {1, 1, 1, 1}; bool samples = false;
+            if (p->material && p->material->has_pbr_metallic_roughness) {
+                const cgltf_pbr_metallic_roughness& pb = p->material->pbr_metallic_roughness; memcpy(colf, pb.base_color_factor, 16);
+                samples = img && pb.base_color_texture.texture && pb.base_color_texture.texture->image == img;
+#ifdef WM_MUT_NO_FLAT_COLOR
+                colf[0] = colf[1] = colf[2] = 1; samples = true;       // every material is taken for the textured one: flat colours are lost
+#endif
             }
             uint32_t base = (uint32_t)m.verts.size(); bool useSkin = skinned && jt && wt;
             for (size_t i = 0; i < pos->count; i++) {
                 Vertex v = {}; cgltf_accessor_read_float(pos, i, v.pos, 3);
+                for (int k = 0; k < 3; k++) v.col[k] = (uint8_t)(std::min(1.0f, std::max(0.0f, colf[k])) * 255.0f + 0.5f);
+                v.col[3] = samples ? 255 : 0;
                 if (nrm) cgltf_accessor_read_float(nrm, i, v.nrm, 3); else v.nrm[1] = 1;
                 if (uv) cgltf_accessor_read_float(uv, i, v.uv, 2);
                 if (useSkin) {
                     cgltf_uint j4[4] = {0, 0, 0, 0}; cgltf_accessor_read_uint(jt, i, j4, 4); cgltf_accessor_read_float(wt, i, v.weights, 4);
                     float sum = v.weights[0] + v.weights[1] + v.weights[2] + v.weights[3];
-                    for (int k = 0; k < 4; k++) { v.joints[k] = (uint8_t)j4[k]; if (sum > 0) v.weights[k] /= sum; }
+                    for (int k = 0; k < 4; k++) { v.joints[k] = (uint8_t)((size_t)j4[k] < sj->size() ? (*sj)[j4[k]] : ident); if (sum > 0) v.weights[k] /= sum; }
                     if (sum <= 0) { v.joints[0] = (uint8_t)ident; v.weights[0] = 1; }
                 } else {      // bake the node's bind transform and bind to the identity joint
                     const float* G = &g[ni * 16]; float p3[3] = {v.pos[0], v.pos[1], v.pos[2]}, n3[3] = {v.nrm[0], v.nrm[1], v.nrm[2]};

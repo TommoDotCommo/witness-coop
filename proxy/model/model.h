@@ -14,7 +14,7 @@ constexpr int kMaxJoints = 128;      // the old limit: a 151-joint character is 
 constexpr int kMaxJoints = 256;      // including the extra identity joint that unskinned geometry is bound to (joint indices are bytes; the shader's bones[] array has the same size)
 #endif
 
-struct Vertex { float pos[3], nrm[3], uv[2]; uint8_t joints[4]; float weights[4]; };
+struct Vertex { float pos[3], nrm[3], uv[2]; uint8_t joints[4]; float weights[4]; uint8_t col[4]; };      // col: the material's base colour factor; col[3] = 255 when the vertex samples the model's texture, 0 when it is flat colour
 
 struct Node { int parent = -1; float t[3] = {0, 0, 0}, r[4] = {0, 0, 0, 1}, s[3] = {1, 1, 1}; std::string name; };
 

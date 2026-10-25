@@ -20,7 +20,10 @@ struct Cfg {
     bool noModelSelect = false;  // test mutant: F6 / F7 and the model command do nothing
     bool noGroupAvatarState = false; // mutant: share one gait state across all remote players
     bool noModelGait = false;    // test mutant: the figure never walks, whatever the player does
+    bool modelByPlayer = false;  // every remote player is drawn with a different model of witness_models\ (player 1 the selected one, 2 the next, ...)
     bool noModelDepth = false;   // test mutant: draw the model over walls
+    bool pauseWrongFlag = false; // test mutant: the first, wrong pause flag (it flips with F6 / F7 and with entering a puzzle)
+    bool noPauseHide = false;    // test mutant: draw puppets, lines and name tags over the pause menu
     bool skipEntityZero = false; // test mutant: restore the old census that lost the second tutorial door
     bool devMenu = false;        // dev_menu=1: the F8 dev menu (map, teleport, nearby puzzles); off in a normal install
     bool partnerView = false;    // (old switch, ignored: POV pictures are on unless partner_view=0)

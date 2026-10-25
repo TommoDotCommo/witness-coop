@@ -10,3 +10,6 @@ witness_cmd.txt.tmp
 witness_cmd.taken
 tools/psolve/psolve
 tools/win/wdraw_snapshot.py
+
+# pictures of the game taken by tools/showcase.sh (they are not part of the repository)
+showcase/
