@@ -229,7 +229,8 @@ def straight_on(node, vx, vy):      # does an edge leave this node in (about) th
         if (wx * vx + wy * vy) / wn > 0.9: return True
     return False
 
-per_px = None      # mouse counts the line needs per screen pixel along an edge, learned on the first long edge
+per_px = None      # (kept for the end stub) mouse counts per screen pixel on the last edge walked
+gain = {}          # counts per pixel, learned per direction (h / v): when the panel's width and height are scaled differently from what the projection assumed (the swamp panels), one number overshoots the other direction
 for i in range(1, len(path)):
     (x0, y0), (x1, y1) = node_px(path[i - 1]), node_px(path[i])
     ux, uy = x1 - x0, y1 - y0; norm = math.hypot(ux, uy) or 1.0; vx, vy = ux / norm, uy / norm
@@ -238,16 +239,17 @@ for i in range(1, len(path)):
         mouse(vx, vy, (per_px or 2.9) * norm + float(os.environ.get('WDRAW_STUB_EXTRA') or 40))
         dbg('end stub pushed', round((per_px or 2.9) * norm + 40), 'counts, traced', traced())
         continue
-    used = 0.0
-    if per_px and norm > 4:
-        first = 0.96 * per_px * norm; mouse(vx, vy, first); used += first
+    used = 0.0; axis_ = 'h' if abs(vx) >= abs(vy) else 'v'
+    if gain.get(axis_) and norm > 4:
+        first = 0.96 * gain[axis_] * norm; mouse(vx, vy, first); used += first
     for _ in range(250):
         if traced() >= i + 1: break
         mouse(vx, vy, 2); used += 2
     else: done(False, 'stuck before node %d (path index %d)' % (path[i], i), traced(), dist)
     if traced() > i + 1: done(False, 'overshot node %d: the line ran past it (traced %d, wanted %d)' % (path[i], traced(), i + 1), traced(), dist)
     if not straight_on(path[i], vx, vy): mouse(vx, vy, 2)      # the count flips as the tip reaches the node: a hair further so a turn is taken at the node, not before it
-    if per_px is None and norm > 14: per_px = used / norm
+    if gain.get(axis_) is None and norm > 14: gain[axis_] = used / norm
+    if norm > 14: per_px = used / norm
     dbg('segment', path[i - 1], '->', path[i], 'counts %.0f' % used, 'per px', per_px and round(per_px, 2), 'traced', traced())
 
 # ---- finishing ------------------------------------------------------------------------------------------------------------------------------
