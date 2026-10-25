@@ -72,6 +72,13 @@ struct Flags {   // all off by default
     bool noLineSend = false;    // twin: drawn lines are never sent (the other game shows nothing)
     bool noLineResend = false;  // twin: a line is sent once when it changes and never again (a lost packet is lost for good)
     bool noLineSeqCheck = false; // twin: a delayed older line overwrites a newer one
+    bool noSocialResend = false;  // twin: chat, pings and strokes are sent once and never again (a lost packet is lost for good)
+    bool noSocialDedupe = false;  // twin: a resent message is delivered again
+    bool noSocialOrder = false;   // twin: a message that arrives before an earlier one is taken at once (and the earlier one is then a duplicate)
+    bool noSocialEpochReset = false; // twin: a restarted sender's new messages are taken for old ones (its numbers start again)
+    bool noPresenceSend = false;  // twin: presence is never sent
+    bool noPresenceSeq = false;   // twin: a delayed older presence overwrites a newer one
+    bool noPresenceExpiry = false; // twin: typing and speaking stay on for ever when the peer goes quiet
 };
 
 struct Hooks {
@@ -87,7 +94,15 @@ struct Hooks {
     std::function<void()> onRestartSeen;                                                              // the peer (re)started
 };
 
-struct RemotePose { bool valid = false; float pos[3] = {0, 0, 0}, ang[2] = {0, 0}; uint64_t ageMs = 0; unsigned seq = 0, id = 0; int pingMs = -1; std::string name; };   // pingMs: round trip in ms, -1 until measured or when the peer went quiet
+// Social layer: presence (character, emote, typing, speaking: small unreliable state, repeated), and reliable ordered messages (chat, location pings, drawing strokes).
+struct Presence { std::string character; uint8_t emote = 0, emoteSeq = 0; bool typing = false, speaking = false; bool operator==(const Presence& o) const { return character == o.character && emote == o.emote && emoteSeq == o.emoteSeq && typing == o.typing && speaking == o.speaking; } };
+enum SocialType : uint8_t { SOC_CHAT = 1, SOC_MARK = 2, SOC_STROKE = 3, SOC_STROKE_CLEAR = 4 };
+constexpr size_t kMaxChatBytes = 400, kMaxStrokePoints = 60;
+struct ChatLine { unsigned from = 0; uint32_t seq = 0; std::string text; };
+struct MarkMsg { unsigned from = 0; uint32_t seq = 0; uint8_t kind = 0; float pos[3] = {0, 0, 0}; };
+struct StrokeMsg { unsigned from = 0; uint32_t seq = 0, id = 0; bool begin = false, end = false, clear = false; uint8_t color = 0; std::vector<float> pts; };      // pts: x y z per point; clear: erase stroke `id` (0: all of the sender's)
+
+struct RemotePose { bool valid = false; float pos[3] = {0, 0, 0}, ang[2] = {0, 0}; uint64_t ageMs = 0; unsigned seq = 0, id = 0; int pingMs = -1; std::string name; std::string character; uint8_t emote = 0, emoteSeq = 0; bool typing = false, speaking = false; };   // pingMs: round trip in ms, -1 until measured or when the peer went quiet
 
 struct Stats { uint32_t sent = 0, resent = 0, inOrder = 0, dup = 0, ooo = 0, acked = 0, emittedPanels = 0, emittedDoors = 0, appliedPanels = 0, appliedDoors = 0, resyncs = 0, emittedPowers = 0, appliedPowers = 0, reloads = 0, emittedCables = 0, appliedCables = 0; };
 
@@ -106,6 +121,15 @@ public:
     // Configure the full remote roster before any threads start. Omit this call for legacy two-player discovery.
     bool setPeers(const std::vector<unsigned>& ids);
     void setName(const std::string& name);                  // this player's name, sent with every ping (24 bytes at most)
+    // social layer (any thread)
+    void setPresence(const Presence& p);                     // this player's character, emote, typing and speaking flags: sent at once when they change, and every second
+    bool sendChat(const std::string& text);                  // reliable, ordered; false when empty (longer than kMaxChatBytes is cut)
+    bool sendMark(uint8_t kind, const float pos[3]);         // a location ping
+    bool sendStroke(uint32_t id, bool begin, bool end, uint8_t color, const float* pts, size_t count);   // count <= kMaxStrokePoints, pts: x y z each
+    bool sendStrokeClear(uint32_t id);                       // 0: every stroke of mine
+    std::vector<ChatLine> takeChat();                        // received, in order, each once; taking removes them
+    std::vector<MarkMsg> takeMarks();
+    std::vector<StrokeMsg> takeStrokes();
     bool ready() const;
     Stats stats() const;
     size_t unacked() const;                                // events sent but not yet acknowledged
@@ -132,10 +156,20 @@ private:
     std::string name_; uint32_t pingNonce_ = 0; uint64_t nextPing_ = 0;
     void onPing(const uint8_t* data, size_t n, uint64_t now);
     std::map<unsigned, LineState> lines_; size_t lineCursor_ = 0; uint64_t nextLineResend_ = 0;
+    struct SocOut { uint32_t seq = 0; uint8_t type = 0; Bytes payload; bool sent = false; uint64_t lastSent = 0; std::set<unsigned> acked; };
+    std::vector<SocOut> socOut_; uint64_t socEpoch_ = 0; uint32_t socNext_ = 1, socRestarts_ = 0;
+    Presence pres_; bool presDirty_ = true; uint32_t presSeq_ = 0; uint64_t nextPres_ = 0;
+    std::vector<ChatLine> chatIn_; std::vector<MarkMsg> markIn_; std::vector<StrokeMsg> strokeIn_;
+    bool socialQueue(uint8_t type, Bytes payload);
+    void socialTick(uint64_t now);
+    void onSocial(const uint8_t* data, size_t n, uint64_t now);
+    void onSocialAck(const uint8_t* data, size_t n);
+    void onPresence(const uint8_t* data, size_t n, uint64_t now);
+    void sendPresence();
     void scanLines(uint64_t now);
     void onLine(const uint8_t* data, size_t n, uint64_t now);
     void sendLine(unsigned panel, const LineState& s);
-    struct Peer { uint32_t session = 0, applied = 0; uint64_t epoch = 0, poseAt = 0; RemotePose pose; std::map<unsigned, LineIn> lines; std::string name; uint32_t lastNonce = 0, lastT0 = 0; float ping = -1; uint64_t pongAt = 0; };
+    struct Peer { uint32_t session = 0, applied = 0; uint64_t epoch = 0, poseAt = 0; RemotePose pose; std::map<unsigned, LineIn> lines; std::string name; uint32_t lastNonce = 0, lastT0 = 0; float ping = -1; uint64_t pongAt = 0; uint64_t socEpoch = 0; uint32_t socApplied = 0, presSeq = 0, presSession = 0; uint64_t presAt = 0; Presence pres; };
     std::map<unsigned, Peer> peers_; bool fixedRoster_ = false;
 
     int id_; uint32_t session_; World* w_; Hooks h_; Flags f_;

@@ -10,6 +10,9 @@ namespace {
 constexpr uint32_t kMagicPose = 0x34505457, kMagicEv = 0x34455457, kMagicAck = 0x34415457;   // "WTP4" "WTE4" "WTA4"
 constexpr uint32_t kMagicPing = 0x34515457;   // "WTQ4": ping and pong, carry the sender's name
 constexpr size_t kPingLen = 48, kNameLen = 24;
+constexpr uint32_t kMagicSoc = 0x34585457, kMagicSocAck = 0x344B5457, kMagicPres = 0x34535457;   // "WTX4" a reliable social message, "WTK4" its acknowledgement, "WTS4" presence
+constexpr size_t kPresLen = 48, kSocHeader = 28, kSocMax = 900, kSocAckLen = 24, kPresName = 24;
+constexpr uint64_t kPresExpiryMs = 4000;
 constexpr uint32_t kMagicLine = 0x344C5457;   // "WTL4": a drawn line, best effort, the whole line every time
 constexpr uint32_t kGroupPose = 0x35505457, kGroupEv = 0x35455457, kGroupAck = 0x35415457;
 constexpr size_t kGroupEvLen = 44;
@@ -91,6 +94,8 @@ void SyncCore::tick(uint64_t now) {
         for (size_t i = 0; i < kNameLen; ++i) b.push_back(!f_.noNameSend && i < name_.size() ? uint8_t(name_[i]) : 0);
         send(finish(std::move(b)));
     }
+    if (!f_.noPresenceSend && (presDirty_ || now >= nextPres_)) { presDirty_ = false; nextPres_ = now + 1000; sendPresence(); }
+    if (!socOut_.empty()) socialTick(now);
     for (auto& kv : lines_) {      // a changed line goes out at once while it is being drawn at most every 100 ms, a finished or cleared one immediately
         LineState& s = kv.second;
         if (s.dirty && (s.final || s.pts.empty() || now >= s.sentAt + 100)) { sendLine(kv.first, s); s.dirty = false; s.sentAt = now; }
@@ -130,6 +135,9 @@ void SyncCore::onPacket(const uint8_t* d, size_t n, uint64_t now) {
     uint32_t magic = get32(d);
     if (magic == kMagicLine) { onLine(d, n, now); return; }
     if (magic == kMagicPing) { onPing(d, n, now); return; }
+    if (magic == kMagicSoc) { onSocial(d, n, now); return; }
+    if (magic == kMagicSocAck) { onSocialAck(d, n); return; }
+    if (magic == kMagicPres) { onPresence(d, n, now); return; }
     Version version = {};
     if (fixedRoster_) {
         if (magic == kGroupEv && n == kGroupEvLen) { version = {get64(d + 28), get32(d + 36)}; magic = kMagicEv; }
@@ -567,7 +575,10 @@ std::vector<RemotePose> SyncCore::remotePoses(uint64_t now) {
     for (const auto& p : peers_) if (p.second.pose.valid) {
         auto pose = p.second.pose; pose.ageMs = now - p.second.poseAt;
         bool fresh = f_.noPingExpiry || (p.second.pongAt && now - p.second.pongAt < 10000);
-        pose.pingMs = (p.second.ping >= 0 && fresh) ? int(p.second.ping + 0.5f) : -1; pose.name = p.second.name; poses.push_back(pose);
+        pose.pingMs = (p.second.ping >= 0 && fresh) ? int(p.second.ping + 0.5f) : -1; pose.name = p.second.name;
+        bool presFresh = f_.noPresenceExpiry || (p.second.presAt && now - p.second.presAt < kPresExpiryMs);
+        pose.character = p.second.pres.character; pose.emote = p.second.pres.emote; pose.emoteSeq = p.second.pres.emoteSeq; pose.typing = presFresh && p.second.pres.typing; pose.speaking = presFresh && p.second.pres.speaking;
+        poses.push_back(pose);
     }
     return poses;
 }
@@ -575,5 +586,112 @@ bool SyncCore::ready() const { Guard g(h_); return ready_; }
 Stats SyncCore::stats() const { Guard g(h_); return st_; }
 size_t SyncCore::unacked() const { Guard g(h_); size_t n = 0; for (auto& s : sent_) if (!s.acked) n++; return n; }
 size_t SyncCore::queuedRemote() const { Guard g(h_); return recvQ_.size(); }
+
+
+// ------------------------------------------------------------------------------------------------ social layer
+// A reliable message: magic, from, epoch, seq, type, len, payload, checksum. Each sender numbers its messages (a new epoch starts the numbers again); a receiver takes them in
+// order, once, and answers with the highest number it has taken (WTK4: magic, from, epoch, applied, checksum); the sender resends what a peer has not acknowledged every 250 ms.
+// Presence (WTS4: magic, from, session, seq, emote, emoteSeq, flags, pad, character[24], checksum) is state: the newest wins, and typing / speaking end when it stops arriving.
+void SyncCore::setPresence(const Presence& p) { Guard g(h_); if (!(p == pres_)) { pres_ = p; presDirty_ = true; } }
+void SyncCore::sendPresence() {
+    Bytes b; put32(b, kMagicPres); put32(b, uint32_t(id_)); put32(b, session_); put32(b, ++presSeq_);
+    b.push_back(pres_.emote); b.push_back(pres_.emoteSeq); b.push_back(uint8_t((pres_.typing ? 1 : 0) | (pres_.speaking ? 2 : 0))); b.push_back(0);
+    for (size_t i = 0; i < kPresName; ++i) b.push_back(i < pres_.character.size() ? uint8_t(pres_.character[i]) : 0);
+    send(finish(std::move(b)));
+}
+void SyncCore::onPresence(const uint8_t* d, size_t n, uint64_t now) {
+    if (n != kPresLen) return;
+    uint32_t from = get32(d + 4), session = get32(d + 8), seq = get32(d + 12);
+    if (int(from) == id_) return;
+    Guard g(h_);
+    auto pi = peers_.find(from);
+    if (pi == peers_.end()) { if (fixedRoster_ || !peers_.empty()) return; pi = peers_.emplace(from, Peer{}).first; }
+    Peer& peer = pi->second;
+    bool newer = session > peer.presSession || (session == peer.presSession && seq > peer.presSeq);
+    if (!newer && !f_.noPresenceSeq) return;
+    peer.presSession = session; peer.presSeq = seq; peer.presAt = now;
+    peer.pres.emote = d[16]; peer.pres.emoteSeq = d[17]; peer.pres.typing = (d[18] & 1) != 0; peer.pres.speaking = (d[18] & 2) != 0;
+    char nm[kPresName + 1] = {}; memcpy(nm, d + 20, kPresName); peer.pres.character = nm;
+}
+bool SyncCore::socialQueue(uint8_t type, Bytes payload) {
+    if (payload.size() > kSocMax) return false;
+    Guard g(h_);
+    if (socOut_.size() >= 1024) {      // a peer that never acknowledges must not make this grow for ever: a new stream (the receivers start counting again)
+        socEpoch_ = (uint64_t(session_) << 16) | ++socRestarts_; socNext_ = 1; socOut_.clear();
+    }
+    if (!socEpoch_) socEpoch_ = uint64_t(session_) << 16;
+    SocOut o; o.seq = socNext_++; o.type = type; o.payload = std::move(payload); socOut_.push_back(std::move(o)); return true;
+}
+bool SyncCore::sendChat(const std::string& text) {
+    std::string t = text.substr(0, kMaxChatBytes); if (t.empty()) return false;
+    return socialQueue(SOC_CHAT, Bytes(t.begin(), t.end()));
+}
+bool SyncCore::sendMark(uint8_t kind, const float pos[3]) { Bytes b; b.push_back(kind); for (int i = 0; i < 3; ++i) putF(b, pos[i]); return socialQueue(SOC_MARK, std::move(b)); }
+bool SyncCore::sendStroke(uint32_t id, bool begin, bool end, uint8_t color, const float* pts, size_t count) {
+    if (count > kMaxStrokePoints) return false;
+    Bytes b; put32(b, id); b.push_back(uint8_t((begin ? 1 : 0) | (end ? 2 : 0))); b.push_back(color); b.push_back(uint8_t(count));
+    for (size_t i = 0; i < count * 3; ++i) putF(b, pts[i]);
+    return socialQueue(SOC_STROKE, std::move(b));
+}
+bool SyncCore::sendStrokeClear(uint32_t id) { Bytes b; put32(b, id); return socialQueue(SOC_STROKE_CLEAR, std::move(b)); }
+std::vector<ChatLine> SyncCore::takeChat() { Guard g(h_); auto v = std::move(chatIn_); chatIn_.clear(); return v; }
+std::vector<MarkMsg> SyncCore::takeMarks() { Guard g(h_); auto v = std::move(markIn_); markIn_.clear(); return v; }
+std::vector<StrokeMsg> SyncCore::takeStrokes() { Guard g(h_); auto v = std::move(strokeIn_); strokeIn_.clear(); return v; }
+
+void SyncCore::socialTick(uint64_t now) {
+    std::map<unsigned, unsigned> budget;
+    for (auto& it : socOut_) {
+        if (it.sent && (f_.noSocialResend || now < it.lastSent + 250)) continue;
+        Bytes b; bool built = false, any = false;
+        auto attempt = [&](unsigned peer) {
+            if (budget[peer] >= 24) return;
+            ++budget[peer];
+            if (!built) { put32(b, kMagicSoc); put32(b, uint32_t(id_)); put64(b, socEpoch_); put32(b, it.seq); put32(b, it.type); put32(b, uint32_t(it.payload.size())); b.insert(b.end(), it.payload.begin(), it.payload.end()); b = finish(std::move(b)); built = true; }
+            sendTo(peer, b); any = true;
+        };
+        if (peers_.empty()) attempt(0); else for (const auto& peer : peers_) if (!it.acked.count(peer.first)) attempt(peer.first);
+        if (any) { it.sent = true; it.lastSent = now; }
+    }
+    auto done = [&](const SocOut& o) { if (peers_.empty()) return false; for (const auto& peer : peers_) if (!o.acked.count(peer.first)) return false; return true; };
+    while (!socOut_.empty() && done(socOut_.front())) socOut_.erase(socOut_.begin());
+}
+void SyncCore::onSocialAck(const uint8_t* d, size_t n) {
+    if (n != kSocAckLen) return;
+    uint32_t from = get32(d + 4), applied = get32(d + 16); uint64_t epoch = get64(d + 8);
+    if (int(from) == id_) return;
+    Guard g(h_);
+    if (epoch != socEpoch_) return;
+    for (auto& o : socOut_) if (o.seq <= applied) o.acked.insert(from);
+}
+void SyncCore::onSocial(const uint8_t* d, size_t n, uint64_t) {
+    if (n < kSocHeader + 4) return;
+    uint32_t len = get32(d + 24);
+    if (len > kSocMax || n != kSocHeader + len + 4) return;
+    uint32_t from = get32(d + 4), seq = get32(d + 16), type = get32(d + 20); uint64_t epoch = get64(d + 8);
+    if (int(from) == id_) return;
+    Guard g(h_);
+    auto pi = peers_.find(from);
+    if (pi == peers_.end()) { if (fixedRoster_ || !peers_.empty()) return; pi = peers_.emplace(from, Peer{}).first; }
+    Peer& peer = pi->second;
+    if (epoch < peer.socEpoch) return;                                                // a delayed packet of an earlier run
+    if (epoch > peer.socEpoch) { peer.socEpoch = epoch; if (!f_.noSocialEpochReset) peer.socApplied = 0; }
+    bool take = false;
+    if (seq == peer.socApplied + 1) take = true;
+    else if (seq <= peer.socApplied) take = f_.noSocialDedupe;                       // twin: the resend is delivered again
+    else if (f_.noSocialOrder) take = true;                                          // twin: ahead of the one before it
+    if (take) {
+        const uint8_t* p = d + kSocHeader;
+        if (type == SOC_CHAT && len >= 1 && len <= kMaxChatBytes) { ChatLine c; c.from = from; c.seq = seq; for (uint32_t i = 0; i < len; ++i) c.text.push_back(char(p[i])); if (chatIn_.size() >= 256) chatIn_.erase(chatIn_.begin()); chatIn_.push_back(std::move(c)); }
+        else if (type == SOC_MARK && len == 13) { MarkMsg m; m.from = from; m.seq = seq; m.kind = p[0]; for (int i = 0; i < 3; ++i) m.pos[i] = getF(p + 1 + 4 * i); if (markIn_.size() >= 256) markIn_.erase(markIn_.begin()); markIn_.push_back(m); }
+        else if (type == SOC_STROKE && len >= 7) {
+            StrokeMsg s; s.from = from; s.seq = seq; s.id = get32(p); s.begin = (p[4] & 1) != 0; s.end = (p[4] & 2) != 0; s.color = p[5]; size_t count = p[6];
+            if (count <= kMaxStrokePoints && len == 7 + count * 12) { for (size_t i = 0; i < count * 3; ++i) s.pts.push_back(getF(p + 7 + 4 * i)); if (strokeIn_.size() >= 1024) strokeIn_.erase(strokeIn_.begin()); strokeIn_.push_back(std::move(s)); }
+        }
+        else if (type == SOC_STROKE_CLEAR && len == 4) { StrokeMsg s; s.from = from; s.seq = seq; s.id = get32(p); s.clear = true; if (strokeIn_.size() >= 1024) strokeIn_.erase(strokeIn_.begin()); strokeIn_.push_back(std::move(s)); }
+        if (seq > peer.socApplied) peer.socApplied = seq;
+    }
+    Bytes a; put32(a, kMagicSocAck); put32(a, uint32_t(id_)); put64(a, peer.socEpoch); put32(a, peer.socApplied);
+    sendTo(from, finish(std::move(a)));
+}
 
 }  // namespace witness
