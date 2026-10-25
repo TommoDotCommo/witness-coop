@@ -33,7 +33,7 @@ def unsupported(p):
     if stored(p): return []
     if p.get('refl') and len(p.get('mirror') or []) != p['nodes']: why.add('symmetry without a mirror map')
     if any(p['dec']) and not (p['gx'] > 1 and p['ndec'] == (p['gx'] - 1) * (p['gy'] - 1)): why.add('decorations on a panel that is not a grid')
-    known = 0x700000 | 0x40000 | 0x20 | 0x100 | 0x200 | 0x1000 | 0x10000 | 0x20000 | 0x30000 | 0x8 | 0x3 | (0xe000 if p.get('dseq') else 0)      # sound dots (0x2000/0x4000/0x8000) are solved from the panel's own sequence
+    known = 0x700000 | 0x40000 | 0x20 | 0x100 | 0x200 | 0x1000 | 0x10000 | 0x20000 | 0x30000 | 0x8 | 0x3 | 0xe000      # sound dots (0x2000/0x4000/0x8000): met in the panel's own sequence (psolve), plain dots when it has none
     for f in p['flags']:
         if f & ~known: why.add('node flags %#x' % (f & ~known))
     return sorted(why)
