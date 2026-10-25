@@ -25,13 +25,14 @@ const Cfg& GetCfg() {
             else if (sscanf(line, "force_active=%d", &v) == 1) r.forceActive = v != 0;
             else if (sscanf(line, "skip_entity_zero=%d", &v) == 1) r.skipEntityZero = v != 0;
             else if (sscanf(line, "dev_menu=%d", &v) == 1) r.devMenu = v != 0;
-            else if (sscanf(line, "partner_view=%d", &v) == 1) r.partnerView = v != 0;
+            else if (sscanf(line, "partner_view=%d", &v) == 1) { r.partnerView = v != 0; r.noPartnerView = v == 0; }
             else if (sscanf(line, "no_partner_video=%d", &v) == 1) r.noPartnerVideo = v != 0;
             else if (sscanf(line, "no_restore_copy=%d", &v) == 1) r.noRestoreCopy = v != 0;
             else if (sscanf(line, "no_power_link=%d", &v) == 1) r.noPowerLink = v != 0;
             else if (sscanf(line, "no_target_dispatch=%d", &v) == 1) r.noTargetDispatch = v != 0;
             else if (sscanf(line, "no_line_draw=%d", &v) == 1) r.noLineDraw = v != 0;
             else if (sscanf(line, "no_name_tags=%d", &v) == 1) r.noNameTags = v != 0;
+            else if (sscanf(line, "no_pov_request=%d", &v) == 1) r.noPovRequest = v != 0;
             else if (sscanf(line, "no_line_depth=%d", &v) == 1) r.noLineDepth = v != 0;
             else if (sscanf(line, "no_teleport_hold=%d", &v) == 1) r.noTeleportHold = v != 0;
             else if (sscanf(line, "panel_mouse_boost=%d", &v) == 1) r.panelMouseBoost = v != 0;

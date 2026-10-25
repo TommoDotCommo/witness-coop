@@ -29,6 +29,8 @@ static const float kVFovDeg = 60.0f;                 // calibrated: horizontal ~
 #include "model_gpu.h"
 #include "depth.h"
 #include "playercolor.h"
+#include "povui.h"
+#include <atomic>
 
 typedef HRESULT(STDMETHODCALLTYPE* PresentFn)(IDXGISwapChain*, UINT, UINT);
 static PresentFn g_origPresent;
@@ -232,6 +234,30 @@ static void InstallDevWndProc(HWND w) {
     Log(g_origWndProc ? "devmenu: window procedure hooked" : "devmenu: window procedure hook FAILED");
 }
 // Name tags: every other player's name and ping over their head, in their colour, visible through walls (so a friend can always be found).
+static std::atomic<unsigned> g_aimed{0};          // the player the crosshair is on (0: none), set while drawing, read by the key handler
+static std::atomic<bool> g_rosterOpen{false}; static std::atomic<int> g_rosterSel{0};
+bool PovRosterOpen() { return g_rosterOpen.load(); }
+void OverlayPovState(unsigned* aimed, int* rosterOpen) { *aimed = g_aimed.load(); *rosterOpen = g_rosterOpen.load() ? 1 : 0; }
+static std::vector<unsigned> PlayerIds() { std::vector<unsigned> ids; for (const auto& rp : CoopGetRemotes()) if (rp.valid && rp.ageMs < 5000) ids.push_back(rp.id); std::sort(ids.begin(), ids.end()); return ids; }
+bool PovKey(unsigned vk, bool down) {       // V: watch the player you look at (again: stop); ] next, [ previous; F5: the player list
+    if (GetCfg().noPartnerView && !DevMenuEnabled()) return false;
+    if (g_rosterOpen.load()) {
+        if (!down) return false;       // key-ups still reach the game
+        std::vector<unsigned> ids = PlayerIds(); int n = (int)ids.size(), sel = g_rosterSel.load();
+        if (vk == VK_UP && n) g_rosterSel = (sel + n - 1) % n;
+        else if (vk == VK_DOWN && n) g_rosterSel = (sel + 1) % n;
+        else if (vk == VK_RETURN) { if (n) VideoWatch(ids[std::min(sel, n - 1)]); g_rosterOpen = false; }
+        else if (vk == VK_BACK || vk == VK_DELETE) VideoClear();
+        else if (vk == VK_ESCAPE || vk == VK_F5) g_rosterOpen = false;
+        return true;
+    }
+    if (!down) return false;
+    if (vk == VK_F5) { g_rosterOpen = true; g_rosterSel = 0; return true; }
+    if (vk == 'V') { unsigned a = g_aimed.load(); if (a) { VideoToggleWatch(a); return true; } if (VideoWatching()) { VideoClear(); return true; } return false; }
+    if (vk == VK_OEM_6) { VideoNext(PlayerIds()); return true; }
+    if (vk == VK_OEM_4) { VideoPrev(PlayerIds()); return true; }
+    return false;
+}
 struct TagInfo { unsigned id; char name[25]; int ping; bool onScreen; float dist; };
 static CRITICAL_SECTION g_tagLock; static bool g_tagLockInit; static std::vector<TagInfo> g_tags;
 static bool TagsWanted() { return !GetCfg().noNameTags; }
@@ -254,6 +280,38 @@ static void DrawNameTags(float W, float H) {
         }
         now.push_back(t);
     }
+    // the player the crosshair is on: close to the screen centre and not too far; the nearest such player gets the "press V" prompt
+    unsigned aimed = 0; float best = 1e9f; const char* aimedName = nullptr; int aimedPing = -1;
+    if (TagsWanted() && !IsBadReadPtr(cam, 12) && !IsBadReadPtr(ang, 8)) for (const auto& rp : CoopGetRemotes()) if (rp.ageMs < 2000) {
+        float body[3] = {rp.pos[0], rp.pos[1], rp.pos[2] - 0.55f}, nx, ny, d[3] = {rp.pos[0] - cam[0], rp.pos[1] - cam[1], rp.pos[2] - cam[2]};
+        float dist = sqrtf(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+        if (dist < 60.0f && Project(cam, ang[0], ang[1], body, W / H, &nx, &ny) && fabsf(nx) < 0.07f * 9.0f / std::max(dist, 9.0f) + 0.035f && fabsf(ny) < 0.30f && dist < best) { best = dist; aimed = rp.id; aimedName = rp.name; aimedPing = rp.pingMs; }
+    }
+    g_aimed = g_rosterOpen.load() ? 0 : aimed;
+    VideoUpdatePlayers(PlayerIds());
+    if (aimed && !g_rosterOpen.load()) {
+        float col[3]; PlayerColor(aimed, col); bool watching = VideoWatching() == aimed; float k = std::max(1.0f, H / 1080.0f);
+        char b[96]; snprintf(b, sizeof b, watching ? "[V] stop watching %s" : "[V] watch %s's view", aimedName && aimedName[0] ? aimedName : "player"); (void)aimedPing;
+        float tw = UiTextWidth(b, k), th = UiLineHeight(k), x = W / 2 - tw / 2, y = H / 2 + 70 * k;
+        UiRect(x - 8 * k, y - 4 * k, tw + 16 * k, th + 8 * k, Rgba(0, 0, 0, 0.6f)); UiText(x, y, b, Rgba(col[0], col[1], col[2], 1), k);
+    }
+    if (g_rosterOpen.load()) {          // the player list: Up/Down, Enter watches, Backspace clears, F5 / Esc closes
+        std::vector<unsigned> ids = PlayerIds(); float k = std::max(1.0f, H / 1080.0f), lh = UiLineHeight(k) + 6 * k, x = 24 * k, y = 90 * k, w = 520 * k;
+        int rows = (int)ids.size(); int sel = std::min(g_rosterSel.load(), std::max(0, rows - 1)); g_rosterSel = sel;
+        UiRect(x, y, w, lh * (rows + 2) + 14 * k, Rgba(0.05f, 0.06f, 0.09f, 0.88f));
+        UiText(x + 12 * k, y + 8 * k, "Players   Up/Down  Enter: watch  Backspace: clear  F5: close", Rgba(0.75f, 0.8f, 0.95f, 1), 0.8f * k);
+        std::vector<RemotePose> rem = CoopGetRemotes();
+        for (int i = 0; i < rows; ++i) {
+            const RemotePose* p = nullptr; for (const auto& r : rem) if (r.id == ids[i]) p = &r;
+            float col[3]; PlayerColor(ids[i], col); float ry = y + 10 * k + lh * (i + 1.4f);
+            if (i == sel) UiRect(x + 6 * k, ry - 3 * k, w - 12 * k, lh, Rgba(0.25f, 0.28f, 0.45f, 0.9f));
+            UiRect(x + 14 * k, ry + 2 * k, 10 * k, 10 * k, Rgba(col[0], col[1], col[2], 1));
+            char b[96]; snprintf(b, sizeof b, "%-18s %s%d ms %s", p && p->name[0] ? p->name : "?", p && p->pingMs >= 0 ? "" : "- ", p && p->pingMs >= 0 ? p->pingMs : 0, VideoWatching() == ids[i] ? "  [watching]" : "");
+            if (p && p->pingMs < 0) snprintf(b, sizeof b, "%-18s -- ms %s", p->name[0] ? p->name : "?", VideoWatching() == ids[i] ? "  [watching]" : "");
+            UiText(x + 32 * k, ry, b, Rgba(col[0], col[1], col[2], 1), k);
+        }
+        if (!rows) UiText(x + 14 * k, y + 10 * k + lh * 1.4f, "nobody else is here yet", Rgba(0.8f, 0.8f, 0.8f, 1), k);
+    }
     EnterCriticalSection(&g_tagLock); g_tags = std::move(now); LeaveCriticalSection(&g_tagLock);
 }
 void OverlayLogTags() {       // witness_cmd.txt: tagstat -> one log line per remote player: name, ping, whether its tag is on screen
@@ -266,7 +324,7 @@ void OverlayLogTags() {       // witness_cmd.txt: tagstat -> one log line per re
 static void DrawDevMenu(IDXGISwapChain* sc) {
     if (!g_uiReady) return;
     DevMenuTick();
-    if (!DevMenuOpen() && !DevMenuToastWanted() && !VideoViewMode() && !TagsWanted()) return;
+    if (!DevMenuOpen() && !DevMenuToastWanted() && !VideoViewMode() && !TagsWanted() && !g_rosterOpen.load()) return;
     ID3D11Texture2D* bb = nullptr; if (FAILED(sc->GetBuffer(0, __uuidof(ID3D11Texture2D), (void**)&bb))) return;
     D3D11_TEXTURE2D_DESC td; bb->GetDesc(&td); ID3D11RenderTargetView* rtv = nullptr;
     if (SUCCEEDED(g_dev->CreateRenderTargetView(bb, nullptr, &rtv))) { UiBegin((float)td.Width, (float)td.Height); DrawNameTags((float)td.Width, (float)td.Height); if (DevMenuOpen()) DevMenuDraw((float)td.Width, (float)td.Height); else DevMenuToast((float)td.Width, (float)td.Height);
@@ -274,8 +332,9 @@ static void DrawDevMenu(IDXGISwapChain* sc) {
             int vw = 0, vh = 0; unsigned long age = 0; ID3D11ShaderResourceView* srv = VideoRemoteSrv(&vw, &vh, &age);
             float k = (VideoViewMode() == 2 ? 2.0f : 1.0f) * std::max(1.f, td.Height / 1080.f), iw = (vw ? vw : 480) * k, ih = (vh ? vh : 270) * k, x = td.Width - iw - 14, y = 14;
             UiRect(x - 3, y - 3, iw + 6, ih + 6 + UiLineHeight(0.85f), Rgba(0, 0, 0, 0.8f));
-            if (srv) UiImage(x, y, iw, ih, srv); else UiText(x + 10, y + ih / 2 - 10, "waiting for the other player's picture", Rgba(1, 0.8f, 0.5f), 0.9f);
-            char b[80]; snprintf(b, sizeof b, "other player's view%s", srv ? (age > 2000 ? "  (stale)" : "") : ""); UiText(x + 2, y + ih + 2, b, Rgba(1, 0.6f, 0.2f), 0.85f);
+            if (srv) UiImage(x, y, iw, ih, srv); else UiText(x + 10, y + ih / 2 - 10, "waiting for the picture", Rgba(1, 0.8f, 0.5f), 0.9f);
+            { const char* nm = "player"; unsigned wid = VideoWatching(); float pc[3] = {1, 0.6f, 0.2f}; PlayerColor(wid, pc); std::vector<RemotePose> rem = CoopGetRemotes(); for (const auto& r : rem) if (r.id == wid && r.name[0]) nm = r.name;
+              char b[96]; snprintf(b, sizeof b, "%s's view%s    [ ] cycle   V clear   F5 list", nm, srv ? (age > 2000 ? "  (stale)" : "") : "  (waiting)"); UiText(x + 2, y + ih + 2, b, Rgba(pc[0], pc[1], pc[2]), 0.85f); }
         }
         UiEnd(rtv); rtv->Release(); }
     bb->Release();
@@ -300,7 +359,7 @@ static HRESULT STDMETHODCALLTYPE HookPresent(IDXGISwapChain* sc, UINT sync, UINT
         uintptr_t im = (g && !IsBadReadPtr((void*)g, 8)) ? *(uintptr_t*)g : 0;
         if (im && !IsBadWritePtr((void*)(im + 0xE5C), 1)) *(volatile unsigned char*)(im + 0xE5C) = 1;
     }
-    { DXGI_SWAP_CHAIN_DESC d; if (SUCCEEDED(sc->GetDesc(&d))) { g_gameWnd = d.OutputWindow; if (DevMenuEnabled()) InstallDevWndProc(d.OutputWindow); InputPump(d.OutputWindow); } }
+    { DXGI_SWAP_CHAIN_DESC d; if (SUCCEEDED(sc->GetDesc(&d))) { g_gameWnd = d.OutputWindow; if (DevMenuEnabled() || VideoEnabled()) InstallDevWndProc(d.OutputWindow); InputPump(d.OutputWindow); } }
     if (g_shotName[0] && g_ready) { char n[64]; strcpy(n, g_shotName); g_shotName[0] = 0; TakeShot(sc, n); }
     HRESULT hr = g_origPresent(sc, sync, flags);
     if (int cap = GetCfg().capFps; cap > 0) {   // frame cap: sleep out the rest of the frame (Sleep(1) until close, then spin)

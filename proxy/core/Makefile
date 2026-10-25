@@ -28,10 +28,14 @@ $(BUILD)/line-sync: tests/line_sync.cpp sync_core.cpp sync_core.h
 $(BUILD)/ping-names: tests/ping_names.cpp sync_core.cpp sync_core.h
 	mkdir -p $(BUILD)
 	g++ -std=c++17 -O2 -Wall -Wextra -o $@ tests/ping_names.cpp sync_core.cpp
+$(BUILD)/pov: tests/pov.cpp pov.h
+	mkdir -p $(BUILD)
+	g++ -std=c++17 -O2 -Wall -Wextra -o $@ tests/pov.cpp
 $(BUILD)/group-sync: tests/group_sync.cpp sync_core.cpp sync_core.h
 	mkdir -p $(BUILD)
 	g++ -std=c++17 -O2 -Wall -Wextra -o $@ tests/group_sync.cpp sync_core.cpp
-test: $(BUILD)/ping-names $(BUILD)/line-sync $(BUILD)/group-sync $(BUILD)/coopfuzz-witness $(BUILD)/apply-retry $(BUILD)/power-sync $(BUILD)/reload-sync $(BUILD)/cable-sync $(BUILD)/cable-off
+test: $(BUILD)/pov $(BUILD)/ping-names $(BUILD)/line-sync $(BUILD)/group-sync $(BUILD)/coopfuzz-witness $(BUILD)/apply-retry $(BUILD)/power-sync $(BUILD)/reload-sync $(BUILD)/cable-sync $(BUILD)/cable-off
+	$(BUILD)/pov
 	$(BUILD)/ping-names
 	$(BUILD)/line-sync
 	$(BUILD)/group-sync

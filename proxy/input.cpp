@@ -5,6 +5,7 @@
 #include "config.h"
 #include "devmenu.h"
 #include "video.h"
+#include "povui.h"
 
 bool HookImport(const char* dll, const char* fn, void* hook, void** orig);   // hooks.cpp
 void Log(const char* msg);
@@ -62,9 +63,9 @@ static UINT WINAPI HookGetRawInputData(HRAWINPUT h, UINT cmd, LPVOID data, PUINT
         InterlockedIncrement(&g_stats[2]);
         UINT r = g_orig(h, cmd, data, size, hdr);
         if (data && r != (UINT)-1 && cmd == RID_INPUT && r >= sizeof(RAWINPUTHEADER) && !DevMenuOpen()) BoostMouse((RAWINPUT*)data);
-        if (DevMenuOpen() && data && r != (UINT)-1 && cmd == RID_INPUT && r >= sizeof(RAWINPUTHEADER)) {      // the dev menu is open: it takes the mouse motion, the game gets an empty event
+        if ((DevMenuOpen() || PovRosterOpen()) && data && r != (UINT)-1 && cmd == RID_INPUT && r >= sizeof(RAWINPUTHEADER)) {      // the dev menu or the player list is open: it takes the mouse motion, the game gets an empty event
             RAWINPUT* ri = (RAWINPUT*)data;
-            if (ri->header.dwType == RIM_TYPEMOUSE) { if (!(ri->data.mouse.usFlags & MOUSE_MOVE_ABSOLUTE)) DevMenuRawMove(ri->data.mouse.lLastX, ri->data.mouse.lLastY); ri->data.mouse.lLastX = ri->data.mouse.lLastY = 0; ri->data.mouse.usButtonFlags = 0; ri->data.mouse.usButtonData = 0; }
+            if (ri->header.dwType == RIM_TYPEMOUSE) { if (DevMenuOpen() && !(ri->data.mouse.usFlags & MOUSE_MOVE_ABSOLUTE)) DevMenuRawMove(ri->data.mouse.lLastX, ri->data.mouse.lLastY); ri->data.mouse.lLastX = ri->data.mouse.lLastY = 0; ri->data.mouse.usButtonFlags = 0; ri->data.mouse.usButtonData = 0; }
             else if (ri->header.dwType == RIM_TYPEKEYBOARD && !(ri->data.keyboard.Flags & RI_KEY_BREAK)) { ri->data.keyboard.VKey = 0; ri->data.keyboard.MakeCode = 0; ri->data.keyboard.Flags |= RI_KEY_BREAK; }
         }
         if (GetCfg().debugMsgs && data && r != (UINT)-1 && r >= sizeof(RAWINPUTHEADER) && cmd == RID_INPUT) {    // diagnostic (debug_msgs=1): what a REAL event looks like (first few, and every button event)
@@ -111,14 +112,14 @@ static BOOL WINAPI HookPeekMessageA(LPMSG m, HWND w, UINT lo, UINT hi, UINT rm) 
     switch (m->message) {
     case WM_KEYDOWN: case WM_SYSKEYDOWN: take = DevMenuKey((unsigned)m->wParam, true); break;
     case WM_KEYUP: case WM_SYSKEYUP: DevMenuKey((unsigned)m->wParam, false); break;
-    case WM_CHAR: take = DevMenuOpen(); break;
-    case WM_LBUTTONDOWN: take = DevMenuMouseButton(0, true); break;
-    case WM_RBUTTONDOWN: take = DevMenuMouseButton(1, true); break;
-    case WM_MBUTTONDOWN: take = DevMenuMouseButton(2, true); break;
+    case WM_CHAR: take = DevMenuOpen() || PovRosterOpen(); break;
+    case WM_LBUTTONDOWN: take = DevMenuMouseButton(0, true) || PovRosterOpen(); break;
+    case WM_RBUTTONDOWN: take = DevMenuMouseButton(1, true) || PovRosterOpen(); break;
+    case WM_MBUTTONDOWN: take = DevMenuMouseButton(2, true) || PovRosterOpen(); break;
     case WM_LBUTTONUP: DevMenuMouseButton(0, false); break;
     case WM_RBUTTONUP: DevMenuMouseButton(1, false); break;
-    case WM_MOUSEWHEEL: take = DevMenuWheel(GET_WHEEL_DELTA_WPARAM(m->wParam)); break;
-    case WM_MOUSEMOVE: take = DevMenuOpen(); break;
+    case WM_MOUSEWHEEL: take = DevMenuWheel(GET_WHEEL_DELTA_WPARAM(m->wParam)) || PovRosterOpen(); break;
+    case WM_MOUSEMOVE: take = DevMenuOpen() || PovRosterOpen(); break;
     }
     if (take) m->message = WM_NULL;
     return r;

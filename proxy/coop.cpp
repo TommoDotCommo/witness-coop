@@ -17,15 +17,23 @@ extern HMODULE g_selfModule();
 
 static CRITICAL_SECTION g_lock; static bool g_lockInit;
 static std::atomic<witness::SyncCore*> g_core{nullptr};
-static std::vector<sockaddr_in> g_rawPeers;
+static std::vector<sockaddr_in> g_rawPeers; static std::map<unsigned, sockaddr_in> g_peerById;       // group: each player's endpoint
 static SOCKET g_sock = INVALID_SOCKET; static sockaddr_in g_peerAddr; static std::atomic<bool> g_peerSet{false};
 void CoopSendRaw(const uint8_t* d, size_t n) {
     if (!g_peerSet.load(std::memory_order_acquire)) return;
     if (g_rawPeers.empty()) sendto(g_sock, (const char*)d, (int)n, 0, (sockaddr*)&g_peerAddr, sizeof g_peerAddr);
     else for (const auto& addr : g_rawPeers) sendto(g_sock, (const char*)d, (int)n, 0, (const sockaddr*)&addr, sizeof addr);
 }
+void CoopSendRawTo(unsigned id, const uint8_t* d, size_t n) {      // one datagram to one player (any thread); with a single peer, to that peer
+    if (!g_peerSet.load(std::memory_order_acquire)) return;
+    if (g_peerById.empty()) { sendto(g_sock, (const char*)d, (int)n, 0, (sockaddr*)&g_peerAddr, sizeof g_peerAddr); return; }
+    auto it = g_peerById.find(id); if (it != g_peerById.end()) sendto(g_sock, (const char*)d, (int)n, 0, (const sockaddr*)&it->second, sizeof it->second);
+}
 void VideoOnPacket(const uint8_t* data, size_t n);
+void VideoOnRequest(const uint8_t* data, size_t n);
 
+static std::atomic<unsigned> g_myId{0};
+unsigned CoopMyId() { return g_myId.load(); }
 witness::SyncCore* CoopCore() { return g_core.load(std::memory_order_acquire); }
 static volatile LONG g_fakeOn; static float g_fake[4]; static volatile LONG g_fakeSeq;     // test hook (witness_cmd.txt: fakepose): a pose the peer never sent
 void CoopSetFakeRemote(bool on, const float* pos, float yaw) {
@@ -138,8 +146,8 @@ static DWORD WINAPI NetThread(LPVOID) {
         if (!core->setPeers(ids)) { Log("coop: invalid roster"); delete core; closesocket(s); return 0; }
         snprintf(m, sizeof m, "coop: group with %zu remote peers", endpoints.size()); Log(m);
     }
-    for (const auto& p : endpoints) g_rawPeers.push_back(p.second);
-    g_sock = s; g_peerAddr = peer; g_peerSet.store(true, std::memory_order_release);
+    for (const auto& p : endpoints) { g_rawPeers.push_back(p.second); g_peerById[p.first] = p.second; }
+    g_myId.store((unsigned)id); g_sock = s; g_peerAddr = peer; g_peerSet.store(true, std::memory_order_release);
     g_core.store(core, std::memory_order_release);
     for (;;) {
         uint64_t now = GetTickCount64();
@@ -151,13 +159,12 @@ static DWORD WINAPI NetThread(LPVOID) {
             if (!endpoints.empty()) {
                 if (n < 8) continue;
                 unsigned from = unsigned(buf[4]) | unsigned(buf[5]) << 8 | unsigned(buf[6]) << 16 | unsigned(buf[7]) << 24;
-                // Video remains one selected peer's stream; its legacy header has no sender id.
-                if (n > 128) expected = &endpoints.begin()->second;
-                else { auto it = endpoints.find(from); if (it == endpoints.end()) continue; expected = &it->second; }
+                auto it = endpoints.find(from); if (it == endpoints.end()) continue; expected = &it->second;      // every datagram, pictures included, names its sender
             }
             if (source.sin_port != expected->sin_port || source.sin_addr.s_addr != expected->sin_addr.s_addr) continue;
-            if (n >= 4 && !memcmp(buf, "WTL4", 4)) core->onPacket(buf, (size_t)n, now);      // a drawn line (can be longer than a pose or an event)
-            else if (n > 128) VideoOnPacket(buf, (size_t)n); else core->onPacket(buf, (size_t)n, now);
+            if (n >= 4 && !memcmp(buf, "WTV4", 4)) VideoOnPacket(buf, (size_t)n);            // a chunk of a POV picture
+            else if (n >= 4 && !memcmp(buf, "WTR4", 4)) VideoOnRequest(buf, (size_t)n);       // a request for this game's POV pictures
+            else core->onPacket(buf, (size_t)n, now);
             sourceLen = sizeof source;
         }
         Sleep(2);

@@ -1,5 +1,5 @@
 # T2 check of the name tags, run with Windows Python. A is the viewer, B the player A sees (B was started with a name). B stands 5 m ahead of A: A's proxy must list B by
-# its name with a measured ping and say its tag is on screen; with A turned round the tag is off screen; the ping stays in a sane range for a loopback link.
+# its name with a measured ping and say its tag is on screen; with B 5 m behind A the tag is off screen; the ping stays in a sane range for a loopback link.
 # usage: wtags.py <pidA> <dirA> <pidB> <dirB> <B's name>
 import os, sys, time, math, re
 exec(compile(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'wlib.py')).read(), 'wlib.py', 'exec'))
@@ -38,7 +38,7 @@ row = t1[0] if t1 else None
 check('A lists B by its name', row and row['name'] == want, row)
 check('A has a measured ping for B (0..500 ms on loopback)', row and 0 <= row['ping'] <= 500, row)
 check('B 5 m ahead has its tag on screen', row and row['onscreen'] == 1 and 4 < row['dist'] < 6, row)
-send(da, ['tp %.4f %.4f %.4f %.5f %.5f' % (cx, cy, cz - 1.69, th + math.pi, 0.0)], 1.5)
-t2 = tags(); r2 = t2[0] if t2 else None
-check('with A turned round the tag is off screen', r2 and r2['onscreen'] == 0, r2)
+send(db, ['tp %.4f %.4f %.4f %.5f %.5f' % (cx - fx * 5, cy - fy * 5, cz - 1.69, th, 0.0)], 2.5)       # B moves to 5 m behind A
+time.sleep(1.0); t2 = tags(); r2 = t2[0] if t2 else None
+check('with B behind A the tag is off screen', r2 and r2['onscreen'] == 0 and 4 < r2['dist'] < 6, r2)
 print('ALL OK' if ok else 'FAILED'); sys.exit(0 if ok else 1)

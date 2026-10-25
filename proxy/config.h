@@ -23,12 +23,14 @@ struct Cfg {
     bool noModelDepth = false;   // test mutant: draw the model over walls
     bool skipEntityZero = false; // test mutant: restore the old census that lost the second tutorial door
     bool devMenu = false;        // dev_menu=1: the F8 dev menu (map, teleport, nearby puzzles); off in a normal install
-    bool partnerView = false;    // partner_view=1: send a small picture of this screen to the peer and show the peer's (F9)
+    bool partnerView = false;    // (old switch, ignored: POV pictures are on unless partner_view=0)
+    bool noPartnerView = false;  // partner_view=0: no POV screens at all
     bool noPartnerVideo = false; // twin: send no picture
     bool noRestoreCopy = false;  // twin: a restore does not put the save file in place
     bool noPowerLink = false;    // twin: leave a powered panel's source back-link (+0x2C8) unset
     float panelMouseGain = 3.0f;   // panel_mouse_gain=<f>: factor on the REAL mouse motion while the panel boost is on (F3): the game's panel cursor moves ~1/3 pixel per count, the owner's pointer 1 pixel
     bool panelMouseBoost = false;  // panel_mouse_boost=1: start with the boost on
+    bool noPovRequest = false;     // twin: this game watches a player but never asks for the pictures
     bool noNameTags = false;       // twin: no name tags over the other players
     bool noLineDraw = false;       // twin: remote lines are received but not drawn
     bool noLineDepth = false;      // twin: remote lines are drawn without the depth test (they show through walls)

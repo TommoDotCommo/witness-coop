@@ -10,6 +10,9 @@
 #include "video.h"
 #include "config.h"
 #include "coop.h"
+#include "core/pov.h"
+#include <map>
+#include <algorithm>
 
 void Log(const char* msg);
 extern HMODULE g_selfModule();
@@ -18,6 +21,7 @@ extern ID3D11DeviceContext* g_videoCtx; extern ID3D11Device* g_videoDev;
 namespace {
 const int kW = 480, kH = 270;                       // size of the picture that is sent
 const uint32_t kMagicVid = 0x34565457;              // "WTV4"
+const uint32_t kMagicReq = 0x34525457;              // "WTR4": magic, from, target, kind (1 asking for pictures, 2 stop), checksum
 const size_t kChunk = 1100;
 CRITICAL_SECTION g_cs; bool g_csInit;
 void Init() { if (!g_csInit) { InitializeCriticalSection(&g_cs); g_csInit = true; } }
@@ -28,8 +32,11 @@ std::vector<uint8_t> g_outRgba;                      // the newest downsampled p
 bool g_outFresh; HANDLE g_outEvent; HANDLE g_thread;
 volatile LONG g_sent, g_recv, g_decoded; volatile int g_mode;
 
+// ---- who watches whom (see core/pov.h): the sender streams only to players who asked, the viewer asks the one it watches about once a second
+witness::PovSubs g_subs; witness::PovView g_view; DWORD g_lastReq; unsigned g_reqTarget; volatile LONG g_requests; volatile LONG g_stopSent;
+struct Reasm { uint32_t curFrame = 0; std::vector<std::vector<uint8_t>> chunks; std::vector<bool> have; unsigned haveCount = 0, expect = 0; uint32_t lastDone = 0; };
+std::map<uint32_t, Reasm> g_re;                      // one reassembly per sender
 // ---- receive
-uint32_t g_curFrame; std::vector<std::vector<uint8_t>> g_chunks; std::vector<bool> g_have; unsigned g_haveCount, g_expect; uint32_t g_lastDone;
 std::vector<uint8_t> g_remote; bool g_remoteNew; DWORD g_remoteAt; ID3D11Texture2D* g_remoteTex; ID3D11ShaderResourceView* g_remoteSrv;
 IWICImagingFactory* g_wicRecv;
 
@@ -68,28 +75,65 @@ DWORD WINAPI EncodeThread(LPVOID) {
         WaitForSingleObject(g_outEvent, INFINITE);
         EnterCriticalSection(&g_cs); bool have = g_outFresh; if (have) { px.swap(g_outRgba); g_outFresh = false; } LeaveCriticalSection(&g_cs);
         if (!have || px.size() != (size_t)kW * kH * 4 || !Encode(wic, px.data(), jpg)) continue;
+        EnterCriticalSection(&g_cs); std::vector<unsigned> subs = g_subs.live(GetTickCount64()); LeaveCriticalSection(&g_cs);
+        if (subs.empty()) continue;                                       // nobody asked: nothing to send
         size_t count = (jpg.size() + kChunk - 1) / kChunk; ++frameId;
         for (size_t i = 0; i < count; i++) {
             size_t len = std::min(kChunk, jpg.size() - i * kChunk); std::vector<uint8_t> pkt(20 + len + 4);
-            uint32_t magic = kMagicVid, from = 0; memcpy(&pkt[0], &magic, 4); memcpy(&pkt[4], &from, 4); memcpy(&pkt[8], &frameId, 4);
+            uint32_t magic = kMagicVid, from = CoopMyId(); memcpy(&pkt[0], &magic, 4); memcpy(&pkt[4], &from, 4); memcpy(&pkt[8], &frameId, 4);
             uint16_t idx = (uint16_t)i, cnt = (uint16_t)count, l = (uint16_t)len; memcpy(&pkt[12], &idx, 2); memcpy(&pkt[14], &cnt, 2); memcpy(&pkt[16], &l, 2); pkt[18] = pkt[19] = 0;
             memcpy(&pkt[20], &jpg[i * kChunk], len); uint32_t sum = Sum(pkt.data(), 20 + len); memcpy(&pkt[20 + len], &sum, 4);
-            CoopSendRaw(pkt.data(), pkt.size());
+            for (unsigned id : subs) CoopSendRawTo(id, pkt.data(), pkt.size());
         }
         InterlockedIncrement(&g_sent);
     }
 }
 }  // namespace
 
-bool VideoEnabled() { return GetCfg().partnerView || GetCfg().devMenu; }
-int VideoViewMode() { return g_mode; }
-void VideoSetMode(int m) { g_mode = m < 0 ? 0 : m > 2 ? 2 : m; }
-void VideoToggleView() { g_mode = (g_mode + 1) % 3; }
+bool VideoEnabled() { return !GetCfg().noPartnerView || GetCfg().devMenu; }
+static unsigned LowestRemote() { unsigned best = 0; for (const auto& r : CoopGetRemotes()) if (r.valid && (!best || r.id < best)) best = r.id; return best; }
+int VideoViewMode() { Init(); EnterCriticalSection(&g_cs); unsigned w = g_view.current(); LeaveCriticalSection(&g_cs); return w ? g_mode : 0; }
+unsigned VideoWatching() { Init(); EnterCriticalSection(&g_cs); unsigned w = g_view.current(); LeaveCriticalSection(&g_cs); return w; }
+void VideoWatch(unsigned id) { Init(); EnterCriticalSection(&g_cs); g_view.watch(id); LeaveCriticalSection(&g_cs); }
+void VideoClear() { Init(); EnterCriticalSection(&g_cs); g_view.clear(); LeaveCriticalSection(&g_cs); }
+bool VideoToggleWatch(unsigned id) { Init(); EnterCriticalSection(&g_cs); bool on = g_view.toggle(id); LeaveCriticalSection(&g_cs); return on; }
+unsigned VideoNext(const std::vector<unsigned>& players) { Init(); EnterCriticalSection(&g_cs); unsigned w = g_view.next(players); LeaveCriticalSection(&g_cs); return w; }
+unsigned VideoPrev(const std::vector<unsigned>& players) { Init(); EnterCriticalSection(&g_cs); unsigned w = g_view.prev(players); LeaveCriticalSection(&g_cs); return w; }
+void VideoUpdatePlayers(const std::vector<unsigned>& players) { Init(); EnterCriticalSection(&g_cs); g_view.update(players); LeaveCriticalSection(&g_cs); }
+void VideoSetMode(int m) { if (m <= 0) { VideoClear(); return; } g_mode = m > 2 ? 2 : m; if (!VideoWatching()) VideoWatch(LowestRemote()); }
+void VideoToggleView() { if (!VideoWatching()) { g_mode = 1; VideoWatch(LowestRemote()); } else if (g_mode == 1) g_mode = 2; else { g_mode = 1; VideoClear(); } }      // F9: show (small), large, off
 void VideoStats(unsigned* s, unsigned* r, unsigned* d) { *s = (unsigned)g_sent; *r = (unsigned)g_recv; *d = (unsigned)g_decoded; }
+void VideoPovStats(unsigned* watching, unsigned* subscribers, unsigned* requestsSent) {
+    Init(); EnterCriticalSection(&g_cs); *watching = g_view.current(); *subscribers = (unsigned)g_subs.live(GetTickCount64()).size(); LeaveCriticalSection(&g_cs); *requestsSent = (unsigned)g_requests;
+}
+
+static void SendRequest(unsigned target, uint32_t kind) {
+    if (GetCfg().noPovRequest) return;
+    uint8_t p[20]; uint32_t magic = kMagicReq, from = CoopMyId(); memcpy(p, &magic, 4); memcpy(p + 4, &from, 4); memcpy(p + 8, &target, 4); memcpy(p + 12, &kind, 4);
+    uint32_t sum = Sum(p, 16); memcpy(p + 16, &sum, 4); CoopSendRawTo(target, p, sizeof p); if (kind == 1) InterlockedIncrement(&g_requests);
+}
+void VideoOnRequest(const uint8_t* d, size_t n) {       // network thread: someone wants this game's pictures (or no longer does)
+    Init(); if (n != 20) return;
+    uint32_t magic, from, target, kind, sum; memcpy(&magic, d, 4); memcpy(&from, d + 4, 4); memcpy(&target, d + 8, 4); memcpy(&kind, d + 12, 4); memcpy(&sum, d + 16, 4);
+    if (magic != kMagicReq || Sum(d, 16) != sum || target != CoopMyId() || !from || from == target) return;
+    EnterCriticalSection(&g_cs); if (kind == 1) g_subs.request(from, GetTickCount64()); else if (kind == 2) g_subs.cancel(from); LeaveCriticalSection(&g_cs);
+}
+static void ViewerTick() {      // render thread, every frame: ask the watched player for pictures about once a second, tell the old one to stop when the choice changes
+    Init(); EnterCriticalSection(&g_cs); unsigned target = g_view.current(), old = g_reqTarget; bool changed = target != old;
+    if (changed) { g_reqTarget = target; g_lastReq = 0; g_re.clear(); g_remote.clear(); g_remoteNew = false; g_remoteAt = 0; }
+    LeaveCriticalSection(&g_cs);
+    if (changed && old) SendRequest(old, 2);
+    DWORD now = GetTickCount();
+    if (target && (changed || now - g_lastReq >= 1000)) { SendRequest(target, 1); g_lastReq = now; }
+}
 
 void VideoFrame(IDXGISwapChain* sc, ID3D11Device* dev, ID3D11DeviceContext* ctx) {
-    if (!VideoEnabled() || GetCfg().noPartnerVideo) return;
-    Init(); if (!g_thread) { g_outEvent = CreateEventA(nullptr, FALSE, FALSE, nullptr); g_thread = CreateThread(nullptr, 0, EncodeThread, nullptr, 0, nullptr); }
+    if (!VideoEnabled()) return;
+    Init(); ViewerTick();
+    if (GetCfg().noPartnerVideo) return;
+    EnterCriticalSection(&g_cs); bool wanted = g_subs.wanted(GetTickCount64()); LeaveCriticalSection(&g_cs);
+    if (!wanted) return;                                  // nobody watches this game: no capture and no encoding
+    if (!g_thread) { g_outEvent = CreateEventA(nullptr, FALSE, FALSE, nullptr); g_thread = CreateThread(nullptr, 0, EncodeThread, nullptr, 0, nullptr); }
     LONG frame = InterlockedIncrement(&g_frames);
     ID3D11Texture2D* bb = nullptr; if (FAILED(sc->GetBuffer(0, __uuidof(ID3D11Texture2D), (void**)&bb))) return;
     D3D11_TEXTURE2D_DESC td; bb->GetDesc(&td);
@@ -122,17 +166,24 @@ void VideoOnPacket(const uint8_t* d, size_t n) {
     Init(); if (n < 24 || n > 20 + kChunk + 4) return;
     uint32_t magic; memcpy(&magic, d, 4); if (magic != kMagicVid) return;
     uint32_t sum; memcpy(&sum, d + n - 4, 4); if (Sum(d, n - 4) != sum) return;
-    uint32_t frame; uint16_t idx, cnt, len; memcpy(&frame, d + 8, 4); memcpy(&idx, d + 12, 2); memcpy(&cnt, d + 14, 2); memcpy(&len, d + 16, 2);
-    if (len + 24u != n || idx >= cnt || cnt == 0 || cnt > 64 || frame <= g_lastDone) return;
-    if (frame > g_curFrame) { g_curFrame = frame; g_chunks.assign(cnt, {}); g_have.assign(cnt, false); g_haveCount = 0; g_expect = cnt; }
-    if (frame < g_curFrame || cnt != g_expect || g_have[idx]) return;
-    g_chunks[idx].assign(d + 20, d + 20 + len); g_have[idx] = true; g_haveCount++;
-    if (g_haveCount < g_expect) return;
-    std::vector<uint8_t> jpg; for (auto& c : g_chunks) jpg.insert(jpg.end(), c.begin(), c.end());
-    g_lastDone = frame; InterlockedIncrement(&g_recv);
-    if (!g_wicRecv) { CoInitializeEx(nullptr, COINIT_MULTITHREADED); if (FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&g_wicRecv)))) { Log("video: no WIC factory, partner view cannot decode"); return; } }
+    uint32_t from, frame; uint16_t idx, cnt, len; memcpy(&from, d + 4, 4); memcpy(&frame, d + 8, 4); memcpy(&idx, d + 12, 2); memcpy(&cnt, d + 14, 2); memcpy(&len, d + 16, 2);
+    if (len + 24u != n || idx >= cnt || cnt == 0 || cnt > 64) return;
+    std::vector<uint8_t> jpg;
+    EnterCriticalSection(&g_cs);
+    if (from != g_view.current()) { LeaveCriticalSection(&g_cs); return; }      // only the player being watched is shown; strays from the one before are dropped
+    Reasm& r = g_re[from];
+    bool take = frame > r.lastDone;
+    if (take && frame > r.curFrame) { r.curFrame = frame; r.chunks.assign(cnt, {}); r.have.assign(cnt, false); r.haveCount = 0; r.expect = cnt; }
+    if (take && frame == r.curFrame && cnt == r.expect && !r.have[idx]) {
+        r.chunks[idx].assign(d + 20, d + 20 + len); r.have[idx] = true; r.haveCount++;
+        if (r.haveCount == r.expect) { for (auto& c : r.chunks) jpg.insert(jpg.end(), c.begin(), c.end()); r.lastDone = frame; }
+    }
+    LeaveCriticalSection(&g_cs);
+    if (jpg.empty()) return;
+    InterlockedIncrement(&g_recv);
+    if (!g_wicRecv) { CoInitializeEx(nullptr, COINIT_MULTITHREADED); if (FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&g_wicRecv)))) { Log("video: no WIC factory, cannot show POV pictures"); return; } }
     std::vector<uint8_t> px; if (!Decode(g_wicRecv, jpg.data(), jpg.size(), px)) return;
-    EnterCriticalSection(&g_cs); g_remote.swap(px); g_remoteNew = true; g_remoteAt = GetTickCount(); LeaveCriticalSection(&g_cs); InterlockedIncrement(&g_decoded);
+    EnterCriticalSection(&g_cs); if (from == g_view.current()) { g_remote.swap(px); g_remoteNew = true; g_remoteAt = GetTickCount(); InterlockedIncrement(&g_decoded); } LeaveCriticalSection(&g_cs);
 }
 
 ID3D11ShaderResourceView* VideoRemoteSrv(int* w, int* h, unsigned long* age) {
