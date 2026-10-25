@@ -34,10 +34,19 @@ void RaceStart(unsigned myId, const std::vector<unsigned>& others, const std::fu
     char m[160]; snprintf(m, sizeof m, "race: %zu other players, goal %s", others.size(), wrace::GoalText(g).c_str()); Log(m);
 }
 bool RaceActive() { return g_race != nullptr; }
+// The result of a race, for the launcher's lobby (witness_race_result.txt next to the DLL): the goal, the winner, and one line per player: place|name|finish ms|phase.
+static void WriteResult(uint64_t now) {
+    wchar_t wp[MAX_PATH]; HMODULE self = nullptr; GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCWSTR)&WriteResult, &self); GetModuleFileNameW(self, wp, MAX_PATH);
+    wchar_t* sl = wcsrchr(wp, L'\\'); if (sl) *(sl + 1) = 0; wcscat_s(wp, L"witness_race_result.txt"); FILE* f = _wfopen(wp, L"w"); if (!f) return;
+    fprintf(f, "goal=%s\nwinner=%u\n", wrace::GoalText(g_goal).c_str(), g_race->winner());
+    for (const auto& s : g_race->standings(now)) fprintf(f, "%d|%s|%u|%s\n", s.place, NameOf(s.id).c_str(), s.finishMs, PhaseName(s.phase));
+    fclose(f);
+}
 void RaceTick(uint64_t now, bool worldReady, const std::set<unsigned>& solved) {
     if (!g_race) return; if (now - g_lastTick < 20) return; g_lastTick = now;
     Lock l; wrace::Phase before = g_race->phase(); g_race->Tick(now, worldReady, solved);
     if (g_race->phase() != before) { char m[120]; snprintf(m, sizeof m, "race: %s -> %s", PhaseName(before), PhaseName(g_race->phase())); Log(m); }
+    static bool written; if (!written && g_race->decided(now)) { written = true; WriteResult(now); Log("race: result written"); }
 }
 void RaceOnPacket(const uint8_t* d, size_t n, uint64_t now) { if (!g_race) return; Lock l; g_race->OnPacket(d, n, now); }
 

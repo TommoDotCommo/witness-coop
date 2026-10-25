@@ -16,7 +16,11 @@
 #include <set>
 #include <string>
 #include <vector>
+#include <uxtheme.h>
 #include "core.h"
+#include "theme.h"
+#include "lobby.h"
+#include "lobby_win.h"
 #include "../proxy/progress/progress.h"
 
 namespace {
@@ -30,10 +34,10 @@ bool Exists(const std::wstring& p) { return GetFileAttributesW(p.c_str()) != INV
 enum { ID_TAB = 100, ID_APPLY, ID_LAUNCH, ID_NEWGAME, ID_BROWSE, ID_GAMEDIR, ID_STATUS, ID_REFRESH, ID_OPENSAVES, ID_BACKUP, ID_TRASH, ID_SAVELIST, ID_SAVEINFO, ID_SAVEPICK, ID_NG_OK = 300, ID_NG_LASERS, ID_NG_PRESET, ID_NG_INFO, ID_NG_AREAS = 400, ID_FIELD = 1000 };
 enum Kind { kCheck, kCombo, kEdit, kMulti };
 struct Field { int id; int page; std::string label, key; Kind kind; std::vector<std::string> choices; std::string def, hint; HWND h = nullptr; };
-std::vector<Field> g_fields; HWND g_main, g_tab, g_pages[8], g_status; int g_npages;
+std::vector<Field> g_fields; HWND g_main, g_tab, g_pages[9], g_status; int g_npages;
 std::wstring g_dir;                       // the game folder
 bool g_noActivate;                        // --no-activate (tests): the game's window is shown without taking the focus
-const wchar_t* kPageNames[] = {L"Play", L"Video", L"Sound and voice", L"Controls", L"Game options", L"Co-op", L"Saves"};
+const wchar_t* kPageNames[] = {L"Lobby", L"Play", L"Video", L"Sound and voice", L"Controls", L"Game options", L"Co-op", L"Saves"};
 
 std::wstring CfgPath() { return g_dir + L"\\witness_coop.cfg"; }
 std::wstring SaveFolder(const wl::CfgFile& c) {      // where the game keeps its saves, as the mod redirects them (save_dir=instance|<path>)
@@ -44,25 +48,26 @@ std::wstring SaveFolder(const wl::CfgFile& c) {      // where the game keeps its
 }
 wl::CfgFile LoadCfg() { return wl::CfgFile::Parse(ReadFile8(CfgPath())); }
 void Status(const std::wstring& s) { SetWindowTextW(g_status, s.c_str()); }
+void LobbyCfgSave(wl::CfgFile* c); void LobbyCfgLoad(const wl::CfgFile& c); void LobbyPartsChosen(const std::string& spec);
 std::vector<std::string> Models() { std::vector<std::string> r; WIN32_FIND_DATAW fd; HANDLE h = FindFirstFileW((g_dir + L"\\witness_models\\*.glb").c_str(), &fd); if (h == INVALID_HANDLE_VALUE) return r; do { std::string n = U(fd.cFileName); r.push_back(n.substr(0, n.size() - 4)); } while (FindNextFileW(h, &fd)); FindClose(h); std::sort(r.begin(), r.end()); return r; }
 
 void AddFields() {
     int id = ID_FIELD; auto add = [&](int page, const char* label, const char* key, Kind k, std::vector<std::string> ch = {}, const char* def = "", const char* hint = "") { g_fields.push_back({id++, page, label, key, k, ch, def, hint}); };
     const std::vector<std::string> q = {"Low", "Medium", "High"}, msaa = {"Off", "2x MSAA", "4x MSAA", "8x MSAA", "16x MSAA"}, res = {"Display resolution", "1080p", "720p", "Dynamic resolution", "Custom size"};
-    add(1, "Render quality profile", "vid:renderProfile", kCombo, q); add(1, "Full screen", "vid:fullscreen", kCheck); add(1, "Wait for vertical sync", "vid:vsync", kCheck); add(1, "High DPI", "vid:highdpi", kCheck);
-    add(1, "Resolution", "vid:resolution", kCombo, res); add(1, "Custom width", "vid:customW", kEdit, {}, "1920"); add(1, "Custom height", "vid:customH", kEdit, {}, "1080"); add(1, "Anti-aliasing", "vid:multisampling", kCombo, msaa);
-    add(1, "Shading quality", "vid:shading", kCombo, q); add(1, "Reflection quality", "vid:reflection", kCombo, q); add(1, "Texture quality", "vid:texture", kCombo, q); add(1, "Texture detail", "vid:textureDetail", kCombo, q); add(1, "Geometry detail", "vid:geometry", kCombo, q);
-    add(1, "Frame rate limit (0: none)", "cfg:cap_fps", kEdit, {}, "0");
-    add(2, "Game sound off (starts the game with -no_sound)", "cfg:launcher_no_sound", kCheck); add(2, "Game volume, percent", "cfg:game_volume", kEdit, {}, "100", "the game's own sound, set through the Windows volume mixer when it starts");
-    add(2, "Voice chat", "cfg:voice_mode", kCombo, {"off", "open", "ptt"}, "ptt", "off, open (voice gate) or ptt (push to talk)"); add(2, "Push-to-talk key", "cfg:key_voice", kEdit, {}, "N", "a letter or F1 to F12");
-    add(2, "Voice volume, percent", "cfg:voice_volume", kEdit, {}, "100"); add(2, "Microphone volume, percent", "cfg:mic_volume", kEdit, {}, "100"); add(2, "Hear players within (metres)", "cfg:voice_range", kEdit, {}, "25", "beyond it the voice turns into radio");
-    add(2, "Radio range (metres, 0: unlimited)", "cfg:voice_radio_range", kEdit, {}, "0"); add(2, "Radio sound when far away", "cfg:voice_radio", kCheck, {}, "1");
-    add(3, "Chat", "cfg:key_chat", kEdit, {}, "T", "a letter or F1 to F12"); add(3, "Ping a place", "cfg:key_ping", kEdit, {}, "P"); add(3, "Emote wheel (hold)", "cfg:key_emote", kEdit, {}, "G"); add(3, "Draw (hold)", "cfg:key_draw", kEdit, {}, "X");
-    add(3, "Drawing canvas", "cfg:key_canvas", kEdit, {}, "Z"); add(3, "Ink colour", "cfg:key_color", kEdit, {}, "B"); add(3, "Character list", "cfg:key_character", kEdit, {}, "C");
-    for (const auto& d : wl::SaveOptionDefs()) add(4, d.label, (std::string("opt:") + d.name).c_str(), d.kind == wl::OptKind::Bool ? kCheck : kEdit);
-    add(5, "Player number (1, 2, ...)", "cfg:id", kEdit, {}, "1"); add(5, "Name shown to the others", "cfg:name", kEdit); add(5, "UDP port to listen on", "cfg:listen", kEdit, {}, "47001");
-    add(5, "Other players (one per line: number,address,port)", "cfgmulti:peer", kMulti); add(5, "Your character", "cfg:character", kCombo, {}, ""); add(5, "Show other players as different models", "cfg:model_by_player", kCheck);
-    add(5, "Developer menu (F8)", "cfg:dev_menu", kCheck);
+    add(2, "Render quality profile", "vid:renderProfile", kCombo, q); add(2, "Full screen", "vid:fullscreen", kCheck); add(2, "Wait for vertical sync", "vid:vsync", kCheck); add(2, "High DPI", "vid:highdpi", kCheck);
+    add(2, "Resolution", "vid:resolution", kCombo, res); add(2, "Custom width", "vid:customW", kEdit, {}, "1920"); add(2, "Custom height", "vid:customH", kEdit, {}, "1080"); add(2, "Anti-aliasing", "vid:multisampling", kCombo, msaa);
+    add(2, "Shading quality", "vid:shading", kCombo, q); add(2, "Reflection quality", "vid:reflection", kCombo, q); add(2, "Texture quality", "vid:texture", kCombo, q); add(2, "Texture detail", "vid:textureDetail", kCombo, q); add(2, "Geometry detail", "vid:geometry", kCombo, q);
+    add(2, "Frame rate limit (0: none)", "cfg:cap_fps", kEdit, {}, "0");
+    add(3, "Game sound off (starts the game with -no_sound)", "cfg:launcher_no_sound", kCheck); add(3, "Game volume, percent", "cfg:game_volume", kEdit, {}, "100", "the game's own sound, set through the Windows volume mixer when it starts");
+    add(3, "Voice chat", "cfg:voice_mode", kCombo, {"off", "open", "ptt"}, "ptt", "off, open (voice gate) or ptt (push to talk)"); add(3, "Push-to-talk key", "cfg:key_voice", kEdit, {}, "N", "a letter or F1 to F12");
+    add(3, "Voice volume, percent", "cfg:voice_volume", kEdit, {}, "100"); add(3, "Microphone volume, percent", "cfg:mic_volume", kEdit, {}, "100"); add(3, "Hear players within (metres)", "cfg:voice_range", kEdit, {}, "25", "beyond it the voice turns into radio");
+    add(3, "Radio range (metres, 0: unlimited)", "cfg:voice_radio_range", kEdit, {}, "0"); add(3, "Radio sound when far away", "cfg:voice_radio", kCheck, {}, "1");
+    add(4, "Chat", "cfg:key_chat", kEdit, {}, "T", "a letter or F1 to F12"); add(4, "Ping a place", "cfg:key_ping", kEdit, {}, "P"); add(4, "Emote wheel (hold)", "cfg:key_emote", kEdit, {}, "G"); add(4, "Draw (hold)", "cfg:key_draw", kEdit, {}, "X");
+    add(4, "Drawing canvas", "cfg:key_canvas", kEdit, {}, "Z"); add(4, "Ink colour", "cfg:key_color", kEdit, {}, "B"); add(4, "Character list", "cfg:key_character", kEdit, {}, "C");
+    for (const auto& d : wl::SaveOptionDefs()) add(5, d.label, (std::string("opt:") + d.name).c_str(), d.kind == wl::OptKind::Bool ? kCheck : kEdit);
+    add(6, "Player number (1, 2, ...)", "cfg:id", kEdit, {}, "1"); add(6, "Name shown to the others", "cfg:name", kEdit); add(6, "UDP port to listen on", "cfg:listen", kEdit, {}, "47001");
+    add(6, "Other players (one per line: number,address,port)", "cfgmulti:peer", kMulti); add(6, "Your character", "cfg:character", kCombo, {}, ""); add(6, "Show other players as different models", "cfg:model_by_player", kCheck);
+    add(6, "Developer menu (F8)", "cfg:dev_menu", kCheck);
 }
 Field* ByKey(const std::string& k) { for (auto& f : g_fields) if (f.key == k) return &f; return nullptr; }
 std::string GetVal(Field& f) {
@@ -125,7 +130,7 @@ void LoadAll() {
         else if (f.key.rfind("cfg:", 0) == 0) SetVal(f, c.Get(f.key.substr(4), f.def));
         else if (f.key == "cfgmulti:peer") FillPeers(f, c);
     }
-    RefreshSaves();
+    LobbyCfgLoad(c); RefreshSaves();
     // the game's options come from the save chosen in the box (the newest first)
     std::vector<uint8_t> data; if (!g_saves.empty()) { std::string t = ReadFile8(g_saves[0].path); data.assign(t.begin(), t.end()); }
     auto opts = wl::ReadSaveOptions(data);
@@ -156,6 +161,7 @@ bool ApplyAll(std::wstring* msg) {
 #ifndef WL_MUT_NO_VIDEO_WRITE
     if (!WriteFile8(sf + L"\\Launcher.variables", wl::FormatVideo(v))) { *msg = L"Could not write Launcher.variables in " + sf; return false; }
 #endif
+    LobbyCfgSave(&c);
 #ifdef WL_MUT_CFG_DROP
     { wl::CfgFile only; for (auto& f : g_fields) if (f.key == "cfg:name") only.Set("name", GetVal(f)); c = only; }      // (mutant) the lines the launcher does not know are lost
 #endif
@@ -178,7 +184,7 @@ bool ApplyAll(std::wstring* msg) {
 }
 
 // ---- the new game window
-HWND g_ng; std::vector<std::pair<int, std::string>> g_ngAreas;
+HWND g_ng; bool g_ngLobby; std::vector<std::pair<int, std::string>> g_ngAreas;
 std::string NgSpec() {
     std::vector<std::string> areas; for (auto& a : g_ngAreas) if (SendDlgItemMessageW(g_ng, a.first, BM_GETCHECK, 0, 0) == BST_CHECKED) areas.push_back(a.second);
     wchar_t b[20]; GetDlgItemTextW(g_ng, ID_NG_LASERS, b, 20); int lasers = _wtoi(b);
@@ -199,18 +205,21 @@ void LaunchGame(bool newGame);
 void StartNewGame() {
     std::string spec = NgSpec(); wl::CfgFile c = LoadCfg(); std::wstring sf = SaveFolder(c);
     if (!spec.empty()) { std::string err; if (wprog::Resolve(wprog::Builtin(), spec, &err).empty()) { MessageBoxW(g_ng, W("Not possible: " + err).c_str(), L"New game", MB_OK); return; } }
+    if (g_ngLobby) { DestroyWindow(g_ng); g_ng = nullptr; LobbyPartsChosen(spec); return; }      // (for the lobby: only the choice is kept; the host's start launches it)
     DeleteFileW((sf + L"\\coop_progress.txt").c_str());      // the forced-progress list of the old world must not be put into this one
     if (spec.empty()) c.Unset("start_progress"); else c.Set("start_progress", spec);
     WriteFile8(CfgPath(), c.Text()); DestroyWindow(g_ng); g_ng = nullptr; LaunchGame(true);
 }
 LRESULT CALLBACK NgProc(HWND h, UINT m, WPARAM w, LPARAM l) {
+    if (m == WM_CTLCOLORSTATIC || m == WM_CTLCOLOREDIT || m == WM_CTLCOLORLISTBOX || m == WM_CTLCOLORBTN) return th::CtlColor(m, (HDC)w, (HWND)l);
     if (m == WM_COMMAND) { int id = LOWORD(w); if (id == ID_NG_OK) { StartNewGame(); return 0; } if (id == IDCANCEL) { DestroyWindow(h); g_ng = nullptr; return 0; } if (id >= ID_NG_AREAS || id == ID_NG_PRESET || id == ID_NG_LASERS) NgUpdate(); return 0; }
     if (m == WM_CLOSE) { DestroyWindow(h); g_ng = nullptr; return 0; }
     return DefWindowProcW(h, m, w, l);
 }
-void OpenNewGame() {
+void OpenNewGame(bool forLobby = false) {
     if (g_ng) { SetForegroundWindow(g_ng); return; }
-    static bool reg; if (!reg) { WNDCLASSW wc = {}; wc.lpfnWndProc = NgProc; wc.hInstance = GetModuleHandleW(nullptr); wc.lpszClassName = L"WitnessNewGame"; wc.hbrBackground = (HBRUSH)(COLOR_BTNFACE + 1); wc.hCursor = LoadCursorW(nullptr, IDC_ARROW); RegisterClassW(&wc); reg = true; }
+    g_ngLobby = forLobby;
+    static bool reg; if (!reg) { WNDCLASSW wc = {}; wc.lpfnWndProc = NgProc; wc.hInstance = GetModuleHandleW(nullptr); wc.lpszClassName = L"WitnessNewGame"; wc.hbrBackground = th::BgBrush(); wc.hCursor = LoadCursorW(nullptr, IDC_ARROW); RegisterClassW(&wc); reg = true; }
     g_ng = CreateWindowExW(WS_EX_DLGMODALFRAME, L"WitnessNewGame", L"New game: what is already completed", WS_CAPTION | WS_SYSMENU | WS_VISIBLE, CW_USEDEFAULT, CW_USEDEFAULT, 620, 640, g_main, nullptr, GetModuleHandleW(nullptr), nullptr);
     HFONT font = (HFONT)SendMessageW(g_main, WM_GETFONT, 0, 0); auto mk = [&](const wchar_t* cls, const wchar_t* text, DWORD style, int x, int y, int w, int h, int id) { HWND c = CreateWindowExW(0, cls, text, WS_CHILD | WS_VISIBLE | style, x, y, w, h, g_ng, (HMENU)(INT_PTR)id, nullptr, nullptr); SendMessageW(c, WM_SETFONT, (WPARAM)font, TRUE); return c; };
     mk(L"STATIC", L"Tick the parts of the map that are done when the game starts. Whatever the game needs before them (the gate of the tutorial, the doors on the way) is solved too, in its own order.", SS_LEFT, 12, 8, 590, 36, 0);
@@ -222,7 +231,7 @@ void OpenNewGame() {
     y += 32; mk(L"STATIC", L"Or a ready-made start:", SS_LEFT, 16, y + 3, 280, 20, 0); HWND cb = mk(L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_VSCROLL, 300, y, 200, 200, ID_NG_PRESET);
     SendMessageW(cb, CB_ADDSTRING, 0, (LPARAM)L"(none)"); for (const auto& n : wprog::PresetNames()) SendMessageW(cb, CB_ADDSTRING, 0, (LPARAM)W(n).c_str()); SendMessageW(cb, CB_SETCURSEL, 0, 0);
     y += 40; mk(L"STATIC", L"", SS_LEFT, 16, y, 580, 60, ID_NG_INFO); y += 70;
-    mk(L"BUTTON", L"Start new game", BS_DEFPUSHBUTTON, 16, y, 160, 30, ID_NG_OK); mk(L"BUTTON", L"Cancel", BS_PUSHBUTTON, 190, y, 100, 30, IDCANCEL);
+    mk(L"BUTTON", forLobby ? L"Use these" : L"Start new game", BS_DEFPUSHBUTTON, 16, y, 160, 30, ID_NG_OK); mk(L"BUTTON", L"Cancel", BS_PUSHBUTTON, 190, y, 100, 30, IDCANCEL);
     NgUpdate();
 }
 
@@ -238,52 +247,253 @@ void LaunchGame(bool newGame) {
 // ---- the window
 HWND Make(HWND parent, const wchar_t* cls, const wchar_t* text, DWORD style, int x, int y, int w, int h, int id, DWORD ex = 0) {
     HWND c = CreateWindowExW(ex, cls, text, WS_CHILD | WS_VISIBLE | style, x, y, w, h, parent, (HMENU)(INT_PTR)id, GetModuleHandleW(nullptr), nullptr);
-    SendMessageW(c, WM_SETFONT, (WPARAM)GetStockObject(DEFAULT_GUI_FONT), TRUE); return c;
+    SendMessageW(c, WM_SETFONT, (WPARAM)GetStockObject(DEFAULT_GUI_FONT), TRUE); th::Style(c); return c;
 }
 void ShowPage(int p) { for (int i = 0; i < g_npages; ++i) ShowWindow(g_pages[i], i == p ? SW_SHOW : SW_HIDE); }
 LRESULT CALLBACK PageProc(HWND h, UINT m, WPARAM w, LPARAM l) {
+    if (m == WM_CTLCOLORSTATIC || m == WM_CTLCOLOREDIT || m == WM_CTLCOLORLISTBOX || m == WM_CTLCOLORBTN) return th::CtlColor(m, (HDC)w, (HWND)l);
+    if (m == WM_DRAWITEM) return SendMessageW(g_main, WM_DRAWITEM, w, l);
     if (m == WM_COMMAND) { SendMessageW(g_main, WM_COMMAND, w, l); return 0; }
     if (m == WM_NOTIFY) { NMHDR* n = (NMHDR*)l; if (n->idFrom == ID_SAVELIST && n->code == LVN_ITEMCHANGED) { NMLISTVIEW* nl = (NMLISTVIEW*)l; if (nl->uNewState & LVIS_SELECTED) ShowSaveInfo(nl->iItem); } return 0; }
     return DefWindowProcW(h, m, w, l);
 }
+void BuildLobbyPage();
 void BuildPages(HWND parent) {
-    WNDCLASSW wc = {}; wc.lpfnWndProc = PageProc; wc.hInstance = GetModuleHandleW(nullptr); wc.lpszClassName = L"WitnessLauncherPage"; wc.hbrBackground = (HBRUSH)(COLOR_BTNFACE + 1); RegisterClassW(&wc);
-    g_npages = 7; static TCITEMW items[8];
+    WNDCLASSW wc = {}; wc.lpfnWndProc = PageProc; wc.hInstance = GetModuleHandleW(nullptr); wc.lpszClassName = L"WitnessLauncherPage"; wc.hbrBackground = th::BgBrush(); wc.hCursor = LoadCursorW(nullptr, IDC_ARROW); RegisterClassW(&wc);
+    g_npages = 8; static TCITEMW items[9];
     for (int i = 0; i < g_npages; ++i) { items[i] = {}; items[i].mask = TCIF_TEXT; items[i].pszText = (LPWSTR)kPageNames[i]; TabCtrl_InsertItem(g_tab, i, &items[i]); }
+    th::StyleTab(g_tab);
     RECT r; GetClientRect(g_tab, &r); TabCtrl_AdjustRect(g_tab, FALSE, &r);      // the pages go under the row of tabs (measured once the tabs exist)
     for (int i = 0; i < g_npages; ++i) g_pages[i] = CreateWindowExW(0, L"WitnessLauncherPage", L"", WS_CHILD, r.left, r.top, r.right - r.left, r.bottom - r.top, g_tab, nullptr, GetModuleHandleW(nullptr), nullptr);
     // Play
-    int y = 16; Make(g_pages[0], L"STATIC", L"Game folder:", SS_LEFT, 16, y + 3, 100, 20, 0); Make(g_pages[0], L"EDIT", g_dir.c_str(), WS_BORDER | ES_AUTOHSCROLL | ES_READONLY, 120, y, 420, 24, ID_GAMEDIR); Make(g_pages[0], L"BUTTON", L"Browse...", BS_PUSHBUTTON, 550, y, 90, 24, ID_BROWSE);
-    y += 50; Make(g_pages[0], L"BUTTON", L"Continue (start the game)", BS_DEFPUSHBUTTON, 16, y, 240, 40, ID_LAUNCH); Make(g_pages[0], L"BUTTON", L"New game...", BS_PUSHBUTTON, 270, y, 160, 40, ID_NEWGAME);
-    Make(g_pages[0], L"STATIC", L"Continue starts the game with the settings of every page, on your latest save. New game asks what is already completed and starts a fresh world; your saves stay where they are.", SS_LEFT, 16, y + 56, 620, 40, 0);
+    int y = 16; Make(g_pages[1], L"STATIC", L"Game folder:", SS_LEFT, 16, y + 3, 100, 20, 0); Make(g_pages[1], L"EDIT", g_dir.c_str(), WS_BORDER | ES_AUTOHSCROLL | ES_READONLY, 120, y, 420, 24, ID_GAMEDIR); Make(g_pages[1], L"BUTTON", L"Browse...", BS_PUSHBUTTON, 550, y, 90, 24, ID_BROWSE);
+    y += 50; Make(g_pages[1], L"BUTTON", L"Continue (start the game)", BS_DEFPUSHBUTTON, 16, y, 240, 40, ID_LAUNCH); Make(g_pages[1], L"BUTTON", L"New game...", BS_PUSHBUTTON, 270, y, 160, 40, ID_NEWGAME);
+    Make(g_pages[1], L"STATIC", L"Continue starts the game with the settings of every page, on your latest save. New game asks what is already completed and starts a fresh world; your saves stay where they are.", SS_LEFT, 16, y + 56, 620, 40, 0);
     // fields
     std::vector<std::string> models = Models();
     for (auto& f : g_fields) {
-        HWND pg = g_pages[f.page]; static int rowY[8]; if (!rowY[f.page]) rowY[f.page] = 12; int ry = rowY[f.page]; int lw = 300;
+        HWND pg = g_pages[f.page]; static int rowY[9]; if (!rowY[f.page]) rowY[f.page] = 12; int ry = rowY[f.page]; int lw = 300;
         if (f.kind == kMulti) { Make(pg, L"STATIC", W(f.label).c_str(), SS_LEFT, 16, ry + 3, lw, 20, 0); f.h = Make(pg, L"EDIT", L"", WS_BORDER | ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN | WS_VSCROLL, 330, ry, 320, 90, f.id); rowY[f.page] += 98; continue; }
         Make(pg, L"STATIC", W(f.label).c_str(), SS_LEFT, 16, ry + 3, lw, 20, 0);
         if (f.kind == kCheck) f.h = Make(pg, L"BUTTON", L"", BS_AUTOCHECKBOX, 330, ry, 24, 22, f.id);
         else if (f.kind == kEdit) f.h = Make(pg, L"EDIT", L"", WS_BORDER | ES_AUTOHSCROLL, 330, ry, 120, 22, f.id);
         else { f.h = Make(pg, L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_VSCROLL, 330, ry, 220, 200, f.id); if (f.key == "cfg:character") { f.choices = {"(default)"}; for (auto& m : models) f.choices.push_back(m); } for (auto& c : f.choices) SendMessageW(f.h, CB_ADDSTRING, 0, (LPARAM)W(c).c_str()); }
-        if (!f.hint.empty()) Make(pg, L"STATIC", W(f.hint).c_str(), SS_LEFT, 460, ry + 3, 200, 20, 0);
+        if (!f.hint.empty()) th::MarkMuted(Make(pg, L"STATIC", W(f.hint).c_str(), SS_LEFT, 460, ry + 3, 340, 20, 0));
         rowY[f.page] += 28;
     }
     // saves
-    HWND sp = g_pages[6]; g_saveList = CreateWindowExW(WS_EX_CLIENTEDGE, WC_LISTVIEWW, L"", WS_CHILD | WS_VISIBLE | LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS, 12, 12, 650, 190, sp, (HMENU)ID_SAVELIST, nullptr, nullptr);
-    ListView_SetExtendedListViewStyle(g_saveList, LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES); SendMessageW(g_saveList, WM_SETFONT, (WPARAM)GetStockObject(DEFAULT_GUI_FONT), TRUE);
+    HWND sp = g_pages[7]; g_saveList = CreateWindowExW(WS_EX_CLIENTEDGE, WC_LISTVIEWW, L"", WS_CHILD | WS_VISIBLE | LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS, 12, 12, 650, 190, sp, (HMENU)ID_SAVELIST, nullptr, nullptr);
+    ListView_SetExtendedListViewStyle(g_saveList, LVS_EX_FULLROWSELECT); th::StyleList(g_saveList); SendMessageW(g_saveList, WM_SETFONT, (WPARAM)GetStockObject(DEFAULT_GUI_FONT), TRUE);
     const wchar_t* cols[] = {L"Saved", L"Players", L"Progress", L"Lasers", L"Time played"}; int cw[] = {120, 230, 120, 60, 100};
     for (int i = 0; i < 5; ++i) { LVCOLUMNW c = {}; c.mask = LVCF_TEXT | LVCF_WIDTH; c.pszText = (LPWSTR)cols[i]; c.cx = cw[i]; ListView_InsertColumn(g_saveList, i, &c); }
     g_saveInfo = Make(sp, L"EDIT", L"", WS_BORDER | ES_MULTILINE | ES_READONLY | WS_VSCROLL | ES_AUTOVSCROLL, 12, 212, 650, 200, ID_SAVEINFO);
     Make(sp, L"BUTTON", L"Refresh", BS_PUSHBUTTON, 12, 422, 90, 26, ID_REFRESH); Make(sp, L"BUTTON", L"Copy to backup", BS_PUSHBUTTON, 112, 422, 120, 26, ID_BACKUP); Make(sp, L"BUTTON", L"Move to backup folder", BS_PUSHBUTTON, 242, 422, 150, 26, ID_TRASH); Make(sp, L"BUTTON", L"Open folder", BS_PUSHBUTTON, 402, 422, 100, 26, ID_OPENSAVES);
     // the game-options page chooses its save
-    Make(g_pages[4], L"STATIC", L"Save to change:", SS_LEFT, 16, 330, 200, 20, 0); g_savePick = Make(g_pages[4], L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_VSCROLL, 330, 326, 220, 200, ID_SAVEPICK);
-    Make(g_pages[4], L"STATIC", L"These are the game's own options; they live inside each save. A copy of the save as it was is kept once (.before-launcher).", SS_LEFT, 16, 362, 640, 36, 0);
+    Make(g_pages[5], L"STATIC", L"Save to change:", SS_LEFT, 16, 330, 200, 20, 0); g_savePick = Make(g_pages[5], L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_VSCROLL, 330, 326, 220, 200, ID_SAVEPICK);
+    BuildLobbyPage();
+    th::MarkMuted(Make(g_pages[5], L"STATIC", L"These are the game's own options; they live inside each save. A copy of the save as it was is kept once (.before-launcher).", SS_LEFT, 16, 362, 640, 36, 0));
 }
+// ---- the lobby page: host or join, see who is there, chat by text and voice, choose what to play, start; and be back here when the game is over
+enum { ID_LB_HOST = 600, ID_LB_JOIN, ID_LB_INVITE, ID_LB_COPY, ID_LB_LEAVE, ID_LB_READY, ID_LB_START, ID_LB_MEMBERS, ID_LB_LOG, ID_LB_CHAT, ID_LB_SEND, ID_LB_MODE, ID_LB_GOAL, ID_LB_NEWGAME, ID_LB_PARTS, ID_LB_STATUS, ID_LB_PORT, ID_LB_ADVERTISE, ID_LB_MUTE, ID_LB_DEAF, ID_LB_RESULT, ID_LB_LEVEL, ID_LB_PARTSINFO, ID_LB_WHO };
+lw::Session g_sess; lw::Voice g_voice; wlobby::State g_shown; std::wstring g_chatLog; HANDLE g_game; DWORD g_gamePid; std::string g_lobbySpec, g_cfgBackup, g_lastResult; bool g_gameWasRace;
+std::wstring g_statFile, g_cmdFile; ULONGLONG g_statAt, g_launchedAt; unsigned g_launches; std::string g_lastLaunchCfg; bool g_voiceWanted = true; std::set<unsigned> g_everHeard;
+HWND LB(int id) { return GetDlgItem(g_pages[0], id); }
+std::string EditText(HWND h) { wchar_t b[1000] = {}; GetWindowTextW(h, b, 1000); return U(b); }
+void LobbyStatus(const std::wstring& s) { SetWindowTextW(LB(ID_LB_STATUS), s.c_str()); }
+std::string CfgGet(const char* k, const char* d = "") { return LoadCfg().Get(k, d); }
+unsigned KeyFromName(const std::string& n) { if (n.size() == 1) return (unsigned)toupper((unsigned char)n[0]); if (n.size() >= 2 && (n[0] == 'F' || n[0] == 'f')) { int k = atoi(n.c_str() + 1); if (k >= 1 && k <= 12) return VK_F1 + k - 1; } return 'N'; }
+lw::VoiceCfg VoiceCfgNow() {
+    wl::CfgFile c = LoadCfg(); lw::VoiceCfg v; std::string m = c.Get("voice_mode", "ptt"); v.mode = m == "off" ? 0 : m == "open" ? 1 : 2; v.key = KeyFromName(c.Get("key_voice", "N"));
+    v.micVolume = atoi(c.Get("mic_volume", "100").c_str()); v.outVolume = atoi(c.Get("voice_volume", "100").c_str()); v.testTone = c.Get("voice_test_tone", ""); v.muteOutput = c.Get("voice_mute_output", "0") == "1"; return v;
+}
+void StartVoice() {
+    if (!g_sess.Active() || g_game || !g_sess.Joined() || g_voice.Running() || !g_voiceWanted) return;
+    g_sess.SetVoiceSink([](const wvoice::Packet& p) { g_voice.Push(p); g_everHeard.insert(p.from); });
+    g_voice.SetMuted(SendMessageW(LB(ID_LB_MUTE), BM_GETCHECK, 0, 0) == BST_CHECKED); g_voice.SetDeaf(SendMessageW(LB(ID_LB_DEAF), BM_GETCHECK, 0, 0) == BST_CHECKED); g_voice.Start(&g_sess, VoiceCfgNow());
+}
+wlobby::Settings SettingsFromUi() {
+    wlobby::Settings s; s.mode = SendMessageW(LB(ID_LB_MODE), CB_GETCURSEL, 0, 0) == 1 ? wlobby::kRace : wlobby::kCoop; s.raceGoal = EditText(LB(ID_LB_GOAL)); s.newGame = SendMessageW(LB(ID_LB_NEWGAME), BM_GETCHECK, 0, 0) == BST_CHECKED; s.progress = g_lobbySpec; return s;
+}
+void PushSettings() { if (g_sess.Active() && g_sess.IsHost()) g_sess.SetSettings(SettingsFromUi()); }
+void PartsInfo() { SetWindowTextW(LB(ID_LB_PARTSINFO), g_lobbySpec.empty() ? L"nothing done yet" : W(g_lobbySpec).c_str()); }
+void RefreshLobbyUi();
+void LobbyCfgSave(wl::CfgFile* c) { std::string port = EditText(LB(ID_LB_PORT)), adv = EditText(LB(ID_LB_ADVERTISE)); if (!port.empty() && (port != "47100" || c->Has("lobby_port"))) c->Set("lobby_port", port); if (adv.empty()) c->Unset("lobby_advertise"); else c->Set("lobby_advertise", adv); }
+void LobbyCfgLoad(const wl::CfgFile& c) { if (!g_pages[0] || !LB(ID_LB_PORT)) return; SetWindowTextW(LB(ID_LB_PORT), W(c.Get("lobby_port", "47100")).c_str()); SetWindowTextW(LB(ID_LB_ADVERTISE), W(c.Get("lobby_advertise", "")).c_str()); }
+void LobbyPartsChosen(const std::string& spec) { g_lobbySpec = spec; PartsInfo(); PushSettings(); }
+void HostLobby() {
+    wl::CfgFile c = LoadCfg(); std::string err; unsigned port = (unsigned)atoi(EditText(LB(ID_LB_PORT)).c_str()); if (port < 1 || port > 65535) { LobbyStatus(L"The lobby port is a number from 1 to 65535."); return; }
+    uint16_t gp = (uint16_t)atoi(c.Get("listen", "47001").c_str()); std::string name = c.Get("name", "Player");
+    if (!g_sess.Host(name, gp, (uint16_t)port, EditText(LB(ID_LB_ADVERTISE)), &err)) { LobbyStatus(W(err)); return; }
+    SetWindowTextW(LB(ID_LB_INVITE), W(g_sess.Invite()).c_str()); g_chatLog.clear(); SetWindowTextW(LB(ID_LB_LOG), L""); PushSettings(); StartVoice(); RefreshLobbyUi();
+}
+void JoinLobby() {
+    wl::CfgFile c = LoadCfg(); std::string err; uint16_t gp = (uint16_t)atoi(c.Get("listen", "47001").c_str());
+    if (!g_sess.Join(EditText(LB(ID_LB_INVITE)), c.Get("name", "Player"), gp, &err)) { LobbyStatus(W(err)); return; }
+    g_chatLog.clear(); SetWindowTextW(LB(ID_LB_LOG), L""); LobbyStatus(L"Joining..."); RefreshLobbyUi();
+}
+void LeaveLobby() { g_voice.Stop(); g_sess.Stop(); g_shown = wlobby::State(); SendMessageW(LB(ID_LB_MEMBERS), LB_RESETCONTENT, 0, 0); SendMessageW(LB(ID_LB_READY), BM_SETCHECK, BST_UNCHECKED, 0); RefreshLobbyUi(); LobbyStatus(L"You left the lobby."); }
+void AppendChat(const std::wstring& line) { g_chatLog += line + L"\r\n"; HWND l = LB(ID_LB_LOG); SetWindowTextW(l, g_chatLog.c_str()); SendMessageW(l, EM_SETSEL, g_chatLog.size(), g_chatLog.size()); SendMessageW(l, EM_SCROLLCARET, 0, 0); }
+std::string MemberName(unsigned id) { for (const auto& m : g_shown.members) if (m.id == id) return m.name; return "player " + std::to_string(id); }
+std::string ClockText(unsigned ms) { char b[24]; snprintf(b, sizeof b, "%u:%02u.%u", ms / 60000, (ms / 1000) % 60, (ms / 100) % 10); return b; }
+std::string RaceResultText() {      // witness_race_result.txt written by the game: goal=, winner=, then place|name|finish ms|phase
+    std::string t = ReadFile8(g_dir + L"\\witness_race_result.txt"); if (t.empty()) return ""; std::string out = "Race: "; size_t at = 0; bool any = false;
+    while (at < t.size()) { size_t e = t.find('\n', at); if (e == std::string::npos) e = t.size(); std::string line = t.substr(at, e - at); at = e + 1; unsigned place = 0, ms = 0; char name[80] = {}, ph[24] = {};
+        if (sscanf(line.c_str(), "%u|%79[^|]|%u|%23s", &place, name, &ms, ph) == 4) { if (any) out += "   "; any = true; out += std::to_string(place) + ". " + name + (!strcmp(ph, "finished") ? " " + ClockText(ms) : std::string(" (not finished)")); } }
+    return any ? out : "";
+}
+void LaunchFromLobby(const wlobby::Launch& l) {
+    std::wstring exe = g_dir + L"\\witness64_d3d11.exe"; if (!Exists(exe)) exe = g_dir + L"\\witness_d3d11.exe"; if (!Exists(exe)) { LobbyStatus(L"The game was not found in " + g_dir); g_sess.SetInGame(false); return; }
+    std::wstring msg; if (!ApplyAll(&msg)) { LobbyStatus(msg); return; }
+    g_cfgBackup = ReadFile8(CfgPath());      // the player's own settings: put back when the game is over
+    std::string cfg = wlobby::BuildGameCfg(g_cfgBackup, l, g_sess.HostIp()); WriteFile8(CfgPath(), cfg); g_lastLaunchCfg = cfg;
+    wl::CfgFile c = LoadCfg(); std::wstring sf = SaveFolder(c); if (l.state.settings.newGame) DeleteFileW((sf + L"\\coop_progress.txt").c_str());
+    DeleteFileW((g_dir + L"\\witness_race_result.txt").c_str()); g_gameWasRace = l.state.settings.mode == wlobby::kRace;
+    std::wstring cmd = L"\"" + exe + L"\" " + W(wl::LaunchArgs(c, l.state.settings.newGame)); STARTUPINFOW si = {sizeof si}; PROCESS_INFORMATION pi = {}; if (g_noActivate) { si.dwFlags = STARTF_USESHOWWINDOW; si.wShowWindow = SW_SHOWNOACTIVATE; }
+    if (CreateProcessW(nullptr, &cmd[0], nullptr, nullptr, FALSE, 0, nullptr, g_dir.c_str(), &si, &pi)) {
+        CloseHandle(pi.hThread); g_game = pi.hProcess; g_gamePid = pi.dwProcessId; g_launchedAt = GetTickCount64(); ++g_launches; g_voice.Stop(); g_sess.SetInGame(true); LobbyStatus(L"The game is running. The lobby stays here: you are back in it when the game ends.");
+    } else { WriteFile8(CfgPath(), g_cfgBackup); LobbyStatus(L"Could not start the game."); g_sess.SetInGame(false); }
+}
+void GameEnded() {
+    CloseHandle(g_game); g_game = nullptr; g_gamePid = 0; if (!g_cfgBackup.empty()) { WriteFile8(CfgPath(), g_cfgBackup); g_cfgBackup.clear(); }
+    std::string res = g_gameWasRace ? RaceResultText() : ""; if (res.empty()) res = g_gameWasRace ? "Race: no result (the game was closed before it ended)" : "The game ended."; g_lastResult = res;
+    if (g_sess.IsHost()) g_sess.SetResult(res);
+    g_sess.SetInGame(false); StartVoice(); LobbyStatus(L"The game ended. Back in the lobby."); LoadAll();
+}
+void RefreshLobbyUi() {
+    bool act = g_sess.Active(), host = act && g_sess.IsHost(), joined = act && g_sess.Joined(); bool lobby = g_shown.phase == wlobby::kLobby;
+    EnableWindow(LB(ID_LB_HOST), !act); EnableWindow(LB(ID_LB_JOIN), !act); EnableWindow(LB(ID_LB_LEAVE), act); EnableWindow(LB(ID_LB_COPY), host);
+    SendMessageW(LB(ID_LB_INVITE), EM_SETREADONLY, act ? TRUE : FALSE, 0); EnableWindow(LB(ID_LB_PORT), !act); EnableWindow(LB(ID_LB_ADVERTISE), !act);
+    EnableWindow(LB(ID_LB_READY), joined && !host && lobby); EnableWindow(LB(ID_LB_START), host && lobby); EnableWindow(LB(ID_LB_SEND), joined); EnableWindow(LB(ID_LB_CHAT), joined);
+    EnableWindow(LB(ID_LB_MODE), !act || host); EnableWindow(LB(ID_LB_GOAL), !act || host); EnableWindow(LB(ID_LB_NEWGAME), !act || host); EnableWindow(LB(ID_LB_PARTS), !act || host);
+}
+void ApplyRemoteSettings(const wlobby::State& st) {      // a guest sees what the host chose
+    if (g_sess.IsHost()) return; SendMessageW(LB(ID_LB_MODE), CB_SETCURSEL, st.settings.mode == wlobby::kRace ? 1 : 0, 0); SetWindowTextW(LB(ID_LB_GOAL), W(st.settings.raceGoal).c_str());
+    SendMessageW(LB(ID_LB_NEWGAME), BM_SETCHECK, st.settings.newGame ? BST_CHECKED : BST_UNCHECKED, 0); g_lobbySpec = st.settings.progress; PartsInfo();
+}
+void LobbyTick() {
+    if (g_game && WaitForSingleObject(g_game, 0) == WAIT_OBJECT_0) GameEnded();
+    if (g_sess.Active()) {
+        bool joined = g_sess.Joined();
+        if (joined) {
+            wlobby::State st = g_sess.State(); bool changed = st.seq != g_shown.seq || st.members.size() != g_shown.members.size() || st.phase != g_shown.phase; wlobby::Phase before = g_shown.phase; g_shown = st;
+            if (changed) {
+                HWND lst = LB(ID_LB_MEMBERS); SendMessageW(lst, LB_RESETCONTENT, 0, 0); for (size_t i = 0; i < st.members.size(); ++i) SendMessageW(lst, LB_ADDSTRING, 0, (LPARAM)W(st.members[i].name).c_str());
+                ApplyRemoteSettings(st);
+                if (!st.lastResult.empty()) SetWindowTextW(LB(ID_LB_RESULT), W("Last game:  " + st.lastResult).c_str());
+                if (before != wlobby::kLobby && st.phase == wlobby::kLobby) SendMessageW(LB(ID_LB_READY), BM_SETCHECK, BST_UNCHECKED, 0);
+                RefreshLobbyUi();
+            }
+            InvalidateRect(LB(ID_LB_MEMBERS), nullptr, FALSE);
+            std::wstring t; if (g_sess.IsHost()) t = L"Hosting.  Send friends the invite above."; else t = L"In the lobby of " + W(MemberName(1)) + L".";
+            if (st.phase == wlobby::kStarting) t = L"The game starts in " + std::to_wstring((st.startInMs + 999) / 1000) + L" ...";
+            else if (st.phase == wlobby::kInGame) t = g_game ? L"The game is running." : L"A game is running (you were not in it).";
+            LobbyStatus(t); StartVoice();
+            for (const auto& c : g_sess.TakeChat()) AppendChat(W(MemberName(c.from) + ":  " + c.text));
+            wlobby::Launch l; if (g_sess.TakeLaunch(&l)) LaunchFromLobby(l);
+        } else {
+            wlobby::JoinResult r = g_sess.Refused();
+            if (!g_sess.IsHost()) LobbyStatus(r == wlobby::kBadToken ? L"The invite is wrong (the code does not match)." : r == wlobby::kFull ? L"The lobby is full." : r == wlobby::kBadVersion ? L"This launcher is a different version from the host's." : L"Looking for the host ...");
+            if (g_voice.Running()) g_voice.Stop();
+        }
+    }
+    // the microphone level
+    InvalidateRect(LB(ID_LB_LEVEL), nullptr, FALSE);
+}
+void DrawMember(DRAWITEMSTRUCT* d) {
+    HDC dc = d->hDC; RECT r = d->rcItem; HBRUSH bg = CreateSolidBrush((d->itemState & ODS_SELECTED) ? th::kSurface2 : th::kSurface); FillRect(dc, &r, bg); DeleteObject(bg);
+    if (d->itemID == (UINT)-1 || d->itemID >= g_shown.members.size()) return; const auto& m = g_shown.members[d->itemID]; SetBkMode(dc, TRANSPARENT);
+    th::DrawDot(dc, r.left + 16, (r.top + r.bottom) / 2, 6, m.speaking ? th::kAccent : (m.ready || m.host ? th::kWarm : th::kMuted), m.speaking || m.ready || m.host);
+    SelectObject(dc, m.host ? th::Bold() : th::Body()); SetTextColor(dc, th::kText); RECT nr = r; nr.left += 34; nr.right -= 120; DrawTextW(dc, W(m.name + (m.id == g_sess.MyId() ? "  (you)" : "")).c_str(), -1, &nr, DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+    const wchar_t* st = m.inGame ? L"in game" : m.host ? L"host" : m.ready ? L"ready" : L"not ready"; SelectObject(dc, th::Small()); SetTextColor(dc, m.inGame ? th::kAccent : m.ready || m.host ? th::kWarm : th::kMuted); RECT sr = r; sr.right -= 12; DrawTextW(dc, st, -1, &sr, DT_VCENTER | DT_SINGLELINE | DT_RIGHT);
+}
+void DrawLevel(DRAWITEMSTRUCT* d) {
+    HDC dc = d->hDC; RECT r = d->rcItem; HBRUSH bg = CreateSolidBrush(th::kSurface2); FillRect(dc, &r, bg); DeleteObject(bg); lw::VoiceStats v = g_voice.Stats();
+    int w = (int)((r.right - r.left) * std::min(1.0f, v.level / 600.0f)); RECT f = r; f.right = f.left + w; HBRUSH fb = CreateSolidBrush(v.speaking ? th::kAccent : th::kMuted); FillRect(dc, &f, fb); DeleteObject(fb);
+}
+LRESULT CALLBACK ChatEditProc(HWND h, UINT m, WPARAM w, LPARAM l, UINT_PTR, DWORD_PTR) {
+    if (m == WM_GETDLGCODE) return DLGC_WANTALLKEYS | DLGC_HASSETSEL;
+    if (m == WM_KEYDOWN && w == VK_RETURN) { SendMessageW(g_main, WM_COMMAND, ID_LB_SEND, 0); return 0; }
+    if (m == WM_CHAR && w == VK_RETURN) return 0;
+    return DefSubclassProc(h, m, w, l);
+}
+void SendChatLine() { std::string t = EditText(LB(ID_LB_CHAT)); if (t.empty() || !g_sess.Active() || !g_sess.Joined()) return; g_sess.SendChat(t); SetWindowTextW(LB(ID_LB_CHAT), L""); }
+void BuildLobbyPage() {
+    HWND pg = g_pages[0]; wl::CfgFile c = LoadCfg();
+    auto mk = [&](const wchar_t* cls, const wchar_t* text, DWORD style, int x, int y, int w, int h, int id) { HWND k = CreateWindowExW(0, cls, text, WS_CHILD | WS_VISIBLE | style, x, y, w, h, pg, (HMENU)(INT_PTR)id, GetModuleHandleW(nullptr), nullptr); th::Style(k); return k; };
+    auto label = [&](const wchar_t* t, int x, int y, int w, bool muted = false) { HWND k = mk(L"STATIC", t, SS_LEFT, x, y, w, 20, 0); if (muted) th::MarkMuted(k); return k; };
+    mk(L"BUTTON", L"Host a lobby", BS_DEFPUSHBUTTON, 16, 12, 150, 32, ID_LB_HOST); label(L"Lobby port", 184, 19, 80, true); mk(L"EDIT", W(c.Get("lobby_port", "47100")).c_str(), WS_BORDER | ES_AUTOHSCROLL | ES_NUMBER, 266, 16, 66, 24, ID_LB_PORT);
+    label(L"Friends reach this PC at", 350, 19, 160, true); mk(L"EDIT", W(c.Get("lobby_advertise", "")).c_str(), WS_BORDER | ES_AUTOHSCROLL, 512, 16, 170, 24, ID_LB_ADVERTISE); label(L"(blank: automatic)", 690, 19, 160, true);
+    label(L"Invite", 16, 60, 50, true); mk(L"EDIT", L"", WS_BORDER | ES_AUTOHSCROLL, 70, 56, 360, 26, ID_LB_INVITE); mk(L"BUTTON", L"Join", BS_PUSHBUTTON, 442, 54, 84, 30, ID_LB_JOIN); mk(L"BUTTON", L"Copy invite", BS_PUSHBUTTON, 534, 54, 110, 30, ID_LB_COPY); mk(L"BUTTON", L"Leave", BS_PUSHBUTTON, 652, 54, 84, 30, ID_LB_LEAVE);
+    HWND st = label(L"Host a lobby and send friends the invite, or paste an invite and join.", 16, 94, 800); SetWindowLongPtrW(st, GWLP_ID, ID_LB_STATUS);
+    label(L"IN THE LOBBY", 16, 126, 200, true); mk(L"LISTBOX", L"", LBS_OWNERDRAWFIXED | LBS_NOTIFY | WS_VSCROLL | LBS_HASSTRINGS, 16, 148, 330, 230, ID_LB_MEMBERS); SendMessageW(LB(ID_LB_MEMBERS), LB_SETITEMHEIGHT, 0, 30);
+    label(L"CHAT", 362, 126, 200, true); mk(L"EDIT", L"", WS_BORDER | ES_MULTILINE | ES_READONLY | WS_VSCROLL | ES_AUTOVSCROLL, 362, 148, 462, 190, ID_LB_LOG);
+    HWND ce = mk(L"EDIT", L"", WS_BORDER | ES_AUTOHSCROLL, 362, 346, 372, 28, ID_LB_CHAT); SetWindowSubclass(ce, ChatEditProc, 3, 0); mk(L"BUTTON", L"Send", BS_PUSHBUTTON, 742, 344, 82, 32, ID_LB_SEND);
+    label(L"VOICE", 16, 390, 200, true); mk(L"BUTTON", L"Mute my microphone", BS_AUTOCHECKBOX, 16, 412, 170, 22, ID_LB_MUTE); mk(L"BUTTON", L"Deafen", BS_AUTOCHECKBOX, 196, 412, 100, 22, ID_LB_DEAF);
+    mk(L"STATIC", L"", SS_OWNERDRAW, 16, 442, 330, 8, ID_LB_LEVEL); label(L"Voice mode and keys are on the Sound and voice page.", 16, 456, 330, true);
+    label(L"WHAT TO PLAY  (the host chooses)", 362, 390, 300, true); label(L"Game", 362, 416, 50); { HWND mc = mk(L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_VSCROLL, 414, 412, 120, 100, ID_LB_MODE); SendMessageW(mc, CB_ADDSTRING, 0, (LPARAM)L"Co-op"); SendMessageW(mc, CB_ADDSTRING, 0, (LPARAM)L"Race"); SendMessageW(mc, CB_SETCURSEL, 0, 0); }
+    label(L"Race goal", 552, 416, 70); mk(L"EDIT", L"panel:9F7F", WS_BORDER | ES_AUTOHSCROLL, 626, 412, 104, 24, ID_LB_GOAL); label(L"panel:ID or count:N", 736, 416, 140, true);
+    HWND ng = mk(L"BUTTON", L"New game", BS_AUTOCHECKBOX, 362, 448, 110, 22, ID_LB_NEWGAME); SendMessageW(ng, BM_SETCHECK, BST_CHECKED, 0); mk(L"BUTTON", L"Parts of the map done...", BS_PUSHBUTTON, 480, 444, 190, 30, ID_LB_PARTS); { HWND pi = label(L"", 680, 450, 150, true); SetWindowLongPtrW(pi, GWLP_ID, ID_LB_PARTSINFO); }
+    mk(L"BUTTON", L"I am ready", BS_AUTOCHECKBOX, 16, 494, 130, 28, ID_LB_READY); mk(L"BUTTON", L"Start the game", BS_DEFPUSHBUTTON, 154, 488, 200, 38, ID_LB_START);
+    HWND rs = label(L"", 362, 494, 462); th::MarkMuted(rs); SetWindowLongPtrW(rs, GWLP_ID, ID_LB_RESULT); PartsInfo(); RefreshLobbyUi();
+}
+void PollCommands() {      // tests: one command per line in launcher_cmd.txt, taken whole
+    if (g_cmdFile.empty() || !Exists(g_cmdFile)) return; std::string t = ReadFile8(g_cmdFile); DeleteFileW(g_cmdFile.c_str()); size_t at = 0;
+    while (at < t.size()) { size_t e = t.find('\n', at); if (e == std::string::npos) e = t.size(); std::string line = t.substr(at, e - at); at = e + 1; while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.pop_back(); if (line.empty()) continue;
+        std::string cmd = line.substr(0, line.find(' ')), arg = line.find(' ') == std::string::npos ? "" : line.substr(line.find(' ') + 1);
+        if (cmd == "host") { if (!arg.empty()) SetWindowTextW(LB(ID_LB_PORT), W(arg).c_str()); HostLobby(); }
+        else if (cmd == "join") { SetWindowTextW(LB(ID_LB_INVITE), W(arg).c_str()); JoinLobby(); }
+        else if (cmd == "leave") LeaveLobby();
+        else if (cmd == "ready") { SendMessageW(LB(ID_LB_READY), BM_SETCHECK, arg == "1" ? BST_CHECKED : BST_UNCHECKED, 0); g_sess.SetReady(arg == "1"); }
+        else if (cmd == "chat") { SetWindowTextW(LB(ID_LB_CHAT), W(arg).c_str()); SendChatLine(); }
+        else if (cmd == "mode") { SendMessageW(LB(ID_LB_MODE), CB_SETCURSEL, arg == "race" ? 1 : 0, 0); PushSettings(); }
+        else if (cmd == "goal") { SetWindowTextW(LB(ID_LB_GOAL), W(arg).c_str()); PushSettings(); }
+        else if (cmd == "newgame") { SendMessageW(LB(ID_LB_NEWGAME), BM_SETCHECK, arg == "1" ? BST_CHECKED : BST_UNCHECKED, 0); PushSettings(); }
+        else if (cmd == "parts") { g_lobbySpec = arg; PartsInfo(); PushSettings(); }
+        else if (cmd == "start") { PushSettings(); if (!g_sess.Start()) LobbyStatus(L"Everybody has to be ready first."); }
+        else if (cmd == "mute") { SendMessageW(LB(ID_LB_MUTE), BM_SETCHECK, arg == "1" ? BST_CHECKED : BST_UNCHECKED, 0); g_voice.SetMuted(arg == "1"); }
+        else if (cmd == "deaf") { SendMessageW(LB(ID_LB_DEAF), BM_SETCHECK, arg == "1" ? BST_CHECKED : BST_UNCHECKED, 0); g_voice.SetDeaf(arg == "1"); }
+        else if (cmd == "voicestart") { g_voiceWanted = true; StartVoice(); } else if (cmd == "voicestop") { g_voiceWanted = false; g_voice.Stop(); }
+        else if (cmd == "quit") PostMessageW(g_main, WM_CLOSE, 0, 0);
+    }
+}
+void WriteStat() {      // tests: what the lobby is, as text lines, rewritten every 250 ms
+    if (g_statFile.empty() || GetTickCount64() - g_statAt < 250) return; g_statAt = GetTickCount64(); char b[600]; std::string o;
+    wlobby::State st = g_sess.Active() ? g_sess.State() : wlobby::State(); lw::VoiceStats v = g_voice.Stats();
+    snprintf(b, sizeof b, "lobby active %d host %d joined %d id %u phase %d start_in %d refused %d\n", g_sess.Active() ? 1 : 0, g_sess.IsHost() ? 1 : 0, g_sess.Joined() ? 1 : 0, g_sess.MyId(), (int)st.phase, st.startInMs, (int)g_sess.Refused()); o += b;
+    snprintf(b, sizeof b, "invite %s\n", g_sess.Invite().c_str()); o += b;
+    for (const auto& m : st.members) { snprintf(b, sizeof b, "member %u name %s host %d ready %d ingame %d speaking %d playing %d port %u ip %s\n", m.id, m.name.c_str(), m.host, m.ready, m.inGame, m.speaking, m.playing, m.gamePort, wlobby::IpText(m.ip).c_str()); o += b; }
+    snprintf(b, sizeof b, "settings mode %d goal %s newgame %d progress %s\n", (int)st.settings.mode, st.settings.raceGoal.c_str(), st.settings.newGame ? 1 : 0, st.settings.progress.c_str()); o += b;
+    o += "result " + st.lastResult + "\n"; o += "chat " + U(g_chatLog) + "\n";
+    snprintf(b, sizeof b, "voice running %d sent %u received %u level %u speaking %d muted_ui %d\n", g_voice.Running() ? 1 : 0, v.sent, v.received, v.level, v.speaking ? 1 : 0, (int)SendMessageW(LB(ID_LB_MUTE), BM_GETCHECK, 0, 0)); o += b;
+    for (const auto& s : v.speakers) { snprintf(b, sizeof b, "voice_speaker %u talking %d rms %.4f tone %.4f %.4f %.4f packets %u\n", s.id, s.talking ? 1 : 0, s.rms, s.tone[0], s.tone[1], s.tone[2], s.packets); o += b; }
+    snprintf(b, sizeof b, "game pid %lu running %d launches %u\n", (unsigned long)g_gamePid, g_game ? 1 : 0, g_launches); o += b;
+    std::wstring tmp = g_statFile + L".tmp"; if (WriteFile8(tmp, o)) MoveFileExW(tmp.c_str(), g_statFile.c_str(), MOVEFILE_REPLACE_EXISTING);
+}
+
 LRESULT CALLBACK MainProc(HWND h, UINT m, WPARAM w, LPARAM l) {
     switch (m) {
+    case WM_ERASEBKGND: { RECT rc; GetClientRect(h, &rc); FillRect((HDC)w, &rc, th::BgBrush()); return 1; }
+    case WM_PAINT: { PAINTSTRUCT ps; HDC dc = BeginPaint(h, &ps); RECT rc; GetClientRect(h, &rc); th::PaintHeader(dc, rc, 84, L"co-op launcher: lobby, race, voice, saves"); EndPaint(h, &ps); return 0; }
+    case WM_CTLCOLORSTATIC: case WM_CTLCOLOREDIT: case WM_CTLCOLORLISTBOX: case WM_CTLCOLORBTN: return th::CtlColor(m, (HDC)w, (HWND)l);
+    case WM_DRAWITEM: { DRAWITEMSTRUCT* d = (DRAWITEMSTRUCT*)l; if (d->CtlID == ID_LB_MEMBERS) DrawMember(d); else if (d->CtlID == ID_LB_LEVEL) DrawLevel(d); return TRUE; }
+    case WM_TIMER: if (w == 1) { PollCommands(); LobbyTick(); WriteStat(); } return 0;
+    case WM_CLOSE: g_voice.Stop(); g_sess.Stop(); DestroyWindow(h); return 0;
     case WM_COMMAND: {
         int id = LOWORD(w);
         if (id == ID_APPLY) { std::wstring msg; ApplyAll(&msg); Status(msg); LoadAll(); }
+        else if (id == ID_LB_HOST) HostLobby();
+        else if (id == ID_LB_JOIN) JoinLobby();
+        else if (id == ID_LB_LEAVE) LeaveLobby();
+        else if (id == ID_LB_COPY) { std::wstring inv = W(g_sess.Invite()); if (!inv.empty() && OpenClipboard(h)) { EmptyClipboard(); HGLOBAL g = GlobalAlloc(GMEM_MOVEABLE, (inv.size() + 1) * 2); if (g) { memcpy(GlobalLock(g), inv.c_str(), (inv.size() + 1) * 2); GlobalUnlock(g); SetClipboardData(CF_UNICODETEXT, g); } CloseClipboard(); LobbyStatus(L"The invite is on the clipboard."); } }
+        else if (id == ID_LB_READY && HIWORD(w) == BN_CLICKED) g_sess.SetReady(SendMessageW(LB(ID_LB_READY), BM_GETCHECK, 0, 0) == BST_CHECKED);
+        else if (id == ID_LB_START) { PushSettings(); if (!g_sess.Start()) LobbyStatus(L"Everybody has to be ready first."); }
+        else if (id == ID_LB_SEND) SendChatLine();
+        else if (id == ID_LB_MODE && HIWORD(w) == CBN_SELCHANGE) PushSettings();
+        else if (id == ID_LB_GOAL && HIWORD(w) == EN_CHANGE) PushSettings();
+        else if (id == ID_LB_NEWGAME) PushSettings();
+        else if (id == ID_LB_PARTS) OpenNewGame(true);
+        else if (id == ID_LB_MUTE) g_voice.SetMuted(SendMessageW(LB(ID_LB_MUTE), BM_GETCHECK, 0, 0) == BST_CHECKED);
+        else if (id == ID_LB_DEAF) g_voice.SetDeaf(SendMessageW(LB(ID_LB_DEAF), BM_GETCHECK, 0, 0) == BST_CHECKED);
         else if (id == ID_LAUNCH) LaunchGame(false);
         else if (id == ID_NEWGAME) OpenNewGame();
         else if (id == ID_REFRESH) { LoadAll(); Status(L"Reloaded."); }
@@ -293,7 +503,7 @@ LRESULT CALLBACK MainProc(HWND h, UINT m, WPARAM w, LPARAM l) {
             std::wstring dir = SaveFolder(LoadCfg()) + L"\\launcher-backup\\" + Stamp();
             if (BackupSave(g_saves[i], id == ID_TRASH, dir)) Status(std::wstring(id == ID_TRASH ? L"Moved to " : L"Copied to ") + dir); else Status(L"Could not do that."); LoadAll();
         }
-        else if (id == ID_BROWSE) { BROWSEINFOW bi = {}; bi.hwndOwner = h; bi.lpszTitle = L"The Witness game folder"; PIDLIST_ABSOLUTE p = SHBrowseForFolderW(&bi); if (p) { wchar_t b[MAX_PATH]; if (SHGetPathFromIDListW(p, b)) { g_dir = b; SetDlgItemTextW(g_pages[0], ID_GAMEDIR, b); LoadAll(); } CoTaskMemFree(p); } }
+        else if (id == ID_BROWSE) { BROWSEINFOW bi = {}; bi.hwndOwner = h; bi.lpszTitle = L"The Witness game folder"; PIDLIST_ABSOLUTE p = SHBrowseForFolderW(&bi); if (p) { wchar_t b[MAX_PATH]; if (SHGetPathFromIDListW(p, b)) { g_dir = b; SetDlgItemTextW(g_pages[1], ID_GAMEDIR, b); LoadAll(); } CoTaskMemFree(p); } }
         return 0; }
     case WM_NOTIFY: { NMHDR* n = (NMHDR*)l; if (n->idFrom == ID_TAB && n->code == TCN_SELCHANGE) ShowPage(TabCtrl_GetCurSel(g_tab)); return 0; }
     case WM_DESTROY: PostQuitMessage(0); return 0;
@@ -306,17 +516,20 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, LPWSTR cmdline, int show) {
     INITCOMMONCONTROLSEX ic = {sizeof ic, ICC_TAB_CLASSES | ICC_LISTVIEW_CLASSES}; InitCommonControlsEx(&ic); CoInitialize(nullptr);
     int argc; LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc); std::wstring dumpTo; int startPage = 0; bool openNew = false;
     wchar_t self[MAX_PATH]; GetModuleFileNameW(nullptr, self, MAX_PATH); g_dir = Dir(self);
-    for (int i = 1; i < argc; ++i) { std::wstring a = argv[i]; if (a == L"--dir" && i + 1 < argc) g_dir = argv[++i]; else if (a == L"--dump-controls" && i + 1 < argc) dumpTo = argv[++i]; else if (a == L"--no-activate") g_noActivate = true; else if (a == L"--page" && i + 1 < argc) startPage = _wtoi(argv[++i]); else if (a == L"--new-game-window") openNew = true; }
+    for (int i = 1; i < argc; ++i) { std::wstring a = argv[i]; if (a == L"--dir" && i + 1 < argc) g_dir = argv[++i]; else if (a == L"--dump-controls" && i + 1 < argc) dumpTo = argv[++i]; else if (a == L"--no-activate") g_noActivate = true; else if (a == L"--page" && i + 1 < argc) startPage = _wtoi(argv[++i]); else if (a == L"--stat-file" && i + 1 < argc) g_statFile = argv[++i]; else if (a == L"--cmd-file" && i + 1 < argc) g_cmdFile = argv[++i]; else if (a == L"--new-game-window") openNew = true; }
     if (!Exists(g_dir + L"\\witness64_d3d11.exe") && !Exists(g_dir + L"\\witness_d3d11.exe") && Exists(Dir(g_dir) + L"\\witness64_d3d11.exe")) g_dir = Dir(g_dir);
-    AddFields();
-    WNDCLASSW wc = {}; wc.lpfnWndProc = MainProc; wc.hInstance = hi; wc.lpszClassName = L"WitnessLauncher"; wc.hbrBackground = (HBRUSH)(COLOR_BTNFACE + 1); wc.hCursor = LoadCursorW(nullptr, IDC_ARROW); wc.hIcon = LoadIconW(nullptr, IDI_APPLICATION); RegisterClassW(&wc);
-    g_main = CreateWindowExW(0, L"WitnessLauncher", L"The Witness co-op: launcher", WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_VISIBLE, CW_USEDEFAULT, CW_USEDEFAULT, 720, 640, nullptr, nullptr, hi, nullptr);
+    th::Init(); AddFields();
+    WNDCLASSW wc = {}; wc.lpfnWndProc = MainProc; wc.hInstance = hi; wc.lpszClassName = L"WitnessLauncher"; wc.hbrBackground = th::BgBrush(); wc.hCursor = LoadCursorW(nullptr, IDC_ARROW); wc.hIcon = LoadIconW(nullptr, IDI_APPLICATION); RegisterClassW(&wc);
+    g_main = CreateWindowExW(0, L"WitnessLauncher", L"The Witness co-op: launcher", WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_VISIBLE | WS_CLIPCHILDREN, CW_USEDEFAULT, CW_USEDEFAULT, 880, 790, nullptr, nullptr, hi, nullptr);
     RECT rc; GetClientRect(g_main, &rc);
-    g_tab = CreateWindowExW(0, WC_TABCONTROLW, L"", WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN, 8, 8, rc.right - 16, rc.bottom - 80, g_main, (HMENU)ID_TAB, hi, nullptr); SendMessageW(g_tab, WM_SETFONT, (WPARAM)GetStockObject(DEFAULT_GUI_FONT), TRUE);
+    g_tab = CreateWindowExW(0, WC_TABCONTROLW, L"", WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN, 8, 88, rc.right - 16, rc.bottom - 88 - 64, g_main, (HMENU)ID_TAB, hi, nullptr); SendMessageW(g_tab, WM_SETFONT, (WPARAM)GetStockObject(DEFAULT_GUI_FONT), TRUE);
     BuildPages(g_main);
-    Make(g_main, L"BUTTON", L"Save settings", BS_PUSHBUTTON, 8, rc.bottom - 60, 140, 30, ID_APPLY); g_status = Make(g_main, L"STATIC", L"", SS_LEFT, 160, rc.bottom - 54, rc.right - 170, 24, ID_STATUS);
-    LoadAll(); if (startPage < 0 || startPage >= g_npages) startPage = 0; TabCtrl_SetCurSel(g_tab, startPage); ShowPage(startPage); if (openNew) OpenNewGame();
-    if (!dumpTo.empty()) { std::string t = std::to_string(ID_STATUS) + " status\n"; for (auto& f : g_fields) t += std::to_string(f.id) + " " + f.key + "\n"; t += std::to_string(ID_APPLY) + " apply\n" + std::to_string(ID_SAVEPICK) + " savepick\n" + std::to_string(ID_LAUNCH) + " launch\n"; WriteFile8(dumpTo, t); }
+    Make(g_main, L"BUTTON", L"Save settings", BS_PUSHBUTTON, 12, rc.bottom - 52, 150, 34, ID_APPLY); g_status = Make(g_main, L"STATIC", L"", SS_LEFT, 176, rc.bottom - 46, rc.right - 190, 24, ID_STATUS); th::MarkMuted(g_status);
+    LoadAll(); SetTimer(g_main, 1, 100, nullptr); if (startPage < 0 || startPage >= g_npages) startPage = 0; TabCtrl_SetCurSel(g_tab, startPage); ShowPage(startPage); if (openNew) OpenNewGame();
+    if (!dumpTo.empty()) { std::string t = std::to_string(ID_STATUS) + " status\n"; for (auto& f : g_fields) t += std::to_string(f.id) + " " + f.key + "\n"; t += std::to_string(ID_APPLY) + " apply\n" + std::to_string(ID_SAVEPICK) + " savepick\n" + std::to_string(ID_LAUNCH) + " launch\n";
+        const std::pair<int, const char*> lb[] = {{ID_LB_HOST, "lobby:host"}, {ID_LB_JOIN, "lobby:join"}, {ID_LB_INVITE, "lobby:invite"}, {ID_LB_COPY, "lobby:copy"}, {ID_LB_LEAVE, "lobby:leave"}, {ID_LB_READY, "lobby:ready"}, {ID_LB_START, "lobby:start"}, {ID_LB_MEMBERS, "lobby:members"}, {ID_LB_LOG, "lobby:log"}, {ID_LB_CHAT, "lobby:chat"}, {ID_LB_SEND, "lobby:send"}, {ID_LB_MODE, "lobby:mode"}, {ID_LB_GOAL, "lobby:goal"}, {ID_LB_NEWGAME, "lobby:newgame"}, {ID_LB_PARTS, "lobby:parts"}, {ID_LB_STATUS, "lobby:status"}, {ID_LB_PORT, "lobby:port"}, {ID_LB_ADVERTISE, "lobby:advertise"}, {ID_LB_MUTE, "lobby:mute"}, {ID_LB_DEAF, "lobby:deaf"}, {ID_LB_RESULT, "lobby:result"}};
+        for (const auto& k : lb) t += std::to_string(k.first) + " " + k.second + "\n";
+        WriteFile8(dumpTo, t); }
     MSG msg; while (GetMessageW(&msg, nullptr, 0, 0) > 0) { if (!IsDialogMessageW(g_ng ? g_ng : g_main, &msg)) { TranslateMessage(&msg); DispatchMessageW(&msg); } }
     return 0;
 }
