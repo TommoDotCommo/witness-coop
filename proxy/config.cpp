@@ -74,6 +74,11 @@ const Cfg& GetCfg() {
             else if (sscanf(line, "voice_range=%f", &fv) == 1) r.voiceRange = std::max(3.0f, fv);
             else if (sscanf(line, "voice_radio_range=%f", &fv) == 1) r.voiceRadioRange = std::max(0.0f, fv);
             else if (sscanf(line, "voice_radio=%d", &v) == 1) r.voiceRadio = v != 0;
+            else if (sscanf(line, "voice_channel=%31s", s) == 1) r.voiceChannel = s;
+            else if (sscanf(line, "key_voice_channel=%15s", kn) == 1 && KeyFromName(kn)) r.keyVoiceChannel = KeyFromName(kn);
+            else if (sscanf(line, "no_voice_channel=%d", &v) == 1) r.noVoiceChannel = v != 0;
+            else if (sscanf(line, "voice_no_self=%d", &v) == 1) r.voiceNoSelf = v != 0;
+            else if (sscanf(line, "no_voice_channel_key=%d", &v) == 1) r.noVoiceChannelKey = v != 0;
             else if (sscanf(line, "key_voice=%15s", kn) == 1 && KeyFromName(kn)) r.keyVoice = KeyFromName(kn);
             else if (sscanf(line, "voice_test_tone=%299s", s) == 1) r.voiceTestTone = s;
             else if (sscanf(line, "voice_mute_output=%d", &v) == 1) r.voiceMuteOutput = v != 0;

@@ -187,6 +187,7 @@ bool SocialKey(unsigned vk, bool down) {
 bool SocialSwallowRaw(unsigned vk) { Lock l; auto it = g_swallow.find(vk); return it != g_swallow.end() && GetTickCount64() - it->second < 600; }      // (looked at, not used up: the game reads one event more than once)
 static bool SocialKeyImpl(unsigned vk, bool down) {
     const Cfg& c = GetCfg(); Lock l; ULONGLONG now = GetTickCount64();
+    if (vk == c.keyVoiceChannel && !c.noVoiceChannelKey && down && !g_open && !g_pick && !g_wheel && !GamePaused()) return VoiceCycleChannel();
     if (vk == c.keyVoice) { if (!down) VoiceKey(vk, false); else if (!g_open && !g_pick && !GamePaused()) VoiceKey(vk, true); }
     if (vk == VK_SHIFT || vk == VK_LSHIFT || vk == VK_RSHIFT) { g_shift = down; return false; }
     if (!down && vk == c.keyDraw) { bool was = g_pen; PenUp(now); return was; }
@@ -300,7 +301,9 @@ void SocialFrame(float W, float H, const float* cam, const float* ang) {
     }
     if (cfg.voiceMode != 0) {      // my own microphone: what the key does, and a bar that follows the level while it is open
         bool talk = VoiceSpeaking(); int lvl = VoiceMicLevel(); char b[80];
-        snprintf(b, sizeof b, cfg.voiceMode == 2 ? (talk ? "MIC  talking" : "MIC  hold %c to talk") : (talk ? "MIC  talking" : "MIC  open"), (char)cfg.keyVoice);
+        char chn[64]; VoiceChannelText(chn, sizeof chn);
+        char pre[48]; if (talk) snprintf(pre, sizeof pre, "MIC  talking"); else if (cfg.voiceMode == 2) snprintf(pre, sizeof pre, "MIC  hold %c to talk", (char)cfg.keyVoice); else snprintf(pre, sizeof pre, "MIC  open");
+        snprintf(b, sizeof b, "%s  [%s]", pre, chn);
         float tw = UiTextWidth(b, 0.8f * k), bx = 24 * k, by = H - 50 * k;
         UiRect(bx - 6 * k, by - 4 * k, tw + 90 * k, UiLineHeight(0.8f * k) + 8 * k, Rgba(0, 0, 0, 0.5f)); UiText(bx, by, b, talk ? Rgba(0.5f, 1, 0.6f, 1) : Rgba(0.8f, 0.85f, 0.95f, 1), 0.8f * k);
         UiRect(bx + tw + 10 * k, by + 3 * k, 60 * k, 8 * k, Rgba(0.2f, 0.22f, 0.3f, 0.9f)); UiRect(bx + tw + 10 * k, by + 3 * k, 60 * k * std::min(1.0f, lvl / 600.0f), 8 * k, talk ? Rgba(0.4f, 1, 0.5f, 1) : Rgba(0.5f, 0.55f, 0.7f, 1)); g_micHudDrawn = true;

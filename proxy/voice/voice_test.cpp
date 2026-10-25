@@ -46,6 +46,29 @@ int main() {
       Settings r = s; r.radioRange = 200; check("mix: the radio has a range of its own, fading out at its end", ComputeMix(150, 0, r).radio > 0.8f && ComputeMix(300, 0, r).radio == 0);
       Settings off = s; off.radio = false; check("mix: with the radio off a far voice is simply not heard", ComputeMix(100, 0, off).radio == 0 && ComputeMix(100, 0, off).prox == 0);
       Settings loud = s; loud.volume = 0.5f; check("mix: the volume scales both voices", std::fabs(ComputeMix(5, 0, loud).prox - 0.25f) < 0.01f && std::fabs(ComputeMix(100, 0, loud).radio - 0.425f) < 0.01f); }
+    // channels: who hears a transmission and how
+    { Packet p; p.from = 3; p.seq = 1; p.flags = kStart; p.channel = kDirect; p.to = 9; auto b = MakePacket(p); Packet q;
+      check("channel: the channel and the addressee travel in the packet", ParsePacket(b.data(), b.size(), &q) && q.channel == kDirect && q.to == 9);
+      auto c = b; c[13] = 9; Packet z; check("channel: a channel that does not exist is refused", !ParsePacket(c.data(), c.size(), &z) || z.channel <= kDirect);
+      Channel ch; unsigned to = 0; check("channel: names parse (proximity, radio, global, direct:N)", ParseChannel("proximity", &ch, &to) && ch == kProximity && ParseChannel("radio", &ch, &to) && ch == kRadio && ParseChannel("global", &ch, &to) && ch == kGlobal && ParseChannel("direct:4", &ch, &to) && ch == kDirect && to == 4 && !ParseChannel("direct:0", &ch, &to) && !ParseChannel("loud", &ch, &to)); }
+    { Settings s; s.range = 25; s.volume = 0.8f;
+      Mix rn = ComputeMix(2, 1.0f, s, kRadio), rf = ComputeMix(900, 1.0f, s, kRadio), gn = ComputeMix(2, 1.0f, s, kGlobal), gf = ComputeMix(900, -1.0f, s, kGlobal), dn = ComputeMix(2, 0, s, kDirect), df = ComputeMix(900, 0, s, kDirect);
+      check("channel radio: as loud next to you as 900 m away, over the radio only, from the middle", rn.radio > 0.6f && rn.prox == 0 && std::fabs(rn.radio - rf.radio) < 1e-5f && rf.prox == 0 && rn.pan == 0 && rf.pan == 0);
+      check("channel global: as loud next to you as 900 m away, as it is (no radio), from the middle", gn.prox > 0.79f && gn.radio == 0 && std::fabs(gn.prox - gf.prox) < 1e-5f && gf.pan == 0 && gf.cutoff > 7000);
+      check("channel direct: sounds like the radio at any distance", dn.radio > 0.6f && dn.prox == 0 && df.radio == dn.radio);
+      Settings off = s; off.radio = false; check("channel radio: still heard when the proximity radio is off (it is the channel the speaker chose)", ComputeMix(900, 0, off, kRadio).radio > 0.6f);
+      check("channel proximity: the default is unchanged (6 dB per doubling, radio far away)", std::fabs(ComputeMix(5, 0, s).prox - 0.4f) < 0.01f && ComputeMix(100, 0, s).radio > 0.6f); }
+    { auto heard = [&](Channel ch, unsigned to, unsigned self, float dist, SpeakerStat* out) { Mixer m; Settings s; s.self = self; m.Configure(s); Adpcm st; uint64_t smp = 0; const float hz[3] = {120, 1000, 5500};
+        for (int k = 0; k < 60; ++k) { int16_t pcm[kFrame]; Tone(hz, 3, 0.9f, &smp, pcm); Packet p; p.from = 7; p.seq = k; p.flags = k == 0 ? kStart : 0; p.channel = ch; p.to = uint8_t(to); Encode(pcm, &st, p.payload); m.Push(p); }
+        std::vector<Speaker> where = {{7, dist, 1.5708f}}; float o[kFrame * 2]; float rl = 0, rr = 0; for (int f = 0; f < 50; ++f) { m.Render(where, o); if (f >= 10) { float l[kFrame], r[kFrame]; for (int i = 0; i < kFrame; ++i) { l[i] = o[2 * i]; r[i] = o[2 * i + 1]; } rl += Rms(l, kFrame); rr += Rms(r, kFrame); } }
+        auto ss = m.Stats(); *out = ss.empty() ? SpeakerStat() : ss[0]; return rl + rr; };
+      SpeakerStat a, b, c, d, e; float lp = heard(kProximity, 0, 2, 500.0f, &a), lr = heard(kRadio, 0, 2, 500.0f, &b), lg = heard(kGlobal, 0, 2, 500.0f, &c), ld = heard(kDirect, 2, 2, 500.0f, &d), lx = heard(kDirect, 5, 2, 500.0f, &e);
+      check("channel mixer: a proximity voice 500 m away is on the radio too (the old behaviour)", lp > 0.5f && a.radio > 0.8f);
+      check("channel mixer: a radio-channel voice at 500 m is heard over the radio: 120 Hz and 5.5 kHz 12 dB below 1 kHz", lr > 0.5f && b.channel == kRadio && b.radio > 0.8f && b.tone[0] < 0.25f * b.tone[1] && b.tone[2] < 0.25f * b.tone[1]);
+      check("channel mixer: a global voice at 500 m is whole: all three tones there, no radio", lg > 1.0f && c.channel == kGlobal && c.radio == 0 && c.prox > 0.9f && c.tone[0] > 0.02f && c.tone[2] > 0.5f * c.tone[1]);
+      check("channel mixer: a direct voice to me at 500 m is heard over the radio", ld > 0.5f && d.channel == kDirect && d.tone[0] < 0.25f * d.tone[1]);
+      check("channel mixer: a direct voice to somebody else is not heard at all", lx == 0.0f && e.packets == 0);
+      SpeakerStat f; check("channel mixer: a listener who does not know its own id hears direct voices (no filter without an id)", heard(kDirect, 5, 0, 500.0f, &f) > 0.5f); }
     // the mixer: a voice of three tones, close and to the right
     { Mixer m; Settings s; m.Configure(s); Adpcm st; uint64_t smp = 0; ToneFrames(m, 7, 100, 60, &st, &smp); std::vector<Speaker> where = {{7, 5.0f, 1.5708f}}; float st2[kFrame * 2]; float rl = 0, rr = 0; bool talked = false;
       for (int f = 0; f < 50; ++f) { m.Render(where, st2); if (f >= 10) { float l[kFrame], r[kFrame]; for (int i = 0; i < kFrame; ++i) { l[i] = st2[2 * i]; r[i] = st2[2 * i + 1]; } rl += Rms(l, kFrame); rr += Rms(r, kFrame); } auto ss = m.Stats(); talked = talked || (ss.size() && ss[0].talking); }

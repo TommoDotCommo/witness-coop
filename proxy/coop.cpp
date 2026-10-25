@@ -173,7 +173,7 @@ static DWORD WINAPI NetThread(LPVOID) {
             }
             if (source.sin_port != expected->sin_port || source.sin_addr.s_addr != expected->sin_addr.s_addr) continue;
             if (n >= 4 && !memcmp(buf, "WTV4", 4)) VideoOnPacket(buf, (size_t)n);            // a chunk of a POV picture
-            else if (n >= 4 && !memcmp(buf, "WTO4", 4)) VoiceOnPacket(buf, (size_t)n);         // 20 ms of a player's voice
+            else if (n >= 4 && !memcmp(buf, "WTO5", 4)) VoiceOnPacket(buf, (size_t)n);         // 20 ms of a player's voice
             else if (n >= 4 && !memcmp(buf, "WTR4", 4)) VideoOnRequest(buf, (size_t)n);       // a request for this game's POV pictures
             else core->onPacket(buf, (size_t)n, now);
             sourceLen = sizeof source;

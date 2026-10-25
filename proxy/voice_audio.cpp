@@ -21,6 +21,7 @@ namespace {
 CRITICAL_SECTION g_lk; bool g_lkInit;
 struct Lock { Lock() { EnterCriticalSection(&g_lk); } ~Lock() { LeaveCriticalSection(&g_lk); } };
 wvoice::Mixer g_mixer; volatile LONG g_ptt = 0, g_transmitting = 0, g_started = 0; volatile LONG g_sent = 0, g_captured = 0, g_received = 0, g_played = 0, g_micLevel = 0;
+wvoice::Channel g_channel = wvoice::kProximity; unsigned g_to = 0;      // what this player says goes where (the cfg sets it, the channel key and the voicechannel command change it)
 unsigned g_seq; float g_gameVolume = -1, g_gameVolumeRead = -1;
 const float kPi = 3.14159265f;
 
@@ -41,19 +42,20 @@ std::vector<wvoice::Speaker> Speakers() {
     }
     return r;
 }
-wvoice::Settings MixSettings() { const Cfg& c = GetCfg(); wvoice::Settings s; s.range = c.voiceRange; s.radioRange = c.voiceRadioRange; s.radio = c.voiceRadio; s.volume = c.voiceVolume / 100.0f; return s; }
+wvoice::Settings MixSettings() { const Cfg& c = GetCfg(); wvoice::Settings s; s.range = c.voiceRange; s.radioRange = c.voiceRadioRange; s.radio = c.voiceRadio; s.volume = c.voiceVolume / 100.0f; s.self = c.voiceNoSelf ? 0 : CoopMyId(); return s; }
 
 // ---- the microphone: a WinMM capture (or the test tones), 20 ms at a time
 void Transmit(const int16_t* pcm, bool want, wvoice::Adpcm* enc) {
     static bool on; const Cfg& cfg = GetCfg(); InterlockedIncrement(&g_captured);
     float lvl = 0; for (int i = 0; i < wvoice::kFrame; ++i) lvl = std::max(lvl, std::fabs(pcm[i] / 32768.0f)); InterlockedExchange(&g_micLevel, (LONG)(lvl * 1000));
-    wvoice::Packet p; p.from = CoopMyId(); p.seq = g_seq;
+    wvoice::Packet p; p.from = CoopMyId(); p.seq = g_seq; { Lock l; if (!cfg.noVoiceChannel) { p.channel = g_channel; p.to = uint8_t(g_to); } }
     if (!want && !on) return;
     p.flags = (want && !on ? wvoice::kStart : 0) | (cfg.voiceMode == 2 ? wvoice::kPtt : 0) | (!want ? wvoice::kEnd : 0);
     wvoice::Encode(pcm, enc, p.payload); ++g_seq; on = want; InterlockedExchange(&g_transmitting, want ? 1 : 0);
     if (cfg.noVoiceSend) return;
     auto bytes = wvoice::MakePacket(p);
-    for (const auto& rp : CoopGetRemotes()) CoopSendRawTo(rp.id, bytes.data(), bytes.size());
+    if (p.channel == wvoice::kDirect) CoopSendRawTo(p.to, bytes.data(), bytes.size());      // one on one: nobody else is sent a thing
+    else for (const auto& rp : CoopGetRemotes()) CoopSendRawTo(rp.id, bytes.data(), bytes.size());
     InterlockedIncrement(&g_sent);
 }
 DWORD WINAPI CaptureThread(LPVOID) {
@@ -117,9 +119,29 @@ void ApplyGameVolume() {
 DWORD WINAPI VolumeThread(LPVOID) { CoInitializeEx(nullptr, COINIT_MULTITHREADED); for (;;) { ApplyGameVolume(); Sleep(3000); } }
 }  // namespace
 
+// ---- the channel: who hears me and how
+static std::string RemoteName(unsigned id) { for (const auto& rp : CoopGetRemotes()) if (rp.id == id && rp.name[0]) return rp.name; char b[24]; snprintf(b, sizeof b, "player %u", id); return b; }
+void VoiceSetChannel(const char* text) {
+    wvoice::Channel ch; unsigned to = 0; char t[40]; snprintf(t, sizeof t, "%s", text); for (char* q = t; *q; ++q) if (*q == '\r' || *q == '\n') *q = 0;
+    if (!g_lkInit) { InitializeCriticalSection(&g_lk); g_lkInit = true; }
+    if (!wvoice::ParseChannel(t, &ch, &to)) return; { Lock l; g_channel = ch; g_to = ch == wvoice::kDirect ? to : 0; }
+    char m[120]; if (ch == wvoice::kDirect) snprintf(m, sizeof m, "voice: channel direct to %u", to); else snprintf(m, sizeof m, "voice: channel %s", wvoice::ChannelName(ch)); Log(m);
+}
+bool VoiceCycleChannel() {
+    std::vector<std::string> all = {"proximity", "radio", "global"}; for (const auto& rp : CoopGetRemotes()) all.push_back("direct:" + std::to_string(rp.id));
+    char cur[40]; { Lock l; if (g_channel == wvoice::kDirect) snprintf(cur, sizeof cur, "direct:%u", g_to); else snprintf(cur, sizeof cur, "%s", wvoice::ChannelName(g_channel)); }
+    size_t i = 0; for (; i < all.size(); ++i) if (all[i] == cur) break;
+    VoiceSetChannel(all[(i + 1) % all.size()].c_str()); return true;
+}
+void VoiceChannelText(char* out, size_t n) {
+    wvoice::Channel ch; unsigned to; { Lock l; ch = g_channel; to = g_to; }
+    if (ch == wvoice::kDirect) snprintf(out, n, "Private: %s", RemoteName(to).c_str()); else snprintf(out, n, "%s", ch == wvoice::kRadio ? "Radio" : ch == wvoice::kGlobal ? "Open line" : "Proximity");
+}
+
 void VoiceStart() {
     if (InterlockedExchange(&g_started, 1)) return;
     if (!g_lkInit) { InitializeCriticalSection(&g_lk); g_lkInit = true; }
+    { const Cfg& c0 = GetCfg(); VoiceSetChannel(c0.voiceChannel.c_str()); }
     const Cfg& c = GetCfg();
     if (c.voiceMode != 0 || !c.voiceTestTone.empty()) { HANDLE t = CreateThread(nullptr, 0, CaptureThread, nullptr, 0, nullptr); if (t) CloseHandle(t); }
     { HANDLE t = CreateThread(nullptr, 0, PlayThread, nullptr, 0, nullptr); if (t) CloseHandle(t); }
@@ -134,7 +156,7 @@ bool VoiceSpeaking() { return g_transmitting != 0 && !GetCfg().noSpeakingFlag; }
 int VoiceMicLevel() { return (int)g_micLevel; }
 void VoiceStat() {
     char m[300]; const Cfg& c = GetCfg();
-    snprintf(m, sizeof m, "voicestat: mode %d ptt %ld transmitting %ld sent %ld captured %ld received %ld played %ld game_volume %.2f hud_speakers %u hud_mic %d", c.voiceMode, g_ptt, g_transmitting, g_sent, g_captured, g_received, g_played, g_gameVolumeRead, SocialSpeakDrawn(), SocialMicHudDrawn() ? 1 : 0); Log(m);
+    snprintf(m, sizeof m, "voicestat: mode %d ptt %ld transmitting %ld sent %ld captured %ld received %ld played %ld game_volume %.2f hud_speakers %u hud_mic %d channel %s to %u", c.voiceMode, g_ptt, g_transmitting, g_sent, g_captured, g_received, g_played, g_gameVolumeRead, SocialSpeakDrawn(), SocialMicHudDrawn() ? 1 : 0, wvoice::ChannelName(g_channel), g_to); Log(m);
     if (!g_lkInit) return; Lock l;
-    for (const auto& s : g_mixer.Stats()) { snprintf(m, sizeof m, "voicestat: speaker %u talking %d prox %.3f radio %.3f pan %.3f rms %.4f tone %.4f %.4f %.4f packets %u concealed %u dropped %u", s.id, s.talking ? 1 : 0, s.prox, s.radio, s.pan, s.rms, s.tone[0], s.tone[1], s.tone[2], s.packets, s.concealed, s.dropped); Log(m); }
+    for (const auto& s : g_mixer.Stats()) { snprintf(m, sizeof m, "voicestat: speaker %u talking %d prox %.3f radio %.3f pan %.3f rms %.4f tone %.4f %.4f %.4f packets %u concealed %u dropped %u channel %u", s.id, s.talking ? 1 : 0, s.prox, s.radio, s.pan, s.rms, s.tone[0], s.tone[1], s.tone[2], s.packets, s.concealed, s.dropped, (unsigned)s.channel); Log(m); }
 }

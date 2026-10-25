@@ -32,11 +32,11 @@ F = r'(-?[0-9.]+)'
 def vstat(d):
     b = lines_after(d, 'voicestat', 'voicestat: mode', r'voicestat: speaker ')
     if not b: return None
-    m = re.match(r'voicestat: mode (\d) ptt (\d+) transmitting (\d+) sent (\d+) captured (\d+) received (\d+) played (\d+) game_volume ' + F + r' hud_speakers (\d+) hud_mic (\d)', b[0])
-    r = dict(mode=int(m[1]), ptt=int(m[2]), transmitting=int(m[3]), sent=int(m[4]), received=int(m[6]), game_volume=float(m[8]), hud_speakers=int(m[9]), hud_mic=int(m[10]), sp={})
+    m = re.match(r'voicestat: mode (\d) ptt (\d+) transmitting (\d+) sent (\d+) captured (\d+) received (\d+) played (\d+) game_volume ' + F + r' hud_speakers (\d+) hud_mic (\d)(?: channel (\w+) to (\d+))?', b[0])
+    r = dict(mode=int(m[1]), ptt=int(m[2]), transmitting=int(m[3]), sent=int(m[4]), received=int(m[6]), game_volume=float(m[8]), hud_speakers=int(m[9]), hud_mic=int(m[10]), channel=m[11], to=int(m[12] or 0), sp={})
     for l in b[1:]:
-        m = re.match(r'voicestat: speaker (\d+) talking (\d) prox ' + F + ' radio ' + F + ' pan ' + F + ' rms ' + F + ' tone ' + F + ' ' + F + ' ' + F + r' packets (\d+) concealed (\d+) dropped (\d+)', l)
-        r['sp'][int(m[1])] = dict(talking=int(m[2]), prox=float(m[3]), radio=float(m[4]), pan=float(m[5]), rms=float(m[6]), tone=[float(m[7]), float(m[8]), float(m[9])], packets=int(m[10]), concealed=int(m[11]))
+        m = re.match(r'voicestat: speaker (\d+) talking (\d) prox ' + F + ' radio ' + F + ' pan ' + F + ' rms ' + F + ' tone ' + F + ' ' + F + ' ' + F + r' packets (\d+) concealed (\d+) dropped (\d+)(?: channel (\d+))?', l)
+        r['sp'][int(m[1])] = dict(talking=int(m[2]), prox=float(m[3]), radio=float(m[4]), pan=float(m[5]), rms=float(m[6]), tone=[float(m[7]), float(m[8]), float(m[9])], packets=int(m[10]), concealed=int(m[11]), channel=int(m[13] or 0))
     return r
 def speaking_seen_by_b():
     b = lines_after(db, 'socialstat', 'socialstat: open', r'socialstat: (chat|mark|me|remote) ')
@@ -84,6 +84,34 @@ if mode == 'open':
     if RADIO_RANGE > 0:
         d, beta = place(RADIO_RANGE * 1.6, 0); time.sleep(1.5); s = vstat(db); sp = s['sp'].get(1) if s else None; e = expect(d, beta)
         check('5. beyond the radio range (%d m) nothing is heard' % RADIO_RANGE, sp and sp['radio'] < 0.02 and sp['prox'] == 0, sp and (round(sp['radio'], 3), 'd=%.1f' % d))
+elif mode == 'channels':
+    def hear(label, want_channel, d_m, **kw):
+        """what B's mixer makes of A: its channel, the gains, the pan and the tones, at d_m metres"""
+        d, beta = place(d_m, 90); time.sleep(1.5); s = vstat(db); sp = s['sp'].get(1) if s else None; return d, sp
+    def whole(sp): return sp and sp['tone'][0] > 0.01 and sp['tone'][1] > 0.01 and sp['tone'][2] > 0.4 * sp['tone'][1]
+    def radio_like(sp): return sp and sp['tone'][1] > 0.02 * VOL and sp['tone'][0] < 0.25 * sp['tone'][1] and sp['tone'][2] < 0.25 * sp['tone'][1]
+    d, sp = hear('prox', 0, 80.0)
+    check('1. proximity (the default), 80 m: the radio, no proximity voice, channel proximity', sp and sp['talking'] == 1 and sp['channel'] == 0 and sp['prox'] == 0 and sp['radio'] > 0.8 * VOL, sp and (sp['channel'], round(sp['prox'], 3), round(sp['radio'], 3)))
+    send(da, ['voicechannel global'], 0.5); d, sp = hear('global', 2, 80.0)
+    check('2. open line (global), 80 m: the voice as it is, as loud as close up, from the middle, no radio', sp and sp['talking'] == 1 and sp['channel'] == 2 and sp['radio'] == 0 and abs(sp['prox'] - VOL) < 0.05 and abs(sp['pan']) < 0.05 and whole(sp), sp and (sp['channel'], round(sp['prox'], 3), round(sp['radio'], 3), round(sp['pan'], 2), [round(t, 3) for t in sp['tone']], 'd=%.1f' % d))
+    check('   A says which channel it speaks on (voicestat)', (vstat(da) or {}).get('channel') == 'global', (vstat(da) or {}).get('channel'))
+    send(da, ['voicechannel radio'], 0.5); d, sp = hear('radio', 1, 5.0)
+    check('3. radio, only 5 m away: still the walkie-talkie (band-limited), from the middle, not the proximity voice', sp and sp['talking'] == 1 and sp['channel'] == 1 and sp['prox'] == 0 and sp['radio'] > 0.8 * VOL and abs(sp['pan']) < 0.05 and radio_like(sp), sp and (sp['channel'], round(sp['prox'], 3), round(sp['radio'], 3), round(sp['pan'], 2), [round(t, 3) for t in sp['tone']], 'd=%.1f' % d))
+    send(da, ['voicechannel direct:2'], 0.5); d, sp = hear('direct to B', 3, 80.0)
+    check('4. one on one with B (player 2), 80 m: B hears it over the radio', sp and sp['talking'] == 1 and sp['channel'] == 3 and sp['radio'] > 0.8 * VOL and sp['prox'] == 0 and radio_like(sp), sp and (sp['channel'], round(sp['prox'], 3), round(sp['radio'], 3), [round(t, 3) for t in sp['tone']]))
+    sa = vstat(da); check('   A says it speaks to player 2', sa and sa['channel'] == 'direct' and sa['to'] == 2, sa and (sa['channel'], sa['to']))
+    s0 = vstat(db); n0 = s0['sp'][1]['packets'] if s0 and 1 in s0['sp'] else 0
+    send(da, ['voicechannel direct:7'], 2.0); s1 = vstat(db); sp = s1['sp'].get(1) if s1 else None
+    check('5. one on one with somebody else (player 7): B hears nothing, and no packet reaches it any more', sp and sp['talking'] == 0 and sp['packets'] <= n0 + 40 and sp['rms'] < 0.001, sp and (sp['talking'], sp['packets'], n0, round(sp['rms'], 4)))
+    p1 = sp['packets'] if sp else 0; time.sleep(1.0); s2 = vstat(db)
+    check('   still nothing a second later', s2 and s2['sp'][1]['packets'] == p1, s2 and (s2['sp'][1]['packets'], p1))
+    send(da, ['voicechannel proximity'], 0.5)
+    seen = []
+    for k in range(5):
+        send(da, ['key H down'], 0.15); send(da, ['key H up'], 0.4); sa = vstat(da); seen.append((sa['channel'], sa['to']) if sa else None)
+    check('6. the channel key (H) steps proximity > radio > global > direct to player 2 > proximity > radio', seen == [('radio', 0), ('global', 0), ('direct', 2), ('proximity', 0), ('radio', 0)], seen)
+    time.sleep(1.0); s = vstat(db); sp = s['sp'].get(1) if s else None
+    check('   and B hears the channel the key chose (radio, channel 1)', sp and sp['talking'] == 1 and sp['channel'] == 1, sp and sp['channel'])
 else:
     d, beta = place(5.0, 90); time.sleep(1.0); s0 = vstat(db); sp = s0['sp'].get(1) if s0 else None
     check('1. push to talk, key not held: nothing is sent', not sp or (sp['talking'] == 0 and sp['packets'] == 0), sp and (sp['talking'], sp['packets']))

@@ -17,9 +17,18 @@ struct Adpcm { int pred = 0, index = 0; };
 void Encode(const int16_t* pcm, Adpcm* st, uint8_t* out);        // kFrame samples -> kPayload bytes
 void Decode(const uint8_t* in, int16_t* pcm);                   // kPayload bytes -> kFrame samples
 
-// ---- the packet ("WTO4", from, seq, flags, payload, checksum): sent once, never repeated
+// ---- who hears a transmission and how (chosen by the speaker, carried in every packet)
+//   kProximity  heard in the world near the speaker, a walkie-talkie beyond the range (the default)
+//   kRadio      everybody hears it over the radio, at any distance (band-limited, noise, squelch), coming from the middle
+//   kGlobal     everybody hears it as it is, as loud at 500 m as next to them, from the middle: an open line
+//   kDirect     only the player named in `to` hears it, over the radio, at any distance: one on one
+enum Channel : uint8_t { kProximity = 0, kRadio = 1, kGlobal = 2, kDirect = 3 };
+const char* ChannelName(Channel c);                                              // "proximity", "radio", "global", "direct"
+bool ParseChannel(const char* text, Channel* c, unsigned* to);                  // "proximity", "radio", "global", "direct:3" (to = 3)
+
+// ---- the packet ("WTO5", from, seq, flags, channel, to, payload, checksum): sent once, never repeated
 enum : uint8_t { kStart = 1, kEnd = 2, kPtt = 4 };
-struct Packet { unsigned from = 0, seq = 0; uint8_t flags = 0; uint8_t payload[kPayload] = {}; };
+struct Packet { unsigned from = 0, seq = 0; uint8_t flags = 0, channel = kProximity, to = 0; uint8_t payload[kPayload] = {}; };
 std::vector<uint8_t> MakePacket(const Packet& p);
 bool ParsePacket(const uint8_t* data, size_t n, Packet* p);
 
@@ -29,12 +38,13 @@ struct Settings {
     float radioRange = 0.0f;       // metres beyond which even the radio is silent (0: no limit)
     bool radio = true;             // far voices come over the radio (off: they are simply not heard)
     float volume = 1.0f;           // 0..1 on everything
+    unsigned self = 0;             // this listener's player id: a direct transmission to another player is not heard (0: not known, every direct transmission is heard)
 };
 struct Mix { float prox = 0, radio = 0, pan = 0, cutoff = 8000; };      // prox, radio: gains of the two voices; pan -1 left .. 1 right; cutoff: low-pass of the proximity voice in Hz
-Mix ComputeMix(float distance, float bearing, const Settings& s);       // bearing: radians clockwise from straight ahead of the listener
+Mix ComputeMix(float distance, float bearing, const Settings& s, Channel ch = kProximity);       // bearing: radians clockwise from straight ahead of the listener
 
 struct Speaker { unsigned id = 0; float distance = 0, bearing = 0; };
-struct SpeakerStat { unsigned id = 0; bool talking = false; float prox = 0, radio = 0, pan = 0, rms = 0; unsigned packets = 0, concealed = 0, dropped = 0; float tone[3] = {}; };
+struct SpeakerStat { unsigned id = 0; uint8_t channel = 0; bool talking = false; float prox = 0, radio = 0, pan = 0, rms = 0; unsigned packets = 0, concealed = 0, dropped = 0; float tone[3] = {}; };
 class Mixer {
 public:
     void Configure(const Settings& s) { s_ = s; }
@@ -45,7 +55,7 @@ public:
 private:
     struct Biquad { float b0 = 1, b1 = 0, b2 = 0, a1 = 0, a2 = 0, z1 = 0, z2 = 0; float step(float x) { float y = b0 * x + z1; z1 = b1 * x - a1 * y + z2; z2 = b2 * x - a2 * y; return y; } };
     struct Voice {
-        std::map<unsigned, Packet> queue; unsigned next = 0; bool started = false; int fill = 0; int16_t last[kFrame] = {}; int silentFrames = 0; bool talking = false;
+        std::map<unsigned, Packet> queue; Channel channel = kProximity; unsigned next = 0; bool started = false; int fill = 0; int16_t last[kFrame] = {}; int silentFrames = 0; bool talking = false;
         float lp = 0; Biquad hp[2], lpf[2]; unsigned noise = 1; int squelch = 0; bool squelchStart = false; float prevProx = 0, prevRadio = 0, prevPan = 0;
         SpeakerStat stat;
     };

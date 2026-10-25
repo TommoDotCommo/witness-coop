@@ -19,6 +19,9 @@ unsigned SocialInkVerts(const float cam[3], std::vector<LineVert>& out, size_t m
 unsigned SocialSpeakDrawn();                  // speaker marks drawn in the last frame (tests)
 bool SocialMicHudDrawn();
 bool VoiceKey(unsigned vk, bool down);        // voice_audio.cpp: the push-to-talk key (true: taken)
+bool VoiceCycleChannel();                     // voice_audio.cpp: the next voice channel (proximity, radio, global, direct to each player); true: taken
+void VoiceSetChannel(const char* text);       // test command voicechannel <proximity|radio|global|direct:N>
+void VoiceChannelText(char* out, size_t n);   // "Proximity", "Radio", "Open line", "Private: <name>"
 bool VoiceSpeaking();                         // this player's microphone is transmitting
 int VoiceMicLevel();                          // 0..1000, the latest microphone peak
 void VoiceStat();                             // log the voice state (test command voicestat)

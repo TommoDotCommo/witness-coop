@@ -35,8 +35,11 @@ struct Cfg {
     float voiceRange = 25.0f, voiceRadioRange = 0.0f;              // voice_range= metres within which players are heard in the world; voice_radio_range= metres beyond which not even the radio carries (0: no limit)
     bool voiceRadio = true;      // voice_radio=0: a voice beyond the range is not heard at all
     unsigned keyVoice = 'N';     // key_voice=: push to talk
+    std::string voiceChannel = "proximity";      // voice_channel=proximity|radio|global|direct:<player id>: who hears this player and how (voice/voice.h)
+    unsigned keyVoiceChannel = 'H';        // key_voice_channel=: next channel (proximity, radio, global, then one on one with each player in turn)
     std::string voiceTestTone;   // voice_test_tone=120,1000,5500: the transmitted voice is a sum of these tones instead of the microphone (tests)
     bool voiceMuteOutput = false;// voice_mute_output=1: the mixer runs but nothing is played (tests)
+    bool noVoiceChannel = false, voiceNoSelf = false, noVoiceChannelKey = false;      // test mutants: the chosen channel is not sent / this listener does not know its own id (hears what was said to others) / the channel key does nothing
     bool noVoiceSend = false, noVoicePlay = false, voiceNoPos = false, noSpeakingFlag = false, noGameVolume = false;      // test mutants: nothing transmitted / received voices dropped / every player counted at distance 0 / the speaking flag never set / the game's volume never set
     float mapgenHeight = 70.0f, mapgenRes = 0.5f; int mapgenSettleMs = 1500;      // mapgen_height= metres above the ground, mapgen_res= metres per pixel, mapgen_settle_ms= wait per tile
     bool mapgenBadScale = false, mapgenMirror = false, mapgenShowOverlay = false;      // test mutants: the projection has the wrong field of view / is mirrored / the mod keeps drawing during the capture
