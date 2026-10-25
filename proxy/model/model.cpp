@@ -244,11 +244,13 @@ static bool InverseOrigin(const float* M, float o[3]) {
     for (int r = 0; r < 3; r++) o[r] = (inv[r * 3] * t[0] + inv[r * 3 + 1] * t[1] + inv[r * 3 + 2] * t[2]) / det;
     return true;
 }
-float EyeHeight(const Model& m, const char* nameContains) {
+float EyeHeightPosed(const Model& m, const float* jm, const char* nameContains) {
     // Where the eye joints are in the space bmin/bmax are measured in: the joint's own origin (translation of the inverse of its inverse bind matrix), put through
-    // the bind-pose skin matrix. (The two spaces differ by whatever scale the nodes above the skeleton carry: the Magic Frog's are 100 times apart.)
-    if (!nameContains || !*nameContains) return -1;
-    std::vector<float> jm(kMaxJoints * 16); JointMatrices(m, -1, 0, jm.data());
+    // the skin matrix of the pose. (The two spaces differ by whatever scale the nodes above the skeleton carry: the Magic Frog's are 100 times apart.)
+    if (!nameContains || !*nameContains) return kNoEye;
+#ifdef WM_MUT_EYE_BIND
+    std::vector<float> bind(kMaxJoints * 16); JointMatrices(m, -1, 0, bind.data()); jm = bind.data();      // always the bind pose: the eyes never move with the animation
+#endif
     float sum = 0; int n = 0;
     for (size_t j = 0; j < m.joints.size(); j++) {
         if (m.nodes[m.joints[j]].name.find(nameContains) == std::string::npos) continue;
@@ -259,11 +261,18 @@ float EyeHeight(const Model& m, const char* nameContains) {
 #endif
         const float* M = &jm[j * 16]; sum += M[1] * o[0] + M[5] * o[1] + M[9] * o[2] + M[13]; n++;
     }
-    return n ? sum / n : -1.0f;
+    return n ? sum / n : kNoEye;
+}
+float EyeHeight(const Model& m, const char* nameContains) {
+    std::vector<float> jm(kMaxJoints * 16); JointMatrices(m, -1, 0, jm.data()); return EyeHeightPosed(m, jm.data(), nameContains);
 }
 Fit FitToEye(const Model& m, float eye, const char* nameContains) {
     float ey = EyeHeight(m, nameContains), h = m.bmax[1] - m.bmin[1], above = ey - m.bmin[1];
-    if (ey < 0 || above < 1e-6f) return FitToHeight(m, eye / 0.92f);
+#ifdef WM_MUT_EYE_NEG
+    if (ey < 0 || above < 1e-6f) return FitToHeight(m, eye / 0.92f);          // the old test: a negative height was taken for "no eye joints"
+#else
+    if (ey <= kNoEye * 0.5f || above < 1e-6f) return FitToHeight(m, eye / 0.92f);
+#endif
     Fit f = FitToHeight(m, h * eye / above);
     return f;
 }

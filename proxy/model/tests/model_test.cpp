@@ -196,10 +196,23 @@ int main(int argc, char** argv) {
         for (int j = 0; j < 3; j++) { float* M = &em.ibm[j * 16]; M[0] = M[5] = M[10] = M[15] = 1; M[12] = -px[j + 1]; M[13] = -py[j + 1]; M[14] = -pz[j + 1]; }      // inverse of the joint's bind pose without the 0.01
         em.bmin[0] = -0.5f; em.bmax[0] = 0.5f; em.bmin[1] = 0; em.bmax[1] = 2.0f; em.bmin[2] = -0.5f; em.bmax[2] = 0.5f;      // 200 units tall, seen through the 0.01
         float ey = wm::EyeHeight(em, "c_eye."); CHECK(Near(ey, 1.52f, 1e-3f), "eye height %.4f (wanted 1.52: the mean of the two eyes, not the eyelid, in bounds space)", ey);
-        CHECK(wm::EyeHeight(em, "nothing") < 0 && wm::EyeHeight(em, "") < 0, "no matching joint must give no eye height");
+        CHECK(wm::EyeHeight(em, "nothing") == wm::kNoEye && wm::EyeHeight(em, "") == wm::kNoEye, "no matching joint must give kNoEye");
         wm::Fit fe = wm::FitToEye(em, wm::kCameraEye, "c_eye."); float feet[3] = {10, 20, 5}, M[16]; wm::ModelMatrix(feet, 0.4f, fe, 0, M);
         float ez = M[4 + 2] * ey + M[12 + 2];         // world z of a model-space point on the eye line (x = z = 0)
         CHECK(Near(ez - 5, wm::kCameraEye, 1e-3f), "the eyes are %.3f m above the feet, the camera is %.3f", ez - 5, wm::kCameraEye);
+        // a pose moves the eyes: a clip that lifts the left eye joint by 10 local units (0.1 in bounds space) lifts the mean by 0.05
+        wm::Clip lift; lift.name = "lift"; lift.duration = 1; wm::Channel ch; ch.node = 1; ch.path = 0; ch.times = {0, 1}; ch.values = {5, 150, -30, 5, 160, -30}; lift.channels.push_back(ch); em.clips.push_back(lift);
+        std::vector<float> jp(wm::kMaxJoints * 16); wm::JointMatrices(em, 0, 0.999f, jp.data()); float eyp = wm::EyeHeightPosed(em, jp.data(), "c_eye.");
+        CHECK(Near(eyp, 1.57f, 2e-3f), "posed eye height %.4f (wanted 1.57: one eye 0.1 higher)", eyp);
+        { // eyes below the origin of the bounds space (a negative height is a height): the same model hung 200 units lower, bounds y = -2 .. 0, eyes at -0.48
+          wm::Model nm = em; nm.clips.clear();
+          for (int i = 1; i < 4; i++) nm.nodes[i].t[1] -= 200;
+          for (int j = 0; j < 3; j++) nm.ibm[j * 16 + 13] += 200;                // the inverse bind translation moves with the joint
+          nm.bmin[1] = -2.0f; nm.bmax[1] = 0.0f;
+          float en = wm::EyeHeight(nm, "c_eye."); CHECK(Near(en, -0.48f, 2e-3f), "negative eye height %.4f (wanted -0.48)", en);
+          wm::Fit fn = wm::FitToEye(nm, wm::kCameraEye, "c_eye."); float f2[3] = {0, 0, 0}, M2[16]; wm::ModelMatrix(f2, 0, fn, 0, M2);
+          CHECK(Near(M2[6] * en + M2[14], wm::kCameraEye, 2e-3f), "negative: the eyes are %.3f m above the feet, the camera is %.3f", M2[6] * en + M2[14], wm::kCameraEye);
+        }
         wm::Fit nf = wm::FitToEye(em, 1.0f, "nothing"); CHECK(Near((em.bmax[1] - em.bmin[1]) * nf.scale, 1.0f / 0.92f, 1e-3f), "no eye joints: the model is %.3f m high", (em.bmax[1] - em.bmin[1]) * nf.scale);
     }
     printf("%s: %d checks, %d failed\n", g_fail ? "FAILED" : "ok", g_n, g_fail);

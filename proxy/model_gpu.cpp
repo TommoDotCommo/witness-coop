@@ -15,7 +15,7 @@ void Log(const char* msg);
 extern HMODULE g_selfModule();
 
 static wm::Model g_model; static std::map<unsigned, std::unique_ptr<wm::Avatar>> g_avatars; static wm::GaitCfg g_gait; static wm::Fit g_fit;
-static bool g_ready, g_tried; static float g_yaw, g_height;
+static bool g_ready, g_tried; static float g_yaw, g_height; static char g_eyeJoint[80];
 static ID3D11Device* g_dev; static ID3D11DeviceContext* g_ctx;
 static ID3D11VertexShader *g_vs, *g_vsFull; static ID3D11PixelShader *g_psDepth, *g_psProbe, *g_psUi; static volatile LONG g_probeReq, g_depthViewCmd;
 static ID3D11VertexShader* g_vsUnused; static ID3D11PixelShader* g_ps; static ID3D11InputLayout* g_layout;
@@ -127,10 +127,11 @@ static bool LoadCurrent() {
     }
     if (cfg.modelHeight > 0) height = cfg.modelHeight; if (cfg.modelStride > 0) speed = cfg.modelStride;
     g_yaw = yaw * 3.14159265f / 180.0f;
+    memcpy(g_eyeJoint, eyeJoint, sizeof g_eyeJoint);
     float eyeAt = wm::EyeHeight(g_model, eyeJoint);
-    g_fit = (cfg.modelHeight <= 0 && eyeJoint[0] && eyeAt >= 0) ? wm::FitToEye(g_model, eye, eyeJoint) : wm::FitToHeight(g_model, height);
+    g_fit = (cfg.modelHeight <= 0 && eyeJoint[0] && eyeAt > wm::kNoEye * 0.5f) ? wm::FitToEye(g_model, eye, eyeJoint) : wm::FitToHeight(g_model, height);
     g_height = (g_model.bmax[1] - g_model.bmin[1]) * g_fit.scale;
-    if (eyeJoint[0]) { char m[200]; snprintf(m, sizeof m, "model: eyes (%s) %s: %.3f m above the feet, camera %.3f m, model %.3f m high", eyeJoint, eyeAt >= 0 ? "found" : "NOT found", eyeAt >= 0 ? (eyeAt - g_model.bmin[1]) * g_fit.scale : -1.0f, wm::kCameraEye, g_height); Log(m); }
+    if (eyeJoint[0]) { char m[200]; snprintf(m, sizeof m, "model: eyes (%s) %s: %.3f m above the feet, camera %.3f m, model %.3f m high", eyeJoint, eyeAt > wm::kNoEye * 0.5f ? "found" : "NOT found", eyeAt > wm::kNoEye * 0.5f ? (eyeAt - g_model.bmin[1]) * g_fit.scale : -1.0f, wm::kCameraEye, g_height); Log(m); }
     wm::GaitCfg gc; gc.refSpeed = speed; gc.runRef = runSpeed; if (cfg.noModelGait) gc.idleBelow = 1e9f; g_gait = gc;
     D3D11_BUFFER_DESC bd = {}; D3D11_SUBRESOURCE_DATA sd = {};
     bd.ByteWidth = (UINT)(g_model.verts.size() * sizeof(wm::Vertex)); bd.BindFlags = D3D11_BIND_VERTEX_BUFFER; sd.pSysMem = g_model.verts.data();
@@ -349,7 +350,8 @@ bool ModelGpuDraw(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Cam& ca
     PlayerDraw record = {}; record.id = playerId; record.seq = seq; memcpy(record.pos, g_avatar->pos(), 12); record.speed = g_avatar->speed(); record.clip = pk.clip; g_playerDraws.push_back(record);
     if (timed) { g_ctx->End(g_query); g_queryPending = true; }
     ID3D11ShaderResourceView* z3[3] = {nullptr, nullptr, nullptr}; g_ctx->PSSetShaderResources(0, 3, z3); (void)nul;      // the game's depth buffer must not stay bound as an input
-    g_stats.drawn = true; g_stats.clip = pk.clip; g_stats.speed = g_avatar->speed(); g_stats.animTime = pk.time; g_stats.from = pk.from; g_stats.blend = pk.blend; memcpy(g_stats.pos, g_avatar->pos(), 12); memcpy(g_stats.cam, cam.pos, 12);
+    g_stats.drawn = true; g_stats.clip = pk.clip; g_stats.speed = g_avatar->speed(); g_stats.animTime = pk.time; g_stats.from = pk.from; g_stats.blend = pk.blend;
+    { float e = wm::EyeHeightPosed(g_model, bones.data(), g_eyeJoint); g_stats.eye = e <= wm::kNoEye * 0.5f ? -1.0f : (e - g_model.bmin[1]) * g_fit.scale; g_stats.yaw = g_avatar->yaw(); } memcpy(g_stats.pos, g_avatar->pos(), 12); memcpy(g_stats.cam, cam.pos, 12);
     return true;
 }
 
@@ -401,5 +403,5 @@ void ModelGpuDumpPlayers() {
 
 void ModelGpuLogStats() {
     ModelDrawStats s = ModelGpuStats(); char m[200];
-    snprintf(m, sizeof m, "modelstat: visible_px %u drawn %d clip %d speed %.2f anim %.3f from %d blend %.2f frames %u model %s %d/%d pos %.2f %.2f %.2f cam %.2f %.2f %.2f", s.visiblePixels, (int)s.drawn, s.clip, s.speed, s.animTime, s.from, s.blend, s.frames, g_list.empty() ? "-" : g_list[g_cur].name.c_str(), g_cur + 1, (int)g_list.size(), s.pos[0], s.pos[1], s.pos[2], s.cam[0], s.cam[1], s.cam[2]); Log(m);
+    snprintf(m, sizeof m, "modelstat: visible_px %u drawn %d clip %d speed %.2f anim %.3f from %d blend %.2f eye %.3f yaw %.3f frames %u model %s %d/%d pos %.2f %.2f %.2f cam %.2f %.2f %.2f", s.visiblePixels, (int)s.drawn, s.clip, s.speed, s.animTime, s.from, s.blend, s.eye, s.yaw, s.frames, g_list.empty() ? "-" : g_list[g_cur].name.c_str(), g_cur + 1, (int)g_list.size(), s.pos[0], s.pos[1], s.pos[2], s.cam[0], s.cam[1], s.cam[2]); Log(m);
 }

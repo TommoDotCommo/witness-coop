@@ -48,10 +48,13 @@ int FindClip(const Model& m, const char* word);
 // How the model is scaled and put on the ground: feet at the origin, centred, `height` metres tall.
 struct Fit { float scale, offset[3]; };
 Fit FitToHeight(const Model& m, float height);
-// Bind-pose height (model space, same Y as bmin/bmax) of the eyes: the mean of the joints whose node name contains `nameContains`. -1 when none matches.
+constexpr float kNoEye = -1e30f;       // EyeHeight: no joint matched (a real height can be negative: it is measured in the space bmin/bmax are in)
+// Bind-pose height (model space, same Y as bmin/bmax) of the eyes: the mean of the joints whose node name contains `nameContains`. kNoEye when none matches.
 float EyeHeight(const Model& m, const char* nameContains);
 // Scale and put the model so that its eyes (the joints above) are `eye` metres above its feet. No such joints: the model is `eye / 0.92` high.
 Fit FitToEye(const Model& m, float eye, const char* nameContains);
+// The same height for a pose: `jointMats` are the skin matrices JointMatrices() gave (kMaxJoints * 16 floats). Multiply (height - bmin[1]) by the fit's scale for metres above the feet.
+float EyeHeightPosed(const Model& m, const float* jointMats, const char* nameContains);
 constexpr float kCameraEye = 1.71f;    // the puppet's feet are this far below the camera of the player it stands for
 
 // ---- camera (the game's camera: position, heading theta, pitch phi, z up, vertical field of view)
