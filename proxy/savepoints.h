@@ -11,6 +11,7 @@ struct SaveEntry { std::string name; bool preset; bool hasGameSave; std::string 
 // The game's save keeps only progress made through its own solve code (it stores each traced solution line), so progress made by the dev
 // tools (a forced solve has no line) is kept as a list of solved panels and put back by the mod after a load. The menu supplies both ends.
 void SaveSetHooks(std::string (*write)(bool forcedOnly), void (*apply)(const std::string& stateText));   // write: the progress as text (forcedOnly: just what the dev tools solved); apply: solve what the text lists
+std::wstring SaveFolder();                            // the game's save folder (redirected in an instance): <save_dir>\\The Witness
 void SaveListRefresh();                               // re-read the two folders
 const std::vector<SaveEntry>& SaveList();
 bool SaveBusy();                                      // a save or restore is running (a few seconds)

@@ -116,6 +116,10 @@ def main():
         for i in sorted(panels):
             p = panels[i]; f.write('panel %X %d %s %s\n' % (i, area_ix[p['area']], p['name'].replace(' ', '_'), ' '.join('%X' % x for x in sorted(res[i]))))
         for i in optional: f.write('optional %X\n' % i)
+        for did in sorted(doors):      # doors whose requirement is panels only: opens when any alternative (panels joined by &) is solved
+            alts = [[t.strip() for t in a.split('&')] for a in doors[did].split('|')]
+            if not all(re.fullmatch(r'0x[0-9A-Fa-f]+', t) and int(t, 16) in panels for a in alts for t in a): continue
+            f.write('door %X %s\n' % (did, '|'.join('&'.join('%X' % int(t, 16) for t in a) for a in alts)))
         for e in sorted(laser_panels):
             if e in panels: f.write('laser %X %d\n' % (e, area_ix[panels[e]['area']]))
     if len(sys.argv) > 3:

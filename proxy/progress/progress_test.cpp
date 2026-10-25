@@ -21,6 +21,7 @@ int main() {
     bool selfok = true, subset = true;
     for (const auto& p : d.panels) { std::set<unsigned> mine(p.needs.begin(), p.needs.end()); if (mine.count(p.id)) selfok = false; for (unsigned n : p.needs) { std::set<unsigned> theirs(d.panels[d.index.at(n)].needs.begin(), d.panels[d.index.at(n)].needs.end()); for (unsigned x : theirs) if (!mine.count(x)) subset = false; if (theirs.size() >= mine.size()) subset = false; } }
     check("no panel needs itself", selfok); check("a prerequisite's own prerequisites are all prerequisites too (transitive, no loop)", subset);
+    check("doors are listed with the panels that open them", d.doors.size() > 90 && [&] { for (const auto& dr : d.doors) { if (dr.opensWith.empty()) return false; for (const auto& alt : dr.opensWith) { if (alt.empty()) return false; for (unsigned x : alt) if (!d.index.count(x)) return false; } } return true; }());
     int sym = d.AreaByName("symmetry island"), tin = d.AreaByName("Tutorial (Inside)"), tout = d.AreaByName("tutorial_outside"), gf = d.AreaByName("Glass Factory"), mo = d.AreaByName("Mountain (Outside)"), des = d.AreaByName("Desert");
     check("areas are found by name, whatever the case or punctuation", sym >= 0 && tin >= 0 && tout >= 0 && gf >= 0 && mo >= 0 && des >= 0 && d.AreaByName("nowhere") < 0);
     // the first area: the hallway, the bend, the gate; nothing else

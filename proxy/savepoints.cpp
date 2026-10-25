@@ -68,6 +68,7 @@ void DoCopyIn() {
 const Step kEsc = {KeyTap, 0x1B, 0x01, 0}, kDown = {KeyTap, 0x53, 0x1F, 0}, kEnter = {KeyTap, 0x0D, 0x1C, 0};
 }  // namespace
 
+std::wstring SaveFolder() { return SaveDir(); }
 void SaveSetHooks(std::string (*w)(bool), void (*a)(const std::string&)) { g_write = w; g_apply = a; }
 const std::vector<SaveEntry>& SaveList() { return g_list; }
 bool SaveBusy() { return g_busy; }

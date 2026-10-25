@@ -336,9 +336,10 @@ void OverlayLogTags() {       // witness_cmd.txt: tagstat -> one log line per re
     for (const auto& x : t) { snprintf(m, sizeof m, "tagstat: id %u name %s ping %d onscreen %d dist %.1f", x.id, x.name, x.ping, (int)x.onScreen, x.dist); Log(m); }
 }
 
+void SaveMetaTick();      // savemeta_game.cpp
 static void DrawDevMenu(IDXGISwapChain* sc) {
     if (!g_uiReady) return;
-    DevMenuTick();
+    DevMenuTick(); SaveMetaTick();
     if (!DevMenuOpen() && !DevMenuToastWanted() && !VideoViewMode() && !TagsWanted() && !g_rosterOpen.load()) return;
     ID3D11Texture2D* bb = nullptr; if (FAILED(sc->GetBuffer(0, __uuidof(ID3D11Texture2D), (void**)&bb))) return;
     D3D11_TEXTURE2D_DESC td; bb->GetDesc(&td); ID3D11RenderTargetView* rtv = nullptr;

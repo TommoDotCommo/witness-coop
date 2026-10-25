@@ -11,4 +11,5 @@ bool SocialEmoteOf(unsigned playerId, int* emote, float* seconds);   // the emot
 const char* SocialEmoteName(int emote);
 void SocialFrame(float W, float H, const float* cam, const float* ang);   // render thread, inside the UI frame (after the name tags)
 void SocialCommand(const char* line);         // witness_cmd.txt: chat <text> | typing on|off | ping | pingat x y z | typetext <text> | socialstat
+const char* SocialMyCharacter();               // the character this player announced (empty: the default)
 bool GamePaused();                            // overlay.cpp: the game's pause menu is open

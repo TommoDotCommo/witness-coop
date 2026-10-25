@@ -27,6 +27,9 @@ struct Cfg {
     std::string character;       // character=<model name>: the model this player announces as its own (others draw this player with it); empty: none announced
     bool noEmoteAnim = false, noEmoteClips = false, noCharacterAnnounce = false, noEmoteSend = false;   // test mutants: emotes shown but not animated / never play a model's own clip / characters not announced or not honoured / emotes not sent
     bool noChatUi = false, noTypingDots = false, noPingMarks = false;      // test mutants: T does nothing; typing is not announced; pings are not drawn
+    std::string startProgress;   // start_progress=<spec>: the next new game starts with these parts of the map completed (the launcher arms it; progress/progress.h says how a spec reads); disarmed once applied
+    bool noSaveMeta = false;     // test mutant: no <save>.coop.txt is written
+    bool noStartProgress = false, progressNoPrereq = false;      // test mutants: the setting is ignored / only the chosen panels are solved, not what the game needs before them
     bool noDrawSend = false, noDrawDraw = false, noDrawDepth = false;      // test mutants: strokes are not sent / not drawn / put at a fixed distance instead of on the surface under the pen
     bool noPauseHide = false;    // test mutant: draw puppets, lines and name tags over the pause menu
     bool skipEntityZero = false; // test mutant: restore the old census that lost the second tutorial door

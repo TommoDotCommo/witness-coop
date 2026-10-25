@@ -18,6 +18,8 @@
 #include "config.h"
 #include "video.h"
 #include "savepoints.h"
+#include "progress/progress.h"
+extern HMODULE g_selfModule();
 
 void Log(const char* msg);
 
@@ -200,6 +202,59 @@ void StateApply(const std::string& text) {      // solve every panel the list na
     std::reverse(g_solveQ.begin(), g_solveQ.end()); g_solveTotal = n; Msg("applying a progress list: %zu panels to solve", n);
 }
 std::string ProgressNote() { Refresh(); int s = 0, o = 0; for (auto& p : g_pn) s += p.solved; for (auto& d : g_dr) o += d.open; char b[100]; snprintf(b, sizeof b, "%d of %zu panels solved, %d of %zu doors open", s, g_pn.size(), o, g_dr.size()); return b; }
+// ---- a new game with parts of the map completed (progress/progress.h): the launcher arms start_progress=<spec> in the cfg; once the world is up this solves what the spec
+// names, writes the list next to the saves (coop_progress.txt) and disarms the setting. The game's own save has no solution line for forced panels, so a later session that
+// loads a campaign puts the list back (only when the loaded world already has solved panels).
+std::vector<unsigned> g_doorQ; DWORD g_doorAt;      // doors that should be open once the panels are solved (a few tutorial doors are opened by the game's own script, not by a panel's target)
+void QueueDoors(const std::vector<unsigned>& ids) {
+    std::set<unsigned> have(ids.begin(), ids.end()); g_doorQ.clear();
+    for (const auto& d : wprog::Builtin().doors) for (const auto& alt : d.opensWith) { bool all = true; for (unsigned p : alt) if (!have.count(p)) { all = false; break; } if (all) { g_doorQ.push_back(d.id); break; } }
+    g_doorAt = 0;
+}
+std::string ProgressText(const std::vector<unsigned>& ids) { std::string t; char b[24]; for (unsigned id : ids) { snprintf(b, sizeof b, "S %x\n", id); t += b; } return t; }
+std::wstring ProgressSidecar() { std::wstring d = SaveFolder(); return d.empty() ? L"" : d + L"\\coop_progress.txt"; }
+std::string ReadAll(const std::wstring& p) { std::string t; FILE* f = p.empty() ? nullptr : _wfopen(p.c_str(), L"rb"); if (f) { char b[4096]; size_t k; while ((k = fread(b, 1, sizeof b, f)) > 0) t.append(b, k); fclose(f); } return t; }
+void DisarmStartProgress() {      // witness_coop.cfg: the start_progress line becomes a comment, so the next start is an ordinary one
+    wchar_t p[MAX_PATH]; GetModuleFileNameW(g_selfModule(), p, MAX_PATH); wchar_t* s = wcsrchr(p, L'\\'); if (s) *(s + 1) = 0; std::wstring path = std::wstring(p) + L"witness_coop.cfg";
+    std::string t = ReadAll(path), out; size_t pos = 0; bool changed = false;
+    while (pos < t.size()) { size_t e = t.find('\n', pos); if (e == std::string::npos) e = t.size() - 1; std::string line = t.substr(pos, e - pos + 1); if (!line.compare(0, 15, "start_progress=")) { line = "# applied: " + line; changed = true; } out += line; pos = e + 1; }
+    if (changed) { FILE* f = _wfopen(path.c_str(), L"wb"); if (f) { fwrite(out.data(), 1, out.size(), f); fclose(f); } }
+}
+unsigned SolvedCount() { unsigned n = 0; for (auto& p : g_pn) n += p.solved; return n; }
+void StartProgressTick() {
+    static bool done; static DWORD nextTry, stableSince; static uintptr_t firstPanel;
+    const Cfg& c = GetCfg(); if (done) return;
+    bool armed = !c.startProgress.empty() && !c.noStartProgress;
+    DWORD now = GetTickCount(); if (now < nextTry) return; nextTry = now + 500;
+    if (!g_built) { Build(); if (!g_built || g_pn.size() < 300) { g_built = false; stableSince = 0; return; } }
+    Refresh(); uintptr_t fp = GameEntity(0x64);
+    if (!stableSince || fp != firstPanel) { firstPanel = fp; stableSince = now; return; }      // the same world for a while (a title screen may build one that a new game then replaces)
+    if (now - stableSince < 6000) return;
+    done = true;
+    if (armed) {
+        std::string err; auto ids = wprog::Resolve(wprog::Builtin(), c.startProgress, &err, !c.progressNoPrereq);
+        if (ids.empty()) { Log(("start progress: nothing to do: " + (err.empty() ? std::string("empty") : err)).c_str()); DisarmStartProgress(); return; }
+        std::string text = ProgressText(ids); StateApply(text); QueueDoors(ids); for (unsigned id : ids) g_forced.insert(id);
+        std::wstring sc = ProgressSidecar(); if (!sc.empty()) { FILE* f = _wfopen(sc.c_str(), L"wb"); if (f) { fwrite(text.data(), 1, text.size(), f); fclose(f); } }
+        char m[200]; snprintf(m, sizeof m, "start progress: '%s' -> %zu panels to solve", c.startProgress.c_str(), ids.size()); Log(m); DisarmStartProgress();
+    } else if (SolvedCount() > 0) {      // a loaded campaign: put back what a new game with progress forced
+        std::string text = ReadAll(ProgressSidecar()); if (!text.empty()) { StateApply(text); char m[100]; snprintf(m, sizeof m, "start progress: loaded campaign, putting back the forced list"); Log(m); }
+    }
+}
+bool Snapshot(std::set<unsigned>* solved, unsigned* doorsOpen, unsigned* doorsTotal) {      // the census: solved panels, doors open and in all (savemeta_game.cpp)
+    if (!g_built) Build(); if (!g_built) return false; Refresh(); for (auto& p : g_pn) if (p.solved) solved->insert(p.id); *doorsOpen = 0; for (auto& d : g_dr) *doorsOpen += d.open; *doorsTotal = (unsigned)g_dr.size(); return true;
+}
+void ProgressCommand(const char* spec) {      // test command: progress <spec>
+    if (!g_built) Build(); std::string err; auto ids = wprog::Resolve(wprog::Builtin(), spec, &err, !GetCfg().progressNoPrereq);
+    if (ids.empty()) { Msg("progress: %s", err.empty() ? "nothing" : err.c_str()); Log(("progress: error " + err).c_str()); return; }
+    StateApply(ProgressText(ids)); QueueDoors(ids); for (unsigned id : ids) g_forced.insert(id); char m[100]; snprintf(m, sizeof m, "progress: %zu panels asked for", ids.size()); Log(m);
+}
+void ProgressStat() {      // test command: every solved panel (hex ids, 40 per line) and the state of the doors the data knows
+    if (!g_built) Build(); Refresh(); std::vector<unsigned> ids; for (auto& p : g_pn) if (p.solved) ids.push_back(p.id); std::sort(ids.begin(), ids.end());
+    char m[600]; snprintf(m, sizeof m, "progressstat: panels %zu solved %zu queued %zu", g_pn.size(), ids.size(), g_solveQ.size()); Log(m);
+    for (size_t i = 0; i < ids.size(); i += 40) { std::string l = "progressstat: ids"; char b[16]; for (size_t k = i; k < ids.size() && k < i + 40; k++) { snprintf(b, sizeof b, " %x", ids[k]); l += b; } Log(l.c_str()); }
+    std::string l = "progressstat: doors open"; char b[16]; for (auto& d : g_dr) if (d.open) { snprintf(b, sizeof b, " %x", d.id); l += b; } Log(l.c_str());
+}
 bool Do(const char* what, int pi) {      // one action on panel index pi, by name (the buttons and the 'menudo' test command)
     if (pi < 0 || pi >= (int)g_pn.size()) return false; Pn& p = g_pn[pi]; uintptr_t te = p.target >= 0 ? GameEntity(p.target) : 0; const char* tt = te ? TypeName(te) : "";
     if (!strcmp(what, "teleport")) TeleportToPanel(p);
@@ -360,6 +415,7 @@ std::vector<Cmd> g_cmds;
 void DevMenuCommand(const char* what, unsigned id) { Init0(); EnterCriticalSection(&g_cs); g_cmds.push_back({what, id}); LeaveCriticalSection(&g_cs); }
 
 bool DevMenuEnabled() { return GetCfg().devMenu; }
+bool DevMenuSnapshot(std::set<unsigned>* solved, unsigned* doorsOpen, unsigned* doorsTotal) { return Snapshot(solved, doorsOpen, doorsTotal); }
 void ProcessCmds() {
     Init0();
     std::vector<Cmd> cmds; EnterCriticalSection(&g_cs); cmds.swap(g_cmds); LeaveCriticalSection(&g_cs);
@@ -368,6 +424,8 @@ void ProcessCmds() {
         if (c.what.rfind("save:", 0) == 0) { SaveStartSave(c.what.substr(5), false, ProgressNote()); continue; }
         if (c.what.rfind("preset:", 0) == 0) { SaveStartPreset(c.what.substr(7), ProgressNote()); continue; }
         if (c.what.rfind("restore:", 0) == 0) { SaveListRefresh(); std::string n = c.what.substr(8); bool found = false; for (auto& e : SaveList()) if (e.name == n) { SaveStartRestore(e); found = true; break; } if (!found) Msg("no save called '%s'", n.c_str()); continue; }
+        if (c.what.rfind("progress:", 0) == 0) { ProgressCommand(c.what.substr(9).c_str()); continue; }
+        if (c.what == "progressstat") { ProgressStat(); continue; }
         if (c.what == "complete") { QueueSolveSpots((int)c.id); continue; }
         auto it = g_pidx.find(c.id);
         if (c.what == "select") { if (it != g_pidx.end()) { SelectPanel(it->second); g_vx = g_pn[it->second].x; g_vy = g_pn[it->second].y; Msg("selected panel %#x", c.id); } else Msg("no such panel %#x", c.id); }
@@ -376,9 +434,13 @@ void ProcessCmds() {
 }
 void DevMenuTick() {      // every frame, open or not: test commands, saves, the solve queue and the check of a pending teleport (retried when refused)
     { static bool hooked; if (!hooked) { SaveSetHooks(StateWrite, StateApply); hooked = true; } }
-    ProcessCmds(); SaveTick(GetTickCount());
+    ProcessCmds(); StartProgressTick(); SaveTick(GetTickCount());
     { static char last[200]; if (strcmp(last, SaveStatus())) { snprintf(last, sizeof last, "%s", SaveStatus()); if (last[0]) Msg("%s", last); } }
     for (int k = 0; k < 8 && !g_solveQ.empty(); k++) { int i = g_solveQ.back(); g_solveQ.pop_back(); g_forced.insert(g_pn[i].id); GameMarkPanelSolved(g_pn[i].id); GameDispatchTargetNow(g_pn[i].id, true); if (g_solveQ.empty()) Msg("solved the panels of the chosen spots"); }
+    if (g_solveQ.empty() && !g_doorQ.empty()) {      // a moment after the last solve: open the doors the data says are open that the solves did not open
+        if (!g_doorAt) g_doorAt = GetTickCount() + 1500;
+        else if (GetTickCount() >= g_doorAt) { Refresh(); std::set<unsigned> openNow; for (auto& d : g_dr) if (d.open) openNow.insert(d.id); unsigned n = 0; for (unsigned id : g_doorQ) if (!openNow.count(id) && GameEntity(id)) { GameDoorOpenNow(id, 1.0f); ++n; } g_doorQ.clear(); char m[100]; snprintf(m, sizeof m, "progress: %u doors opened by hand", n); Log(m); }
+    }
     if (!g_tp.on || GetTickCount() - g_tp.at < 1500) return;
     float pos[3], ang[2]; if (!Camera(pos, ang)) return;
     int k = g_tp.attempt;

@@ -24,6 +24,12 @@ bool Parse(const std::string& text, Data* out, std::string* err) {
             std::string t; while (ls >> t) p.needs.push_back((unsigned)strtoul(t.c_str(), nullptr, 16));
             if (d.index.count(p.id)) return fail("panel twice"); d.index[p.id] = d.panels.size(); d.panels.push_back(p);
         } else if (kind == "optional") { std::string idtxt; if (!(ls >> idtxt)) return fail("bad optional"); auto it = d.index.find((unsigned)strtoul(idtxt.c_str(), nullptr, 16)); if (it == d.index.end()) return fail("optional: unknown panel"); d.panels[it->second].optional = true;
+        } else if (kind == "door") {
+            std::string idtxt, alts; if (!(ls >> idtxt >> alts)) return fail("bad door"); Data::Door dr; dr.id = (unsigned)strtoul(idtxt.c_str(), nullptr, 16);
+            std::vector<unsigned> cur; std::string tok;
+            auto endTok = [&] { if (!tok.empty()) cur.push_back((unsigned)strtoul(tok.c_str(), nullptr, 16)); tok.clear(); };
+            for (char ch : alts) { if (ch == '&') endTok(); else if (ch == '|') { endTok(); dr.opensWith.push_back(cur); cur.clear(); } else tok.push_back(ch); }
+            endTok(); dr.opensWith.push_back(cur); d.doors.push_back(dr);
         } else if (kind == "laser") { std::string idtxt; int a; if (!(ls >> idtxt >> a)) return fail("bad laser"); d.lasers.push_back((unsigned)strtoul(idtxt.c_str(), nullptr, 16)); }
         else return fail("unknown line");
     }
@@ -32,13 +38,13 @@ bool Parse(const std::string& text, Data* out, std::string* err) {
 }
 const Data& Builtin() { static Data d = [] { Data x; std::string e; if (!Parse(BuiltinText(), &x, &e)) x = Data(); return x; }(); return d; }
 
-std::vector<unsigned> Complete(const Data& d, const std::vector<int>& areas, const std::vector<unsigned>& panels) {
+std::vector<unsigned> Complete(const Data& d, const std::vector<int>& areas, const std::vector<unsigned>& panels, bool withPrerequisites) {
     std::set<unsigned> want;
     for (int a : areas) for (const auto& p : d.panels) if (p.area == a && !p.optional) want.insert(p.id);
     for (unsigned id : panels) if (d.index.count(id)) want.insert(id);
 #ifndef WP_MUT_NOPREREQ
     std::set<unsigned> all = want;
-    for (unsigned id : want) for (unsigned n : d.panels[d.index.at(id)].needs) all.insert(n);
+    if (withPrerequisites) for (unsigned id : want) for (unsigned n : d.panels[d.index.at(id)].needs) all.insert(n);
     want = all;
 #endif
     std::vector<unsigned> out(want.begin(), want.end());
@@ -75,7 +81,7 @@ std::string PresetSpec(const std::string& n) {
     return "";
 }
 
-std::vector<unsigned> Resolve(const Data& d, const std::string& spec, std::string* err) {
+std::vector<unsigned> Resolve(const Data& d, const std::string& spec, std::string* err, bool withPrerequisites) {
     std::vector<int> areas; std::vector<unsigned> panels; std::set<unsigned> extra; size_t pos = 0;
     auto bad = [&](const std::string& m) { if (err) *err = m; return std::vector<unsigned>(); };
     while (pos <= spec.size()) {
@@ -91,6 +97,6 @@ std::vector<unsigned> Resolve(const Data& d, const std::string& spec, std::strin
         else return bad("unknown choice '" + key + "'");
     }
     for (unsigned id : extra) panels.push_back(id);
-    return Complete(d, areas, panels);
+    return Complete(d, areas, panels, withPrerequisites);
 }
 }  // namespace wprog

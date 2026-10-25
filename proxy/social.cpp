@@ -145,6 +145,7 @@ void Bubbled(float cx, float bottom, const std::vector<std::string>& lines, bool
 }
 }  // namespace
 
+const char* SocialMyCharacter() { static std::string s; Lock l; s = g_myChar.empty() ? GetCfg().character : g_myChar; return s.c_str(); }
 bool SocialCapturing() { Lock l; return g_open || g_pick; }
 bool SocialMouseCaptured() { Lock l; return g_open || g_pick || g_wheel || g_canvas; }
 void SocialRawMove(int dx, int dy) { Lock l; if (g_canvas && !g_wheel && !g_open && !g_pick) { g_ox += dx * 1.6f; g_oy += dy * 1.6f; return; } if (g_wheel) { g_wx += float(dx); g_wy += float(dy); float m = sqrtf(g_wx * g_wx + g_wy * g_wy); if (m > 140) { g_wx *= 140 / m; g_wy *= 140 / m; } } }

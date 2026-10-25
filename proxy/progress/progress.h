@@ -12,6 +12,8 @@ struct Panel { unsigned id = 0; int area = 0; std::string name; std::vector<unsi
 struct Data {
     std::vector<std::string> areas;      // "Symmetry Island", ...
     std::vector<Panel> panels;           // in file order
+    struct Door { unsigned id = 0; std::vector<std::vector<unsigned>> opensWith; };      // opens when every panel of any one alternative is solved
+    std::vector<Door> doors;
     std::vector<unsigned> lasers;        // the panel that lights each of the 11 lasers
     std::map<unsigned, size_t> index;    // panel id -> position in `panels`
     int AreaByName(const std::string& name) const;       // case and spaces/underscores/punctuation ignored: "symmetry island", "Mountain (Inside)"; -1: none
@@ -22,11 +24,11 @@ bool Parse(const std::string& text, Data* out, std::string* err = nullptr);
 const Data& Builtin();                   // the embedded data, parsed once
 
 // The panels to solve, prerequisites first: every panel of the chosen areas, the single panels, and what the game needs before any of them.
-std::vector<unsigned> Complete(const Data& d, const std::vector<int>& areas, const std::vector<unsigned>& panels = {});
+std::vector<unsigned> Complete(const Data& d, const std::vector<int>& areas, const std::vector<unsigned>& panels = {}, bool withPrerequisites = true);      // (without: only a game-level test mutant asks for that)
 // The cheapest way to light n of the 11 lasers: their panels and everything before them (one after the other, the cheapest next).
 std::vector<unsigned> Lasers(const Data& d, int n);
 // A choice written as text (the cfg key start_progress=, the launcher, the dev menu): "area:Desert;area:Symmetry Island;lasers:3;panel:0x293;preset:seven-lasers". Empty on an error (err says why).
-std::vector<unsigned> Resolve(const Data& d, const std::string& spec, std::string* err = nullptr);
+std::vector<unsigned> Resolve(const Data& d, const std::string& spec, std::string* err = nullptr, bool withPrerequisites = true);
 std::vector<std::string> PresetNames();                 // "tutorial", "three-lasers", "seven-lasers", "all-lasers", "everything"
 std::string PresetSpec(const std::string& name);        // its spec text, empty if unknown
 }  // namespace wprog

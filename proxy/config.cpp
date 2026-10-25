@@ -66,6 +66,10 @@ const Cfg& GetCfg() {
             else if (sscanf(line, "key_ping=%15s", kn) == 1 && KeyFromName(kn)) r.keyPing = KeyFromName(kn);
             else if (sscanf(line, "key_emote=%15s", kn) == 1 && KeyFromName(kn)) r.keyEmote = KeyFromName(kn);
             else if (sscanf(line, "key_draw=%15s", kn) == 1 && KeyFromName(kn)) r.keyDraw = KeyFromName(kn);
+            else if (!strncmp(line, "start_progress=", 15)) { std::string t = line + 15; while (!t.empty() && (t.back() == '\r' || t.back() == '\n')) t.pop_back(); r.startProgress = t; }
+            else if (sscanf(line, "no_save_meta=%d", &v) == 1) r.noSaveMeta = v != 0;
+            else if (sscanf(line, "no_start_progress=%d", &v) == 1) r.noStartProgress = v != 0;
+            else if (sscanf(line, "progress_no_prereq=%d", &v) == 1) r.progressNoPrereq = v != 0;
             else if (sscanf(line, "key_canvas=%15s", kn) == 1 && KeyFromName(kn)) r.keyCanvas = KeyFromName(kn);
             else if (sscanf(line, "key_color=%15s", kn) == 1 && KeyFromName(kn)) r.keyColor = KeyFromName(kn);
             else if (sscanf(line, "no_draw_send=%d", &v) == 1) r.noDrawSend = v != 0;
