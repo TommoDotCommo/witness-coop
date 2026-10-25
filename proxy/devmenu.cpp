@@ -391,8 +391,11 @@ bool DevMenuOpen() { return g_open; }
 static void Init() { if (!g_csInit) { InitializeCriticalSection(&g_cs); g_csInit = true; } }
 void DevMenuToggle() { Init(); g_open = !g_open; g_ldown = g_rdown = false; if (g_open) g_built = false; }      // rebuild on open: entities may have been recreated by a load
 void DevMenuSetPage(int p) { Init(); g_page = p; if (p == 2) SaveListRefresh(); if (!g_open) { g_open = true; g_built = false; } }
+void PanelBoostToggle();      // input.cpp
+void PanelBoostMsg(bool on, float gain) { Msg("panel mouse boost %s (x%.1f, F3 toggles)", on ? "ON" : "off", gain); }
 bool DevMenuKey(unsigned vk, bool down) {
-    Init(); if (vk == VK_F9 && down && VideoEnabled()) { VideoToggleView(); return true; }
+    Init(); if (vk == VK_F3 && down) { PanelBoostToggle(); return true; }
+    if (vk == VK_F9 && down && VideoEnabled()) { VideoToggleView(); return true; }
     if (!DevMenuEnabled()) return false;
     if (vk == VK_F8 && down) { DevMenuToggle(); return true; }
     if (vk == VK_F4 && down) { if (g_open && g_page == 1) DevMenuToggle(); else DevMenuSetPage(1); return true; }

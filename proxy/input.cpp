@@ -42,6 +42,18 @@ void InputPump(HWND wnd) {      // one event per frame, so a sequence of mouse d
     InterlockedIncrement(&g_stats[0]);
 }
 
+void PanelBoostMsg(bool on, float gain);      // devmenu.cpp
+// Panel boost (F3): in a panel the game moves its own cursor about 1/3 pixel per mouse count while the owner's real pointer moves 1 pixel, so the circle falls behind the
+// pointer and the pointer leaves the window. With the boost on, the REAL mouse motion is multiplied (the bot's injected events are not touched), the fraction carried over.
+static volatile LONG g_boost = -1; static float g_carry[2];
+void PanelBoostToggle() { if (g_boost < 0) g_boost = GetCfg().panelMouseBoost; g_boost = !g_boost; PanelBoostMsg(g_boost != 0, GetCfg().panelMouseGain); }
+static void BoostMouse(RAWINPUT* ri) {
+    if (g_boost < 0) g_boost = GetCfg().panelMouseBoost;
+    if (!g_boost || ri->header.dwType != RIM_TYPEMOUSE || (ri->data.mouse.usFlags & MOUSE_MOVE_ABSOLUTE)) return;
+    float g = GetCfg().panelMouseGain; LONG* d[2] = {&ri->data.mouse.lLastX, &ri->data.mouse.lLastY};
+    for (int i = 0; i < 2; i++) { g_carry[i] += *d[i] * g; LONG w = (LONG)g_carry[i]; g_carry[i] -= w; *d[i] = w; }
+}
+
 typedef UINT(WINAPI* GetRawInputDataFn)(HRAWINPUT, UINT, LPVOID, PUINT, UINT);
 static GetRawInputDataFn g_orig;
 static UINT WINAPI HookGetRawInputData(HRAWINPUT h, UINT cmd, LPVOID data, PUINT size, UINT hdr) {
@@ -49,6 +61,7 @@ static UINT WINAPI HookGetRawInputData(HRAWINPUT h, UINT cmd, LPVOID data, PUINT
     if ((v & ~(ULONG_PTR)0xFF) != kTokenBase) {
         InterlockedIncrement(&g_stats[2]);
         UINT r = g_orig(h, cmd, data, size, hdr);
+        if (data && r != (UINT)-1 && cmd == RID_INPUT && r >= sizeof(RAWINPUTHEADER) && !DevMenuOpen()) BoostMouse((RAWINPUT*)data);
         if (DevMenuOpen() && data && r != (UINT)-1 && cmd == RID_INPUT && r >= sizeof(RAWINPUTHEADER)) {      // the dev menu is open: it takes the mouse motion, the game gets an empty event
             RAWINPUT* ri = (RAWINPUT*)data;
             if (ri->header.dwType == RIM_TYPEMOUSE) { if (!(ri->data.mouse.usFlags & MOUSE_MOVE_ABSOLUTE)) DevMenuRawMove(ri->data.mouse.lLastX, ri->data.mouse.lLastY); ri->data.mouse.lLastX = ri->data.mouse.lLastY = 0; ri->data.mouse.usButtonFlags = 0; ri->data.mouse.usButtonData = 0; }

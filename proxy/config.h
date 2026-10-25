@@ -26,6 +26,8 @@ struct Cfg {
     bool noPartnerVideo = false; // twin: send no picture
     bool noRestoreCopy = false;  // twin: a restore does not put the save file in place
     bool noPowerLink = false;    // twin: leave a powered panel's source back-link (+0x2C8) unset
+    float panelMouseGain = 3.0f;   // panel_mouse_gain=<f>: factor on the REAL mouse motion while the panel boost is on (F3): the game's panel cursor moves ~1/3 pixel per count, the owner's pointer 1 pixel
+    bool panelMouseBoost = false;  // panel_mouse_boost=1: start with the boost on
     bool noTeleportHold = false;   // twin: the menu teleport does not hold the player (the old 12-frame write): far panels end at the spawn point
     bool noTargetDispatch = false; // twin: a remote solve does not run the game's target dispatcher for other target types
 };

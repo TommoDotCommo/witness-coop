@@ -68,6 +68,7 @@ def standing(pos):      # distance along the (horizontal part of the) panel's no
 # ---- teleport -------------------------------------------------------------------------------------------------------------------------------
 def menu_teleport():
     """The dev menu's teleport (the feature under test): 3 m in front of the panel, held 2 s while the player settles on the ground there."""
+    if os.environ.get('WDRAW_NO_TELEPORT'): return p.camera()[0]      # a human is standing in front of the panel: draw from where they are (the menu teleport may land off the platform they are on)
     for attempt in range(3):
         c.send(['menusel %x' % eid, 'menudo teleport'], 3.2)
         pos, ang = p.camera(); dn_, lat_ = standing(pos)
