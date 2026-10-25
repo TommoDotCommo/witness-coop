@@ -15,7 +15,7 @@ def restart(cfg_a='', cfg_b=''):
     time.sleep(45); open(os.path.join(RUN, 'guard.stop'), 'w').write('bot starting')
 
 def solved_set(which):
-    return set(json.loads(pyw('wstatedump.py', pid(which)).strip().splitlines()[-1])['panels'])
+    return {int(k_, 16) for k_ in json.loads(pyw('wstatedump.py', pid(which)).strip().splitlines()[-1])['panels']}
 
 def run_panels(which, ids, manifest):
     out = {}
