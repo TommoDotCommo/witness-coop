@@ -58,6 +58,7 @@ bool SyncCore::setPeers(const std::vector<unsigned>& ids) {
 }
 
 void SyncCore::emit(uint8_t kind, unsigned id, bool resync) {
+    if (f_.raceMode && !f_.raceEmits) return;      // a race: this game's progress stays in this game
     // A complete snapshot must itself fit, even if a future entity table is larger than today's build.
     size_t capacity = fixedRoster_ && !f_.noBacklogReset ? std::max<size_t>(4096, panels_.size() * 2 + doors_.size() + cables_.size() + 64) : 4096;
     if (fixedRoster_ && sent_.size() >= capacity && !f_.noBacklogReset) {
@@ -247,6 +248,7 @@ void SyncCore::sendLine(unsigned panel, const LineState& s) {
 }
 
 void SyncCore::scanLines(uint64_t now) {
+    if (f_.raceMode) return;      // (a drawn line is progress on a puzzle: it is not shared in a race)
     std::vector<LineOut> out;
     if (!w_->scanLines(out)) return;
     std::set<unsigned> present;
@@ -287,7 +289,7 @@ void SyncCore::onLine(const uint8_t* d, size_t n, uint64_t now) {
 }
 
 std::vector<RemoteLine> SyncCore::remoteLines(uint64_t now) {
-    Guard g(h_); std::vector<RemoteLine> out;
+    Guard g(h_); std::vector<RemoteLine> out; if (f_.raceMode) return out;
     for (const auto& p : peers_) for (const auto& kv : p.second.lines) if (!kv.second.pts.empty()) {
         RemoteLine r; r.from = p.first; r.panel = kv.first; r.seq = kv.second.seq; r.final = kv.second.final; r.pts = kv.second.pts; r.ageMs = now - kv.second.at; out.push_back(std::move(r));
     }
@@ -454,6 +456,7 @@ void SyncCore::pollState(uint64_t now) {
 
 void SyncCore::applyRemote(uint64_t now) {
     Guard g(h_);
+    if (f_.raceMode && !f_.raceApplies) { recvQ_.clear(); return; }      // a race: what another player did is not done here (the events were acknowledged, so the sender does not keep sending them)
     if (!ready_) return;   // events stay queued until this world is stable
     // One attempt per queued event per frame. Keep temporarily unavailable entities and refused calls: the transport already
     // ACKed these events, so the sender will not send them again. Other independent, monotonic changes can still make progress.
@@ -583,6 +586,7 @@ std::vector<RemotePose> SyncCore::remotePoses(uint64_t now) {
     return poses;
 }
 bool SyncCore::ready() const { Guard g(h_); return ready_; }
+std::set<unsigned> SyncCore::solvedPanels() const { Guard g(h_); return knownPanel_; }
 Stats SyncCore::stats() const { Guard g(h_); return st_; }
 size_t SyncCore::unacked() const { Guard g(h_); size_t n = 0; for (auto& s : sent_) if (!s.acked) n++; return n; }
 size_t SyncCore::queuedRemote() const { Guard g(h_); return recvQ_.size(); }

@@ -11,6 +11,7 @@
 #include <map>
 #include <atomic>
 #include "coop.h"
+#include "race_game.h"
 
 void Log(const char* msg);
 extern HMODULE g_selfModule();
@@ -119,6 +120,9 @@ static DWORD WINAPI NetThread(LPVOID) {
         if (sscanf(line, "no_social_dedupe=%d", &v) == 1) flags.noSocialDedupe = v;
         if (sscanf(line, "no_social_order=%d", &v) == 1) flags.noSocialOrder = v;
         if (sscanf(line, "no_presence_send=%d", &v) == 1) flags.noPresenceSend = v;
+        { char gm[16]; if (sscanf(line, "game_mode=%15s", gm) == 1) flags.raceMode = !strcmp(gm, "race"); }
+        if (sscanf(line, "race_emits=%d", &v) == 1) flags.raceEmits = v;
+        if (sscanf(line, "race_applies=%d", &v) == 1) flags.raceApplies = v;
     }
     fclose(f);
     if (id < 1 || listenPort < 1 || listenPort > 65535 || badConfig || endpoints.count((unsigned)id) || (endpoints.empty() && (peerPort < 1 || peerPort > 65535))) {
@@ -159,9 +163,14 @@ static DWORD WINAPI NetThread(LPVOID) {
     g_myId.store((unsigned)id); g_sock = s; g_peerAddr = peer; g_peerSet.store(true, std::memory_order_release);
     g_core.store(core, std::memory_order_release);
     VoiceStart();
+    if (flags.raceMode) {      // a race: this thread also runs the race state machine, which reports to everybody
+        std::vector<unsigned> others; if (endpoints.empty()) others.push_back(id == 1 ? 2u : 1u); else for (const auto& p : endpoints) others.push_back(p.first);
+        RaceStart((unsigned)id, others, [](const std::vector<uint8_t>& b) { for (const auto& pid : g_peerById) CoopSendRawTo(pid.first, b.data(), b.size()); if (g_peerById.empty()) CoopSendRaw(b.data(), b.size()); });
+    }
     for (;;) {
         uint64_t now = GetTickCount64();
         core->tick(now);
+        if (flags.raceMode) RaceTick(now, core->ready(), core->solvedPanels());
         uint8_t buf[1500]; int n;
         sockaddr_in source = {}; int sourceLen = sizeof source;
         while ((n = recvfrom(s, (char*)buf, sizeof buf, 0, (sockaddr*)&source, &sourceLen)) > 0) {
@@ -174,6 +183,7 @@ static DWORD WINAPI NetThread(LPVOID) {
             if (source.sin_port != expected->sin_port || source.sin_addr.s_addr != expected->sin_addr.s_addr) continue;
             if (n >= 4 && !memcmp(buf, "WTV4", 4)) VideoOnPacket(buf, (size_t)n);            // a chunk of a POV picture
             else if (n >= 4 && !memcmp(buf, "WTO5", 4)) VoiceOnPacket(buf, (size_t)n);         // 20 ms of a player's voice
+            else if (n >= 4 && !memcmp(buf, "WTR1", 4)) RaceOnPacket(buf, (size_t)n, now);         // a race report: phase, progress, finish time
             else if (n >= 4 && !memcmp(buf, "WTR4", 4)) VideoOnRequest(buf, (size_t)n);       // a request for this game's POV pictures
             else core->onPacket(buf, (size_t)n, now);
             sourceLen = sizeof source;

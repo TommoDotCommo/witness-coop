@@ -50,6 +50,7 @@ public:
 };
 
 struct Flags {   // all off by default
+    bool raceMode = false;      // a race, not co-op: nothing of the world is shared (no solved panel, opened door, lit cable, drawn line leaves or enters this game); poses, chat and presence still travel
     bool dropFirstEvent = false, noResend = false, noEchoGuard = false;                 // test switches (witness_coop.cfg)
     // bug twins: each switches one protection off so a test must fail (see core/tests)
     bool noDedupe = false, noEpochReset = false, noResyncOnRestart = false, noGate = false, noSettle = false;
@@ -79,6 +80,8 @@ struct Flags {   // all off by default
     bool noPresenceSend = false;  // twin: presence is never sent
     bool noPresenceSeq = false;   // twin: a delayed older presence overwrites a newer one
     bool noPresenceExpiry = false; // twin: typing and speaking stay on for ever when the peer goes quiet
+    bool raceEmits = false;     // twin: a race game still announces its own solved panels and doors
+    bool raceApplies = false;   // twin: a race game still applies the events it receives
 };
 
 struct Hooks {
@@ -131,6 +134,7 @@ public:
     std::vector<MarkMsg> takeMarks();
     std::vector<StrokeMsg> takeStrokes();
     bool ready() const;
+    std::set<unsigned> solvedPanels() const;               // the panels known to be solved in this world (the race counts them)
     Stats stats() const;
     size_t unacked() const;                                // events sent but not yet acknowledged
     size_t queuedRemote() const;                           // received in order, not yet applied

@@ -7,6 +7,7 @@
 #include <cstring>
 #include <string>
 #include "game.h"
+#include "race_game.h"
 #include "model_gpu.h"
 #include "coop.h"
 #include "input.h"
@@ -115,6 +116,7 @@ static DWORD WINAPI CmdThread(LPVOID) {
             else if (sscanf(line, "solve %x", &id) == 1 || sscanf(line, "dispatch %x", &id) == 1) { Cmd c = {line[0] == 's' ? 5 : 4, id, 0, 0, 0, false, 0, 0, 0}; EnterCriticalSection(&g_lock); if (g_n < 64) g_q[g_n++] = c; LeaveCriticalSection(&g_lock); }
             else if (!strncmp(line, "chat ", 5) || !strncmp(line, "typing ", 7) || !strncmp(line, "typetext ", 9) || !strncmp(line, "ping", 4) || !strncmp(line, "socialstat", 10) || !strncmp(line, "emote ", 6) || !strncmp(line, "character ", 10) || !strncmp(line, "wheel ", 6) || !strncmp(line, "canvas ", 7) || !strncmp(line, "reticle ", 8) || !strncmp(line, "drawstat", 8) || !strncmp(line, "drawclear", 9)) SocialCommand(line);
             else if (!strncmp(line, "voicestat", 9)) VoiceStat();
+            else if (!strncmp(line, "racestat", 8)) RaceStat();
             else if (!strncmp(line, "voicechannel ", 13)) VoiceSetChannel(line + 13);
             else if (!strncmp(line, "mapgen ", 7)) MapGenCommand(line + 7);
             else if (!strncmp(line, "mapstat", 7)) DevMenuCommand("mapstat", 0);

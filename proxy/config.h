@@ -34,6 +34,7 @@ struct Cfg {
     int voiceVolume = 100, micVolume = 100, gameVolume = 100;      // voice_volume= mic_volume= game_volume= percent (the game's volume is set on its Windows audio session)
     float voiceRange = 25.0f, voiceRadioRange = 0.0f;              // voice_range= metres within which players are heard in the world; voice_radio_range= metres beyond which not even the radio carries (0: no limit)
     bool voiceRadio = true;      // voice_radio=0: a voice beyond the range is not heard at all
+    bool race = false; std::string raceGoal = "panel:9F7F"; bool noRaceHud = false; int raceCountdownMs = 5000;      // game_mode=race: nothing of the world is shared and the players race (race/race.h); race_goal=panel:<hex>|count:<n>; no_race_hud=1: nothing drawn (test)
     bool noSeeThrough = false; float ghostAlpha = 0.22f;      // see_through=0: players stay solid when they are in the way of a puzzle; ghost_alpha=: how see-through they become (ghost/ghost.h)
     unsigned keyVoice = 'N';     // key_voice=: push to talk
     std::string voiceChannel = "proximity";      // voice_channel=proximity|radio|global|direct:<player id>: who hears this player and how (voice/voice.h)
