@@ -24,16 +24,16 @@ bool Newest(const std::wstring& dir, const wchar_t* pat, std::wstring* path, uns
     do { if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) && Ft(fd.ftLastWriteTime) >= best) { best = Ft(fd.ftLastWriteTime); *path = dir + L"\\" + fd.cFileName; any = true; } } while (FindNextFileW(h, &fd));
     FindClose(h); if (when) *when = best; return any;
 }
-struct Seen { unsigned id = 0; std::string character; double seconds = 0; };
-std::map<std::string, Seen> g_roster;      // this session, by name
+struct Seen { unsigned id = 0; std::string name, character; double seconds = 0; };
+std::map<unsigned, Seen> g_roster;      // this session, by player id (a name that arrives later replaces the placeholder one)
 }  // namespace
 
 void SaveMetaTick() {
     static ULONGLONG start = GetTickCount64(), last = start, lastWrite = 0; static std::wstring lastFile; static unsigned long long lastWhen; static bool loadedEarlier; static wprog::SaveMeta earlier; static bool hadEarlier;
     const Cfg& cfg = GetCfg(); if (cfg.noSaveMeta) return;
     ULONGLONG now = GetTickCount64(); double dt = (now - last) / 1000.0; last = now; if (dt > 5) dt = 5;
-    { Seen& me = g_roster[CoopMyName()]; me.id = CoopMyId(); me.character = SocialMyCharacter(); me.seconds += dt; }
-    for (const auto& r : CoopGetRemotes()) if (r.name[0] && r.ageMs < 3000) { Seen& s = g_roster[r.name]; s.id = r.id; s.character = r.character; s.seconds += dt; }
+    { Seen& me = g_roster[CoopMyId()]; me.id = CoopMyId(); me.name = CoopMyName(); me.character = SocialMyCharacter(); me.seconds += dt; }
+    for (const auto& r : CoopGetRemotes()) if (r.name[0] && r.ageMs < 3000) { Seen& s = g_roster[r.id]; s.id = r.id; s.name = r.name; s.character = r.character; s.seconds += dt; }
     if (now - lastWrite < 3000) return;
     std::wstring dir = SaveFolder(), file; unsigned long long when = 0; if (dir.empty() || !Newest(dir, L"*.witness_campaign", &file, &when)) return;
     if (!loadedEarlier) {      // the sidecar of the newest save written before this session: its players and time are the earlier sessions of this campaign
@@ -45,7 +45,7 @@ void SaveMetaTick() {
     if (DevMenuSnapshot(&solved, &open, &doors)) wprog::FillProgress(wprog::Builtin(), solved, open, doors, &m);
     SYSTEMTIME st; GetLocalTime(&st); char b[40]; snprintf(b, sizeof b, "%04d-%02d-%02d %02d:%02d:%02d", st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond); m.savedAt = b;
     m.sessionSeconds = unsigned((now - start) / 1000); m.totalSeconds = m.sessionSeconds + (hadEarlier ? earlier.totalSeconds : 0);
-    for (const auto& kv : g_roster) { wprog::MetaPlayer p; p.id = kv.second.id; p.name = kv.first; p.character = kv.second.character; p.seconds = unsigned(kv.second.seconds); p.sessions = 1; m.players.push_back(p); }
+    for (const auto& kv : g_roster) { wprog::MetaPlayer p; p.id = kv.second.id; p.name = kv.second.name; p.character = kv.second.character; p.seconds = unsigned(kv.second.seconds); p.sessions = 1; bool dup = false; for (auto& q : m.players) if (q.name == p.name) { q.seconds += p.seconds; dup = true; } if (!dup) m.players.push_back(p); }
     if (hadEarlier) wprog::MergePlayers(&m.players, earlier.players);
     std::wstring out = Swap(file, L".coop.txt"); std::string text = wprog::FormatMeta(m);
     if (m.total == 0) return;      // no census yet (the world is not up): nothing worth writing

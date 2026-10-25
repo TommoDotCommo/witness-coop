@@ -402,7 +402,7 @@ void SocialCommand(const char* line) {
     else if (!strncmp(line, "drawclear", 9)) { Lock l; ClearMine(); }
     else if (!strncmp(line, "drawstat", 8)) {
         Lock l; char m[300]; size_t total = 0; for (const auto& s : g_strokes) total += s.pts.size() / 3;
-        snprintf(m, sizeof m, "drawstat: strokes %zu points %zu segs %u pen %d canvas %d reticle %.0f %.0f color %u", g_strokes.size(), total, g_segsDrawn, g_pen ? 1 : 0, g_canvas ? 1 : 0, g_scrW / 2 + g_ox, g_scrH / 2 + g_oy, g_penColor); Log(m);
+        snprintf(m, sizeof m, "drawstat: strokes %zu points %zu segs %u pen %d canvas %d reticle %.0f %.0f color %u screen %.0f %.0f", g_strokes.size(), total, g_segsDrawn, g_pen ? 1 : 0, g_canvas ? 1 : 0, g_scrW / 2 + g_ox, g_scrH / 2 + g_oy, g_penColor, g_scrW, g_scrH); Log(m);
         for (const auto& s : g_strokes) {
             size_t n = s.pts.size() / 3; if (!n) continue; const float* a = &s.pts[0]; const float* b = &s.pts[(n - 1) * 3]; float sx = -1, sy = -1; ToScreen(g_camNow, g_angNow[0], g_angNow[1], b, g_scrW, g_scrH, &sx, &sy);
             float dx = b[0] - g_camNow[0], dy = b[1] - g_camNow[1], dz = b[2] - g_camNow[2];

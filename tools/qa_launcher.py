@@ -56,7 +56,7 @@ def main():
         subprocess.run([os.path.expanduser('~/.local/bin/lab'), 'register-pid', gp], capture_output=True)
         open(os.path.join(RUN, 'pidA.txt'), 'w').write(gp)
         t0 = time.time(); block = ''
-        while time.time() - t0 < 120:
+        while time.time() - t0 < 360:      # (a game starting beside other games takes minutes)
             if os.path.exists(log) and os.path.getmtime(log) > before:
                 t = open(log, errors='ignore').read(); m = re.search(r'Applying user settings:(.*?)(?:\n\s*WIN:|\Z)', t, re.S)
                 if m and 'geometry_detail' in m.group(1): block = m.group(1); break
@@ -67,13 +67,13 @@ def main():
         print('  %-90s %s  %s' % ("the game's own log says it applies the video settings chosen in the launcher", 'ok' if block and not bad else 'FAILED', bad if bad else ''), flush=True); ok = ok and bool(block) and not bad
         # the game read the options of the save: its next save carries them
         t0 = time.time()
-        while time.time() - t0 < 120 and 'overlay: resources ready' not in open(os.path.join(DIR1, 'witness_proxy.log'), errors='ignore').read(): time.sleep(1)
+        while time.time() - t0 < 360 and 'overlay: resources ready' not in open(os.path.join(DIR1, 'witness_proxy.log'), errors='ignore').read(): time.sleep(1)
         time.sleep(10)
         def newest(): return max((os.path.join(saves, f) for f in os.listdir(saves) if f.endswith('.witness_campaign')), key=os.path.getmtime)
         m0 = os.path.getmtime(newest()); size0 = os.path.getsize(newest())
         send(DIR1, ['key ESC down']); time.sleep(0.2); send(DIR1, ['key ESC up'])      # the pause menu: the game writes its campaign again, from what it holds in memory
         t0 = time.time()
-        while time.time() - t0 < 60 and os.path.getmtime(newest()) <= m0: time.sleep(1)
+        while time.time() - t0 < 90 and os.path.getmtime(newest()) <= m0: time.sleep(1)
         fs = [os.path.basename(newest())]; n0 = 0
         b = open(os.path.join(saves, fs[-1]), 'rb').read()
         def opt(n, fmt): p = b'\0' + n.encode() + b'\0'; i = b.find(p); return struct.unpack(fmt, b[i + len(p):i + len(p) + 4])[0]

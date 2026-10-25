@@ -30,8 +30,8 @@ def stat(d, cmd, head, tail_re):
 FL = r'(-?[0-9.]+)'
 def draw(d):
     b = stat(d, 'drawstat', 'drawstat: strokes', r'drawstat: stroke ')
-    m = re.match(r'drawstat: strokes (\d+) points (\d+) segs (\d+) pen (\d) canvas (\d) reticle ' + FL + ' ' + FL + r' color (\d+)', b[0])
-    r = dict(strokes=int(m[1]), points=int(m[2]), segs=int(m[3]), pen=int(m[4]), canvas=int(m[5]), rx=float(m[6]), ry=float(m[7]), color=int(m[8]), list=[])
+    m = re.match(r'drawstat: strokes (\d+) points (\d+) segs (\d+) pen (\d) canvas (\d) reticle ' + FL + ' ' + FL + r' color (\d+) screen ' + FL + ' ' + FL, b[0])
+    r = dict(strokes=int(m[1]), points=int(m[2]), segs=int(m[3]), pen=int(m[4]), canvas=int(m[5]), rx=float(m[6]), ry=float(m[7]), color=int(m[8]), sw=float(m[9]), sh=float(m[10]), list=[])
     for l in b[1:]:
         m = re.match(r'drawstat: stroke from (\d+) id (\d+) color (\d+) points (\d+) first ' + ' '.join([FL] * 3) + ' last ' + ' '.join([FL] * 3) + ' lastscreen ' + FL + ' ' + FL + ' lastdist ' + FL, l)
         r['list'].append(dict(frm=int(m[1]), id=int(m[2]), color=int(m[3]), n=int(m[4]), first=tuple(float(m[i]) for i in (5, 6, 7)), last=tuple(float(m[i]) for i in (8, 9, 10)), sx=float(m[11]), sy=float(m[12]), dist=float(m[13])))
@@ -50,7 +50,7 @@ check('start: nothing drawn in either game', draw(da)['strokes'] == 0 and draw(d
 # 1. the canvas: the pen moves with the mouse, the camera stays
 send(da, ['canvas on', 'reticle 0.5 0.5'], 0.5); send(da, ['mouse 40 0', 'mouse -40 0'], 0.5)
 (_, (th1, ph1)) = A.camera(); sa = draw(da)
-check('canvas on: the pen is at the middle of the screen and the mouse did not turn the camera', sa['canvas'] == 1 and abs(th1 - th) < 0.005 and abs(ph1 - ph) < 0.005 and abs(sa['rx'] - 960) < 40, (sa['canvas'], round(th1 - th, 4), round(sa['rx'])))
+check('canvas on: the pen is at the middle of the screen and the mouse did not turn the camera', sa['canvas'] == 1 and abs(th1 - th) < 0.005 and abs(ph1 - ph) < 0.005 and abs(sa['rx'] - sa['sw'] / 2) < 40, (sa['canvas'], round(th1 - th, 4), round(sa['rx'])))
 # 2. a ping at the middle of the screen measures the surface; a one-point stroke there must be as far
 send(da, ['ping'], 1.5); mk = marks(da); cam = A.camera()[0]
 pd = math.dist(mk[-1], cam) if mk else -1
