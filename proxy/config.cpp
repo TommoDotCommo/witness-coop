@@ -74,6 +74,8 @@ const Cfg& GetCfg() {
             else if (sscanf(line, "voice_range=%f", &fv) == 1) r.voiceRange = std::max(3.0f, fv);
             else if (sscanf(line, "voice_radio_range=%f", &fv) == 1) r.voiceRadioRange = std::max(0.0f, fv);
             else if (sscanf(line, "voice_radio=%d", &v) == 1) r.voiceRadio = v != 0;
+            else if (sscanf(line, "see_through=%d", &v) == 1) r.noSeeThrough = v == 0;
+            else if (sscanf(line, "ghost_alpha=%f", &fv) == 1) r.ghostAlpha = std::max(0.02f, std::min(1.0f, fv));
             else if (sscanf(line, "voice_channel=%31s", s) == 1) r.voiceChannel = s;
             else if (sscanf(line, "key_voice_channel=%15s", kn) == 1 && KeyFromName(kn)) r.keyVoiceChannel = KeyFromName(kn);
             else if (sscanf(line, "no_voice_channel=%d", &v) == 1) r.noVoiceChannel = v != 0;

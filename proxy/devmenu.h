@@ -3,6 +3,8 @@
 // and actions on them. Drawn over the back buffer by overlay.cpp; while it is open the game gets no keyboard or mouse input.
 #include <windows.h>
 
+#include <vector>
+bool DevMenuPanelPoints(std::vector<float>* xyz);   // render thread: the world position (x y z, three floats each) of every puzzle panel in the world; false while the world is not loaded yet (see-through players use it, dev_menu or not)
 bool DevMenuEnabled();                        // dev_menu=1 in witness_coop.cfg
 bool DevMenuOpen();
 void DevMenuToggle();

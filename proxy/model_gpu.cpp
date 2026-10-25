@@ -13,6 +13,8 @@
 #include "model_gpu.h"
 #include "config.h"
 #include "depth.h"
+#include "devmenu.h"
+#include "ghost/ghost.h"
 
 void Log(const char* msg);
 extern HMODULE g_selfModule();
@@ -38,6 +40,8 @@ struct PlayerDraw { unsigned id, seq; float pos[3], speed; int clip; int model; 
 static std::vector<PlayerDraw> g_playerDraws;
 static ID3D11VertexShader* g_vsLine; static ID3D11PixelShader* g_psLine; static ID3D11InputLayout* g_layoutLine; static ID3D11Buffer* g_vbLine; static ID3D11Query* g_qLine; static bool g_qLinePending; static LineDrawStats g_lineStats;
 static const size_t kLineVerts = 65536;
+struct GhostState { float alpha = 1.0f; float target = 1.0f; ULONGLONG t = 0; };
+static std::map<unsigned, GhostState> g_ghost; static std::vector<float> g_panelPts; static ULONGLONG g_panelPtsT; static size_t g_panelCount;
 static ModelDrawStats g_stats; static ID3D11Query* g_query; static bool g_queryPending;
 
 struct FrameCB { float viewProj[16], model[16]; float light[4]; float tint[4]; float depthp[4]; float screen[4]; };       // 192 bytes
@@ -64,7 +68,7 @@ float4 PS(VOut i) : SV_TARGET {
     else { int ns = (int)depthp.y; float s = 0; for (int k = 0; k < ns; k++) s += (sceneMS.Load(px, k) <= zm) ? 1 : 0; vis = s / ns; }
     if (vis <= 0) discard;
   }
-  return float4(c, vis); }
+  return float4(c, vis * tint.w); }      // tint.w: how solid this player is (see-through players, ghost/ghost.h)
 struct LIn { float3 p : POSITION; float4 c : COLOR0; };
 struct LOut { float4 pos : SV_POSITION; float4 c : COLOR0; float dist : TEXCOORD1; };
 LOut VSLine(LIn v) { LOut o; o.pos = mul(viewProj, float4(v.p, 1)); o.dist = o.pos.w; o.c = v.c; return o; }
@@ -411,7 +415,17 @@ bool ModelGpuDraw(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Cam& ca
     wm::ModelMatrix(feet, g_avatar->yaw(), g_L->fit, g_L->yaw, fc.model);
     ApplyEmote(fc.model, feet, g_avatar->yaw() + g_L->yaw, fx);
     g_stats.emote = extra ? extra->emote : 0; g_stats.lift = fx.lift; g_stats.lean = fx.lean; g_stats.roll = fx.roll; g_stats.dyaw = fx.dyaw;
-    float L[4] = {0.35f, 0.25f, 0.9f, 0.55f}, T[4] = {1, 1, 1, 1}; memcpy(fc.light, L, 16); memcpy(fc.tint, T, 16);
+    float L[4] = {0.35f, 0.25f, 0.9f, 0.55f}, T[4] = {1, 1, 1, 1}; memcpy(fc.light, L, 16);
+    {      // see through a player who is in the way of a puzzle (or in your face): the alpha moves to its target a step at a time
+        GhostState& gs = g_ghost[playerId]; ULONGLONG nowT = GetTickCount64(); float dt = gs.t ? std::min(0.25f, float(nowT - gs.t) / 1000.0f) : 1.0f; gs.t = nowT;
+        if (!cfg.noSeeThrough) {
+            if (nowT - g_panelPtsT > 1000) { g_panelPtsT = nowT; DevMenuPanelPoints(&g_panelPts); g_panelCount = g_panelPts.size() / 3; }
+            float fwd[3] = {cosf(cam.phi) * cosf(cam.theta), cosf(cam.phi) * sinf(cam.theta), sinf(cam.phi)}; wghost::Params gp; gp.minAlpha = cfg.ghostAlpha;
+            gs.target = wghost::Alpha(cam.pos, fwd, feet, g_panelPts.data(), g_panelCount, gp);
+        } else gs.target = 1.0f;
+        gs.alpha = wghost::Approach(gs.alpha, gs.target, dt, 5.0f); T[3] = gs.alpha;
+    }
+    memcpy(fc.tint, T, 16);
     ID3D11ShaderResourceView* sceneSrv = nullptr; bool ms = false;
     bool haveScene = !cfg.noModelDepth && DepthScene(&sceneSrv, &ms);
     if (InterlockedExchange(&g_probeReq, 0)) { if (haveScene) RunProbe(w, h, sceneSrv, ms); else Log("probe: no scene depth buffer found"); }
@@ -497,4 +511,5 @@ void ModelGpuDumpPlayers() {
 void ModelGpuLogStats() {
     ModelDrawStats s = ModelGpuStats(); char m[480];
     snprintf(m, sizeof m, "modelstat: visible_px %u drawn %d clip %d speed %.2f anim %.3f from %d blend %.2f eye %.3f yaw %.3f frames %u model %s %d/%d pos %.2f %.2f %.2f cam %.2f %.2f %.2f fx emote %d lift %.3f lean %.3f roll %.3f dyaw %.3f", s.visiblePixels, (int)s.drawn, s.clip, s.speed, s.animTime, s.from, s.blend, s.eye, s.yaw, s.frames, g_list.empty() ? "-" : g_list[g_drawnIdx].name.c_str(), g_drawnIdx + 1, (int)g_list.size(), s.pos[0], s.pos[1], s.pos[2], s.cam[0], s.cam[1], s.cam[2], s.emote, s.lift, s.lean, s.roll, s.dyaw); Log(m);
+    for (const auto& kv : g_ghost) { snprintf(m, sizeof m, "ghoststat: %u alpha %.3f target %.3f panels %zu", kv.first, kv.second.alpha, kv.second.target, g_panelCount); Log(m); }
 }

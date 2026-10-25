@@ -221,6 +221,12 @@ void DisarmStartProgress() {      // witness_coop.cfg: the start_progress line b
     while (pos < t.size()) { size_t e = t.find('\n', pos); if (e == std::string::npos) e = t.size() - 1; std::string line = t.substr(pos, e - pos + 1); if (!line.compare(0, 15, "start_progress=")) { line = "# applied: " + line; changed = true; } out += line; pos = e + 1; }
     if (changed) { FILE* f = _wfopen(path.c_str(), L"wb"); if (f) { fwrite(out.data(), 1, out.size(), f); fclose(f); } }
 }
+}      // (the namespace of the rest of this file is closed for the exported function below and opened again)
+bool DevMenuPanelPoints(std::vector<float>* xyz) {
+    if (!g_built) { static DWORD next; DWORD now = GetTickCount(); if (now < next) return false; next = now + 2000; Build(); if (g_pn.size() < 300) { g_built = false; return false; } }
+    xyz->clear(); for (const auto& p : g_pn) { xyz->push_back(p.x); xyz->push_back(p.y); xyz->push_back(p.z); } return true;
+}
+namespace {
 unsigned SolvedCount() { unsigned n = 0; for (auto& p : g_pn) n += p.solved; return n; }
 void StartProgressTick() {
     static bool done; static DWORD nextTry, stableSince; static uintptr_t firstPanel;
