@@ -33,7 +33,7 @@ struct FrameCB { float viewProj[16], model[16]; float light[4]; float tint[4]; f
 
 static const char* kHlsl = R"(
 cbuffer Frame : register(b0) { float4x4 viewProj; float4x4 model; float4 light; float4 tint; float4 depthp; float4 screen; };   // screen: width, height. depthp: x mode (0 none, 1 plain, 2 multisampled), y samples, z relative bias, w the game's near plane (its depth is near / distance, reversed)
-cbuffer Bones : register(b1) { float4x4 bones[128]; };
+cbuffer Bones : register(b1) { float4x4 bones[256]; };
 Texture2D tex : register(t0); SamplerState smp : register(s0);
 Texture2DMS<float> sceneMS : register(t1); Texture2D<float> scene1 : register(t2);
 struct VIn { float3 p : POSITION; float3 n : NORMAL; float2 uv : TEXCOORD0; uint4 j : BLENDINDICES; float4 w : BLENDWEIGHT; };

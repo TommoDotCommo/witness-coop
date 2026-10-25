@@ -12,6 +12,22 @@ static int g_fail, g_n;
 #define CHECK(c, ...) do { g_n++; if (!(c)) { g_fail++; printf("FAIL line %d: %s | ", __LINE__, #c); printf(__VA_ARGS__); printf("\n"); } } while (0)
 static bool Near(float a, float b, float e) { return fabsf(a - b) <= e; }
 
+// A synthetic skinned model: a chain of `n` joints (each 0.01 m along x from its parent), one triangle at the origin bound to the LAST joint.
+// In the bind pose that triangle must sit at n * 0.01 m, so a joint index that is cut off, wrapped or shifted puts it somewhere else.
+static std::vector<uint8_t> ChainGlb(int n) {
+    std::vector<uint8_t> bin(104, 0); float pos[9] = {0, 0, 0, 0.1f, 0, 0, 0, 0.1f, 0}, wt[12] = {1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0}; uint16_t ix[3] = {0, 1, 2};
+    memcpy(&bin[0], pos, 36); for (int v = 0; v < 3; v++) bin[36 + v * 4] = (uint8_t)(n - 1); memcpy(&bin[48], wt, 48); memcpy(&bin[96], ix, 6);
+    std::string j = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"buffers\":[{\"byteLength\":104}],\"bufferViews\":[{\"buffer\":0,\"byteOffset\":0,\"byteLength\":36},{\"buffer\":0,\"byteOffset\":36,\"byteLength\":12},{\"buffer\":0,\"byteOffset\":48,\"byteLength\":48},{\"buffer\":0,\"byteOffset\":96,\"byteLength\":6}],"
+        "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\",\"min\":[0,0,0],\"max\":[0.1,0.1,0]},{\"bufferView\":1,\"componentType\":5121,\"count\":3,\"type\":\"VEC4\"},{\"bufferView\":2,\"componentType\":5126,\"count\":3,\"type\":\"VEC4\"},{\"bufferView\":3,\"componentType\":5123,\"count\":3,\"type\":\"SCALAR\"}],"
+        "\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0,\"JOINTS_0\":1,\"WEIGHTS_0\":2},\"indices\":3}]}],\"nodes\":[";
+    for (int i = 0; i < n; i++) { j += "{\"translation\":[0.01,0,0]"; if (i + 1 < n) j += ",\"children\":[" + std::to_string(i + 1) + "]"; j += "},"; }
+    j += "{\"mesh\":0,\"skin\":0}],\"skins\":[{\"joints\":["; for (int i = 0; i < n; i++) j += (i ? "," : "") + std::to_string(i);
+    j += "]}],\"scenes\":[{\"nodes\":[0," + std::to_string(n) + "]}]}"; while (j.size() % 4) j += ' ';
+    std::vector<uint8_t> out(12 + 8 + j.size() + 8 + bin.size()); uint32_t total = (uint32_t)out.size(), jl = (uint32_t)j.size(), bl = (uint32_t)bin.size(), mg = 0x46546C67, ver = 2, jt = 0x4E4F534A, bt = 0x004E4942;
+    uint8_t* q = out.data(); memcpy(q, &mg, 4); memcpy(q + 4, &ver, 4); memcpy(q + 8, &total, 4); memcpy(q + 12, &jl, 4); memcpy(q + 16, &jt, 4); memcpy(q + 20, j.data(), jl);
+    q += 20 + jl; memcpy(q, &bl, 4); memcpy(q + 4, &bt, 4); memcpy(q + 8, bin.data(), bl); return out;
+}
+
 int main(int argc, char** argv) {
     std::ifstream f(argv[1], std::ios::binary); std::vector<uint8_t> file((std::istreambuf_iterator<char>(f)), {});
     wm::Model m; std::string err;
@@ -130,5 +146,16 @@ int main(int argc, char** argv) {
         CHECK(s0.Pick(fig).clip == 0 && s0.Pick(fig).time == 0, "unnamed clip, standing: first frame (time %.2f)", s0.Pick(fig).time);
     }
     printf("%s: %d checks, %d failed\n", g_fail ? "FAILED" : "ok", g_n, g_fail);
+
+    // a character with many joints (the Magic Frog has 151): up to kMaxJoints - 1 = 255 must load and skin correctly, one more must be refused
+    for (int n : {150, 255}) {
+        std::vector<uint8_t> g = ChainGlb(n); wm::Model cm; std::string ce;
+        bool ok = wm::LoadGlb(g.data(), g.size(), &cm, &ce); CHECK(ok, "%d joints: %s", n, ce.c_str());
+        if (!ok) continue;
+        std::vector<float> cj(wm::kMaxJoints * 16); wm::JointMatrices(cm, -1, 0, cj.data()); float sp[3] = {0, 0, 0}; wm::SkinPosition(cm, cj.data(), cm.verts[0], sp);
+        CHECK((int)cm.joints.size() == n && cm.jointCount() == n + 1 && cm.verts[0].joints[0] == n - 1, "%d joints: loaded %zu joints, vertex bound to joint %d", n, cm.joints.size(), cm.verts[0].joints[0]);
+        CHECK(Near(sp[0], n * 0.01f, 1e-3f) && Near(sp[1], 0, 1e-4f), "%d joints: the triangle skins to x %.4f, wanted %.4f", n, sp[0], n * 0.01f);
+    }
+    { std::vector<uint8_t> g = ChainGlb(256); wm::Model cm; std::string ce; CHECK(!wm::LoadGlb(g.data(), g.size(), &cm, &ce), "256 joints accepted (the limit is 255)"); }
     return g_fail ? 1 : 0;
 }

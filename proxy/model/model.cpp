@@ -76,7 +76,7 @@ bool LoadGlb(const uint8_t* data, size_t n, Model* out, std::string* err) {
     }
     const cgltf_skin* skin = d->skins_count ? &d->skins[0] : nullptr;
     if (skin) {
-        if (skin->joints_count + 1 > (size_t)kMaxJoints) return fail("too many joints (limit 127)");
+        if (skin->joints_count + 1 > (size_t)kMaxJoints) return fail("too many joints (limit 255)");
         for (size_t j = 0; j < skin->joints_count; j++) m.joints.push_back((int)(skin->joints[j] - d->nodes));
         m.ibm.assign(skin->joints_count * 16, 0);
         for (size_t j = 0; j < skin->joints_count; j++) {

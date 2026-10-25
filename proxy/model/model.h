@@ -8,7 +8,11 @@
 
 namespace wm {
 
-constexpr int kMaxJoints = 128;      // including the extra identity joint that unskinned geometry is bound to
+#ifdef WM_MUT_MAX_JOINTS
+constexpr int kMaxJoints = 128;      // the old limit: a 151-joint character is refused
+#else
+constexpr int kMaxJoints = 256;      // including the extra identity joint that unskinned geometry is bound to (joint indices are bytes; the shader's bones[] array has the same size)
+#endif
 
 struct Vertex { float pos[3], nrm[3], uv[2]; uint8_t joints[4]; float weights[4]; };
 
