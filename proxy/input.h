@@ -5,6 +5,7 @@
 // answer the game's GetRawInputData call for that handle with the event we queued.
 void InputInstallHook();                       // from InstallHooks (DllMain): patches the exe's GetRawInputData import
 void InputKey(unsigned vk, unsigned scan, bool down);
+void InputChar(unsigned ch);                   // a typed character (WM_CHAR) for the window, one per frame like the others
 void InputMouse(int dx, int dy, unsigned buttonFlags);      // RI_MOUSE_* flags, 0 for a pure move
 void InputPump(HWND wnd);                      // render thread, once per frame: post the queued events to the game window
 unsigned InputStats(int which);                // 0 posted, 1 answered, 2 hook calls for real handles, 3 hook calls for our handles

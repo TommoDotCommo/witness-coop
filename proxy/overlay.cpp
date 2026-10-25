@@ -31,6 +31,7 @@ static const float kVFovDeg = 60.0f;                 // calibrated: horizontal ~
 #include "model_gpu.h"
 #include "depth.h"
 #include "playercolor.h"
+#include "social.h"
 #include "povui.h"
 #include <atomic>
 
@@ -89,7 +90,7 @@ static void TakeShot(IDXGISwapChain* sc, const char* name) {
 
 static bool Readable(const void* p, size_t n) { return !IsBadReadPtr(p, n); }
 // The game's pause menu is open: nothing of ours may be drawn over it (puppets, shared lines, name tags).
-static bool GamePaused() {
+bool GamePaused() {
     if (GetCfg().noPauseHide) return false; uintptr_t base = (uintptr_t)GetModuleHandleA(nullptr);
     if (GetCfg().pauseWrongFlag) { const DWORD* p = (const DWORD*)(base + kPausedOld); return Readable(p, 4) && *p == 1; }
     const float *a = (const float*)(base + kPauseDimA), *b = (const float*)(base + kPauseDimB);
@@ -340,7 +341,7 @@ static void DrawDevMenu(IDXGISwapChain* sc) {
     if (!DevMenuOpen() && !DevMenuToastWanted() && !VideoViewMode() && !TagsWanted() && !g_rosterOpen.load()) return;
     ID3D11Texture2D* bb = nullptr; if (FAILED(sc->GetBuffer(0, __uuidof(ID3D11Texture2D), (void**)&bb))) return;
     D3D11_TEXTURE2D_DESC td; bb->GetDesc(&td); ID3D11RenderTargetView* rtv = nullptr;
-    if (SUCCEEDED(g_dev->CreateRenderTargetView(bb, nullptr, &rtv))) { UiBegin((float)td.Width, (float)td.Height); DrawNameTags((float)td.Width, (float)td.Height); if (DevMenuOpen()) DevMenuDraw((float)td.Width, (float)td.Height); else DevMenuToast((float)td.Width, (float)td.Height);
+    if (SUCCEEDED(g_dev->CreateRenderTargetView(bb, nullptr, &rtv))) { UiBegin((float)td.Width, (float)td.Height); DrawNameTags((float)td.Width, (float)td.Height); { uintptr_t b0 = (uintptr_t)GetModuleHandleA(nullptr); const float* c0 = (const float*)(b0 + kCamPos); const float* a0 = (const float*)(b0 + kCamAng); if (!IsBadReadPtr(c0, 12) && !IsBadReadPtr(a0, 8)) SocialFrame((float)td.Width, (float)td.Height, c0, a0); } if (DevMenuOpen()) DevMenuDraw((float)td.Width, (float)td.Height); else DevMenuToast((float)td.Width, (float)td.Height);
         if (VideoViewMode()) {      // the partner's screen, in a corner (F9: small, large, off)
             int vw = 0, vh = 0; unsigned long age = 0; ID3D11ShaderResourceView* srv = VideoRemoteSrv(&vw, &vh, &age);
             float k = (VideoViewMode() == 2 ? 2.0f : 1.0f) * std::max(1.f, td.Height / 1080.f), iw = (vw ? vw : 480) * k, ih = (vh ? vh : 270) * k, x = td.Width - iw - 14, y = 14;

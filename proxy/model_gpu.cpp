@@ -301,10 +301,11 @@ static bool EnsureDepth(UINT w, UINT h) {
     g_depthW = w; g_depthH = h; return true;
 }
 
-static void RunProbe(UINT w, UINT h, ID3D11ShaderResourceView* sceneSrv, bool ms) {
+// Reads the scene depth at 8 places into out (centre: out[0..3] are the four samples of the middle pixel, then low, high, left, right). false: could not.
+static bool ProbeDepth(UINT w, UINT h, ID3D11ShaderResourceView* sceneSrv, bool ms, float out[8]) {
     D3D11_TEXTURE2D_DESC td = {}; td.Width = 8; td.Height = 1; td.MipLevels = 1; td.ArraySize = 1; td.Format = DXGI_FORMAT_R32_FLOAT; td.SampleDesc.Count = 1; td.BindFlags = D3D11_BIND_RENDER_TARGET;
     ID3D11Texture2D *rt = nullptr, *st = nullptr; ID3D11RenderTargetView* rtv = nullptr;
-    if (FAILED(g_dev->CreateTexture2D(&td, nullptr, &rt)) || FAILED(g_dev->CreateRenderTargetView(rt, nullptr, &rtv))) { Log("probe: cannot make the target"); if (rt) rt->Release(); return; }
+    if (FAILED(g_dev->CreateTexture2D(&td, nullptr, &rt)) || FAILED(g_dev->CreateRenderTargetView(rt, nullptr, &rtv))) { Log("probe: cannot make the target"); if (rt) rt->Release(); return false; }
     td.Usage = D3D11_USAGE_STAGING; td.BindFlags = 0; td.CPUAccessFlags = D3D11_CPU_ACCESS_READ; g_dev->CreateTexture2D(&td, nullptr, &st);
     FrameCB fc = {}; fc.depthp[0] = ms ? 2.0f : 1.0f; fc.screen[0] = (float)w; fc.screen[1] = (float)h;
     g_ctx->UpdateSubresource(g_cbFrame, 0, nullptr, &fc, 0, 0);
@@ -316,16 +317,32 @@ static void RunProbe(UINT w, UINT h, ID3D11ShaderResourceView* sceneSrv, bool ms
     g_ctx->Draw(3, 0);
     ID3D11ShaderResourceView* z3[3] = {nullptr, nullptr, nullptr}; g_ctx->PSSetShaderResources(0, 3, z3);
     g_ctx->CopyResource(st, rt); D3D11_MAPPED_SUBRESOURCE m;
-    if (SUCCEEDED(g_ctx->Map(st, 0, D3D11_MAP_READ, 0, &m))) {
-        const float* v = (const float*)m.pData; char msg[300];
-        snprintf(msg, sizeof msg, "probe: centre samples %.7g %.7g %.7g %.7g | low %.7g high %.7g left %.7g right %.7g (scene depth, %s)", v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], ms ? "multisampled" : "single sample");
-        Log(msg); g_ctx->Unmap(st, 0);
-    }
+    bool ok = false;
+    if (SUCCEEDED(g_ctx->Map(st, 0, D3D11_MAP_READ, 0, &m))) { memcpy(out, m.pData, 8 * sizeof(float)); g_ctx->Unmap(st, 0); ok = true; }
     rtv->Release(); rt->Release(); if (st) st->Release();
+    return ok;
 }
+static void RunProbe(UINT w, UINT h, ID3D11ShaderResourceView* sceneSrv, bool ms) {
+    float v[8]; if (!ProbeDepth(w, h, sceneSrv, ms, v)) return; char msg[300];
+    snprintf(msg, sizeof msg, "probe: centre samples %.7g %.7g %.7g %.7g | low %.7g high %.7g left %.7g right %.7g (scene depth, %s)", v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], ms ? "multisampled" : "single sample"); Log(msg);
+}
+// The distance (along the view direction) of the game's geometry under the middle of the screen, for location pings and free drawing: asked for, answered by the next frame.
+static volatile LONG g_centerReq, g_centerReady; static float g_centerDist = -1;
+void ModelGpuRequestCenterDepth() { InterlockedExchange(&g_centerReady, 0); InterlockedExchange(&g_centerReq, 1); }
+bool ModelGpuTakeCenterDepth(float* dist) { if (!InterlockedExchange(&g_centerReady, 0)) return false; *dist = g_centerDist; return true; }
+static void AnswerCenterDepth(UINT w, UINT h) {
+    ID3D11ShaderResourceView* sceneSrv = nullptr; bool ms = false; float v[8]; g_centerDist = -1;
+    if (!GetCfg().noModelDepth && DepthScene(&sceneSrv, &ms) && ProbeDepth(w, h, sceneSrv, ms, v)) {
+        float z = 0; int n = 0; for (int i = 0; i < (ms ? 4 : 1); ++i) if (v[i] > 1e-7f) { z += v[i]; ++n; }
+        if (n) g_centerDist = GetCfg().depthNear / (z / n);      // the game stores depth as near / distance
+    }
+    InterlockedExchange(&g_centerReady, 1);
+}
+
 
 bool ModelGpuDraw(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Cam& cam, bool valid, unsigned seq, const float pos[3], float yaw, unsigned playerId, bool first) {
     if (!g_ready) return false;
+    if (first && InterlockedExchange(&g_centerReq, 0)) AnswerCenterDepth(w, h);
     if (!GetCfg().noModelSelect) ApplySelection(); else InterlockedExchange(&g_selReq, 0);
     g_L = ModelFor(playerId); g_drawnIdx = g_L->index;
     PanelAtExit panel{rtv, w, h};

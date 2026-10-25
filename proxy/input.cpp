@@ -6,12 +6,13 @@
 #include "devmenu.h"
 #include "video.h"
 #include "povui.h"
+#include "social.h"
 
 bool HookImport(const char* dll, const char* fn, void* hook, void** orig);   // hooks.cpp
 void Log(const char* msg);
 #include <cstdio>
 
-struct Ev { bool key; unsigned vk, scan; bool down; int dx, dy; unsigned bflags; };
+struct Ev { bool key; unsigned vk, scan; bool down; int dx, dy; unsigned bflags; bool ch = false; };
 static CRITICAL_SECTION g_lock; static bool g_init;
 static Ev g_q[512]; static int g_n;                         // not yet posted
 static Ev g_sent[256]; static volatile LONG g_stats[4];   // posted, answered, calls for real (OS) handles, calls for our handles     // posted, indexed by token & 255
@@ -20,6 +21,7 @@ static const ULONG_PTR kTokenBase = 0xC0DE0000;
 static void Init() { if (!g_init) { InitializeCriticalSection(&g_lock); g_init = true; } }
 static void Push(const Ev& e) { Init(); EnterCriticalSection(&g_lock); if (g_n < 512) g_q[g_n++] = e; LeaveCriticalSection(&g_lock); }
 void InputKey(unsigned vk, unsigned scan, bool down) { Push({true, vk, scan, down, 0, 0, 0}); }
+void InputChar(unsigned ch) { Ev e = {true, ch, 0, true, 0, 0, 0}; e.ch = true; Push(e); }
 void InputMouse(int dx, int dy, unsigned bf) { Push({false, 0, 0, false, dx, dy, bf}); }
 unsigned InputStats(int w) { return (unsigned)g_stats[w]; }
 
@@ -31,7 +33,8 @@ void InputPump(HWND wnd) {      // one event per frame, so a sequence of mouse d
     LeaveCriticalSection(&g_lock);
     if (!have) return;
     static unsigned seq; unsigned t = seq++; g_sent[t & 255] = e;
-    if (e.key) {   // keys as ordinary key messages; NOTE: the game ignores these for movement (see NOTES.md), only the mouse path is used by the bot
+    if (e.ch) PostMessageW(wnd, WM_CHAR, e.vk, 1);
+    else if (e.key) {   // keys as ordinary key messages; NOTE: the game ignores these for movement (see NOTES.md), only the mouse path is used by the bot
         LPARAM lp = 1 | ((LPARAM)e.scan << 16) | (e.down ? 0 : ((LPARAM)1 << 30) | ((LPARAM)1 << 31));
         PostMessageW(wnd, e.down ? WM_KEYDOWN : WM_KEYUP, e.vk, lp);
     } else if (e.bflags) {   // a click: the game gets buttons as ordinary mouse messages (a real click makes no raw button record)
@@ -63,7 +66,7 @@ static UINT WINAPI HookGetRawInputData(HRAWINPUT h, UINT cmd, LPVOID data, PUINT
         InterlockedIncrement(&g_stats[2]);
         UINT r = g_orig(h, cmd, data, size, hdr);
         if (data && r != (UINT)-1 && cmd == RID_INPUT && r >= sizeof(RAWINPUTHEADER) && !DevMenuOpen()) BoostMouse((RAWINPUT*)data);
-        if ((DevMenuOpen() || PovRosterOpen()) && data && r != (UINT)-1 && cmd == RID_INPUT && r >= sizeof(RAWINPUTHEADER)) {      // the dev menu or the player list is open: it takes the mouse motion, the game gets an empty event
+        if ((DevMenuOpen() || PovRosterOpen() || SocialCapturing()) && data && r != (UINT)-1 && cmd == RID_INPUT && r >= sizeof(RAWINPUTHEADER)) {      // the dev menu or the player list is open: it takes the mouse motion, the game gets an empty event
             RAWINPUT* ri = (RAWINPUT*)data;
             if (ri->header.dwType == RIM_TYPEMOUSE) { if (DevMenuOpen() && !(ri->data.mouse.usFlags & MOUSE_MOVE_ABSOLUTE)) DevMenuRawMove(ri->data.mouse.lLastX, ri->data.mouse.lLastY); ri->data.mouse.lLastX = ri->data.mouse.lLastY = 0; ri->data.mouse.usButtonFlags = 0; ri->data.mouse.usButtonData = 0; }
             else if (ri->header.dwType == RIM_TYPEKEYBOARD && !(ri->data.keyboard.Flags & RI_KEY_BREAK)) { ri->data.keyboard.VKey = 0; ri->data.keyboard.MakeCode = 0; ri->data.keyboard.Flags |= RI_KEY_BREAK; }
@@ -110,16 +113,16 @@ static BOOL WINAPI HookPeekMessageA(LPMSG m, HWND w, UINT lo, UINT hi, UINT rm) 
     if (!r || !m || !(rm & PM_REMOVE) || !(DevMenuEnabled() || VideoEnabled())) return r;
     bool take = false;
     switch (m->message) {
-    case WM_KEYDOWN: case WM_SYSKEYDOWN: take = DevMenuKey((unsigned)m->wParam, true); break;
-    case WM_KEYUP: case WM_SYSKEYUP: DevMenuKey((unsigned)m->wParam, false); break;
-    case WM_CHAR: take = DevMenuOpen() || PovRosterOpen(); break;
-    case WM_LBUTTONDOWN: take = DevMenuMouseButton(0, true) || PovRosterOpen(); break;
-    case WM_RBUTTONDOWN: take = DevMenuMouseButton(1, true) || PovRosterOpen(); break;
-    case WM_MBUTTONDOWN: take = DevMenuMouseButton(2, true) || PovRosterOpen(); break;
+    case WM_KEYDOWN: case WM_SYSKEYDOWN: take = DevMenuKey((unsigned)m->wParam, true) || SocialKey((unsigned)m->wParam, true); break;
+    case WM_KEYUP: case WM_SYSKEYUP: DevMenuKey((unsigned)m->wParam, false); SocialKey((unsigned)m->wParam, false); break;
+    case WM_CHAR: take = DevMenuOpen() || PovRosterOpen() || SocialChar((unsigned)m->wParam) || SocialCapturing(); break;
+    case WM_LBUTTONDOWN: take = DevMenuMouseButton(0, true) || PovRosterOpen() || SocialCapturing(); break;
+    case WM_RBUTTONDOWN: take = DevMenuMouseButton(1, true) || PovRosterOpen() || SocialCapturing(); break;
+    case WM_MBUTTONDOWN: take = DevMenuMouseButton(2, true) || PovRosterOpen() || SocialCapturing(); break;
     case WM_LBUTTONUP: DevMenuMouseButton(0, false); break;
     case WM_RBUTTONUP: DevMenuMouseButton(1, false); break;
-    case WM_MOUSEWHEEL: take = DevMenuWheel(GET_WHEEL_DELTA_WPARAM(m->wParam)) || PovRosterOpen(); break;
-    case WM_MOUSEMOVE: take = DevMenuOpen() || PovRosterOpen(); break;
+    case WM_MOUSEWHEEL: take = DevMenuWheel(GET_WHEEL_DELTA_WPARAM(m->wParam)) || PovRosterOpen() || SocialCapturing(); break;
+    case WM_MOUSEMOVE: take = DevMenuOpen() || PovRosterOpen() || SocialCapturing(); break;
     }
     if (take) m->message = WM_NULL;
     return r;

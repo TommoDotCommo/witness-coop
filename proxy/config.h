@@ -23,6 +23,8 @@ struct Cfg {
     bool modelByPlayer = false;  // every remote player is drawn with a different model of witness_models\ (player 1 the selected one, 2 the next, ...)
     bool noModelDepth = false;   // test mutant: draw the model over walls
     bool pauseWrongFlag = false; // test mutant: the first, wrong pause flag (it flips with F6 / F7 and with entering a puzzle)
+    unsigned keyChat = 'T', keyPing = 'P', keyEmote = 'G', keyDraw = 'X', keyChar = 'C';   // key_chat= ... : a letter or F1..F12
+    bool noChatUi = false, noTypingDots = false, noPingMarks = false;      // test mutants: T does nothing; typing is not announced; pings are not drawn
     bool noPauseHide = false;    // test mutant: draw puppets, lines and name tags over the pause menu
     bool skipEntityZero = false; // test mutant: restore the old census that lost the second tutorial door
     bool devMenu = false;        // dev_menu=1: the F8 dev menu (map, teleport, nearby puzzles); off in a normal install

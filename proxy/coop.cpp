@@ -34,6 +34,8 @@ void VideoOnRequest(const uint8_t* data, size_t n);
 
 static std::atomic<unsigned> g_myId{0};
 unsigned CoopMyId() { return g_myId.load(); }
+static char g_myName[40] = "";
+const char* CoopMyName() { return g_myName[0] ? g_myName : "me"; }
 witness::SyncCore* CoopCore() { return g_core.load(std::memory_order_acquire); }
 static volatile LONG g_fakeOn; static float g_fake[4]; static volatile LONG g_fakeSeq;     // test hook (witness_cmd.txt: fakepose): a pose the peer never sent
 void CoopSetFakeRemote(bool on, const float* pos, float yaw) {
@@ -46,7 +48,8 @@ std::vector<RemotePose> CoopGetRemotes() {
     std::vector<RemotePose> out;
     if (auto* c = CoopCore()) for (const auto& r : c->remotePoses(GetTickCount64())) {
         RemotePose p; memset(&p, 0, sizeof p); p.pingMs = r.pingMs; strncpy(p.name, r.name.c_str(), sizeof p.name - 1); p.valid = r.valid; memcpy(p.pos, r.pos, sizeof p.pos); memcpy(p.ang, r.ang, sizeof p.ang);
-        p.ageMs = (DWORD)r.ageMs; p.seq = r.seq; p.id = r.id; out.push_back(p);
+        p.ageMs = (DWORD)r.ageMs; p.seq = r.seq; p.id = r.id;
+        strncpy(p.character, r.character.c_str(), sizeof p.character - 1); p.emote = r.emote; p.emoteSeq = r.emoteSeq; p.typing = r.typing; p.speaking = r.speaking; out.push_back(p);
     }
     return out;
 }
@@ -110,6 +113,10 @@ static DWORD WINAPI NetThread(LPVOID) {
         if (sscanf(line, "no_ping_reply=%d", &v) == 1) flags.noPingReply = v;
         if (sscanf(line, "no_name_send=%d", &v) == 1) flags.noNameSend = v;
         if (sscanf(line, "no_line_resend=%d", &v) == 1) flags.noLineResend = v;
+        if (sscanf(line, "no_social_resend=%d", &v) == 1) flags.noSocialResend = v;
+        if (sscanf(line, "no_social_dedupe=%d", &v) == 1) flags.noSocialDedupe = v;
+        if (sscanf(line, "no_social_order=%d", &v) == 1) flags.noSocialOrder = v;
+        if (sscanf(line, "no_presence_send=%d", &v) == 1) flags.noPresenceSend = v;
     }
     fclose(f);
     if (id < 1 || listenPort < 1 || listenPort > 65535 || badConfig || endpoints.count((unsigned)id) || (endpoints.empty() && (peerPort < 1 || peerPort > 65535))) {
@@ -140,7 +147,7 @@ static DWORD WINAPI NetThread(LPVOID) {
     h.lock = [] { EnterCriticalSection(&g_lock); }; h.unlock = [] { LeaveCriticalSection(&g_lock); };
     uint32_t session = (uint32_t)time(nullptr);     // must grow with every start: the core ignores packets from an older session
     witness::SyncCore* core = new witness::SyncCore(id, session, GameWorldInstance(), h, flags);
-    { char nm[40]; if (name[0]) snprintf(nm, sizeof nm, "%s", name); else snprintf(nm, sizeof nm, "Player %d", id); core->setName(nm); }
+    { char nm[40]; if (name[0]) snprintf(nm, sizeof nm, "%s", name); else snprintf(nm, sizeof nm, "Player %d", id); core->setName(nm); snprintf(g_myName, sizeof g_myName, "%s", nm); }
     if (!endpoints.empty()) {
         std::vector<unsigned> ids; for (const auto& p : endpoints) ids.push_back(p.first);
         if (!core->setPeers(ids)) { Log("coop: invalid roster"); delete core; closesocket(s); return 0; }

@@ -19,6 +19,8 @@ LineDrawStats ModelGpuLineStats();
 void ModelGpuLogLineStats();          // witness_cmd.txt: linestat -> one log line
 ModelDrawStats ModelGpuStats();
 void ModelGpuDumpPlayers(); // render-thread test bridge: submitted ids, positions and gait speeds
+void ModelGpuRequestCenterDepth();     // the next frame measures the distance of the geometry under the middle of the screen
+bool ModelGpuTakeCenterDepth(float* dist);   // true once the answer is there: the distance in metres along the view direction, or -1 (sky / no depth buffer)
 void ModelGpuRequestProbe();      // the next frame logs the scene depth at a few pixels (witness_cmd.txt: probe)
 void ModelGpuLogStats();               // witness_cmd.txt: modelstat -> one log line: pixels of the model that survived the depth test (GPU occlusion query), clip, speed
 void ModelGpuDepthView(bool on);          // witness_cmd.txt: depthview on|off (diagnostic: draw the game's depth buffer instead of the model)

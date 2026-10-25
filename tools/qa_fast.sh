@@ -1,10 +1,10 @@
 #!/bin/bash
-# Every T2 scenario of the co-op features (sweep, pov, lines, tags, ui, pause; QA_SCENARIOS="pov ui" picks some) spread over N parallel shards (QA_FAST_SHARDS, default 3), each its own lab
+# Every T2 scenario of the co-op features (sweep, pov, lines, tags, ui, pause, social; QA_SCENARIOS="pov ui" picks some) spread over N parallel shards (QA_FAST_SHARDS, default 3), each its own lab
 # owner with its own two slots, ports and folders; scenarios in one shard run one after the other. Needs 2N free slots and about 4 GB of RAM per pair (a shard that finds no
 # slots exits 3: rerun with fewer). The game-free tests (make -C proxy/core test) take seconds and are not part of this: run them first. Exit 0 only when every scenario passed.
 . "$(dirname "$0")/config.sh"
 N="${QA_FAST_SHARDS:-3}"; BASE="${LAB_OWNER:-$(basename "$ROOT")}"; LOGS="$(mktemp -d "${TMPDIR:-/tmp}/qa_fast.XXXXXX")"
-read -r -a ALL <<< "${QA_SCENARIOS:-sweep pov lines tags ui pause}"
+read -r -a ALL <<< "${QA_SCENARIOS:-sweep pov lines tags ui pause social}"
 declare -a SHARD; for idx in "${!ALL[@]}"; do SHARD[$((idx % N))]+="${ALL[$idx]} "; done
 pids=(); start=$(date +%s)
 for i in "${!SHARD[@]}"; do

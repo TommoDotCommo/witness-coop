@@ -1,10 +1,17 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <cctype>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include "config.h"
 
 extern HMODULE g_selfModule();
+
+static unsigned KeyFromName(const char* n) {      // 'T' -> 0x54; F1..F12 -> VK_F1..; 0: not a key
+    if (!n || !*n) return 0; if (!n[1] && isalnum((unsigned char)n[0])) return (unsigned)toupper((unsigned char)n[0]);
+    if ((n[0] == 'F' || n[0] == 'f') && atoi(n + 1) >= 1 && atoi(n + 1) <= 12) return 0x6F + (unsigned)atoi(n + 1); return 0;
+}
 
 static std::wstring DllDir() {
     wchar_t p[MAX_PATH]; GetModuleFileNameW(g_selfModule(), p, MAX_PATH);
@@ -16,7 +23,7 @@ const Cfg& GetCfg() {
         Cfg r; FILE* f = _wfopen((DllDir() + L"witness_coop.cfg").c_str(), L"r"); if (!f) return r;
         char line[400];
         while (fgets(line, sizeof line, f)) {
-            int v; float fv; char s[300];
+            int v; float fv; char s[300], kn[16];
             if (sscanf(line, "cap_fps=%d", &v) == 1) r.capFps = v;
             else if (sscanf(line, "share_zip=%d", &v) == 1) r.shareZip = v != 0;
             else if (sscanf(line, "debug_depth=%d", &v) == 1) r.debugDepth = v != 0;
@@ -47,6 +54,14 @@ const Cfg& GetCfg() {
             else if (sscanf(line, "model_by_player=%d", &v) == 1) r.modelByPlayer = v != 0;
             else if (sscanf(line, "no_model_depth=%d", &v) == 1) r.noModelDepth = v != 0;
             else if (sscanf(line, "no_pause_hide=%d", &v) == 1) r.noPauseHide = v != 0;
+            else if (sscanf(line, "no_chat_ui=%d", &v) == 1) r.noChatUi = v != 0;
+            else if (sscanf(line, "no_typing_dots=%d", &v) == 1) r.noTypingDots = v != 0;
+            else if (sscanf(line, "no_ping_marks=%d", &v) == 1) r.noPingMarks = v != 0;
+            else if (sscanf(line, "key_chat=%15s", kn) == 1 && KeyFromName(kn)) r.keyChat = KeyFromName(kn);
+            else if (sscanf(line, "key_ping=%15s", kn) == 1 && KeyFromName(kn)) r.keyPing = KeyFromName(kn);
+            else if (sscanf(line, "key_emote=%15s", kn) == 1 && KeyFromName(kn)) r.keyEmote = KeyFromName(kn);
+            else if (sscanf(line, "key_draw=%15s", kn) == 1 && KeyFromName(kn)) r.keyDraw = KeyFromName(kn);
+            else if (sscanf(line, "key_character=%15s", kn) == 1 && KeyFromName(kn)) r.keyChar = KeyFromName(kn);
             else if (sscanf(line, "pause_wrong_flag=%d", &v) == 1) r.pauseWrongFlag = v != 0;
             else if (sscanf(line, "no_model_select=%d", &v) == 1) r.noModelSelect = v != 0;
             else if (sscanf(line, "no_group_avatar_state=%d", &v) == 1) r.noGroupAvatarState = v != 0;

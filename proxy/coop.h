@@ -2,7 +2,7 @@
 #include <windows.h>
 #include <cstdint>
 #include "core/sync_core.h"
-struct RemotePose { bool valid; float pos[3]; float ang[2]; DWORD ageMs; unsigned seq; unsigned id; int pingMs; char name[25]; };      // pingMs: -1 unknown
+struct RemotePose { bool valid; float pos[3]; float ang[2]; DWORD ageMs; unsigned seq; unsigned id; int pingMs; char name[25]; char character[25]; unsigned char emote, emoteSeq; bool typing, speaking; };      // pingMs: -1 unknown
 std::vector<witness::RemoteLine> CoopGetRemoteLines();   // the latest line of every other player on every panel
 std::vector<RemotePose> CoopGetRemotes();  // all remote players, ordered by id
 bool CoopGetRemote(RemotePose* out, unsigned id = 0);        // latest pose from the peer, with its age
@@ -11,6 +11,7 @@ witness::SyncCore* CoopCore();              // the sync core; null until the con
 witness::World* GameWorldInstance();        // state.cpp: the core's view of the game's memory
 void CoopSendRaw(const uint8_t* data, size_t n);   // any thread: one datagram to the peer, as is
 void CoopSendRawTo(unsigned id, const uint8_t* data, size_t n);   // any thread: one datagram to one player (POV pictures and requests)
+const char* CoopMyName();                          // this game's name (name= in the cfg; "Player <id>" when none)
 unsigned CoopMyId();                               // this game's player id (0 before the config is read)
 void CoopSetFakeRemote(bool on, const float* pos, float yaw);   // test hook: show the peer at this eye position instead of where it is (witness_cmd.txt: fakepose x y z yaw | fakepose off)
 
