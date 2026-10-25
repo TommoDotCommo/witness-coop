@@ -146,13 +146,19 @@ bool ApplyAll(std::wstring* msg) {
             if (val.empty() || (val == f.def && k != "id" && k != "listen" && k != "name")) c.Unset(k); else c.Set(k, val);
         } else if (f.key == "cfgmulti:peer") {
             std::vector<std::string> peers; std::string line; for (char ch : val + "\n") { if (ch == '\n') { while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.pop_back(); if (!line.empty()) peers.push_back(line); line.clear(); } else line.push_back(ch); }
-            for (const auto& p : peers) { unsigned id, port; char host[100]; if (sscanf(p.c_str(), "%u,%99[^,],%u", &id, host, &port) != 3 || port > 65535) { *msg = W("Other players: \"" + p + "\" is not number,address,port"); return false; } }
+            for (const auto& p : peers) { unsigned id, port; char host[100]; bool legacy = !p.empty() && p.find_first_not_of("0123456789") == std::string::npos && atoi(p.c_str()) <= 65535;      // the old form: one port on this machine
+                if (!legacy && (sscanf(p.c_str(), "%u,%99[^,],%u", &id, host, &port) != 3 || port > 65535)) { *msg = W("Other players: \"" + p + "\" is not number,address,port"); return false; } }
             c.SetAll("peer", peers);
         }
     }
     std::string err = wl::CheckVideo(v); if (!err.empty()) { *msg = W("Video: " + err); return false; }
     CreateDirectoryW(Dir(sf).c_str(), nullptr); CreateDirectoryW(sf.c_str(), nullptr);
+#ifndef WL_MUT_NO_VIDEO_WRITE
     if (!WriteFile8(sf + L"\\Launcher.variables", wl::FormatVideo(v))) { *msg = L"Could not write Launcher.variables in " + sf; return false; }
+#endif
+#ifdef WL_MUT_CFG_DROP
+    { wl::CfgFile only; for (auto& f : g_fields) if (f.key == "cfg:name") only.Set("name", GetVal(f)); c = only; }      // (mutant) the lines the launcher does not know are lost
+#endif
     if (!WriteFile8(CfgPath(), c.Text())) { *msg = L"Could not write witness_coop.cfg in " + g_dir; return false; }
     // the game's options go into the chosen save (a copy of the original is kept once)
     int pick = (int)SendMessageW(g_savePick, CB_GETCURSEL, 0, 0);
@@ -163,6 +169,9 @@ bool ApplyAll(std::wstring* msg) {
             if (fabsf(cur - val) < 1e-6f) continue;
             if (!wl::WriteSaveOption(&data, name, val)) { *msg = W(f.label + ": out of range"); return false; } changed = true;
         }
+#ifdef WL_MUT_NO_SAVE_WRITE
+        changed = false;
+#endif
         if (changed) { std::wstring bak = g_saves[pick].path + L".before-launcher"; if (!Exists(bak)) CopyFileW(g_saves[pick].path.c_str(), bak.c_str(), TRUE); if (!WriteFile8(g_saves[pick].path, std::string(data.begin(), data.end()))) { *msg = L"Could not write the save"; return false; } }
     }
     *msg = L"Saved."; return true;
@@ -305,7 +314,7 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, LPWSTR cmdline, int show) {
     BuildPages(g_main);
     Make(g_main, L"BUTTON", L"Save settings", BS_PUSHBUTTON, 8, rc.bottom - 60, 140, 30, ID_APPLY); g_status = Make(g_main, L"STATIC", L"", SS_LEFT, 160, rc.bottom - 54, rc.right - 170, 24, ID_STATUS);
     LoadAll(); ShowPage(0);
-    if (!dumpTo.empty()) { std::string t; for (auto& f : g_fields) t += std::to_string(f.id) + " " + f.key + "\n"; t += std::to_string(ID_APPLY) + " apply\n" + std::to_string(ID_SAVEPICK) + " savepick\n" + std::to_string(ID_LAUNCH) + " launch\n"; WriteFile8(dumpTo, t); }
+    if (!dumpTo.empty()) { std::string t = std::to_string(ID_STATUS) + " status\n"; for (auto& f : g_fields) t += std::to_string(f.id) + " " + f.key + "\n"; t += std::to_string(ID_APPLY) + " apply\n" + std::to_string(ID_SAVEPICK) + " savepick\n" + std::to_string(ID_LAUNCH) + " launch\n"; WriteFile8(dumpTo, t); }
     MSG msg; while (GetMessageW(&msg, nullptr, 0, 0) > 0) { if (!IsDialogMessageW(g_ng ? g_ng : g_main, &msg)) { TranslateMessage(&msg); DispatchMessageW(&msg); } }
     return 0;
 }
