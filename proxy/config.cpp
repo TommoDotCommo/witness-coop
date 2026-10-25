@@ -66,6 +66,11 @@ const Cfg& GetCfg() {
             else if (sscanf(line, "key_ping=%15s", kn) == 1 && KeyFromName(kn)) r.keyPing = KeyFromName(kn);
             else if (sscanf(line, "key_emote=%15s", kn) == 1 && KeyFromName(kn)) r.keyEmote = KeyFromName(kn);
             else if (sscanf(line, "key_draw=%15s", kn) == 1 && KeyFromName(kn)) r.keyDraw = KeyFromName(kn);
+            else if (sscanf(line, "key_canvas=%15s", kn) == 1 && KeyFromName(kn)) r.keyCanvas = KeyFromName(kn);
+            else if (sscanf(line, "key_color=%15s", kn) == 1 && KeyFromName(kn)) r.keyColor = KeyFromName(kn);
+            else if (sscanf(line, "no_draw_send=%d", &v) == 1) r.noDrawSend = v != 0;
+            else if (sscanf(line, "no_draw_draw=%d", &v) == 1) r.noDrawDraw = v != 0;
+            else if (sscanf(line, "no_draw_depth=%d", &v) == 1) r.noDrawDepth = v != 0;
             else if (sscanf(line, "key_character=%15s", kn) == 1 && KeyFromName(kn)) r.keyChar = KeyFromName(kn);
             else if (sscanf(line, "pause_wrong_flag=%d", &v) == 1) r.pauseWrongFlag = v != 0;
             else if (sscanf(line, "no_model_select=%d", &v) == 1) r.noModelSelect = v != 0;

@@ -43,6 +43,51 @@ const ULONGLONG kEmoteMs = 2600;
 const char* kEmoteNames[8] = {"Wave", "Dance", "Cheer", "Yes", "No", "Bow", "Spin", "Shrug"};
 int WheelSlot() { float m = sqrtf(g_wx * g_wx + g_wy * g_wy); if (m < 30) return -1; float a = atan2f(g_wy, g_wx) + 1.5707963f; if (a < 0) a += 6.2831853f; return int(a / 0.7853982f + 0.5f) % 8; }
 void TriggerEmote(int id, ULONGLONG now) { if (id < 1 || id > 8) return; g_emote = id; g_emoteAt = now; ++g_emoteSeq; }
+// ---- free drawing: strokes of points in the world, put on the surface under the pen (the scene depth at the pen's pixel), seen by everybody
+struct Stroke { unsigned from; uint32_t id; uint8_t color; std::vector<float> pts; };
+std::deque<Stroke> g_strokes;      // everybody's, mine included
+bool g_canvas = false, g_pen = false, g_shift = false; float g_ox = 0, g_oy = 0;      // the canvas: the mouse moves a pen (g_ox, g_oy: pixels from the middle of the screen); hold the draw key to put ink down
+uint8_t g_penColor = 0; uint32_t g_strokeNext = 1, g_curId = 0; bool g_begun = false; std::vector<float> g_unsent; ULONGLONG g_sentAt = 0;
+bool g_penAsked = false; ULONGLONG g_penAskAt = 0; float g_reqCam[3], g_reqAng[2], g_reqF[2]; float g_lastDist = 4.0f;
+float g_camNow[3] = {}, g_angNow[2] = {}, g_scrW = 1920, g_scrH = 1080; unsigned g_segsDrawn = 0;
+const size_t kMaxPlayerPts = 4000; const int kInks = 8;
+void InkColor(unsigned from, uint8_t idx, float* c) {
+    static const float p[kInks][3] = {{0, 0, 0}, {1, 1, 1}, {1.0f, 0.25f, 0.25f}, {1.0f, 0.62f, 0.15f}, {1.0f, 0.92f, 0.2f}, {0.35f, 0.95f, 0.4f}, {0.3f, 0.85f, 1.0f}, {0.95f, 0.4f, 0.95f}};
+    if (idx % kInks == 0) PlayerColor(from, c); else memcpy(c, p[idx % kInks], 12);
+}
+void TrimPlayer(unsigned from) {      // a player's oldest strokes go when they hold too many points
+    for (;;) { size_t n = 0; int first = -1; for (size_t i = 0; i < g_strokes.size(); ++i) if (g_strokes[i].from == from) { n += g_strokes[i].pts.size() / 3; if (first < 0) first = int(i); }
+        if (n <= kMaxPlayerPts || first < 0) return; g_strokes.erase(g_strokes.begin() + first); }
+}
+Stroke* FindStroke(unsigned from, uint32_t id) { for (auto it = g_strokes.rbegin(); it != g_strokes.rend(); ++it) if (it->from == from && it->id == id) return &*it; return nullptr; }
+void ApplyStroke(const witness::StrokeMsg& s) {
+    if (s.clear) { g_strokes.erase(std::remove_if(g_strokes.begin(), g_strokes.end(), [&](const Stroke& t) { return t.from == s.from && (s.id == 0 || t.id == s.id); }), g_strokes.end()); return; }
+    Stroke* t = s.begin ? nullptr : FindStroke(s.from, s.id);
+    if (!t) { g_strokes.push_back({s.from, s.id, s.color, {}}); t = &g_strokes.back(); }
+    t->pts.insert(t->pts.end(), s.pts.begin(), s.pts.end()); TrimPlayer(s.from);
+}
+void FlushStroke(bool end, ULONGLONG now) {      // the points not yet sent go out in chunks; `end` marks the last chunk (a bare end when nothing is left)
+    g_sentAt = now; auto* core = CoopCore(); size_t total = g_unsent.size() / 3;
+    if (!total && !(end && g_begun)) return;
+    do {
+        size_t n = std::min<size_t>(total, witness::kMaxStrokePoints); bool last = end && n == total;
+        if (core && !GetCfg().noDrawSend) core->sendStroke(g_curId, !g_begun, last, g_penColor, g_unsent.data(), n);
+        g_begun = true; g_unsent.erase(g_unsent.begin(), g_unsent.begin() + n * 3); total -= n;
+    } while (total > 0);
+}
+void PenUp(ULONGLONG now) { if (!g_pen) return; g_pen = false; FlushStroke(true, now); g_unsent.clear(); g_begun = false; }
+void PenDown(ULONGLONG now) { if (g_pen) return; g_pen = true; g_curId = g_strokeNext++; g_begun = false; g_unsent.clear(); g_penAsked = false; (void)now; }
+void ClearMine() { g_strokes.erase(std::remove_if(g_strokes.begin(), g_strokes.end(), [](const Stroke& t) { return t.from == CoopMyId(); }), g_strokes.end()); if (auto* c = CoopCore()) if (!GetCfg().noDrawSend) c->sendStrokeClear(0); }
+void UndoMine() {
+    for (auto it = g_strokes.rbegin(); it != g_strokes.rend(); ++it) if (it->from == CoopMyId()) { uint32_t id = it->id; g_strokes.erase(std::next(it).base()); if (auto* c = CoopCore()) if (!GetCfg().noDrawSend) c->sendStrokeClear(id); return; }
+}
+void AddPenPoint(const float p[3], ULONGLONG now) {
+    Stroke* t = FindStroke(CoopMyId(), g_curId);
+    if (!t) { g_strokes.push_back({CoopMyId(), g_curId, g_penColor, {}}); t = &g_strokes.back(); }
+    if (t->pts.size() >= 3) { const float* q = &t->pts[t->pts.size() - 3]; float d2 = (p[0] - q[0]) * (p[0] - q[0]) + (p[1] - q[1]) * (p[1] - q[1]) + (p[2] - q[2]) * (p[2] - q[2]); if (d2 < 0.04f * 0.04f) return; }
+    t->pts.insert(t->pts.end(), p, p + 3); g_unsent.insert(g_unsent.end(), p, p + 3); TrimPlayer(CoopMyId());
+    if (g_unsent.size() >= 36 || now - g_sentAt > 120) FlushStroke(false, now);
+}
 unsigned g_dotsDrawn = 0, g_bubblesDrawn = 0, g_marksDrawn = 0, g_arrowsDrawn = 0;      // what the last frame drew (for the tests)
 
 std::string NameOf(unsigned id) {
@@ -101,8 +146,8 @@ void Bubbled(float cx, float bottom, const std::vector<std::string>& lines, bool
 }  // namespace
 
 bool SocialCapturing() { Lock l; return g_open || g_pick; }
-bool SocialMouseCaptured() { Lock l; return g_open || g_pick || g_wheel; }
-void SocialRawMove(int dx, int dy) { Lock l; if (g_wheel) { g_wx += float(dx); g_wy += float(dy); float m = sqrtf(g_wx * g_wx + g_wy * g_wy); if (m > 140) { g_wx *= 140 / m; g_wy *= 140 / m; } } }
+bool SocialMouseCaptured() { Lock l; return g_open || g_pick || g_wheel || g_canvas; }
+void SocialRawMove(int dx, int dy) { Lock l; if (g_canvas && !g_wheel && !g_open && !g_pick) { g_ox += dx * 1.6f; g_oy += dy * 1.6f; return; } if (g_wheel) { g_wx += float(dx); g_wy += float(dy); float m = sqrtf(g_wx * g_wx + g_wy * g_wy); if (m > 140) { g_wx *= 140 / m; g_wy *= 140 / m; } } }
 const char* SocialEmoteName(int e) { return e >= 1 && e <= 8 ? kEmoteNames[e - 1] : ""; }
 bool SocialEmoteOf(unsigned id, int* emote, float* seconds) {
     Lock l; auto it = g_remoteEmotes.find(id); if (it == g_remoteEmotes.end() || !it->second.id) return false;
@@ -110,6 +155,8 @@ bool SocialEmoteOf(unsigned id, int* emote, float* seconds) {
 }
 bool SocialKey(unsigned vk, bool down) {
     const Cfg& c = GetCfg(); Lock l; ULONGLONG now = GetTickCount64();
+    if (vk == VK_SHIFT || vk == VK_LSHIFT || vk == VK_RSHIFT) { g_shift = down; return false; }
+    if (!down && vk == c.keyDraw) { bool was = g_pen; PenUp(now); return was; }
     if (g_open) {
         if (!down) return false;
         if (vk == VK_ESCAPE) { g_open = false; g_input.clear(); return true; }
@@ -135,6 +182,10 @@ bool SocialKey(unsigned vk, bool down) {
     if (vk == c.keyEmote) { g_wheel = true; g_wx = g_wy = 0; return true; }
     if (vk == c.keyChar) { g_pick = true; g_pickSel = 0; for (int i = 0; i < ModelGpuCount(); ++i) if (!_stricmp(ModelGpuName(i), g_myChar.c_str())) g_pickSel = i + 1; return true; }
     if (vk == c.keyChat && !c.noChatUi) { g_open = true; g_input.clear(); return true; }
+    if (vk == c.keyDraw) { if (g_shift) ClearMine(); else PenDown(now); return true; }
+    if (vk == c.keyCanvas) { g_canvas = !g_canvas; g_ox = g_oy = 0; if (!g_canvas) PenUp(now); return true; }
+    if (vk == c.keyColor && (g_canvas || g_pen)) { g_penColor = uint8_t((g_penColor + 1) % kInks); return true; }
+    if (vk == VK_BACK && g_canvas) { UndoMine(); return true; }
     if (vk == c.keyPing) { g_pingReq = true; g_pingAsked = false; g_pingAt = now; return true; }
     return false;
 }
@@ -150,6 +201,7 @@ void SocialFrame(float W, float H, const float* cam, const float* ang) {
     if (core) {
         for (const auto& m : core->takeChat()) AddChat(m.from, m.text, now);
         for (const auto& m : core->takeMarks()) AddMark(m.from, m.kind, m.pos, now);
+        for (const auto& s : core->takeStrokes()) ApplyStroke(s);
         witness::Presence p; p.typing = g_open && !cfg.noTypingDots; p.character = cfg.noCharacterAnnounce ? "" : (g_myChar.empty() ? cfg.character : g_myChar);
         if (g_emote && now - g_emoteAt >= kEmoteMs) g_emote = 0;
         if (!cfg.noEmoteSend) { p.emote = uint8_t(g_emote); p.emoteSeq = uint8_t(g_emoteSeq); }
@@ -160,6 +212,24 @@ void SocialFrame(float W, float H, const float* cam, const float* ang) {
     g_dotsDrawn = g_bubblesDrawn = g_marksDrawn = g_arrowsDrawn = 0;
     if (GamePaused()) return;
     float k = std::max(1.0f, H / 1080.0f);
+    memcpy(g_camNow, cam, 12); g_angNow[0] = ang[0]; g_angNow[1] = ang[1]; g_scrW = W; g_scrH = H;
+    g_ox = std::min(std::max(g_ox, -W / 2 + 6), W / 2 - 6); g_oy = std::min(std::max(g_oy, -H / 2 + 6), H / 2 - 6);
+    if (g_pen && !g_open) {      // the pen is down: ask for the depth under it; the answer (next frame) puts one point of ink on that surface, along the ray of the frame the question was asked in
+        float d = 0;
+        if (g_penAsked && ModelGpuTakeCenterDepth(&d)) {
+            g_penAsked = false; float th = g_reqAng[0], ph = g_reqAng[1];
+            if (d < 0.05f || d > 300.0f) d = std::min(std::max(g_lastDist, 3.0f), 60.0f); else g_lastDist = d;
+            if (cfg.noDrawDepth) d = 4.0f;
+            float tv = tanf(kVFovDeg * 3.14159265f / 360.0f), tw = tv * (W / H), rr = (g_reqF[0] * 2 - 1) * tw, uu = (1 - g_reqF[1] * 2) * tv;
+            float fwd[3] = {cosf(ph) * cosf(th), cosf(ph) * sinf(th), sinf(ph)}, rt[3] = {sinf(th), -cosf(th), 0}, up[3] = {-sinf(ph) * cosf(th), -sinf(ph) * sinf(th), cosf(ph)}, p[3];
+            for (int i = 0; i < 3; ++i) p[i] = g_reqCam[i] + (fwd[i] + rt[i] * rr + up[i] * uu) * d;
+            AddPenPoint(p, now);
+        } else if (g_penAsked && now - g_penAskAt > 400) g_penAsked = false;
+        if (!g_penAsked) {
+            g_reqF[0] = (W / 2 + g_ox) / W; g_reqF[1] = (H / 2 + g_oy) / H; memcpy(g_reqCam, cam, 12); g_reqAng[0] = ang[0]; g_reqAng[1] = ang[1];
+            ModelGpuRequestDepthAt(g_reqF[0], g_reqF[1]); g_penAsked = true; g_penAskAt = now;
+        }
+    }
     // a location ping asked for: the next frame answers with the scene depth under the cross-hair
     if (g_pingReq) {
         if (!g_pingAsked) { ModelGpuRequestCenterDepth(); g_pingAsked = true; }
@@ -214,6 +284,28 @@ void SocialFrame(float W, float H, const float* cam, const float* ang) {
             UiRect(lx - 4 * k, ly - 2 * k, tw + 8 * k, UiLineHeight(0.8f * k) + 4 * k, Rgba(0, 0, 0, 0.6f)); UiText(lx, ly, lab, Rgba(col[0], col[1], col[2], 1), 0.8f * k);
         }
     }
+    g_segsDrawn = 0;      // the ink: every stroke as a glowing line through its points, thinner the farther away; nothing behind the camera
+    if (!cfg.noDrawDraw) for (const auto& s : g_strokes) {
+        float col[3]; InkColor(s.from, s.color, col); bool havePrev = false; float px = 0, py = 0, pd = 0;
+        for (size_t i = 0; i + 2 < s.pts.size(); i += 3) {
+            float sx, sy; const float* w = &s.pts[i];
+            bool ok = ToScreen(cam, ang[0], ang[1], w, W, H, &sx, &sy); float dx = w[0] - cam[0], dy = w[1] - cam[1], dz = w[2] - cam[2], dist = sqrtf(dx * dx + dy * dy + dz * dz);
+            if (ok && havePrev && dist < 160 && pd < 160 && fabsf(sx - px) < W * 2 && fabsf(sy - py) < H * 2) {
+                float t = std::min(std::max(5.0f * k * 5.0f / std::max(std::min(dist, pd), 2.0f), 2.0f * k), 7.0f * k);
+                UiLine(px, py, sx, sy, Rgba(col[0], col[1], col[2], 0.28f), t * 2.2f); UiLine(px, py, sx, sy, Rgba(col[0], col[1], col[2], 0.95f), t); ++g_segsDrawn;
+            }
+            havePrev = ok; px = sx; py = sy; pd = dist;
+        }
+    }
+    if (g_canvas || g_pen) {      // the pen: a ring in the ink's colour where the ink goes down, and the keys
+        float col[3]; InkColor(CoopMyId(), g_penColor, col); float cx = W / 2 + g_ox, cy = H / 2 + g_oy, R = (g_pen ? 7.0f : 10.0f) * k;
+        for (int i = 0; i < 16; ++i) { float a0 = i * 0.3926991f, a1 = (i + 1) * 0.3926991f; UiLine(cx + cosf(a0) * R, cy + sinf(a0) * R, cx + cosf(a1) * R, cy + sinf(a1) * R, Rgba(col[0], col[1], col[2], 1), 2.5f * k); }
+        UiRect(cx - 1.5f * k, cy - 1.5f * k, 3 * k, 3 * k, Rgba(1, 1, 1, 1));
+        if (g_canvas) {
+            for (int i = 0; i < kInks; ++i) { float c2[3]; InkColor(CoopMyId(), uint8_t(i), c2); float sw = 22 * k, x0 = W / 2 - kInks * sw / 2 + i * sw; UiRect(x0, H - 78 * k, sw - 4 * k, 14 * k, Rgba(c2[0], c2[1], c2[2], 1)); if (i == g_penColor) UiFrame(x0 - 2, H - 80 * k, sw, 18 * k, Rgba(1, 1, 1, 1), 2); }
+            const char* hint = "canvas: move the mouse, hold X to draw, B colour, Backspace undo, Shift+X clear all, Z leaves"; float hw = UiTextWidth(hint, 0.8f * k); UiText(W / 2 - hw / 2, H - 56 * k, hint, Rgba(0.85f, 0.9f, 1, 1), 0.8f * k);
+        }
+    }
     if (g_wheel) {      // the emote wheel: eight slots round the middle of the screen, the one the mouse points to lit
         float cx = W / 2, cy = H / 2, R = 150 * k; int sel = WheelSlot(); float col[3]; PlayerColor(CoopMyId(), col);
         UiRect(cx - R - 70 * k, cy - R - 40 * k, 2 * R + 140 * k, 2 * R + 80 * k, Rgba(0, 0, 0, 0.35f));
@@ -266,6 +358,18 @@ void SocialCommand(const char* line) {
     else if (!strncmp(line, "emote ", 6)) { int id = atoi(line + 6); Lock l; TriggerEmote(id, now); }
     else if (!strncmp(line, "character ", 10)) { char nm[64] = {}; sscanf(line + 10, "%63s", nm); Lock l; g_myChar = strcmp(nm, "none") ? nm : ""; }
     else if (!strncmp(line, "wheel ", 6)) { Lock l; g_wheel = !strncmp(line + 6, "open", 4); g_wx = g_wy = 0; }
+    else if (!strncmp(line, "canvas ", 7)) { Lock l; g_canvas = !strncmp(line + 7, "on", 2); g_ox = g_oy = 0; if (!g_canvas) PenUp(now); }
+    else if (!strncmp(line, "reticle ", 8)) { float fx = 0.5f, fy = 0.5f; if (sscanf(line + 8, "%f %f", &fx, &fy) == 2) { Lock l; g_ox = (fx - 0.5f) * g_scrW; g_oy = (fy - 0.5f) * g_scrH; } }
+    else if (!strncmp(line, "drawclear", 9)) { Lock l; ClearMine(); }
+    else if (!strncmp(line, "drawstat", 8)) {
+        Lock l; char m[300]; size_t total = 0; for (const auto& s : g_strokes) total += s.pts.size() / 3;
+        snprintf(m, sizeof m, "drawstat: strokes %zu points %zu segs %u pen %d canvas %d reticle %.0f %.0f color %u", g_strokes.size(), total, g_segsDrawn, g_pen ? 1 : 0, g_canvas ? 1 : 0, g_scrW / 2 + g_ox, g_scrH / 2 + g_oy, g_penColor); Log(m);
+        for (const auto& s : g_strokes) {
+            size_t n = s.pts.size() / 3; if (!n) continue; const float* a = &s.pts[0]; const float* b = &s.pts[(n - 1) * 3]; float sx = -1, sy = -1; ToScreen(g_camNow, g_angNow[0], g_angNow[1], b, g_scrW, g_scrH, &sx, &sy);
+            float dx = b[0] - g_camNow[0], dy = b[1] - g_camNow[1], dz = b[2] - g_camNow[2];
+            snprintf(m, sizeof m, "drawstat: stroke from %u id %u color %u points %zu first %.3f %.3f %.3f last %.3f %.3f %.3f lastscreen %.0f %.0f lastdist %.3f", s.from, s.id, s.color, n, a[0], a[1], a[2], b[0], b[1], b[2], sx, sy, sqrtf(dx * dx + dy * dy + dz * dz)); Log(m);
+        }
+    }
     else if (!strncmp(line, "socialstat", 10)) {
         Lock l; char m[300]; snprintf(m, sizeof m, "socialstat: open %d input_len %zu log %zu chat_seen %u marks %zu marks_seen %u bubbles %zu drawn dots %u bubbles %u marks %u arrows %u", g_open ? 1 : 0, g_input.size(), g_log.size(), g_chatSeen, g_marks.size(), g_marksSeen, g_bubbles.size(), g_dotsDrawn, g_bubblesDrawn, g_marksDrawn, g_arrowsDrawn); Log(m);
         for (const auto& e : g_log) { snprintf(m, sizeof m, "socialstat: chat from %u name %s text %s", e.from, e.name.c_str(), e.text.c_str()); Log(m); }

@@ -23,10 +23,11 @@ struct Cfg {
     bool modelByPlayer = false;  // every remote player is drawn with a different model of witness_models\ (player 1 the selected one, 2 the next, ...)
     bool noModelDepth = false;   // test mutant: draw the model over walls
     bool pauseWrongFlag = false; // test mutant: the first, wrong pause flag (it flips with F6 / F7 and with entering a puzzle)
-    unsigned keyChat = 'T', keyPing = 'P', keyEmote = 'G', keyDraw = 'X', keyChar = 'C';   // key_chat= ... : a letter or F1..F12
+    unsigned keyChat = 'T', keyPing = 'P', keyEmote = 'G', keyDraw = 'X', keyChar = 'C', keyCanvas = 'Z', keyColor = 'B';   // key_chat= ... : a letter or F1..F12
     std::string character;       // character=<model name>: the model this player announces as its own (others draw this player with it); empty: none announced
     bool noEmoteAnim = false, noEmoteClips = false, noCharacterAnnounce = false, noEmoteSend = false;   // test mutants: emotes shown but not animated / never play a model's own clip / characters not announced or not honoured / emotes not sent
     bool noChatUi = false, noTypingDots = false, noPingMarks = false;      // test mutants: T does nothing; typing is not announced; pings are not drawn
+    bool noDrawSend = false, noDrawDraw = false, noDrawDepth = false;      // test mutants: strokes are not sent / not drawn / put at a fixed distance instead of on the surface under the pen
     bool noPauseHide = false;    // test mutant: draw puppets, lines and name tags over the pause menu
     bool skipEntityZero = false; // test mutant: restore the old census that lost the second tutorial door
     bool devMenu = false;        // dev_menu=1: the F8 dev menu (map, teleport, nearby puzzles); off in a normal install

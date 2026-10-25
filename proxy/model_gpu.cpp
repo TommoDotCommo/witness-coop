@@ -79,7 +79,8 @@ float4 PSLine(LOut i) : SV_TARGET {      // a line lies in the panel's own surfa
 struct FS { float4 pos : SV_POSITION; };
 // depth probe: renders into an 8x1 float target; pixel i holds the scene depth at the i-th probe position (centre, 4 samples of it, then four other points)
 float PSProbe(FS i) : SV_TARGET {
-  int k = (int)i.pos.x; float w = screen.x, h = screen.y; int2 p = int2(w * 0.5, h * 0.5); int smp = 0;
+  int k = (int)i.pos.x; float w = screen.x, h = screen.y; int2 p = int2(w * tint.x, h * tint.y);      // tint.xy: where to look, as fractions of the screen (the middle for pings)
+  int smp = 0;
   if (k < 4) smp = k; else if (k == 4) p = int2(w * 0.5, h * 0.8); else if (k == 5) p = int2(w * 0.5, h * 0.2); else if (k == 6) p = int2(w * 0.2, h * 0.5); else p = int2(w * 0.8, h * 0.5);
   return depthp.x < 1.5 ? scene1.Load(int3(p, 0)) : sceneMS.Load(p, smp); }
 // the selector panel: a CPU-drawn texture (GDI text) copied 1:1 to the screen; depthp.xy is the panel's top-left corner
@@ -347,12 +348,12 @@ static bool EnsureDepth(UINT w, UINT h) {
 }
 
 // Reads the scene depth at 8 places into out (centre: out[0..3] are the four samples of the middle pixel, then low, high, left, right). false: could not.
-static bool ProbeDepth(UINT w, UINT h, ID3D11ShaderResourceView* sceneSrv, bool ms, float out[8]) {
+static bool ProbeDepth(UINT w, UINT h, ID3D11ShaderResourceView* sceneSrv, bool ms, float out[8], float fx = 0.5f, float fy = 0.5f) {
     D3D11_TEXTURE2D_DESC td = {}; td.Width = 8; td.Height = 1; td.MipLevels = 1; td.ArraySize = 1; td.Format = DXGI_FORMAT_R32_FLOAT; td.SampleDesc.Count = 1; td.BindFlags = D3D11_BIND_RENDER_TARGET;
     ID3D11Texture2D *rt = nullptr, *st = nullptr; ID3D11RenderTargetView* rtv = nullptr;
     if (FAILED(g_dev->CreateTexture2D(&td, nullptr, &rt)) || FAILED(g_dev->CreateRenderTargetView(rt, nullptr, &rtv))) { Log("probe: cannot make the target"); if (rt) rt->Release(); return false; }
     td.Usage = D3D11_USAGE_STAGING; td.BindFlags = 0; td.CPUAccessFlags = D3D11_CPU_ACCESS_READ; g_dev->CreateTexture2D(&td, nullptr, &st);
-    FrameCB fc = {}; fc.depthp[0] = ms ? 2.0f : 1.0f; fc.screen[0] = (float)w; fc.screen[1] = (float)h;
+    FrameCB fc = {}; fc.depthp[0] = ms ? 2.0f : 1.0f; fc.screen[0] = (float)w; fc.screen[1] = (float)h; fc.tint[0] = fx; fc.tint[1] = fy;
     g_ctx->UpdateSubresource(g_cbFrame, 0, nullptr, &fc, 0, 0);
     D3D11_VIEWPORT vp = {0, 0, 8, 1, 0, 1};
     g_ctx->OMSetRenderTargets(1, &rtv, nullptr); g_ctx->RSSetViewports(1, &vp); g_ctx->RSSetState(g_rs); g_ctx->OMSetBlendState(g_blend, nullptr, 0xffffffff);
@@ -373,11 +374,13 @@ static void RunProbe(UINT w, UINT h, ID3D11ShaderResourceView* sceneSrv, bool ms
 }
 // The distance (along the view direction) of the game's geometry under the middle of the screen, for location pings and free drawing: asked for, answered by the next frame.
 static volatile LONG g_centerReq, g_centerReady; static float g_centerDist = -1;
-void ModelGpuRequestCenterDepth() { InterlockedExchange(&g_centerReady, 0); InterlockedExchange(&g_centerReq, 1); }
+static volatile float g_centerFx = 0.5f, g_centerFy = 0.5f;
+void ModelGpuRequestDepthAt(float fx, float fy) { g_centerFx = fx; g_centerFy = fy; InterlockedExchange(&g_centerReady, 0); InterlockedExchange(&g_centerReq, 1); }
+void ModelGpuRequestCenterDepth() { ModelGpuRequestDepthAt(0.5f, 0.5f); }
 bool ModelGpuTakeCenterDepth(float* dist) { if (!InterlockedExchange(&g_centerReady, 0)) return false; *dist = g_centerDist; return true; }
 static void AnswerCenterDepth(UINT w, UINT h) {
     ID3D11ShaderResourceView* sceneSrv = nullptr; bool ms = false; float v[8]; g_centerDist = -1;
-    if (!GetCfg().noModelDepth && DepthScene(&sceneSrv, &ms) && ProbeDepth(w, h, sceneSrv, ms, v)) {
+    if (!GetCfg().noModelDepth && DepthScene(&sceneSrv, &ms) && ProbeDepth(w, h, sceneSrv, ms, v, g_centerFx, g_centerFy)) {
         float z = 0; int n = 0; for (int i = 0; i < (ms ? 4 : 1); ++i) if (v[i] > 1e-7f) { z += v[i]; ++n; }
         if (n) g_centerDist = GetCfg().depthNear / (z / n);      // the game stores depth as near / distance
     }

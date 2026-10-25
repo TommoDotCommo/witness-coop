@@ -23,6 +23,7 @@ LineDrawStats ModelGpuLineStats();
 void ModelGpuLogLineStats();          // witness_cmd.txt: linestat -> one log line
 ModelDrawStats ModelGpuStats();
 void ModelGpuDumpPlayers(); // render-thread test bridge: submitted ids, positions and gait speeds
+void ModelGpuRequestDepthAt(float fx, float fy);   // the same for the point (fx, fy) of the screen, 0..1 (free drawing)
 void ModelGpuRequestCenterDepth();     // the next frame measures the distance of the geometry under the middle of the screen
 bool ModelGpuTakeCenterDepth(float* dist);   // true once the answer is there: the distance in metres along the view direction, or -1 (sky / no depth buffer)
 void ModelGpuRequestProbe();      // the next frame logs the scene depth at a few pixels (witness_cmd.txt: probe)
