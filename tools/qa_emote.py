@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """T2 scenario for emotes and the character switcher (tools/win/wemote.py): A plays emotes by command and with the real wheel (G held, mouse toward a slot, G released), B must be told
 and draw the motion on A's puppet, and stop when it ends; A changes character by command and with the real list (C, Down, Down, Enter) and B draws A with that model.
-Mutants: emotes never sent (no_emote_send, A), emotes shown but not animated (no_emote_anim, B), characters not announced (no_character_announce, A).
+Mutants: emotes never sent (no_emote_send, A), emotes shown but not animated (no_emote_anim, B), characters not announced (no_character_announce, A), a key the mod took also reaches the game (no_key_swallow, A).
 usage: qa_emote.py (called by tools/qa.sh emote)"""
 import os, subprocess, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -16,7 +16,7 @@ def run(cfg_a='', cfg_b=''):
 def main():
     results = []
     print('=== emote: clean build', flush=True); ok = run(); results.append(('clean', ok)); print('clean: %s' % ('PASS' if ok else 'FAIL'), flush=True)
-    for name, ca, cb in (('no_emote_send (emotes never sent)', 'no_emote_send=1', ''), ('no_emote_anim (shown, not animated)', '', 'no_emote_anim=1'), ('no_character_announce (characters not announced)', 'no_character_announce=1', '')):
+    for name, ca, cb in (('no_emote_send (emotes never sent)', 'no_emote_send=1', ''), ('no_emote_anim (shown, not animated)', '', 'no_emote_anim=1'), ('no_character_announce (characters not announced)', 'no_character_announce=1', ''), ('no_key_swallow (Esc reaches the game too)', 'no_key_swallow=1', '')):
         print('=== emote: MUTANT %s' % name, flush=True); caught = not run(ca, cb); results.append((name, caught)); print('mutant: %s' % ('caught' if caught else 'NOT CAUGHT'), flush=True)
     bad = [n for n, ok in results if not ok]
     print('ALL OK' if not bad else 'FAILED: %s' % bad); return 1 if bad else 0

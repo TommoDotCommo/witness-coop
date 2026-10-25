@@ -45,7 +45,7 @@ def prepare(c, config, names, avail):
     saves = d / 'appdata/The Witness'
     if saves.exists():
         for file in saves.iterdir():
-            if file.suffix in ('.witness_campaign', '.png'): file.unlink()
+            if file.suffix in ('.witness_campaign', '.png') or file.name.endswith('.coop.txt') or file.name == 'coop_progress.txt': file.unlink()
 
 def draw_plan():
     """The maze's solution as a node list for wdraw (from the panel manifest and the rule solver), 'id:node,node,...' or '' when there is no manifest."""

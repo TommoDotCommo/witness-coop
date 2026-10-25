@@ -32,8 +32,8 @@ def social(d):
                 m = re.match(r'socialstat: remote (\d+) typing (\d+) speaking (\d+) emote (\d+) character (\S*) playing (\d+) t ([0-9.]+)', l)
                 if not m: break
                 rem.append(dict(id=int(m[1]), emote=int(m[4]), character=m[5], playing=int(m[6]), t=float(m[7])))
-            mm = re.match(r'socialstat: me character (\S*) emote (\d+) seq (\d+) wheel (\d+) picker (\d+)', me)
-            return dict(character=mm[1], emote=int(mm[2]), seq=int(mm[3]), wheel=int(mm[4]), picker=int(mm[5]), remote=rem)
+            mm = re.match(r'socialstat: me character (\S*) emote (\d+) seq (\d+) wheel (\d+) picker (\d+)(?: paused (\d+))?', me)
+            return dict(character=mm[1], emote=int(mm[2]), seq=int(mm[3]), wheel=int(mm[4]), picker=int(mm[5]), paused=int(mm[6] or 0), remote=rem)
         time.sleep(0.05)
 def model_stat(d):
     log = os.path.join(d, 'witness_proxy.log'); n0 = count(d, 'modelstat:'); send(d, ['modelstat']); t = time.time()
@@ -98,4 +98,9 @@ check('C opens the character list', sa and sa['picker'] == 1, sa and sa['picker'
 for k in ('DOWN', 'DOWN'): send(da, ['key %s down' % k], 0.12); send(da, ['key %s up' % k], 0.3)
 send(da, ['key ENTER down'], 0.12); send(da, ['key ENTER up'], 1.5); sa = social(da); bs = model_stat(db)
 check('Enter chooses the second model: A is the fox, B draws it so', sa and sa['character'] == 'fox' and sa['picker'] == 0 and bs and bs['model'] == 'fox', (sa and (sa['character'], sa['picker']), bs and bs['model']))
+# 7. Esc closes the list and the chat box and nothing else: the same press arrives a moment later as raw input and must not open the game's pause menu
+send(da, ['key C down'], 0.12); send(da, ['key C up'], 0.5); send(da, ['key ESC down'], 0.12); send(da, ['key ESC up'], 1.2); sa = social(da)
+check('Esc closes the character list and the game is not paused', sa and sa['picker'] == 0 and sa['paused'] == 0, sa and (sa['picker'], sa['paused']))
+send(da, ['key T down'], 0.12); send(da, ['key T up'], 0.5); send(da, ['key ESC down'], 0.12); send(da, ['key ESC up'], 1.2); sa = social(da)
+check('Esc cancels the chat box and the game is not paused', sa and sa['paused'] == 0, sa and sa['paused'])
 print('ALL OK' if ok else 'FAILED'); sys.exit(0 if ok else 1)

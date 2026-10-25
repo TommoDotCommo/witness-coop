@@ -89,6 +89,7 @@ const Cfg& GetCfg() {
             else if (sscanf(line, "mapgen_mirror=%d", &v) == 1) r.mapgenMirror = v != 0;
             else if (sscanf(line, "mapgen_show_overlay=%d", &v) == 1) r.mapgenShowOverlay = v != 0;
             else if (sscanf(line, "no_underlay=%d", &v) == 1) r.noUnderlay = v != 0;
+            else if (sscanf(line, "no_key_swallow=%d", &v) == 1) r.noKeySwallow = v != 0;
             else if (sscanf(line, "no_save_meta=%d", &v) == 1) r.noSaveMeta = v != 0;
             else if (sscanf(line, "no_start_progress=%d", &v) == 1) r.noStartProgress = v != 0;
             else if (sscanf(line, "progress_no_prereq=%d", &v) == 1) r.progressNoPrereq = v != 0;

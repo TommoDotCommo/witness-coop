@@ -5,6 +5,7 @@
 #include <cstddef>
 // Keys are configurable (key_chat=, key_ping=, ... in witness_coop.cfg).
 bool SocialKey(unsigned vk, bool down);       // window thread (the game's message loop): true when the key was taken
+bool SocialSwallowRaw(unsigned vk);           // raw input thread: the mod took this key's press a moment ago, the game must not see it
 bool SocialChar(unsigned ch);                 // window thread: a WM_CHAR; true when the chat box took it
 bool SocialCapturing();                       // the chat box or the character list is open: it has the keyboard, and the mouse look is frozen
 bool SocialMouseCaptured();                   // that, or the emote wheel is open: the mouse look is frozen (the wheel takes the motion)

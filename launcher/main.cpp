@@ -247,9 +247,10 @@ LRESULT CALLBACK PageProc(HWND h, UINT m, WPARAM w, LPARAM l) {
 }
 void BuildPages(HWND parent) {
     WNDCLASSW wc = {}; wc.lpfnWndProc = PageProc; wc.hInstance = GetModuleHandleW(nullptr); wc.lpszClassName = L"WitnessLauncherPage"; wc.hbrBackground = (HBRUSH)(COLOR_BTNFACE + 1); RegisterClassW(&wc);
-    RECT r; GetClientRect(g_tab, &r); TabCtrl_AdjustRect(g_tab, FALSE, &r); g_npages = 7;
-    for (int i = 0; i < g_npages; ++i) { TabCtrl_InsertItem(g_tab, i, &(TCITEMW&)*[&] { static TCITEMW t[8]; t[i] = {}; t[i].mask = TCIF_TEXT; t[i].pszText = (LPWSTR)kPageNames[i]; return &t[i]; }());
-        g_pages[i] = CreateWindowExW(0, L"WitnessLauncherPage", L"", WS_CHILD, r.left, r.top, r.right - r.left, r.bottom - r.top, g_tab, nullptr, GetModuleHandleW(nullptr), nullptr); }
+    g_npages = 7; static TCITEMW items[8];
+    for (int i = 0; i < g_npages; ++i) { items[i] = {}; items[i].mask = TCIF_TEXT; items[i].pszText = (LPWSTR)kPageNames[i]; TabCtrl_InsertItem(g_tab, i, &items[i]); }
+    RECT r; GetClientRect(g_tab, &r); TabCtrl_AdjustRect(g_tab, FALSE, &r);      // the pages go under the row of tabs (measured once the tabs exist)
+    for (int i = 0; i < g_npages; ++i) g_pages[i] = CreateWindowExW(0, L"WitnessLauncherPage", L"", WS_CHILD, r.left, r.top, r.right - r.left, r.bottom - r.top, g_tab, nullptr, GetModuleHandleW(nullptr), nullptr);
     // Play
     int y = 16; Make(g_pages[0], L"STATIC", L"Game folder:", SS_LEFT, 16, y + 3, 100, 20, 0); Make(g_pages[0], L"EDIT", g_dir.c_str(), WS_BORDER | ES_AUTOHSCROLL | ES_READONLY, 120, y, 420, 24, ID_GAMEDIR); Make(g_pages[0], L"BUTTON", L"Browse...", BS_PUSHBUTTON, 550, y, 90, 24, ID_BROWSE);
     y += 50; Make(g_pages[0], L"BUTTON", L"Continue (start the game)", BS_DEFPUSHBUTTON, 16, y, 240, 40, ID_LAUNCH); Make(g_pages[0], L"BUTTON", L"New game...", BS_PUSHBUTTON, 270, y, 160, 40, ID_NEWGAME);

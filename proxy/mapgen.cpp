@@ -11,6 +11,7 @@
 #include "game.h"
 
 void Log(const char* msg);
+bool GamePaused();      // overlay.cpp
 extern HMODULE g_selfModule();
 bool OverlayCaptureRgba(IDXGISwapChain* sc, std::vector<uint8_t>* px, unsigned* w, unsigned* h);      // overlay.cpp
 bool DevMenuMapInfo(float* minx, float* miny, float* maxx, float* maxy);                               // devmenu.cpp
@@ -110,6 +111,7 @@ void MapGenCommand(const char* args) { g_cmd = !strncmp(args, "start", 5) ? 1 : 
 static void RunCommand(int cmd) {
     if (cmd == 1) {
         if (g_phase != Idle) { Log("mapgen: already running"); return; }
+        if (GamePaused()) { Log("mapgen: the game is paused: nothing to take a picture of"); return; }
         if (!Camera(g_home, g_homeAng)) return; Plan(); if (g_plan.empty()) return; g_i = 0; g_phase = Moving; g_t0 = 0; g_started = GetTickCount();
     } else if (cmd == 2) { if (g_phase != Idle) Finish(false); }
     else { char m[160]; snprintf(m, sizeof m, "mapgen: phase %d tile %zu of %zu serial %u", (int)g_phase, g_i, g_plan.size(), g_serial); Log(m); }
@@ -123,7 +125,7 @@ void MapGenTick(IDXGISwapChain* sc) {
     }
     if (g_phase == Capturing) {
         if (now - g_t0 < (DWORD)c.mapgenSettleMs) return;      // (a tile always ends: the frame after the wait is taken whatever is on it)
-        std::vector<uint8_t> px; unsigned W, H; if (OverlayCaptureRgba(sc, &px, &W, &H)) Composite(px, W, H, g_plan[g_i]);
+        std::vector<uint8_t> px; unsigned W, H; if (!GamePaused() && OverlayCaptureRgba(sc, &px, &W, &H)) Composite(px, W, H, g_plan[g_i]);      // (a pause menu is not part of the island)
         if (++g_i >= g_plan.size()) { Finish(true); return; }
         g_phase = Moving;
     }

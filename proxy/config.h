@@ -41,6 +41,7 @@ struct Cfg {
     float mapgenHeight = 70.0f, mapgenRes = 0.5f; int mapgenSettleMs = 1500;      // mapgen_height= metres above the ground, mapgen_res= metres per pixel, mapgen_settle_ms= wait per tile
     bool mapgenBadScale = false, mapgenMirror = false, mapgenShowOverlay = false;      // test mutants: the projection has the wrong field of view / is mirrored / the mod keeps drawing during the capture
     bool noUnderlay = false;     // test mutant: the map has no picture under it
+    bool noKeySwallow = false;   // test mutant: a key the mod took (Esc closing the chat box or the character list) still reaches the game as raw input
     bool noDrawSend = false, noDrawDraw = false, noDrawDepth = false;      // test mutants: strokes are not sent / not drawn / put at a fixed distance instead of on the surface under the pen
     bool noPauseHide = false;    // test mutant: draw puppets, lines and name tags over the pause menu
     bool skipEntityZero = false; // test mutant: restore the old census that lost the second tutorial door

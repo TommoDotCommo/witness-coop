@@ -176,7 +176,16 @@ bool SocialEmoteOf(unsigned id, int* emote, float* seconds) {
     Lock l; auto it = g_remoteEmotes.find(id); if (it == g_remoteEmotes.end() || !it->second.id) return false;
     ULONGLONG age = GetTickCount64() - it->second.start; if (age >= kEmoteMs) return false; *emote = it->second.id; *seconds = float(age) / 1000.0f; return true;
 }
+static bool SocialKeyImpl(unsigned vk, bool down);
+std::map<unsigned, ULONGLONG> g_swallow;      // keys whose press the mod took: the same press arrives a moment later as raw input, which must not reach the game either (Esc closing the chat box would open the pause menu)
 bool SocialKey(unsigned vk, bool down) {
+    bool took = SocialKeyImpl(vk, down); Lock l; static std::set<unsigned> tookDown;
+    if (down) { if (took && !GetCfg().noKeySwallow) { g_swallow[vk] = GetTickCount64(); tookDown.insert(vk); } }
+    else { g_swallow.erase(vk); if (tookDown.erase(vk)) return true; }      // the release of a key the mod took is the mod's too: the game opens its pause menu on the release of Esc
+    return took;
+}
+bool SocialSwallowRaw(unsigned vk) { Lock l; auto it = g_swallow.find(vk); return it != g_swallow.end() && GetTickCount64() - it->second < 600; }      // (looked at, not used up: the game reads one event more than once)
+static bool SocialKeyImpl(unsigned vk, bool down) {
     const Cfg& c = GetCfg(); Lock l; ULONGLONG now = GetTickCount64();
     if (vk == c.keyVoice) { if (!down) VoiceKey(vk, false); else if (!g_open && !g_pick && !GamePaused()) VoiceKey(vk, true); }
     if (vk == VK_SHIFT || vk == VK_LSHIFT || vk == VK_RSHIFT) { g_shift = down; return false; }
@@ -413,7 +422,7 @@ void SocialCommand(const char* line) {
         Lock l; char m[300]; snprintf(m, sizeof m, "socialstat: open %d input_len %zu log %zu chat_seen %u marks %zu marks_seen %u bubbles %zu drawn dots %u bubbles %u marks %u arrows %u", g_open ? 1 : 0, g_input.size(), g_log.size(), g_chatSeen, g_marks.size(), g_marksSeen, g_bubbles.size(), g_dotsDrawn, g_bubblesDrawn, g_marksDrawn, g_arrowsDrawn); Log(m);
         for (const auto& e : g_log) { snprintf(m, sizeof m, "socialstat: chat from %u name %s text %s", e.from, e.name.c_str(), e.text.c_str()); Log(m); }
         for (const auto& mk : g_marks) { snprintf(m, sizeof m, "socialstat: mark from %u kind %u pos %.2f %.2f %.2f", mk.from, mk.kind, mk.pos[0], mk.pos[1], mk.pos[2]); Log(m); }
-        snprintf(m, sizeof m, "socialstat: me character %s emote %d seq %u wheel %d picker %d", g_myChar.c_str(), g_emote, g_emoteSeq, g_wheel ? 1 : 0, g_pick ? 1 : 0); Log(m);
+        snprintf(m, sizeof m, "socialstat: me character %s emote %d seq %u wheel %d picker %d paused %d", g_myChar.c_str(), g_emote, g_emoteSeq, g_wheel ? 1 : 0, g_pick ? 1 : 0, GamePaused() ? 1 : 0); Log(m);
         for (const auto& r : CoopGetRemotes()) { int e = 0; float t = 0; auto it = g_remoteEmotes.find(r.id); bool act = it != g_remoteEmotes.end() && it->second.id && now - it->second.start < kEmoteMs; if (act) { e = it->second.id; t = float(now - it->second.start) / 1000.0f; }
             snprintf(m, sizeof m, "socialstat: remote %u typing %d speaking %d emote %u character %s playing %d t %.2f", r.id, r.typing ? 1 : 0, r.speaking ? 1 : 0, r.emote, r.character, e, t); Log(m); }
     }
