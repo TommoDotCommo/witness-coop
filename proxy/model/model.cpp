@@ -174,9 +174,8 @@ static void Sample(const Channel& c, float t, float* out) {
     if (c.path == 1) Slerp(a, b, f, out); else for (int i = 0; i < 3; i++) out[i] = a[i] + (b[i] - a[i]) * f;
 }
 
-void JointMatrices(const Model& m, int clip, float t, float* out) {
+static void PoseTRS(const Model& m, int clip, float t, float* T, float* R, float* S) {      // rest pose, then the clip's channels at t (looped)
     size_t nn = m.nodes.size();
-    std::vector<float> T(nn * 3), R(nn * 4), S(nn * 3);
     for (size_t i = 0; i < nn; i++) { memcpy(&T[i * 3], m.nodes[i].t, 12); memcpy(&R[i * 4], m.nodes[i].r, 16); memcpy(&S[i * 3], m.nodes[i].s, 12); }
     if (clip >= 0 && clip < (int)m.clips.size()) {
         const Clip& c = m.clips[clip];
@@ -184,6 +183,18 @@ void JointMatrices(const Model& m, int clip, float t, float* out) {
         t = c.duration > 0 ? t - c.duration * floorf(t / c.duration) : 0;
 #endif
         for (const Channel& ch : c.channels) { float v[4]; Sample(ch, t, v); float* dst = ch.path == 0 ? &T[ch.node * 3] : ch.path == 1 ? &R[ch.node * 4] : &S[ch.node * 3]; memcpy(dst, v, (ch.path == 1 ? 4 : 3) * 4); }
+    }
+}
+
+void JointMatricesBlend(const Model& m, int from, float tFrom, int to, float tTo, float w, float* out) {
+    size_t nn = m.nodes.size();
+    std::vector<float> T(nn * 3), R(nn * 4), S(nn * 3);
+    PoseTRS(m, to, tTo, T.data(), R.data(), S.data());
+    if (from >= 0 && w < 1) {
+        std::vector<float> T0(nn * 3), R0(nn * 4), S0(nn * 3); PoseTRS(m, from, tFrom, T0.data(), R0.data(), S0.data());
+        if (w < 0) w = 0;
+        for (size_t i = 0; i < nn * 3; i++) { T[i] = T0[i] + (T[i] - T0[i]) * w; S[i] = S0[i] + (S[i] - S0[i]) * w; }
+        for (size_t i = 0; i < nn; i++) { float q[4]; Slerp(&R0[i * 4], &R[i * 4], w, q); memcpy(&R[i * 4], q, 16); }
     }
     std::vector<float> G(nn * 16); std::vector<char> done(nn, 0);
     struct Rec { static void Go(const Model& m, size_t i, const float* T, const float* R, const float* S, float* G, char* done) {
@@ -202,6 +213,8 @@ void JointMatrices(const Model& m, int clip, float t, float* out) {
     Identity(out + m.joints.size() * 16);
 }
 
+void JointMatrices(const Model& m, int clip, float t, float* out) { JointMatricesBlend(m, -1, 0, clip, t, 1, out); }
+
 void SkinPosition(const Model&, const float* jm, const Vertex& v, float out[3]) {
     out[0] = out[1] = out[2] = 0;
     for (int k = 0; k < 4; k++) {
@@ -219,6 +232,39 @@ int FindClip(const Model& m, const char* word) {
 Fit FitToHeight(const Model& m, float height) {
     Fit f; float h = m.bmax[1] - m.bmin[1]; f.scale = h > 1e-6f ? height / h : 1;
     f.offset[0] = (m.bmin[0] + m.bmax[0]) * 0.5f; f.offset[1] = m.bmin[1]; f.offset[2] = (m.bmin[2] + m.bmax[2]) * 0.5f;
+    return f;
+}
+
+// Translation of the inverse of the affine matrix M (column-major): where a joint's own origin sits in model space in the bind pose.
+static bool InverseOrigin(const float* M, float o[3]) {
+    float a = M[0], b = M[4], c = M[8], d = M[1], e = M[5], f = M[9], g = M[2], h = M[6], i = M[10];      // rows of the 3x3 part
+    float det = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g); if (fabsf(det) < 1e-20f) return false;
+    float inv[9] = {(e * i - f * h), -(b * i - c * h), (b * f - c * e), -(d * i - f * g), (a * i - c * g), -(a * f - c * d), (d * h - e * g), -(a * h - b * g), (a * e - b * d)};
+    float t[3] = {-M[12], -M[13], -M[14]};
+    for (int r = 0; r < 3; r++) o[r] = (inv[r * 3] * t[0] + inv[r * 3 + 1] * t[1] + inv[r * 3 + 2] * t[2]) / det;
+    return true;
+}
+float EyeHeight(const Model& m, const char* nameContains) {
+    // Where the eye joints are in the space bmin/bmax are measured in: the joint's own origin (translation of the inverse of its inverse bind matrix), put through
+    // the bind-pose skin matrix. (The two spaces differ by whatever scale the nodes above the skeleton carry: the Magic Frog's are 100 times apart.)
+    if (!nameContains || !*nameContains) return -1;
+    std::vector<float> jm(kMaxJoints * 16); JointMatrices(m, -1, 0, jm.data());
+    float sum = 0; int n = 0;
+    for (size_t j = 0; j < m.joints.size(); j++) {
+        if (m.nodes[m.joints[j]].name.find(nameContains) == std::string::npos) continue;
+        float o[3];
+        if (!InverseOrigin(&m.ibm[j * 16], o)) continue;
+#ifdef WM_MUT_EYE_IBM
+        sum += o[1]; n++; continue;            // the origin in the inverse bind matrix's space: wrong whenever that space is not the one the bounds are in
+#endif
+        const float* M = &jm[j * 16]; sum += M[1] * o[0] + M[5] * o[1] + M[9] * o[2] + M[13]; n++;
+    }
+    return n ? sum / n : -1.0f;
+}
+Fit FitToEye(const Model& m, float eye, const char* nameContains) {
+    float ey = EyeHeight(m, nameContains), h = m.bmax[1] - m.bmin[1], above = ey - m.bmin[1];
+    if (ey < 0 || above < 1e-6f) return FitToHeight(m, eye / 0.92f);
+    Fit f = FitToHeight(m, h * eye / above);
     return f;
 }
 
@@ -288,19 +334,36 @@ void Avatar::Update(uint64_t nowMs, bool valid, unsigned seq, const float pos[3]
     for (int i = 0; i < 3; i++) pos_[i] += (target_[i] - pos_[i]) * k;
     yaw_ = yaw;
     idlePhase_ += dt;
-    if (speed_ >= g_.idleBelow) phase_ += dt * speed_ / g_.refSpeed;
+    if (speed_ >= g_.idleBelow) { phase_ += dt * speed_ / g_.refSpeed; runPhase_ += dt * speed_ / (g_.runRef > 0 ? g_.runRef : g_.refSpeed); }
+#ifdef WM_MUT_NO_RUNREF
+    runPhase_ = phase_;
+#endif
+}
+
+Avatar::Sel Avatar::Choose(const Model& m) const {
+    int idle = FindClip(m, "idle"); if (idle < 0) idle = FindClip(m, "stand"); if (idle < 0) idle = FindClip(m, "survey");
+    int walk = FindClip(m, "walk"); int run = FindClip(m, "run"); if (run < 0) run = FindClip(m, "sprint");
+    if (walk < 0) walk = idle >= 0 && m.clips.size() > 1 ? (idle == 0 ? 1 : 0) : 0;      // an unnamed clip is the walk cycle
+    if (speed_ < g_.idleBelow) return idle >= 0 ? Sel{idle, 0} : Sel{walk, 3};
+#ifndef WM_MUT_NO_RUN
+    if (run >= 0 && speed_ >= g_.runSpeed) return {run, 2};
+#endif
+    return {walk, 1};
 }
 
 ClipPick Avatar::Pick(const Model& m) const {
     if (m.clips.empty()) return {-1, 0};
-    int idle = FindClip(m, "idle"); if (idle < 0) idle = FindClip(m, "stand"); if (idle < 0) idle = FindClip(m, "survey");
-    int walk = FindClip(m, "walk"); int run = FindClip(m, "run"); if (run < 0) run = FindClip(m, "sprint");
-    if (walk < 0) walk = idle >= 0 && m.clips.size() > 1 ? (idle == 0 ? 1 : 0) : 0;      // an unnamed clip is the walk cycle
-    if (speed_ < g_.idleBelow) return idle >= 0 ? ClipPick{idle, idlePhase_} : ClipPick{walk, 0};
-#ifndef WM_MUT_NO_RUN
-    if (run >= 0 && speed_ >= g_.runSpeed) return {run, phase_};
+    Sel cur = Choose(m);
+    if (last_.clip >= 0 && cur.clip != last_.clip) { prev_ = last_; fadeStartMs_ = lastMs_; }        // the state changed: fade from what was playing
+    last_ = cur;
+    ClipPick pk{cur.clip, TimeOf(cur.kind)};
+#ifndef WM_MUT_NO_BLEND
+    if (prev_.clip >= 0 && g_.fadeMs > 0) {
+        float w = (float)(lastMs_ - fadeStartMs_) / g_.fadeMs;
+        if (w < 1) { pk.from = prev_.clip; pk.fromTime = TimeOf(prev_.kind); pk.blend = w < 0 ? 0 : w; }
+    }
 #endif
-    return {walk, phase_};
+    return pk;
 }
 
 }  // namespace wm

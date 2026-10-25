@@ -145,7 +145,6 @@ int main(int argc, char** argv) {
         CHECK(w.Pick(fig).clip == 0 && w.Pick(fig).time > 1.0f, "unnamed clip is the walk (clip %d time %.2f)", w.Pick(fig).clip, w.Pick(fig).time);
         CHECK(s0.Pick(fig).clip == 0 && s0.Pick(fig).time == 0, "unnamed clip, standing: first frame (time %.2f)", s0.Pick(fig).time);
     }
-    printf("%s: %d checks, %d failed\n", g_fail ? "FAILED" : "ok", g_n, g_fail);
 
     // a character with many joints (the Magic Frog has 151): up to kMaxJoints - 1 = 255 must load and skin correctly, one more must be refused
     for (int n : {150, 255}) {
@@ -157,5 +156,52 @@ int main(int argc, char** argv) {
         CHECK(Near(sp[0], n * 0.01f, 1e-3f) && Near(sp[1], 0, 1e-4f), "%d joints: the triangle skins to x %.4f, wanted %.4f", n, sp[0], n * 0.01f);
     }
     { std::vector<uint8_t> g = ChainGlb(256); wm::Model cm; std::string ce; CHECK(!wm::LoadGlb(g.data(), g.size(), &cm, &ce), "256 joints accepted (the limit is 255)"); }
+
+    // cross-fade: after the player stops, the pose fades from the walk to the idle over fadeMs instead of jumping; a new state starts from what was playing
+    if (fox.clips.size() == 3) {
+        auto clipName = [&](int c) { return c >= 0 ? fox.clips[c].name : std::string("none"); };
+        wm::Avatar a; walkAt(fox, 3.0f, 120, a); wm::ClipPick p0 = a.Pick(fox);
+        CHECK(clipName(p0.clip) == "Walk" && p0.from < 0 && p0.blend == 1, "walking: clip %s from %d blend %.2f", clipName(p0.clip).c_str(), p0.from, p0.blend);
+        uint64_t t = 5000 + 120 * 17; unsigned seq = 1000; float p[3] = {0, 0, 5}; p[0] = 3.0f * 60 / 30 * 2;
+        float firstBlend = -1, lastBlend = -1; int fadeFrames = 0; std::string fromName;
+        for (int fr = 0; fr < 200; fr++, t += 17) {
+            a.Update(t, true, seq, p, 0); wm::ClipPick q = a.Pick(fox);
+            if (clipName(q.clip) == "Survey" && q.from >= 0 && q.blend < 1) { if (firstBlend < 0) firstBlend = q.blend; lastBlend = q.blend; fadeFrames++; fromName = clipName(q.from); }
+        }
+        CHECK(fadeFrames >= 5 && firstBlend >= 0 && firstBlend < 0.3f && lastBlend > firstBlend && fromName == "Walk", "stopping: %d frames of fade (blend %.2f .. %.2f) from '%s'", fadeFrames, firstBlend, lastBlend, fromName.c_str());
+        wm::ClipPick done = a.Pick(fox); CHECK(clipName(done.clip) == "Survey" && done.blend == 1, "fade finished: clip %s blend %.2f", clipName(done.clip).c_str(), done.blend);
+        // the blended pose: w = 0 is the old clip, w = 1 the new one, in between it is neither
+        std::vector<float> ja(wm::kMaxJoints * 16), jb(wm::kMaxJoints * 16), jh(wm::kMaxJoints * 16), jn(wm::kMaxJoints * 16); float pa[3], pb[3], ph[3], pn[3]; const wm::Vertex& vx = fox.verts[100];
+        wm::JointMatrices(fox, 1, 0.3f, ja.data()); wm::JointMatrices(fox, 0, 0.9f, jb.data()); wm::SkinPosition(fox, ja.data(), vx, pa); wm::SkinPosition(fox, jb.data(), vx, pb);
+        wm::JointMatricesBlend(fox, 1, 0.3f, 0, 0.9f, 0.0f, jn.data()); wm::SkinPosition(fox, jn.data(), vx, pn);
+        CHECK(Near(pn[0], pa[0], 1e-4f) && Near(pn[1], pa[1], 1e-4f) && Near(pn[2], pa[2], 1e-4f), "blend 0 is not the old clip");
+        wm::JointMatricesBlend(fox, 1, 0.3f, 0, 0.9f, 1.0f, jn.data()); wm::SkinPosition(fox, jn.data(), vx, pn);
+        CHECK(Near(pn[0], pb[0], 1e-4f) && Near(pn[1], pb[1], 1e-4f) && Near(pn[2], pb[2], 1e-4f), "blend 1 is not the new clip");
+        wm::JointMatricesBlend(fox, 1, 0.3f, 0, 0.9f, 0.5f, jh.data()); wm::SkinPosition(fox, jh.data(), vx, ph);
+        float dA = fabsf(ph[0] - pa[0]) + fabsf(ph[1] - pa[1]) + fabsf(ph[2] - pa[2]), dB = fabsf(ph[0] - pb[0]) + fabsf(ph[1] - pb[1]) + fabsf(ph[2] - pb[2]), dAB = fabsf(pa[0] - pb[0]) + fabsf(pa[1] - pb[1]) + fabsf(pa[2] - pb[2]);
+        CHECK(dA > 1e-3f && dB > 1e-3f && dA < dAB * 1.5f && dB < dAB * 1.5f, "half blend: %.3f from old, %.3f from new, clips differ by %.3f", dA, dB, dAB);
+        // the run clip is timed by its own reference speed (GaitCfg::runRef), not by the walk's
+        wm::GaitCfg g1, g2; g2.runRef = 4.5f; wm::Avatar r1(g1), r2(g2); walkAt(fox, 6.5f, 120, r1); walkAt(fox, 6.5f, 120, r2);
+        float t1 = r1.Pick(fox).time, t2 = r2.Pick(fox).time;
+        CHECK(clipName(r1.Pick(fox).clip) == "Run" && clipName(r2.Pick(fox).clip) == "Run" && t1 > 0 && Near(t1 / t2, 4.5f / 1.6f, 0.05f), "run clip time %.2f (walk reference) vs %.2f (run reference 4.5): ratio %.2f, wanted %.2f", t1, t2, t1 / t2, 4.5f / 1.6f);
+    }
+    // eye height: the eyes are found by joint name, in the space the bounds are measured in. Like the Magic Frog, the nodes above the skeleton scale it by 0.01 while the
+    // inverse bind matrices are in the unscaled space; the fit must put the eyes at the camera's eye height above the feet all the same
+    {
+        wm::Model em; em.nodes.resize(4); const char* nm[4] = {"armature", "c_eye.l_050", "c_eye.r_063", "c_eyelid_top.l_053"};
+        float px[4] = {0, 5, -5, 0}, py[4] = {0, 150, 154, 300}, pz[4] = {0, -30, -30, 0};
+        for (int i = 0; i < 4; i++) { em.nodes[i].name = nm[i]; em.nodes[i].parent = i ? 0 : -1; em.nodes[i].t[0] = px[i]; em.nodes[i].t[1] = py[i]; em.nodes[i].t[2] = pz[i]; }
+        for (int k = 0; k < 3; k++) em.nodes[0].s[k] = 0.01f;
+        em.joints = {1, 2, 3}; em.ibm.assign(48, 0);
+        for (int j = 0; j < 3; j++) { float* M = &em.ibm[j * 16]; M[0] = M[5] = M[10] = M[15] = 1; M[12] = -px[j + 1]; M[13] = -py[j + 1]; M[14] = -pz[j + 1]; }      // inverse of the joint's bind pose without the 0.01
+        em.bmin[0] = -0.5f; em.bmax[0] = 0.5f; em.bmin[1] = 0; em.bmax[1] = 2.0f; em.bmin[2] = -0.5f; em.bmax[2] = 0.5f;      // 200 units tall, seen through the 0.01
+        float ey = wm::EyeHeight(em, "c_eye."); CHECK(Near(ey, 1.52f, 1e-3f), "eye height %.4f (wanted 1.52: the mean of the two eyes, not the eyelid, in bounds space)", ey);
+        CHECK(wm::EyeHeight(em, "nothing") < 0 && wm::EyeHeight(em, "") < 0, "no matching joint must give no eye height");
+        wm::Fit fe = wm::FitToEye(em, wm::kCameraEye, "c_eye."); float feet[3] = {10, 20, 5}, M[16]; wm::ModelMatrix(feet, 0.4f, fe, 0, M);
+        float ez = M[4 + 2] * ey + M[12 + 2];         // world z of a model-space point on the eye line (x = z = 0)
+        CHECK(Near(ez - 5, wm::kCameraEye, 1e-3f), "the eyes are %.3f m above the feet, the camera is %.3f", ez - 5, wm::kCameraEye);
+        wm::Fit nf = wm::FitToEye(em, 1.0f, "nothing"); CHECK(Near((em.bmax[1] - em.bmin[1]) * nf.scale, 1.0f / 0.92f, 1e-3f), "no eye joints: the model is %.3f m high", (em.bmax[1] - em.bmin[1]) * nf.scale);
+    }
+    printf("%s: %d checks, %d failed\n", g_fail ? "FAILED" : "ok", g_n, g_fail);
     return g_fail ? 1 : 0;
 }

@@ -117,15 +117,21 @@ static bool LoadCurrent() {
     wm::Model nm; std::string err;
     if (!LoadFile(path, &nm, &err)) { char m[240]; snprintf(m, sizeof m, "model: cannot load %s: %s", g_list[g_cur].name.c_str(), err.c_str()); return Fail(m); }
     ReleaseModel(); g_model = std::move(nm);
-    float height = 1.8f, speed = 1.6f, yaw = cfg.modelYaw;       // the model's own <file>.glb.txt sets its size, walking speed and facing; witness_coop.cfg overrides it
+    float height = 1.8f, speed = 1.6f, yaw = cfg.modelYaw, runSpeed = 0, eye = wm::kCameraEye; char eyeJoint[80] = "";
+    // the model's own <file>.glb.txt sets its size, walking speed and facing; witness_coop.cfg overrides it. eye_joint=<part of a joint name> sizes the model so that
+    // those joints (its eyes) are at the camera's height above the feet (eye=<metres> asks for another height); run_speed=<m/s> is what the run clip was made for.
     if (FILE* sc = _wfopen((path + L".txt").c_str(), L"r")) {
-        char l[200]; float v; while (fgets(l, sizeof l, sc)) { if (sscanf(l, "height=%f", &v) == 1) height = v; else if (sscanf(l, "speed=%f", &v) == 1) speed = v; else if (sscanf(l, "yaw=%f", &v) == 1) yaw += v; }
+        char l[200]; float v; while (fgets(l, sizeof l, sc)) { if (sscanf(l, "height=%f", &v) == 1) height = v; else if (sscanf(l, "speed=%f", &v) == 1) speed = v; else if (sscanf(l, "yaw=%f", &v) == 1) yaw += v;
+            else if (sscanf(l, "run_speed=%f", &v) == 1) runSpeed = v; else if (sscanf(l, "eye=%f", &v) == 1) eye = v; else if (sscanf(l, "eye_joint=%79s", eyeJoint) == 1) {} }
         fclose(sc);
     }
     if (cfg.modelHeight > 0) height = cfg.modelHeight; if (cfg.modelStride > 0) speed = cfg.modelStride;
-    g_yaw = yaw * 3.14159265f / 180.0f; g_height = height;
-    g_fit = wm::FitToHeight(g_model, height);
-    wm::GaitCfg gc; gc.refSpeed = speed; if (cfg.noModelGait) gc.idleBelow = 1e9f; g_gait = gc;
+    g_yaw = yaw * 3.14159265f / 180.0f;
+    float eyeAt = wm::EyeHeight(g_model, eyeJoint);
+    g_fit = (cfg.modelHeight <= 0 && eyeJoint[0] && eyeAt >= 0) ? wm::FitToEye(g_model, eye, eyeJoint) : wm::FitToHeight(g_model, height);
+    g_height = (g_model.bmax[1] - g_model.bmin[1]) * g_fit.scale;
+    if (eyeJoint[0]) { char m[200]; snprintf(m, sizeof m, "model: eyes (%s) %s: %.3f m above the feet, camera %.3f m, model %.3f m high", eyeJoint, eyeAt >= 0 ? "found" : "NOT found", eyeAt >= 0 ? (eyeAt - g_model.bmin[1]) * g_fit.scale : -1.0f, wm::kCameraEye, g_height); Log(m); }
+    wm::GaitCfg gc; gc.refSpeed = speed; gc.runRef = runSpeed; if (cfg.noModelGait) gc.idleBelow = 1e9f; g_gait = gc;
     D3D11_BUFFER_DESC bd = {}; D3D11_SUBRESOURCE_DATA sd = {};
     bd.ByteWidth = (UINT)(g_model.verts.size() * sizeof(wm::Vertex)); bd.BindFlags = D3D11_BIND_VERTEX_BUFFER; sd.pSysMem = g_model.verts.data();
     if (FAILED(dev->CreateBuffer(&bd, &sd, &g_vb))) return Fail("model: vertex buffer failed");
@@ -307,9 +313,9 @@ bool ModelGpuDraw(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Cam& ca
     const Cfg& cfg = GetCfg();
     wm::ClipPick pk = g_avatar->Pick(g_model);
     std::vector<float> bones(wm::kMaxJoints * 16, 0.0f);
-    wm::JointMatrices(g_model, pk.clip, pk.time, bones.data());
+    wm::JointMatricesBlend(g_model, pk.from, pk.fromTime, pk.clip, pk.time, pk.blend, bones.data());
     FrameCB fc; wm::ViewProj(cam, fc.viewProj);
-    float feet[3] = {g_avatar->pos()[0], g_avatar->pos()[1], g_avatar->pos()[2] - 1.71f};
+    float feet[3] = {g_avatar->pos()[0], g_avatar->pos()[1], g_avatar->pos()[2] - wm::kCameraEye};
     wm::ModelMatrix(feet, g_avatar->yaw(), g_fit, g_yaw, fc.model);
     float L[4] = {0.35f, 0.25f, 0.9f, 0.55f}, T[4] = {1, 1, 1, 1}; memcpy(fc.light, L, 16); memcpy(fc.tint, T, 16);
     ID3D11ShaderResourceView* sceneSrv = nullptr; bool ms = false;
@@ -343,7 +349,7 @@ bool ModelGpuDraw(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Cam& ca
     PlayerDraw record = {}; record.id = playerId; record.seq = seq; memcpy(record.pos, g_avatar->pos(), 12); record.speed = g_avatar->speed(); record.clip = pk.clip; g_playerDraws.push_back(record);
     if (timed) { g_ctx->End(g_query); g_queryPending = true; }
     ID3D11ShaderResourceView* z3[3] = {nullptr, nullptr, nullptr}; g_ctx->PSSetShaderResources(0, 3, z3); (void)nul;      // the game's depth buffer must not stay bound as an input
-    g_stats.drawn = true; g_stats.clip = pk.clip; g_stats.speed = g_avatar->speed(); g_stats.animTime = pk.time; memcpy(g_stats.pos, g_avatar->pos(), 12); memcpy(g_stats.cam, cam.pos, 12);
+    g_stats.drawn = true; g_stats.clip = pk.clip; g_stats.speed = g_avatar->speed(); g_stats.animTime = pk.time; g_stats.from = pk.from; g_stats.blend = pk.blend; memcpy(g_stats.pos, g_avatar->pos(), 12); memcpy(g_stats.cam, cam.pos, 12);
     return true;
 }
 
@@ -395,5 +401,5 @@ void ModelGpuDumpPlayers() {
 
 void ModelGpuLogStats() {
     ModelDrawStats s = ModelGpuStats(); char m[200];
-    snprintf(m, sizeof m, "modelstat: visible_px %u drawn %d clip %d speed %.2f anim %.3f frames %u model %s %d/%d pos %.2f %.2f %.2f cam %.2f %.2f %.2f", s.visiblePixels, (int)s.drawn, s.clip, s.speed, s.animTime, s.frames, g_list.empty() ? "-" : g_list[g_cur].name.c_str(), g_cur + 1, (int)g_list.size(), s.pos[0], s.pos[1], s.pos[2], s.cam[0], s.cam[1], s.cam[2]); Log(m);
+    snprintf(m, sizeof m, "modelstat: visible_px %u drawn %d clip %d speed %.2f anim %.3f from %d blend %.2f frames %u model %s %d/%d pos %.2f %.2f %.2f cam %.2f %.2f %.2f", s.visiblePixels, (int)s.drawn, s.clip, s.speed, s.animTime, s.from, s.blend, s.frames, g_list.empty() ? "-" : g_list[g_cur].name.c_str(), g_cur + 1, (int)g_list.size(), s.pos[0], s.pos[1], s.pos[2], s.cam[0], s.cam[1], s.cam[2]); Log(m);
 }

@@ -20,7 +20,7 @@ def stat():
     while time.time() - t < 6:
         ls = [l for l in open(log, errors='ignore') if l.startswith('modelstat:')]
         if len(ls) > n0:
-            m = re.search(r'visible_px (\d+) drawn (\d) clip (-?\d+) speed ([-0-9.]+) anim ([-0-9.]+) frames (\d+)', ls[-1])
+            m = re.search(r'visible_px (\d+) drawn (\d) clip (-?\d+) speed ([-0-9.]+) anim ([-0-9.]+)(?: from -?\d+ blend [-0-9.]+)? frames (\d+)', ls[-1])
             return dict(vis=int(m[1]), drawn=int(m[2]), clip=int(m[3]), speed=float(m[4]), anim=float(m[5]))
         time.sleep(0.2)
     return None

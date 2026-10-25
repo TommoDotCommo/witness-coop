@@ -37,6 +37,8 @@ bool LoadGlb(const uint8_t* data, size_t n, Model* out, std::string* err);
 
 // Joint matrices (jointCount() * 16 floats) for clip `clip` at `t` seconds (looped). clip < 0: the bind pose.
 void JointMatrices(const Model& m, int clip, float t, float* out);
+// The same with a cross-fade: pose = (1 - w) * (clip `from` at tFrom) + w * (clip `to` at tTo). from < 0 or w >= 1: just `to`.
+void JointMatricesBlend(const Model& m, int from, float tFrom, int to, float tTo, float w, float* out);
 void SkinPosition(const Model& m, const float* jointMats, const Vertex& v, float out[3]);
 
 // Index of the clip whose name contains `word` (case-insensitive), or -1.
@@ -46,6 +48,11 @@ int FindClip(const Model& m, const char* word);
 // How the model is scaled and put on the ground: feet at the origin, centred, `height` metres tall.
 struct Fit { float scale, offset[3]; };
 Fit FitToHeight(const Model& m, float height);
+// Bind-pose height (model space, same Y as bmin/bmax) of the eyes: the mean of the joints whose node name contains `nameContains`. -1 when none matches.
+float EyeHeight(const Model& m, const char* nameContains);
+// Scale and put the model so that its eyes (the joints above) are `eye` metres above its feet. No such joints: the model is `eye / 0.92` high.
+Fit FitToEye(const Model& m, float eye, const char* nameContains);
+constexpr float kCameraEye = 1.71f;    // the puppet's feet are this far below the camera of the player it stands for
 
 // ---- camera (the game's camera: position, heading theta, pitch phi, z up, vertical field of view)
 struct Cam { float pos[3], theta, phi, vfovDeg, aspect, nearZ, farZ; };
@@ -55,8 +62,9 @@ void ViewProj(const Cam& c, float out[16]);                 // world -> clip, D3
 void ModelMatrix(const float feet[3], float yaw, const Fit& f, float yawOffset, float out[16]);   // model space -> world
 
 // ---- the remote player's walk state
-struct GaitCfg { float refSpeed = 1.6f; float runSpeed = 4.5f; float idleBelow = 0.25f; float tau = 0.15f; };
-struct ClipPick { int clip; float time; };
+struct GaitCfg { float refSpeed = 1.6f; float runSpeed = 4.5f; float idleBelow = 0.25f; float tau = 0.15f; float runRef = 0; float fadeMs = 200; };   // runRef: m/s the run clip was made for (0: the walk's refSpeed); fadeMs: cross-fade between clips
+// The pose to draw: `clip` at `time`; while `blend` < 1 it is cross-faded from `from` at `fromTime` (from < 0: no fade).
+struct ClipPick { int clip; float time; int from = -1; float fromTime = 0; float blend = 1; };
 class Avatar {
 public:
     explicit Avatar(GaitCfg g = {}) : g_(g) {}
@@ -68,8 +76,11 @@ public:
     float speed() const { return speed_; }
     float phase() const { return phase_; }          // seconds of animation time
 private:
+    struct Sel { int clip = -1, kind = 0; };      // kind: 0 idle, 1 walk, 2 run, 3 held first frame: which phase counter times the clip
+    Sel Choose(const Model& m) const; float TimeOf(int kind) const { return kind == 1 ? phase_ : kind == 2 ? runPhase_ : kind == 0 ? idlePhase_ : 0.0f; }   // kind 3: a held first frame
+    mutable Sel last_, prev_; mutable uint64_t fadeStartMs_ = 0;
     GaitCfg g_; bool have_ = false; unsigned lastSeq_ = 0; uint64_t lastMs_ = 0, lastSeqMs_ = 0;
-    float target_[3] = {0, 0, 0}, pos_[3] = {0, 0, 0}, lastTarget_[3] = {0, 0, 0}, yaw_ = 0, speed_ = 0, phase_ = 0, idlePhase_ = 0;
+    float target_[3] = {0, 0, 0}, pos_[3] = {0, 0, 0}, lastTarget_[3] = {0, 0, 0}, yaw_ = 0, speed_ = 0, phase_ = 0, runPhase_ = 0, idlePhase_ = 0;
 };
 
 }  // namespace wm
