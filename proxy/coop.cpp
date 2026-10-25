@@ -30,6 +30,8 @@ void CoopSendRawTo(unsigned id, const uint8_t* d, size_t n) {      // one datagr
     auto it = g_peerById.find(id); if (it != g_peerById.end()) sendto(g_sock, (const char*)d, (int)n, 0, (const sockaddr*)&it->second, sizeof it->second);
 }
 void VideoOnPacket(const uint8_t* data, size_t n);
+void VoiceOnPacket(const uint8_t* data, size_t n);      // voice_audio.cpp
+void VoiceStart();
 void VideoOnRequest(const uint8_t* data, size_t n);
 
 static std::atomic<unsigned> g_myId{0};
@@ -156,6 +158,7 @@ static DWORD WINAPI NetThread(LPVOID) {
     for (const auto& p : endpoints) { g_rawPeers.push_back(p.second); g_peerById[p.first] = p.second; }
     g_myId.store((unsigned)id); g_sock = s; g_peerAddr = peer; g_peerSet.store(true, std::memory_order_release);
     g_core.store(core, std::memory_order_release);
+    VoiceStart();
     for (;;) {
         uint64_t now = GetTickCount64();
         core->tick(now);
@@ -170,6 +173,7 @@ static DWORD WINAPI NetThread(LPVOID) {
             }
             if (source.sin_port != expected->sin_port || source.sin_addr.s_addr != expected->sin_addr.s_addr) continue;
             if (n >= 4 && !memcmp(buf, "WTV4", 4)) VideoOnPacket(buf, (size_t)n);            // a chunk of a POV picture
+            else if (n >= 4 && !memcmp(buf, "WTO4", 4)) VoiceOnPacket(buf, (size_t)n);         // 20 ms of a player's voice
             else if (n >= 4 && !memcmp(buf, "WTR4", 4)) VideoOnRequest(buf, (size_t)n);       // a request for this game's POV pictures
             else core->onPacket(buf, (size_t)n, now);
             sourceLen = sizeof source;

@@ -88,6 +88,7 @@ void AddPenPoint(const float p[3], ULONGLONG now) {
     t->pts.insert(t->pts.end(), p, p + 3); g_unsent.insert(g_unsent.end(), p, p + 3); TrimPlayer(CoopMyId());
     if (g_unsent.size() >= 36 || now - g_sentAt > 120) FlushStroke(false, now);
 }
+unsigned g_speakDrawn = 0; bool g_micHudDrawn = false;      // voice: speaker marks over players and the microphone indicator drawn in the last frame (for the tests)
 unsigned g_dotsDrawn = 0, g_bubblesDrawn = 0, g_marksDrawn = 0, g_arrowsDrawn = 0;      // what the last frame drew (for the tests)
 
 std::string NameOf(unsigned id) {
@@ -146,6 +147,27 @@ void Bubbled(float cx, float bottom, const std::vector<std::string>& lines, bool
 }  // namespace
 
 const char* SocialMyCharacter() { static std::string s; Lock l; s = g_myChar.empty() ? GetCfg().character : g_myChar; return s.c_str(); }
+unsigned SocialSpeakDrawn() { return g_speakDrawn; }
+bool SocialMicHudDrawn() { return g_micHudDrawn; }
+unsigned SocialInkVerts(const float cam[3], std::vector<LineVert>& out, size_t maxVerts) {      // every stroke as ribbons in the world, turned to face the camera: the line pipeline draws them hidden by walls
+    Lock l; unsigned segs = 0; if (GetCfg().noDrawDraw) { g_segsDrawn = 0; return 0; }
+    for (const auto& s : g_strokes) {
+        float col[3]; InkColor(s.from, s.color, col);
+        for (size_t i = 0; i + 5 < s.pts.size(); i += 3) {
+            if (out.size() + 6 > maxVerts) { g_segsDrawn = segs; return segs; }
+            const float *a = &s.pts[i], *b = &s.pts[i + 3]; float d[3] = {b[0] - a[0], b[1] - a[1], b[2] - a[2]}, len = sqrtf(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]); if (len < 1e-4f || len > 3.0f) continue;
+            float v[3] = {(a[0] + b[0]) * 0.5f - cam[0], (a[1] + b[1]) * 0.5f - cam[1], (a[2] + b[2]) * 0.5f - cam[2]}, dist = sqrtf(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]); if (dist > 200.0f) continue;
+            float sd[3] = {d[1] * v[2] - d[2] * v[1], d[2] * v[0] - d[0] * v[2], d[0] * v[1] - d[1] * v[0]}, sl = sqrtf(sd[0] * sd[0] + sd[1] * sd[1] + sd[2] * sd[2]); if (sl < 1e-9f) continue;
+            float hw = std::min(0.06f, 0.016f + 0.0035f * dist) / sl, o[3] = {sd[0] * hw, sd[1] * hw, sd[2] * hw}, ext = std::min(0.06f, 0.016f + 0.0035f * dist) / len;
+            float a2[3] = {a[0] - d[0] * ext, a[1] - d[1] * ext, a[2] - d[2] * ext}, b2[3] = {b[0] + d[0] * ext, b[1] + d[1] * ext, b[2] + d[2] * ext};
+            float q[4][3] = {{a2[0] - o[0], a2[1] - o[1], a2[2] - o[2]}, {a2[0] + o[0], a2[1] + o[1], a2[2] + o[2]}, {b2[0] - o[0], b2[1] - o[1], b2[2] - o[2]}, {b2[0] + o[0], b2[1] + o[1], b2[2] + o[2]}};
+            static const int idx[6] = {0, 1, 2, 1, 3, 2};
+            for (int k : idx) { LineVert lv; memcpy(lv.p, q[k], 12); lv.c[0] = col[0]; lv.c[1] = col[1]; lv.c[2] = col[2]; lv.c[3] = 1; out.push_back(lv); }
+            ++segs;
+        }
+    }
+    g_segsDrawn = segs; return segs;
+}
 bool SocialCapturing() { Lock l; return g_open || g_pick; }
 bool SocialMouseCaptured() { Lock l; return g_open || g_pick || g_wheel || g_canvas; }
 void SocialRawMove(int dx, int dy) { Lock l; if (g_canvas && !g_wheel && !g_open && !g_pick) { g_ox += dx * 1.6f; g_oy += dy * 1.6f; return; } if (g_wheel) { g_wx += float(dx); g_wy += float(dy); float m = sqrtf(g_wx * g_wx + g_wy * g_wy); if (m > 140) { g_wx *= 140 / m; g_wy *= 140 / m; } } }
@@ -156,6 +178,7 @@ bool SocialEmoteOf(unsigned id, int* emote, float* seconds) {
 }
 bool SocialKey(unsigned vk, bool down) {
     const Cfg& c = GetCfg(); Lock l; ULONGLONG now = GetTickCount64();
+    if (vk == c.keyVoice) { if (!down) VoiceKey(vk, false); else if (!g_open && !g_pick && !GamePaused()) VoiceKey(vk, true); }
     if (vk == VK_SHIFT || vk == VK_LSHIFT || vk == VK_RSHIFT) { g_shift = down; return false; }
     if (!down && vk == c.keyDraw) { bool was = g_pen; PenUp(now); return was; }
     if (g_open) {
@@ -203,14 +226,14 @@ void SocialFrame(float W, float H, const float* cam, const float* ang) {
         for (const auto& m : core->takeChat()) AddChat(m.from, m.text, now);
         for (const auto& m : core->takeMarks()) AddMark(m.from, m.kind, m.pos, now);
         for (const auto& s : core->takeStrokes()) ApplyStroke(s);
-        witness::Presence p; p.typing = g_open && !cfg.noTypingDots; p.character = cfg.noCharacterAnnounce ? "" : (g_myChar.empty() ? cfg.character : g_myChar);
+        witness::Presence p; p.typing = g_open && !cfg.noTypingDots; p.speaking = VoiceSpeaking(); p.character = cfg.noCharacterAnnounce ? "" : (g_myChar.empty() ? cfg.character : g_myChar);
         if (g_emote && now - g_emoteAt >= kEmoteMs) g_emote = 0;
         if (!cfg.noEmoteSend) { p.emote = uint8_t(g_emote); p.emoteSeq = uint8_t(g_emoteSeq); }
         core->setPresence(p);
     }
     g_marks.erase(std::remove_if(g_marks.begin(), g_marks.end(), [&](const Mark& m) { return now - m.at > kMarkMs; }), g_marks.end());
     for (auto it = g_bubbles.begin(); it != g_bubbles.end();) { if (it->second.until < now) it = g_bubbles.erase(it); else ++it; }
-    g_dotsDrawn = g_bubblesDrawn = g_marksDrawn = g_arrowsDrawn = 0;
+    g_dotsDrawn = g_bubblesDrawn = g_marksDrawn = g_arrowsDrawn = 0; g_speakDrawn = 0; g_micHudDrawn = false;
     if (GamePaused()) return;
     float k = std::max(1.0f, H / 1080.0f);
     memcpy(g_camNow, cam, 12); g_angNow[0] = ang[0]; g_angNow[1] = ang[1]; g_scrW = W; g_scrH = H;
@@ -258,6 +281,21 @@ void SocialFrame(float W, float H, const float* cam, const float* ang) {
         if (rp.typing) { Bubbled(sx, bottom, {}, true, col, kk, now); ++g_dotsDrawn; }
         else if (bi != g_bubbles.end()) { Bubbled(sx, bottom, Wrap(bi->second.text, 28, 4), false, col, kk, now); ++g_bubblesDrawn; }
     }
+    for (const auto& rp : rem) {      // a player who is talking: three bars moving beside the top of the head, in their colour
+        if (!rp.speaking || rp.ageMs > 2000) continue;
+        float head[3] = {rp.pos[0], rp.pos[1], rp.pos[2] + 0.30f}, sx, sy; if (!ToScreen(cam, ang[0], ang[1], head, W, H, &sx, &sy)) continue;
+        float col[3]; PlayerColor(rp.id, col); float dist = sqrtf((rp.pos[0] - cam[0]) * (rp.pos[0] - cam[0]) + (rp.pos[1] - cam[1]) * (rp.pos[1] - cam[1]) + (rp.pos[2] - cam[2]) * (rp.pos[2] - cam[2]));
+        float kk = k * std::min(1.0f, std::max(0.6f, 10.0f / std::max(dist, 1.0f)));
+        for (int b = 0; b < 3; ++b) { float ph = float(now % 500) / 500.0f * 6.2831853f + b * 2.1f, hgt = (7 + 9 * (0.5f + 0.5f * sinf(ph))) * kk; UiRect(sx + (30 + b * 7) * kk, sy - 6 * kk - hgt, 4.5f * kk, hgt, Rgba(col[0], col[1], col[2], 0.95f)); }
+        ++g_speakDrawn;
+    }
+    if (cfg.voiceMode != 0) {      // my own microphone: what the key does, and a bar that follows the level while it is open
+        bool talk = VoiceSpeaking(); int lvl = VoiceMicLevel(); char b[80];
+        snprintf(b, sizeof b, cfg.voiceMode == 2 ? (talk ? "MIC  talking" : "MIC  hold %c to talk") : (talk ? "MIC  talking" : "MIC  open"), (char)cfg.keyVoice);
+        float tw = UiTextWidth(b, 0.8f * k), bx = 24 * k, by = H - 50 * k;
+        UiRect(bx - 6 * k, by - 4 * k, tw + 90 * k, UiLineHeight(0.8f * k) + 8 * k, Rgba(0, 0, 0, 0.5f)); UiText(bx, by, b, talk ? Rgba(0.5f, 1, 0.6f, 1) : Rgba(0.8f, 0.85f, 0.95f, 1), 0.8f * k);
+        UiRect(bx + tw + 10 * k, by + 3 * k, 60 * k, 8 * k, Rgba(0.2f, 0.22f, 0.3f, 0.9f)); UiRect(bx + tw + 10 * k, by + 3 * k, 60 * k * std::min(1.0f, lvl / 600.0f), 8 * k, talk ? Rgba(0.4f, 1, 0.5f, 1) : Rgba(0.5f, 0.55f, 0.7f, 1)); g_micHudDrawn = true;
+    }
     for (const auto& rp : rem) {      // the name of the emote a player is playing, over their head
         auto it = g_remoteEmotes.find(rp.id); if (it == g_remoteEmotes.end() || !it->second.id || now - it->second.start >= kEmoteMs || rp.ageMs > 2000) continue;
         float head[3] = {rp.pos[0], rp.pos[1], rp.pos[2] + 0.8f}, sx, sy; if (!ToScreen(cam, ang[0], ang[1], head, W, H, &sx, &sy)) continue;
@@ -285,8 +323,8 @@ void SocialFrame(float W, float H, const float* cam, const float* ang) {
             UiRect(lx - 4 * k, ly - 2 * k, tw + 8 * k, UiLineHeight(0.8f * k) + 4 * k, Rgba(0, 0, 0, 0.6f)); UiText(lx, ly, lab, Rgba(col[0], col[1], col[2], 1), 0.8f * k);
         }
     }
-    g_segsDrawn = 0;      // the ink: every stroke as a glowing line through its points, thinner the farther away; nothing behind the camera
-    if (!cfg.noDrawDraw) for (const auto& s : g_strokes) {
+    // the ink is drawn as ribbons in the world by the line pipeline (SocialInkVerts, depth tested); this flat drawing is only for a game where that pipeline did not start
+    if (!cfg.noDrawDraw && !ModelGpuReady()) { g_segsDrawn = 0; for (const auto& s : g_strokes) {
         float col[3]; InkColor(s.from, s.color, col); bool havePrev = false; float px = 0, py = 0, pd = 0;
         for (size_t i = 0; i + 2 < s.pts.size(); i += 3) {
             float sx, sy; const float* w = &s.pts[i];
@@ -297,7 +335,7 @@ void SocialFrame(float W, float H, const float* cam, const float* ang) {
             }
             havePrev = ok; px = sx; py = sy; pd = dist;
         }
-    }
+    } }
     if (g_canvas || g_pen) {      // the pen: a ring in the ink's colour where the ink goes down, and the keys
         float col[3]; InkColor(CoopMyId(), g_penColor, col); float cx = W / 2 + g_ox, cy = H / 2 + g_oy, R = (g_pen ? 7.0f : 10.0f) * k;
         for (int i = 0; i < 16; ++i) { float a0 = i * 0.3926991f, a1 = (i + 1) * 0.3926991f; UiLine(cx + cosf(a0) * R, cy + sinf(a0) * R, cx + cosf(a1) * R, cy + sinf(a1) * R, Rgba(col[0], col[1], col[2], 1), 2.5f * k); }

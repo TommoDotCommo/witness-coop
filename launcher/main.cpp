@@ -302,9 +302,9 @@ LRESULT CALLBACK MainProc(HWND h, UINT m, WPARAM w, LPARAM l) {
 
 int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, LPWSTR cmdline, int show) {
     INITCOMMONCONTROLSEX ic = {sizeof ic, ICC_TAB_CLASSES | ICC_LISTVIEW_CLASSES}; InitCommonControlsEx(&ic); CoInitialize(nullptr);
-    int argc; LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc); std::wstring dumpTo;
+    int argc; LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc); std::wstring dumpTo; int startPage = 0; bool openNew = false;
     wchar_t self[MAX_PATH]; GetModuleFileNameW(nullptr, self, MAX_PATH); g_dir = Dir(self);
-    for (int i = 1; i < argc; ++i) { std::wstring a = argv[i]; if (a == L"--dir" && i + 1 < argc) g_dir = argv[++i]; else if (a == L"--dump-controls" && i + 1 < argc) dumpTo = argv[++i]; else if (a == L"--no-activate") g_noActivate = true; }
+    for (int i = 1; i < argc; ++i) { std::wstring a = argv[i]; if (a == L"--dir" && i + 1 < argc) g_dir = argv[++i]; else if (a == L"--dump-controls" && i + 1 < argc) dumpTo = argv[++i]; else if (a == L"--no-activate") g_noActivate = true; else if (a == L"--page" && i + 1 < argc) startPage = _wtoi(argv[++i]); else if (a == L"--new-game-window") openNew = true; }
     if (!Exists(g_dir + L"\\witness64_d3d11.exe") && !Exists(g_dir + L"\\witness_d3d11.exe") && Exists(Dir(g_dir) + L"\\witness64_d3d11.exe")) g_dir = Dir(g_dir);
     AddFields();
     WNDCLASSW wc = {}; wc.lpfnWndProc = MainProc; wc.hInstance = hi; wc.lpszClassName = L"WitnessLauncher"; wc.hbrBackground = (HBRUSH)(COLOR_BTNFACE + 1); wc.hCursor = LoadCursorW(nullptr, IDC_ARROW); wc.hIcon = LoadIconW(nullptr, IDI_APPLICATION); RegisterClassW(&wc);
@@ -313,7 +313,7 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, LPWSTR cmdline, int show) {
     g_tab = CreateWindowExW(0, WC_TABCONTROLW, L"", WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN, 8, 8, rc.right - 16, rc.bottom - 80, g_main, (HMENU)ID_TAB, hi, nullptr); SendMessageW(g_tab, WM_SETFONT, (WPARAM)GetStockObject(DEFAULT_GUI_FONT), TRUE);
     BuildPages(g_main);
     Make(g_main, L"BUTTON", L"Save settings", BS_PUSHBUTTON, 8, rc.bottom - 60, 140, 30, ID_APPLY); g_status = Make(g_main, L"STATIC", L"", SS_LEFT, 160, rc.bottom - 54, rc.right - 170, 24, ID_STATUS);
-    LoadAll(); ShowPage(0);
+    LoadAll(); if (startPage < 0 || startPage >= g_npages) startPage = 0; TabCtrl_SetCurSel(g_tab, startPage); ShowPage(startPage); if (openNew) OpenNewGame();
     if (!dumpTo.empty()) { std::string t = std::to_string(ID_STATUS) + " status\n"; for (auto& f : g_fields) t += std::to_string(f.id) + " " + f.key + "\n"; t += std::to_string(ID_APPLY) + " apply\n" + std::to_string(ID_SAVEPICK) + " savepick\n" + std::to_string(ID_LAUNCH) + " launch\n"; WriteFile8(dumpTo, t); }
     MSG msg; while (GetMessageW(&msg, nullptr, 0, 0) > 0) { if (!IsDialogMessageW(g_ng ? g_ng : g_main, &msg)) { TranslateMessage(&msg); DispatchMessageW(&msg); } }
     return 0;

@@ -7,7 +7,7 @@ Mutants (each a build of the launcher): the video file is not written, the save 
 usage: qa_launcher.py (called by tools/qa.sh launcher)"""
 import os, re, shutil, struct, subprocess, sys, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from witness import TOOLS, ROOT, DIR1, PYW, pid, win
+from witness import TOOLS, ROOT, DIR1, PYW, RUN, pid, win
 import qa_sweep
 
 LDIR = os.path.join(ROOT, 'launcher', 'build')
@@ -54,7 +54,7 @@ def main():
     ok, gp = run_window('witness_launcher.exe', 'launch')
     if gp:
         subprocess.run([os.path.expanduser('~/.local/bin/lab'), 'register-pid', gp], capture_output=True)
-        open(os.path.join(os.environ.get('WITNESS_RUN', os.path.join(ROOT, 'local', 'run')), 'pidA.txt'), 'w').write(gp)
+        open(os.path.join(RUN, 'pidA.txt'), 'w').write(gp)
         t0 = time.time(); block = ''
         while time.time() - t0 < 120:
             if os.path.exists(log) and os.path.getmtime(log) > before:

@@ -30,6 +30,17 @@ struct Cfg {
     std::string startProgress;   // start_progress=<spec>: the next new game starts with these parts of the map completed (the launcher arms it; progress/progress.h says how a spec reads); disarmed once applied
     bool noSaveMeta = false;     // test mutant: no <save>.coop.txt is written
     bool noStartProgress = false, progressNoPrereq = false;      // test mutants: the setting is ignored / only the chosen panels are solved, not what the game needs before them
+    int voiceMode = 2;           // voice_mode=off|open|ptt (0, 1, 2): voice chat is off / the microphone is open (a voice-activity gate) / push to talk with key_voice (default)
+    int voiceVolume = 100, micVolume = 100, gameVolume = 100;      // voice_volume= mic_volume= game_volume= percent (the game's volume is set on its Windows audio session)
+    float voiceRange = 25.0f, voiceRadioRange = 0.0f;              // voice_range= metres within which players are heard in the world; voice_radio_range= metres beyond which not even the radio carries (0: no limit)
+    bool voiceRadio = true;      // voice_radio=0: a voice beyond the range is not heard at all
+    unsigned keyVoice = 'N';     // key_voice=: push to talk
+    std::string voiceTestTone;   // voice_test_tone=120,1000,5500: the transmitted voice is a sum of these tones instead of the microphone (tests)
+    bool voiceMuteOutput = false;// voice_mute_output=1: the mixer runs but nothing is played (tests)
+    bool noVoiceSend = false, noVoicePlay = false, voiceNoPos = false, noSpeakingFlag = false, noGameVolume = false;      // test mutants: nothing transmitted / received voices dropped / every player counted at distance 0 / the speaking flag never set / the game's volume never set
+    float mapgenHeight = 70.0f, mapgenRes = 0.5f; int mapgenSettleMs = 1500;      // mapgen_height= metres above the ground, mapgen_res= metres per pixel, mapgen_settle_ms= wait per tile
+    bool mapgenBadScale = false, mapgenMirror = false, mapgenShowOverlay = false;      // test mutants: the projection has the wrong field of view / is mirrored / the mod keeps drawing during the capture
+    bool noUnderlay = false;     // test mutant: the map has no picture under it
     bool noDrawSend = false, noDrawDraw = false, noDrawDepth = false;      // test mutants: strokes are not sent / not drawn / put at a fixed distance instead of on the surface under the pen
     bool noPauseHide = false;    // test mutant: draw puppets, lines and name tags over the pause menu
     bool skipEntityZero = false; // test mutant: restore the old census that lost the second tutorial door

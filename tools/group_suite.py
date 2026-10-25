@@ -95,7 +95,7 @@ def prepare(c, config):
     models=d/'witness_models';models.mkdir(exist_ok=True)
     for asset in (Path(ROOT)/'assets/models').iterdir():
         if asset.suffix in ('.glb','.txt'):replace_copy(asset,models/asset.name)
-    config=config+'force_active=1\ncap_fps=20\ndev_menu=1\nno_partner_video=1\ndrop_pct=25\ndrop_seed='+str(c.id)+'\n'
+    config=config+'force_active=1\ncap_fps=20\ndev_menu=1\nvoice_mode=off\nvoice_mute_output=1\nno_partner_video=1\ndrop_pct=25\ndrop_seed='+str(c.id)+'\n'
     cfg=d/'witness_coop.cfg';cfg.unlink(missing_ok=True);cfg.write_text(config)
     for name in ('witness_cmd.txt','witness_proxy.log','witness_net.json'):(d/name).unlink(missing_ok=True)
     saves=d/'appdata/The Witness'

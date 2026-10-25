@@ -113,6 +113,11 @@ void UiClip(float x, float y, float w, float h) {
     Seg s = {g_v.size(), w > 0, {(LONG)x, (LONG)y, (LONG)(x + w), (LONG)(y + h)}, nullptr};
     if (g_seg.back().first == s.first) g_seg.back() = s; else g_seg.push_back(s);
 }
+ID3D11ShaderResourceView* UiMakeTexture(const uint8_t* bgra, int w, int h) {
+    if (!g_dev || w <= 0 || h <= 0) return nullptr; D3D11_TEXTURE2D_DESC td = {}; td.Width = w; td.Height = h; td.MipLevels = 1; td.ArraySize = 1; td.Format = DXGI_FORMAT_B8G8R8A8_UNORM; td.SampleDesc.Count = 1; td.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+    D3D11_SUBRESOURCE_DATA sd = {bgra, (UINT)w * 4, 0}; ID3D11Texture2D* tex = nullptr; ID3D11ShaderResourceView* srv = nullptr;
+    if (SUCCEEDED(g_dev->CreateTexture2D(&td, &sd, &tex))) { g_dev->CreateShaderResourceView(tex, nullptr, &srv); tex->Release(); } return srv;
+}
 void UiImage(float x, float y, float w, float h, ID3D11ShaderResourceView* srv, UiColor tint) {
     if (!srv || g_v.size() + 6 > kMaxVerts) return;
     Seg prev = g_seg.back(); Seg a = prev; a.first = g_v.size(); a.img = srv;

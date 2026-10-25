@@ -67,6 +67,28 @@ const Cfg& GetCfg() {
             else if (sscanf(line, "key_emote=%15s", kn) == 1 && KeyFromName(kn)) r.keyEmote = KeyFromName(kn);
             else if (sscanf(line, "key_draw=%15s", kn) == 1 && KeyFromName(kn)) r.keyDraw = KeyFromName(kn);
             else if (!strncmp(line, "start_progress=", 15)) { std::string t = line + 15; while (!t.empty() && (t.back() == '\r' || t.back() == '\n')) t.pop_back(); r.startProgress = t; }
+            else if (sscanf(line, "voice_mode=%15s", s) == 1) r.voiceMode = !strcmp(s, "off") ? 0 : (!strcmp(s, "open") ? 1 : 2);
+            else if (sscanf(line, "voice_volume=%d", &v) == 1) r.voiceVolume = std::max(0, std::min(100, v));
+            else if (sscanf(line, "mic_volume=%d", &v) == 1) r.micVolume = std::max(0, std::min(100, v));
+            else if (sscanf(line, "game_volume=%d", &v) == 1) r.gameVolume = std::max(0, std::min(100, v));
+            else if (sscanf(line, "voice_range=%f", &fv) == 1) r.voiceRange = std::max(3.0f, fv);
+            else if (sscanf(line, "voice_radio_range=%f", &fv) == 1) r.voiceRadioRange = std::max(0.0f, fv);
+            else if (sscanf(line, "voice_radio=%d", &v) == 1) r.voiceRadio = v != 0;
+            else if (sscanf(line, "key_voice=%15s", kn) == 1 && KeyFromName(kn)) r.keyVoice = KeyFromName(kn);
+            else if (sscanf(line, "voice_test_tone=%299s", s) == 1) r.voiceTestTone = s;
+            else if (sscanf(line, "voice_mute_output=%d", &v) == 1) r.voiceMuteOutput = v != 0;
+            else if (sscanf(line, "no_voice_send=%d", &v) == 1) r.noVoiceSend = v != 0;
+            else if (sscanf(line, "no_voice_play=%d", &v) == 1) r.noVoicePlay = v != 0;
+            else if (sscanf(line, "voice_no_pos=%d", &v) == 1) r.voiceNoPos = v != 0;
+            else if (sscanf(line, "no_speaking_flag=%d", &v) == 1) r.noSpeakingFlag = v != 0;
+            else if (sscanf(line, "no_game_volume=%d", &v) == 1) r.noGameVolume = v != 0;
+            else if (sscanf(line, "mapgen_height=%f", &fv) == 1) r.mapgenHeight = std::max(30.0f, fv);
+            else if (sscanf(line, "mapgen_res=%f", &fv) == 1) r.mapgenRes = std::max(0.1f, fv);
+            else if (sscanf(line, "mapgen_settle_ms=%d", &v) == 1) r.mapgenSettleMs = std::max(100, v);
+            else if (sscanf(line, "mapgen_bad_scale=%d", &v) == 1) r.mapgenBadScale = v != 0;
+            else if (sscanf(line, "mapgen_mirror=%d", &v) == 1) r.mapgenMirror = v != 0;
+            else if (sscanf(line, "mapgen_show_overlay=%d", &v) == 1) r.mapgenShowOverlay = v != 0;
+            else if (sscanf(line, "no_underlay=%d", &v) == 1) r.noUnderlay = v != 0;
             else if (sscanf(line, "no_save_meta=%d", &v) == 1) r.noSaveMeta = v != 0;
             else if (sscanf(line, "no_start_progress=%d", &v) == 1) r.noStartProgress = v != 0;
             else if (sscanf(line, "progress_no_prereq=%d", &v) == 1) r.progressNoPrereq = v != 0;

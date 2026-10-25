@@ -88,6 +88,18 @@ static void TakeShot(IDXGISwapChain* sc, const char* name) {
     bb->Release();
 }
 
+// The back buffer as RGBA, top row first (free drawing's depth probe, the map picture).
+bool OverlayCaptureRgba(IDXGISwapChain* sc, std::vector<uint8_t>* px, unsigned* w, unsigned* h) {
+    ID3D11Texture2D *bb = nullptr, *st = nullptr; bool ok = false;
+    if (FAILED(sc->GetBuffer(0, __uuidof(ID3D11Texture2D), (void**)&bb))) return false;
+    D3D11_TEXTURE2D_DESC td; bb->GetDesc(&td); td.Usage = D3D11_USAGE_STAGING; td.BindFlags = 0; td.CPUAccessFlags = D3D11_CPU_ACCESS_READ; td.MiscFlags = 0;
+    if (SUCCEEDED(g_dev->CreateTexture2D(&td, nullptr, &st))) {
+        g_ctx->CopyResource(st, bb); D3D11_MAPPED_SUBRESOURCE ms;
+        if (SUCCEEDED(g_ctx->Map(st, 0, D3D11_MAP_READ, 0, &ms))) { px->resize((size_t)td.Width * td.Height * 4); for (UINT y = 0; y < td.Height; y++) memcpy(&(*px)[(size_t)y * td.Width * 4], (const unsigned char*)ms.pData + (size_t)y * ms.RowPitch, td.Width * 4); *w = td.Width; *h = td.Height; ok = true; g_ctx->Unmap(st, 0); }
+        st->Release();
+    }
+    bb->Release(); return ok;
+}
 static bool Readable(const void* p, size_t n) { return !IsBadReadPtr(p, n); }
 // The game's pause menu is open: nothing of ours may be drawn over it (puppets, shared lines, name tags).
 bool GamePaused() {
@@ -189,6 +201,7 @@ static void DrawMarkers(IDXGISwapChain* sc) {
         }
         if (first) { float p[3] = {}; ModelGpuDraw(rtv, td.Width, td.Height, wc, false, 0, p, 0); }
         std::vector<LineVert> lv; unsigned nl = 0; if (!GetCfg().noLineDraw) nl = BuildLineVerts(wc.pos, lv);
+        nl += SocialInkVerts(wc.pos, lv, 60000);
         ModelGpuDrawLines(rtv, td.Width, td.Height, wc, lv.data(), lv.size(), nl);
         rtv->Release(); bb->Release(); return;
     }
@@ -337,6 +350,8 @@ void OverlayLogTags() {       // witness_cmd.txt: tagstat -> one log line per re
 }
 
 void SaveMetaTick();      // savemeta_game.cpp
+#include "mapgen.h"
+void MapGenCountOverlayFrame();
 static void DrawDevMenu(IDXGISwapChain* sc) {
     if (!g_uiReady) return;
     DevMenuTick(); SaveMetaTick();
@@ -363,8 +378,10 @@ static HRESULT STDMETHODCALLTYPE HookPresent(IDXGISwapChain* sc, UINT sync, UINT
     if (f == 1) Log("overlay: Present hook called (first frame)");
     if (!g_ready && !g_failed) { g_ready = InitResources(sc); g_failed = !g_ready; }
     DepthDiagFrame((unsigned)f);
-    if (g_ready) DrawMarkers(sc);
-    if (g_ready && g_uiReady) { VideoFrame(sc, g_dev, g_ctx); DrawDevMenu(sc); }      // the picture for the partner is taken before the menu and the inset are drawn
+    bool mapgen = MapGenActive() && !GetCfg().mapgenShowOverlay; if (MapGenActive() && !mapgen) MapGenCountOverlayFrame();      // the map picture is made of the game's frames alone
+    if (g_ready && !mapgen) DrawMarkers(sc);
+    if (g_ready && g_uiReady && !mapgen) { VideoFrame(sc, g_dev, g_ctx); DrawDevMenu(sc); }
+    if (g_ready) MapGenTick(sc);      // the picture for the partner is taken before the menu and the inset are drawn
     if (GetCfg().forceActive) {   // build 11370412: the game's focus state is byte +0x21 of the object at exe+0x469A5B0; its loop does
         // Sleep(100) (about 10 fps) when this and the byte at exe+0x62D394 are both 0, and it ignores WM_INPUT while it is 0
         uintptr_t base = (uintptr_t)GetModuleHandleA(nullptr), p = IsBadReadPtr((void*)(base + 0x469A5B0), 8) ? 0 : *(uintptr_t*)(base + 0x469A5B0);

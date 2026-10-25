@@ -19,6 +19,7 @@
 #include "video.h"
 #include "savepoints.h"
 #include "progress/progress.h"
+#include "mapgen.h"
 extern HMODULE g_selfModule();
 
 void Log(const char* msg);
@@ -46,7 +47,7 @@ std::vector<Ev> g_ev;
 // selection and view
 enum { SelNone, SelPoint, SelPanel, SelPlayer };
 int g_selKind = SelNone, g_selPanel = -1; float g_selX, g_selY; int g_selPlayer;
-float g_vx, g_vy, g_vscale; bool g_viewInit;
+float g_vx, g_vy, g_vscale; bool g_viewInit; unsigned g_underlayDrawn; bool g_underlayLoaded;
 float g_spotScroll, g_nearScroll; float g_radius = 40;
 char g_msg[200]; DWORD g_msgAt;
 void Msg(const char* fmt, ...) { va_list ap; va_start(ap, fmt); vsnprintf(g_msg, sizeof g_msg, fmt, ap); va_end(ap); g_msgAt = GetTickCount(); Log(g_msg); }
@@ -317,6 +318,12 @@ void MapPage(float x, float y, float w, float h, float sc) {
     }
     static float lastMx, lastMy; if (over && g_rdown) { g_vx -= (g_mx - lastMx) / g_vscale; g_vy += (g_my - lastMy) / g_vscale; } lastMx = g_mx; lastMy = g_my;
     UiClip(x + 1, y + 1, w - 2, h - 2);
+    { static unsigned serial = ~0u; static ID3D11ShaderResourceView* tex; static float b[4]; static bool have; static unsigned drawn;
+      if (!GetCfg().noUnderlay) {
+        if (serial != MapGenSerial() || (!have && serial == ~0u)) { int uw, uh; have = MapUnderlayInfo(&b[0], &b[1], &b[2], &b[3], &uw, &uh); serial = MapGenSerial(); if (tex) { tex->Release(); tex = nullptr; } if (have) tex = UiMakeTexture(MapUnderlayPixels(), uw, uh); if (tex) Log("devmenu: map underlay loaded"); }
+        if (tex) { UiImage(sx(b[0]), sy(b[3]), (b[2] - b[0]) * g_vscale, (b[3] - b[1]) * g_vscale, tex, Rgba(1, 1, 1, 0.92f)); ++drawn; }
+      }
+      g_underlayDrawn = drawn; g_underlayLoaded = tex != nullptr; }
     for (float gx = floorf((g_vx - w / 2 / g_vscale) / 50) * 50; gx < g_vx + w / 2 / g_vscale; gx += 50) UiLine(sx(gx), y, sx(gx), y + h, Rgba(1, 1, 1, 0.05f));
     for (float gy = floorf((g_vy - h / 2 / g_vscale) / 50) * 50; gy < g_vy + h / 2 / g_vscale; gy += 50) UiLine(x, sy(gy), x + w, sy(gy), Rgba(1, 1, 1, 0.05f));
     for (auto& d : g_dr) UiFrame(sx(d.x) - 2, sy(d.y) - 2, 5, 5, d.open ? Rgba(0.3f, 0.8f, 1, 0.9f) : Rgba(0.9f, 0.9f, 0.9f, 0.5f));
@@ -340,7 +347,13 @@ void MapPage(float x, float y, float w, float h, float sc) {
         if (hypotf(rpx - g_mx, rpy - g_my) < 12) hoveredPlayer = (int)rp.id;
     }
     UiClip(0, 0, 0, 0);
-    if (over && g_cl) {
+    bool onBtn = false;
+    {      // the map picture: made from the game's own frames by flying the player over the island (a few minutes); the button starts it
+        bool have = g_underlayLoaded; const char* label = have ? "Make the island picture again" : "Make a picture of the island under the map"; float bw = UiTextWidth(label, sc) + 16, bh = UiLineHeight(sc) + 10, bx = x + w - bw - 8, by = y + 8; bool hov = Hit(bx, by, bw, bh); onBtn = hov;
+        UiRect(bx, by, bw, bh, hov ? Rgba(0.25f, 0.3f, 0.5f, 0.95f) : Rgba(0.12f, 0.14f, 0.22f, 0.92f)); UiFrame(bx, by, bw, bh, Rgba(0.5f, 0.55f, 0.75f)); UiText(bx + 8, by + 5, label, Rgba(1, 1, 1), sc);
+        if (hov && g_cl) { MapGenCommand("start"); g_open = false; Msg("flying over the island to take its picture: the menu comes back when the map has one"); }
+    }
+    if (over && g_cl && !onBtn) {
         if (hoveredPlayer >= 0) { g_selKind = SelPlayer; g_selPlayer = hoveredPlayer; }
         else if (hover >= 0) SelectPanel(hover);
         else { g_selKind = SelPoint; g_selX = g_vx + (g_mx - x - w / 2) / g_vscale; g_selY = g_vy - (g_my - y - h / 2) / g_vscale; }
@@ -414,6 +427,14 @@ std::vector<Cmd> g_cmds;
 
 void DevMenuCommand(const char* what, unsigned id) { Init0(); EnterCriticalSection(&g_cs); g_cmds.push_back({what, id}); LeaveCriticalSection(&g_cs); }
 
+bool DevMenuMapInfo(float* minx, float* miny, float* maxx, float* maxy) {      // the census' rectangle (trimmed like the map's view), for the map picture
+    if (!g_built) Build(); if (!g_built) return false; *minx = g_minx; *miny = g_miny; *maxx = g_maxx; *maxy = g_maxy; return true;
+}
+bool DevMenuGroundNear(float x, float y, float maxDist, float* z) {      // the ground under the nearest panel (a panel is about 1.4 m above it)
+    if (!g_built) return false; int best = -1; float bd = maxDist;
+    for (size_t i = 0; i < g_pn.size(); i++) { float d = hypotf(g_pn[i].x - x, g_pn[i].y - y); if (d < bd) { bd = d; best = (int)i; } }
+    if (best < 0) return false; *z = g_pn[best].z - 1.4f; return true;
+}
 bool DevMenuEnabled() { return GetCfg().devMenu; }
 bool DevMenuSnapshot(std::set<unsigned>* solved, unsigned* doorsOpen, unsigned* doorsTotal) { return Snapshot(solved, doorsOpen, doorsTotal); }
 void ProcessCmds() {
@@ -426,6 +447,7 @@ void ProcessCmds() {
         if (c.what.rfind("restore:", 0) == 0) { SaveListRefresh(); std::string n = c.what.substr(8); bool found = false; for (auto& e : SaveList()) if (e.name == n) { SaveStartRestore(e); found = true; break; } if (!found) Msg("no save called '%s'", n.c_str()); continue; }
         if (c.what.rfind("progress:", 0) == 0) { ProgressCommand(c.what.substr(9).c_str()); continue; }
         if (c.what == "progressstat") { ProgressStat(); continue; }
+        if (c.what == "mapstat") { char m[120]; snprintf(m, sizeof m, "mapstat: underlay loaded %d drawn %u page %d open %d", g_underlayLoaded ? 1 : 0, g_underlayDrawn, g_page, g_open ? 1 : 0); Log(m); continue; }
         if (c.what == "complete") { QueueSolveSpots((int)c.id); continue; }
         auto it = g_pidx.find(c.id);
         if (c.what == "select") { if (it != g_pidx.end()) { SelectPanel(it->second); g_vx = g_pn[it->second].x; g_vy = g_pn[it->second].y; Msg("selected panel %#x", c.id); } else Msg("no such panel %#x", c.id); }

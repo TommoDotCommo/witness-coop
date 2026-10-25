@@ -30,13 +30,15 @@ def prepare(c, config, names, avail):
         assert gs.digest(d / 'AnselSDK64.dll') == gs.DLL_HASH, 'unrecognized original DLL'
         (d / 'AnselSDK64.dll').rename(d / 'AnselSDK64_real.dll')
     gs.replace_copy(Path(ROOT) / 'proxy/AnselSDK64.dll', d / 'AnselSDK64.dll')
+    if (Path(ROOT) / 'launcher/build/witness_launcher.exe').exists(): gs.replace_copy(Path(ROOT) / 'launcher/build/witness_launcher.exe', d / 'witness_launcher.exe')
     models = d / 'witness_models'; models.mkdir(exist_ok=True)
     for f in models.iterdir(): f.unlink()
     for m in names:
         gs.replace_copy(avail[m], models / (m + '.glb'))
         if Path(str(avail[m]) + '.txt').exists(): gs.replace_copy(str(avail[m]) + '.txt', models / (m + '.glb.txt'))
     mine = names[(c.id - 1) % len(names)]
-    config += 'name=%s\nmodel=%s\nmodel_by_player=1\nforce_active=1\ncap_fps=30\ndev_menu=1\n' % (NAMES.get(mine, mine), names[0])
+    config += 'name=%s\nmodel=%s\nmodel_by_player=1\nforce_active=1\ncap_fps=30\ndev_menu=1\nvoice_mute_output=1\n' % (NAMES.get(mine, mine), names[0])
+    config += 'voice_mode=open\nvoice_test_tone=300,900,1700\n' if c.id % 2 == 0 else 'voice_mode=ptt\n'      # the even players are talking (a test voice: no microphone is needed)
     cfg = d / 'witness_coop.cfg'; cfg.unlink(missing_ok=True); cfg.write_text(config)
     for name in ('witness_cmd.txt', 'witness_proxy.log', 'witness_net.json'): (d / name).unlink(missing_ok=True)
     for leftover in ('shots', 'presets', 'savepoints'): shutil.rmtree(d / leftover, ignore_errors=True)      # pictures and save points of earlier runs
