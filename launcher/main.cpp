@@ -215,9 +215,10 @@ void OpenNewGame() {
     HFONT font = (HFONT)SendMessageW(g_main, WM_GETFONT, 0, 0); auto mk = [&](const wchar_t* cls, const wchar_t* text, DWORD style, int x, int y, int w, int h, int id) { HWND c = CreateWindowExW(0, cls, text, WS_CHILD | WS_VISIBLE | style, x, y, w, h, g_ng, (HMENU)(INT_PTR)id, nullptr, nullptr); SendMessageW(c, WM_SETFONT, (WPARAM)font, TRUE); return c; };
     mk(L"STATIC", L"Tick the parts of the map that are done when the game starts. Whatever the game needs before them (the gate of the tutorial, the doors on the way) is solved too, in its own order.", SS_LEFT, 12, 8, 590, 36, 0);
     const auto& d = wprog::Builtin(); g_ngAreas.clear(); int y = 50, col = 0, k = 0;
-    for (size_t i = 0; i < d.areas.size(); ++i) { if (!d.AreaCount((int)i)) continue; int id = ID_NG_AREAS + k++; g_ngAreas.push_back({id, d.areas[i]}); mk(L"BUTTON", W(d.areas[i] + "  (" + std::to_string(d.AreaCount((int)i)) + ")").c_str(), BS_AUTOCHECKBOX, 16 + col * 290, y, 280, 22, id); if (++col == 2) { col = 0; y += 24; } }
+    for (size_t i = 0; i < d.areas.size(); ++i) { if (!d.AreaCount((int)i)) continue; int id = ID_NG_AREAS + k++; g_ngAreas.push_back({id, d.areas[i]}); std::string lab = d.areas[i]; for (size_t q = 0; q < lab.size(); ++q) if (lab[q] == '&') { lab.insert(q, "&"); ++q; }      // (an & in a button label would underline the next letter)
+        mk(L"BUTTON", W(lab + "  (" + std::to_string(d.AreaCount((int)i)) + ")").c_str(), BS_AUTOCHECKBOX, 16 + col * 290, y, 280, 22, id); if (++col == 2) { col = 0; y += 24; } }
     if (col) y += 24; y += 8;
-    mk(L"STATIC", L"Or light this many lasers (the cheapest first):", SS_LEFT, 16, y + 3, 280, 20, 0); mk(L"EDIT", L"0", WS_BORDER | ES_NUMBER, 300, y, 50, 22, ID_NG_LASERS);
+    mk(L"STATIC", L"Or light this many lasers (the cheapest first):", SS_LEFT, 16, y + 3, 330, 20, 0); mk(L"EDIT", L"0", WS_BORDER | ES_NUMBER, 350, y, 50, 22, ID_NG_LASERS);
     y += 32; mk(L"STATIC", L"Or a ready-made start:", SS_LEFT, 16, y + 3, 280, 20, 0); HWND cb = mk(L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_VSCROLL, 300, y, 200, 200, ID_NG_PRESET);
     SendMessageW(cb, CB_ADDSTRING, 0, (LPARAM)L"(none)"); for (const auto& n : wprog::PresetNames()) SendMessageW(cb, CB_ADDSTRING, 0, (LPARAM)W(n).c_str()); SendMessageW(cb, CB_SETCURSEL, 0, 0);
     y += 40; mk(L"STATIC", L"", SS_LEFT, 16, y, 580, 60, ID_NG_INFO); y += 70;
