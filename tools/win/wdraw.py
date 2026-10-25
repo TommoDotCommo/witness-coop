@@ -254,7 +254,7 @@ for i in range(1, len(path)):
         continue
     used = 0.0; axis_ = 'h' if abs(vx) >= abs(vy) else 'v'
     if gain.get(axis_) and norm > 4:
-        first = float(os.environ.get("WDRAW_FIRST") or 0.96) * gain[axis_] * norm; mouse(vx, vy, first); used += first
+        first = float(os.environ.get("WDRAW_FIRST") or 0.9) * gain[axis_] * norm; mouse(vx, vy, first); used += first
     for _ in range(250):
         if traced() >= i + 1: break
         mouse(vx, vy, 2); used += 2
