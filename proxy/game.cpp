@@ -62,6 +62,8 @@ void GameRunQueued() {
     Cmd batch[64]; int n;
     EnterCriticalSection(&g_lock); n = g_n; memcpy(batch, g_q, sizeof(Cmd) * n); g_n = 0; LeaveCriticalSection(&g_lock);
     for (int i = 0; i < n; i++) {
+        if (batch[i].type == 8) { ModelGpuDumpPlayers(); continue; }
+        if (batch[i].type == 7) { CoopDumpStatus(ModelGpuStats().submittedPlayers); continue; }
         if (batch[i].type == 1) { InputKey(batch[i].vk, batch[i].scan, batch[i].down); continue; }
         if (batch[i].type == 2) { InputMouse(batch[i].dx, batch[i].dy, batch[i].bf); continue; }
         if (batch[i].type == 4 || batch[i].type == 5) {      // test commands: 'solve' makes the panel solved as a player's solve would (fields + dispatcher), 'dispatch' only runs the dispatcher
@@ -113,6 +115,8 @@ static DWORD WINAPI CmdThread(LPVOID) {
             else if (!strncmp(line, "depthview ", 10)) ModelGpuDepthView(!strncmp(line + 10, "on", 2));
             else if (!strncmp(line, "fakepose off", 12)) CoopSetFakeRemote(false, nullptr, 0);
             else if (!strncmp(line, "fakepose ", 9)) { float f[4]; if (sscanf(line, "fakepose %f %f %f %f", &f[0], &f[1], &f[2], &f[3]) == 4) CoopSetFakeRemote(true, f, f[3]); }
+            else if (!strncmp(line, "modelstate", 10)) { EnterCriticalSection(&g_lock); if (g_n < 64) g_q[g_n++] = {8, 0, 0, 0, 0, false, 0, 0, 0}; LeaveCriticalSection(&g_lock); }
+            else if (!strncmp(line, "netstate", 8)) { EnterCriticalSection(&g_lock); if (g_n < 64) g_q[g_n++] = {7, 0, 0, 0, 0, false, 0, 0, 0}; LeaveCriticalSection(&g_lock); }
             else if (!strncmp(line, "modelstat", 9)) ModelGpuLogStats();
             else if (sscanf(line, "model %63s", a2) == 1) { if (!strcmp(a2, "next")) ModelGpuSelect(1); else if (!strcmp(a2, "prev")) ModelGpuSelect(-1); else ModelGpuSelectName(a2); }
             else if (!strncmp(line, "hover off", 9)) GameHoverOff();

@@ -1,3 +1,5 @@
+#include <map>
+#include <memory>
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <d3d11.h>
@@ -12,7 +14,7 @@
 void Log(const char* msg);
 extern HMODULE g_selfModule();
 
-static wm::Model g_model; static wm::Avatar* g_avatar; static wm::Fit g_fit;
+static wm::Model g_model; static std::map<unsigned, std::unique_ptr<wm::Avatar>> g_avatars; static wm::GaitCfg g_gait; static wm::Fit g_fit;
 static bool g_ready, g_tried; static float g_yaw, g_height;
 static ID3D11Device* g_dev; static ID3D11DeviceContext* g_ctx;
 static ID3D11VertexShader *g_vs, *g_vsFull; static ID3D11PixelShader *g_psDepth, *g_psProbe, *g_psUi; static volatile LONG g_probeReq, g_depthViewCmd;
@@ -21,6 +23,8 @@ static ID3D11Buffer *g_vb, *g_ib, *g_cbFrame, *g_cbBones;
 static ID3D11ShaderResourceView* g_tex; static ID3D11SamplerState* g_samp;
 static ID3D11RasterizerState* g_rs; static ID3D11DepthStencilState* g_dss; static ID3D11BlendState *g_blend, *g_blendAlpha;
 static ID3D11Texture2D* g_depthTex; static ID3D11DepthStencilView* g_dsv; static UINT g_depthW, g_depthH;
+struct PlayerDraw { unsigned id, seq; float pos[3], speed; int clip; };
+static std::vector<PlayerDraw> g_playerDraws;
 static ModelDrawStats g_stats; static ID3D11Query* g_query; static bool g_queryPending;
 
 struct FrameCB { float viewProj[16], model[16]; float light[4]; float tint[4]; float depthp[4]; float screen[4]; };       // 192 bytes
@@ -91,7 +95,7 @@ static void BuildList() {
     if (at < 0 && GetFileAttributesW(want.c_str()) != INVALID_FILE_ATTRIBUTES) { g_list.insert(g_list.begin(), {want, NameOf(want)}); at = 0; }
     g_cur = at < 0 ? 0 : at;
 }
-static void ReleaseModel() { if (g_vb) { g_vb->Release(); g_vb = nullptr; } if (g_ib) { g_ib->Release(); g_ib = nullptr; } if (g_tex) { g_tex->Release(); g_tex = nullptr; } delete g_avatar; g_avatar = nullptr; g_model = wm::Model(); }
+static void ReleaseModel() { if (g_vb) { g_vb->Release(); g_vb = nullptr; } if (g_ib) { g_ib->Release(); g_ib = nullptr; } if (g_tex) { g_tex->Release(); g_tex = nullptr; } g_avatars.clear(); g_model = wm::Model(); }
 // Loads the model at g_list[g_cur] and puts it on the GPU. On failure the previous one stays (nothing is released before the new one is ready).
 static bool LoadFile(const std::wstring& path, wm::Model* out, std::string* err);
 static bool LoadCurrent() {
@@ -108,7 +112,7 @@ static bool LoadCurrent() {
     if (cfg.modelHeight > 0) height = cfg.modelHeight; if (cfg.modelStride > 0) speed = cfg.modelStride;
     g_yaw = yaw * 3.14159265f / 180.0f; g_height = height;
     g_fit = wm::FitToHeight(g_model, height);
-    wm::GaitCfg gc; gc.refSpeed = speed; if (cfg.noModelGait) gc.idleBelow = 1e9f; g_avatar = new wm::Avatar(gc);
+    wm::GaitCfg gc; gc.refSpeed = speed; if (cfg.noModelGait) gc.idleBelow = 1e9f; g_gait = gc;
     D3D11_BUFFER_DESC bd = {}; D3D11_SUBRESOURCE_DATA sd = {};
     bd.ByteWidth = (UINT)(g_model.verts.size() * sizeof(wm::Vertex)); bd.BindFlags = D3D11_BIND_VERTEX_BUFFER; sd.pSysMem = g_model.verts.data();
     if (FAILED(dev->CreateBuffer(&bd, &sd, &g_vb))) return Fail("model: vertex buffer failed");
@@ -266,11 +270,13 @@ static void RunProbe(UINT w, UINT h, ID3D11ShaderResourceView* sceneSrv, bool ms
     rtv->Release(); rt->Release(); if (st) st->Release();
 }
 
-bool ModelGpuDraw(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Cam& cam, bool valid, unsigned seq, const float pos[3], float yaw) {
+bool ModelGpuDraw(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Cam& cam, bool valid, unsigned seq, const float pos[3], float yaw, unsigned playerId, bool first) {
     if (!g_ready) return false;
     if (!GetCfg().noModelSelect) ApplySelection(); else InterlockedExchange(&g_selReq, 0);
     PanelAtExit panel{rtv, w, h};
-    static unsigned s_frames; g_stats.frames = ++s_frames;
+    static unsigned s_frames; if (first) { g_stats.frames = ++s_frames; g_stats.submittedPlayers = 0; g_playerDraws.clear(); }
+    auto& avatar = g_avatars[GetCfg().noGroupAvatarState ? 0 : playerId]; if (!avatar) avatar = std::make_unique<wm::Avatar>(g_gait);
+    wm::Avatar* g_avatar = avatar.get();
     g_avatar->Update(GetTickCount64(), valid, seq, pos, yaw);
     g_stats.drawn = false;
     if (!valid) { g_stats.visiblePixels = 0; g_queryPending = false; }
@@ -289,7 +295,7 @@ bool ModelGpuDraw(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Cam& ca
     fc.screen[0] = (float)w; fc.screen[1] = (float)h;
     fc.depthp[0] = haveScene ? (ms ? 2.0f : 1.0f) : 0.0f; fc.depthp[1] = 4; fc.depthp[2] = cfg.depthBias; fc.depthp[3] = cfg.depthNear;
     g_ctx->UpdateSubresource(g_cbFrame, 0, nullptr, &fc, 0, 0); g_ctx->UpdateSubresource(g_cbBones, 0, nullptr, bones.data(), 0, 0);
-    g_ctx->ClearDepthStencilView(g_dsv, D3D11_CLEAR_DEPTH, 1.0f, 0);
+    if (first) g_ctx->ClearDepthStencilView(g_dsv, D3D11_CLEAR_DEPTH, 1.0f, 0);
     D3D11_VIEWPORT vp = {0, 0, (float)w, (float)h, 0, 1};
     g_ctx->OMSetRenderTargets(1, &rtv, g_dsv); g_ctx->RSSetViewports(1, &vp); g_ctx->RSSetState(g_rs);
     g_ctx->OMSetBlendState(haveScene ? g_blendAlpha : g_blend, nullptr, 0xffffffff); g_ctx->OMSetDepthStencilState(g_dss, 0);
@@ -310,11 +316,24 @@ bool ModelGpuDraw(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Cam& ca
     if (!g_query) { D3D11_QUERY_DESC qd = {D3D11_QUERY_OCCLUSION, 0}; g_dev->CreateQuery(&qd, &g_query); }
     if (g_queryPending) { UINT64 n; if (g_ctx->GetData(g_query, &n, sizeof n, D3D11_ASYNC_GETDATA_DONOTFLUSH) == S_OK) { g_stats.visiblePixels = (unsigned)n; g_queryPending = false; } }
     bool timed = g_query && !g_queryPending; if (timed) g_ctx->Begin(g_query);
-    g_ctx->DrawIndexed((UINT)g_model.idx.size(), 0, 0);
+    g_ctx->DrawIndexed((UINT)g_model.idx.size(), 0, 0); ++g_stats.submittedPlayers;
+    PlayerDraw record = {}; record.id = playerId; record.seq = seq; memcpy(record.pos, g_avatar->pos(), 12); record.speed = g_avatar->speed(); record.clip = pk.clip; g_playerDraws.push_back(record);
     if (timed) { g_ctx->End(g_query); g_queryPending = true; }
     ID3D11ShaderResourceView* z3[3] = {nullptr, nullptr, nullptr}; g_ctx->PSSetShaderResources(0, 3, z3); (void)nul;      // the game's depth buffer must not stay bound as an input
     g_stats.drawn = true; g_stats.clip = pk.clip; g_stats.speed = g_avatar->speed(); g_stats.animTime = pk.time; memcpy(g_stats.pos, g_avatar->pos(), 12); memcpy(g_stats.cam, cam.pos, 12);
     return true;
+}
+
+void ModelGpuDumpPlayers() {
+    wchar_t path[MAX_PATH]; GetModuleFileNameW(g_selfModule(), path, MAX_PATH);
+    wchar_t* slash = wcsrchr(path, L'\\'); if (slash) *(slash + 1) = 0;
+    wcscat_s(path, L"witness_models.json"); wchar_t tmp[MAX_PATH]; wcscpy_s(tmp, path); wcscat_s(tmp, L".tmp");
+    FILE* f = _wfopen(tmp, L"w"); if (!f) return;
+    fprintf(f, "{\"frame\":%u,\"players\":[", g_stats.frames); bool comma = false;
+    for (const auto& p : g_playerDraws) {
+        fprintf(f, "%s{\"id\":%u,\"seq\":%u,\"pos\":[%.5f,%.5f,%.5f],\"speed\":%.5f,\"clip\":%d}", comma ? "," : "", p.id, p.seq, p.pos[0], p.pos[1], p.pos[2], p.speed, p.clip); comma = true;
+    }
+    fprintf(f, "]}\n"); fclose(f); MoveFileExW(tmp, path, MOVEFILE_REPLACE_EXISTING);
 }
 
 void ModelGpuLogStats() {

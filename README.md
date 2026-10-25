@@ -62,6 +62,51 @@ isolate them: starting a New Game from a copy rewrote an existing save there. Ba
 A hand test: walk player A (left window) to the first panel at the end of the start tunnel and solve it; the door opens in B
 as well (B's `local/witness-2/witness_proxy.log` says `remote panel 0x64 applied as solved`, `remote door 0x34eda opened`).
 
+## Experimental groups (2–16 players)
+
+The `coop16` branch adds a configured full mesh of up to 16 players: independent reliable streams and ACKs,
+all remote poses and avatars, player selection on the map, and shared panel, door, panel-power and cable state.
+Group cable mutations carry logical versions so concurrent changes and old snapshots converge consistently.
+Detection follows the requested power level while the cable glow fades; a genuine local reversal is still sent during
+a remote echo-guard window. New commands are detected before restart snapshots are built.
+The original two-player `peer=<port>` configuration still uses protocol v4. Group mode uses v5; every member must
+use the group DLL and list every other member, with distinct player IDs and UDP endpoints.
+
+Generate configurations from a JSON roster, for example:
+
+```json
+[{"id":1,"host":"127.0.0.1","port":48001},
+ {"id":2,"host":"127.0.0.1","port":48002},
+ {"id":3,"host":"127.0.0.1","port":48003}]
+```
+
+```sh
+python3 tools/group_config.py roster.json local/group-configs
+```
+
+Copy each generated `player-<id>.cfg` to `witness_coop.cfg` beside that player's DLL in a disposable game copy.
+Each config has `id`, `listen`, and one `peer=<id>,<IPv4 address>,<port>` line per other member (15 lines for a
+16-player group). Keep `save_dir=instance` to isolate saves. Launch and install the copies as described above;
+`tools/restart.sh` generates two-player configs, so it does not preserve group configs.
+Group partner video displays the lowest-ID remote player's stream. Avatar choice is still local.
+
+Validation so far: the eight-player game-free test covers lossy links, reordering, duplicates, independent ACKs,
+a temporarily unreachable receiver, progression from every player, all remote poses, cable conflicts and a peer restart.
+Five group mutants must fail, including recovery after 4,200 changes while one receiver is unreachable. `python3 tools/test_group_config.py` checks the 16-entry roster capacity and invalid rosters.
+The production Windows UDP layer also passed an eight-client fake-world integration test with 25% loss,
+cable on/off and a restarted client (`make -C proxy/core transport-test`; no game or lab slots).
+A two-real-game group run passed a normal input-driven bot solve, door sync, progress originating on both clients,
+pose/avatar submission, packet loss, restart catch-up, empty queues and byte-identical real saves.
+`tools/qa_group_render.sh` also passed with one real game and seven lightweight protocol clients: seven actual D3D
+avatar submissions with distinct positions, one moving gait and six stationary gaits, bidirectional panel progression,
+a normal local bot solve and drained queues under 25% packet loss. Its shared-avatar-state mutant was caught.
+This uses one game slot; it does not count as eight real game processes. The `modelstate` command writes the latest
+render frame's submitted IDs, positions and gait speeds to `witness_models.json` for these checks.
+Eight-real-game QA is **pending** while other lab tests occupy the available RAM: `tools/qa_group.sh 8` first checks lab activity and RAM, then leases only this
+worktree's slots, runs a normal bot solve, checks every world's process memory, originates progress on every client,
+and verifies restart recovery and drained queues. It refuses insufficient RAM rather than displacing another test. Groups of three or more also defer while another sweep or suite is live, so a client restart cannot make occupied test capacity look temporarily free.
+Sixteen live clients and remote-PC networking have not been tested.
+
 ## How it works
 
 The exe loads `AnselSDK64.dll` from its own folder. `proxy/` builds a replacement whose nine exports are stubs that load the

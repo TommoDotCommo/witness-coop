@@ -5,13 +5,14 @@
 #include <d3d11.h>
 #include "model/model.h"
 
-struct ModelDrawStats { unsigned visiblePixels; unsigned frames; int clip; float speed; float animTime; bool drawn; float pos[3], cam[3]; };
+struct ModelDrawStats { unsigned visiblePixels; unsigned frames; unsigned submittedPlayers; int clip; float speed; float animTime; bool drawn; float pos[3], cam[3]; };
 bool ModelGpuInit(ID3D11Device* dev, ID3D11DeviceContext* ctx);      // loads the configured model; false: use the flat puppet instead
 bool ModelGpuReady();
 // Draws the player at `pos` (eye position), heading `yaw`. `valid` false: the peer is gone, nothing is drawn.
 // sceneDepth: a shader resource view of a copy of the game's depth buffer, or null (nothing hides the model).
-bool ModelGpuDraw(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Cam& cam, bool valid, unsigned seq, const float pos[3], float yaw);
+bool ModelGpuDraw(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Cam& cam, bool valid, unsigned seq, const float pos[3], float yaw, unsigned playerId = 0, bool first = true);
 ModelDrawStats ModelGpuStats();
+void ModelGpuDumpPlayers(); // render-thread test bridge: submitted ids, positions and gait speeds
 void ModelGpuRequestProbe();      // the next frame logs the scene depth at a few pixels (witness_cmd.txt: probe)
 void ModelGpuLogStats();               // witness_cmd.txt: modelstat -> one log line: pixels of the model that survived the depth test (GPU occlusion query), clip, speed
 void ModelGpuDepthView(bool on);          // witness_cmd.txt: depthview on|off (diagnostic: draw the game's depth buffer instead of the model)
