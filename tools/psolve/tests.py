@@ -82,6 +82,13 @@ def test_gap_blocks():
     p = grid(3, 3, gaps={(0, 1), (0, 3)})                   # both edges out of the start are gone: no line exists
     assert solver.solve_rules(p) is None
 
+def test_sound_dots():
+    # sound dots (0x2000 / 0x4000 = pitch 1 / 2) have to be met in the order of the panel's own sequence, whichever order is the shorter way
+    for seq in ([1, 2], [2, 1]):
+        p = grid(3, 3, extra_flags={1: 0x20 | 0x2000, 3: 0x20 | 0x4000}); p['dseq'] = seq
+        path = solver.solve_rules(p); check_path(p, path)
+        assert path.index(1) < path.index(3) if seq == [1, 2] else path.index(3) < path.index(1), (seq, path)
+
 def run():
     n = 0
     for name, fn in sorted(globals().items()):
@@ -91,7 +98,7 @@ def run():
 def run_mutants():
     """Every rule switched off in turn (PSOLVE_MUTANT=<rule>) must make at least one test fail."""
     bad = []
-    for rule in ('dots', 'squares', 'stars', 'triangles', 'poly'):
+    for rule in ('dots', 'squares', 'stars', 'triangles', 'poly', 'pitch'):
         r = subprocess.run([sys.executable, os.path.abspath(__file__)], env={**os.environ, 'PSOLVE_MUTANT': rule}, capture_output=True, text=True)
         print('mutant %-9s %s' % (rule, 'caught' if r.returncode else 'NOT CAUGHT'))
         if r.returncode == 0: bad.append(rule)

@@ -33,8 +33,9 @@ def unsupported(p):
     if stored(p): return []
     if p.get('refl') and len(p.get('mirror') or []) != p['nodes']: why.add('symmetry without a mirror map')
     if any(p['dec']) and not (p['gx'] > 1 and p['ndec'] == (p['gx'] - 1) * (p['gy'] - 1)): why.add('decorations on a panel that is not a grid')
+    known = 0x700000 | 0x40000 | 0x20 | 0x100 | 0x200 | 0x1000 | 0x10000 | 0x20000 | 0x30000 | 0x8 | 0x3 | (0xe000 if p.get('dseq') else 0)      # sound dots (0x2000/0x4000/0x8000) are solved from the panel's own sequence
     for f in p['flags']:
-        if f & ~(0x700000 | 0x40000 | 0x20 | 0x100 | 0x200 | 0x1000 | 0x10000 | 0x20000 | 0x30000 | 0x8 | 0x3): why.add('node flags %#x' % (f & ~0x7f1323))
+        if f & ~known: why.add('node flags %#x' % (f & ~known))
     return sorted(why)
 
 PSOLVE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'psolve', 'psolve')
@@ -44,8 +45,9 @@ def psolve_text(p):
     n, m = p['nodes'], p['edges']
     cells = list(p['dec']) if p['gx'] > 1 and p['ndec'] == (p['gx'] - 1) * (p['gy'] - 1) else []
     mir = list(p.get('mirror') or [])
-    return '%d %d %d %d %d\n%s\n%s\n%s\n%d %s\n' % (n, m, p['gx'] if cells or p['gx'] > 1 else 0, p['gy'] if cells or p['gx'] > 1 else 0, len(cells),
-        ' '.join(str(f) for f in p['flags']), ' '.join('%d %d' % (a, b) for a, b in zip(p['ca'], p['cb'])), ' '.join(str(v) for v in cells), len(mir), ' '.join(map(str, mir)))
+    ds = list(p.get('dseq') or [])
+    return '%d %d %d %d %d\n%s\n%s\n%s\n%d %s\n%d %s\n' % (n, m, p['gx'] if cells or p['gx'] > 1 else 0, p['gy'] if cells or p['gx'] > 1 else 0, len(cells),
+        ' '.join(str(f) for f in p['flags']), ' '.join('%d %d' % (a, b) for a, b in zip(p['ca'], p['cb'])), ' '.join(str(v) for v in cells), len(mir), ' '.join(map(str, mir)), len(ds), ' '.join(map(str, ds)))
 
 def solve_rules(p, limit=3_000_000_000, timeout=180):
     """Run psolve (the rule solver: dots, squares, stars, triangles, polyominoes, erasers on grids); returns the node list or None."""

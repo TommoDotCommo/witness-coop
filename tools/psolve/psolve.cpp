@@ -238,12 +238,14 @@ static bool evaluate() {
 }
 
 static vector<int> ends, starts; static vector<char> isEnd;
+static vector<int> dseq; static int seqPos = 0;      // sound dots (flags 0x2000 / 0x4000 / 0x8000 = pitch 1 / 2 / 3): the line must meet them in the order of the panel's own sequence
+static int pitchOf(int n) { unsigned f = flags[n]; return (f & 0x2000) ? 1 : (f & 0x4000) ? 2 : (f & 0x8000) ? 3 : 0; }
 static long long nodesSeen = 0, LIMIT = 400000000LL;
 static bool found = false; static vector<int> solution;
 
 static void dfs(int v) {
     if (found || nodesSeen > LIMIT) return; nodesSeen++;
-    if (isEnd[v] && (!sym || (mirror[v] >= 0 && mirror[v] != v && isEnd[mirror[v]]))) { if (evaluate()) { found = true; solution = path; } return; }
+    if (isEnd[v] && (!sym || (mirror[v] >= 0 && mirror[v] != v && isEnd[mirror[v]]))) { if ((dseq.empty() || seqPos == (int)dseq.size()) && evaluate()) { found = true; solution = path; } return; }
     for (int w : adj[v]) {
         if (visited[w]) continue; int e = eid[v * N + w];
         int mv = sym ? mirror[v] : -1, mw = sym ? mirror[w] : -1, e2 = -1;
@@ -254,7 +256,8 @@ static void dfs(int v) {
         if (sym) vis1[w] = 1;
         // triangle pruning: no cell may get more used edges than its count
         visited[w] = 1; usedEdge[e] = 1; path.push_back(w);
-        bool ok = true;
+        bool ok = true; int pw = dseq.empty() ? 0 : pitchOf(w), seqStep = 0;
+        if (pw && !mut("pitch")) { if (seqPos < (int)dseq.size() && dseq[seqPos] == pw) { seqPos++; seqStep = 1; } else ok = false; }
         if (gridPanel && NDEC && v < GX * GY && w < GX * GY) {
             // the two cells beside this edge
             int vr = v / GX, vc = v % GX, wr = w / GX, wc = w % GX;
@@ -270,7 +273,7 @@ static void dfs(int v) {
             }
         }
         if (ok) dfs(w);
-        path.pop_back(); usedEdge[e] = 0; visited[w] = 0;
+        path.pop_back(); usedEdge[e] = 0; visited[w] = 0; seqPos -= seqStep;
         if (sym) { visited[mw] = 0; vis2[mw] = 0; usedEdge[e2] = 0; vis1[w] = 0; }
         if (found) return;
     }
@@ -285,6 +288,7 @@ int main(int argc, char** argv) {
     for (int m = 0; m < N; m++) if (adj[m].size() == 2) { int a = adj[m][0], b = adj[m][1]; if (eid[a * N + b] < 0) midNode[a * N + b] = midNode[b * N + a] = m; }
     cellv.resize(NDEC); for (auto& v : cellv) scanf("%u", &v);
     int R = 0; scanf("%d", &R); mirror.resize(R); for (auto& m : mirror) scanf("%d", &m);
+    { int K = 0; if (scanf("%d", &K) == 1) { dseq.resize(K); for (auto& d : dseq) scanf("%d", &d); } }
     gridPanel = GX > 1 && GY > 1; CW = GX - 1; CH = GY - 1;
     if (gridPanel && NDEC != CW * CH) { gridPanel = NDEC == 0 ? gridPanel : false; }
     usedEdge.assign(M, 0); visited.assign(N, 0); vis1.assign(N, 0); vis2.assign(N, 0); isEnd.assign(N, 0);
