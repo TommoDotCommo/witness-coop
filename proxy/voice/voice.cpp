@@ -2,6 +2,7 @@
 #include "voice.h"
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 
 namespace wvoice {
@@ -156,6 +157,18 @@ bool Vad::Feed(const int16_t* pcm) {
 }
 void Tone(const float* hz, int n, float amp, uint64_t* sample, int16_t* out) {
     for (int i = 0; i < kFrame; ++i, ++*sample) { float x = 0; for (int k = 0; k < n; ++k) x += std::sin(6.2831853f * hz[k] * float(*sample) / kRate); out[i] = int16_t(std::max(-32767.0f, std::min(32767.0f, x / n * amp * 32767.0f))); }
+}
+bool LoadWav(const char* path, std::vector<int16_t>* out) {
+    FILE* f = fopen(path, "rb"); if (!f) return false; std::vector<uint8_t> d; uint8_t b[4096]; size_t n; while ((n = fread(b, 1, sizeof b, f)) > 0) d.insert(d.end(), b, b + n); fclose(f);
+    if (d.size() < 44 || memcmp(d.data(), "RIFF", 4) || memcmp(&d[8], "WAVE", 4)) return false;
+    auto u32 = [&](size_t i) { return unsigned(d[i]) | unsigned(d[i + 1]) << 8 | unsigned(d[i + 2]) << 16 | unsigned(d[i + 3]) << 24; };
+    unsigned rate = 0, ch = 0, bits = 0; size_t at = 12, dataAt = 0, dataLen = 0;
+    while (at + 8 <= d.size()) { unsigned len = u32(at + 4); if (!memcmp(&d[at], "fmt ", 4) && at + 24 <= d.size()) { ch = d[at + 10] | d[at + 11] << 8; rate = u32(at + 12); bits = d[at + 22] | d[at + 23] << 8; } else if (!memcmp(&d[at], "data", 4)) { dataAt = at + 8; dataLen = std::min<size_t>(len, d.size() - dataAt); break; } at += 8 + len + (len & 1); }
+    if (!rate || bits != 16 || (ch != 1 && ch != 2) || !dataAt) return false;
+    size_t frames = dataLen / (2 * ch); std::vector<float> mono(frames); for (size_t i = 0; i < frames; ++i) { float s = 0; for (unsigned c = 0; c < ch; ++c) s += int16_t(d[dataAt + (i * ch + c) * 2] | d[dataAt + (i * ch + c) * 2 + 1] << 8); mono[i] = s / ch; }
+    size_t outN = size_t(double(frames) * kRate / rate); out->assign(outN, 0);
+    for (size_t i = 0; i < outN; ++i) { double p = double(i) * rate / kRate; size_t a = size_t(p); double fr = p - a; float x0 = mono[std::min(a, frames - 1)], x1 = mono[std::min(a + 1, frames - 1)]; (*out)[i] = int16_t(x0 + (x1 - x0) * fr); }      // (linear resampling: a voice, not music)
+    return true;
 }
 constexpr float Mixer::kToneHz[3];
 }  // namespace wvoice

@@ -61,5 +61,7 @@ public:
 private:
     int hang_ = 0;
 };
+// A speech recording (a .wav of 16-bit mono or stereo PCM at any rate) as kRate mono samples, for the test voice and the demo. false: not such a file.
+bool LoadWav(const char* path, std::vector<int16_t>* out);
 void Tone(const float* hz, int n, float amp, uint64_t* sample, int16_t* out);      // a test voice: the sum of n sine waves, kFrame samples, continuing from `sample`
 }  // namespace wvoice

@@ -2,6 +2,7 @@
 #include "voice.h"
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 using namespace wvoice;
 static int fails = 0, checks = 0;
@@ -78,5 +79,25 @@ int main() {
     { Vad v; int16_t quiet[kFrame] = {}, loud[kFrame]; for (int i = 0; i < kFrame; ++i) loud[i] = int16_t(8000 * std::sin(i * 0.3)); for (int i = 0; i < kFrame; i += 2) quiet[i] = 20;
       check("vad: silence is not speech", !v.Feed(quiet)); check("vad: a loud frame is", v.Feed(loud));
       int held = 0; for (int i = 0; i < 40; ++i) if (v.Feed(quiet)) ++held; check("vad: speech is held for about 300 ms after it ends", held >= 13 && held <= 15); }
+    // real speech (when SPEECH_WAV names a recording: tools/make_speech.sh makes one with the Windows voice): it survives the codec, and what is heard keeps its rhythm near and far
+    if (const char* wav = getenv("SPEECH_WAV")) {
+        std::vector<int16_t> sp; check("speech: the recording loads", LoadWav(wav, &sp) && sp.size() > kFrame * 100);
+        if (sp.size() > kFrame * 100) {
+            int frames = int(sp.size() / kFrame); Adpcm enc; std::vector<float> envIn, envNear, envFar; double snrSum = 0; int snrN = 0;
+            Mixer near_, far_; Settings s0; near_.Configure(s0); far_.Configure(s0);
+            for (int f = 0; f < frames; ++f) {
+                Packet p; p.from = 3; p.seq = f; p.flags = f == 0 ? kStart : 0; Encode(&sp[f * kFrame], &enc, p.payload); near_.Push(p); far_.Push(p);
+                int16_t dec[kFrame]; Decode(p.payload, dec); double sa = 0; for (int i = 0; i < kFrame; ++i) sa += double(sp[f * kFrame + i]) * sp[f * kFrame + i]; if (sa / kFrame > 1e5) { snrSum += Snr(&sp[f * kFrame], dec, kFrame); ++snrN; }
+                float e = 0; for (int i = 0; i < kFrame; ++i) e += float(sp[f * kFrame + i]) * sp[f * kFrame + i]; envIn.push_back(std::sqrt(e / kFrame) / 32768.0f);
+            }
+            for (int f = 0; f < frames + 6; ++f) { float o[kFrame * 2]; near_.Render({{3, 5.0f, 0}}, o); envNear.push_back(Rms(o, kFrame * 2)); far_.Render({{3, 80.0f, 0}}, o); envFar.push_back(Rms(o, kFrame * 2)); }
+            auto corr = [&](const std::vector<float>& a, int lag) { double ma = 0, mb = 0; int n = frames - 8; for (int i = 0; i < n; ++i) { ma += envIn[i]; mb += a[i + lag]; } ma /= n; mb /= n; double sab = 0, saa = 0, sbb = 0; for (int i = 0; i < n; ++i) { double x = envIn[i] - ma, y = a[i + lag] - mb; sab += x * y; saa += x * x; sbb += y * y; } return sab / std::sqrt(saa * sbb + 1e-12); };
+            double bestN = -1, bestF = -1; for (int lag = 0; lag <= 5; ++lag) { bestN = std::max(bestN, corr(envNear, lag)); bestF = std::max(bestF, corr(envFar, lag)); }
+            printf("  speech: %d s, codec %.1f dB, loudness rhythm kept: near %.3f, radio %.3f\n", frames / 50, snrN ? snrSum / snrN : 0.0, bestN, bestF);
+            check("speech: the codec keeps it above 15 dB signal-to-noise", snrN > 20 && snrSum / snrN > 15);
+            check("speech: heard 5 m away it keeps its rhythm (loudness correlates above 0.95 with what was said)", bestN > 0.95);
+            check("speech: heard over the radio it keeps its rhythm too (above 0.85)", bestF > 0.85);
+        }
+    }
     printf("%d checks, %d failed\n", checks, fails); return fails ? 1 : 0;
 }

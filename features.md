@@ -50,3 +50,7 @@ players who were in the game with their characters and times (earlier sessions o
 | Launcher | `make -C launcher test` (cfg, video file, options in a save, saves; 5 mutants) | `launcher` (the window driven with window messages, the files on disk, the game it starts: its own log and the save it writes) |
 | Voice | `make -C proxy/voice test` (codec, packets, mix, radio filter, jitter; 7 mutants) | `voice` (proximity gain, pan, fade and radio read from the listener's mixer with real positions; push to talk; speaking flag; game volume read back from the system) |
 | Map picture | - | `map` (seams of neighbouring tiles agree, content, nothing of the mod drawn, the player returns) |
+
+Real speech: `tools/make_speech.sh` records a spoken sentence with the Windows voice; `SPEECH_WAV=<file> make -C proxy/voice test` then also checks that it survives the codec (23.7 dB on the
+sentence used) and keeps its loudness rhythm through the mixer (correlation 1.000 five metres away, 0.939 over the radio at 80 m), and `voice-demo <folder> <file>` writes the
+speech versions of the listening files (`speech_voice_*.wav`). A person speaking into a microphone has not been tested.
