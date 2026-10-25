@@ -17,6 +17,6 @@ elif [ -x "$LAB" ]; then
   trap '"$LAB" release' EXIT
   "$LAB" provision witness || exit 1
 fi
-if [ "${1:-}" = model ]; then shift; python3 "$TOOLS/suite_model.py" "$@"; elif [ "${1:-}" = sweep ]; then shift; python3 "$TOOLS/qa_sweep.py" "$@"; elif [ "${1:-}" = lines ]; then shift; python3 "$TOOLS/qa_lines.py" "$@"; elif [ "${1:-}" = tags ]; then shift; python3 "$TOOLS/qa_tags.py" "$@"; elif [ "${1:-}" = pov ]; then shift; python3 "$TOOLS/qa_pov.py" "$@"; elif [ "${1:-}" = ui ]; then shift; python3 "$TOOLS/qa_ui.py" "$@"; elif [ "${1:-}" = pause ]; then shift; python3 "$TOOLS/qa_pause.py" "$@"; elif [ "${1:-}" = social ]; then shift; python3 "$TOOLS/qa_social.py" "$@"; else python3 "$TOOLS/suite.py" "$@"; fi
+if [ "${1:-}" = model ]; then shift; python3 "$TOOLS/suite_model.py" "$@"; elif [ "${1:-}" = sweep ]; then shift; python3 "$TOOLS/qa_sweep.py" "$@"; elif [ "${1:-}" = lines ]; then shift; python3 "$TOOLS/qa_lines.py" "$@"; elif [ "${1:-}" = tags ]; then shift; python3 "$TOOLS/qa_tags.py" "$@"; elif [ "${1:-}" = pov ]; then shift; python3 "$TOOLS/qa_pov.py" "$@"; elif [ "${1:-}" = ui ]; then shift; python3 "$TOOLS/qa_ui.py" "$@"; elif [ "${1:-}" = pause ]; then shift; python3 "$TOOLS/qa_pause.py" "$@"; elif [ "${1:-}" = social ]; then shift; python3 "$TOOLS/qa_social.py" "$@"; elif [ "${1:-}" = emote ]; then shift; python3 "$TOOLS/qa_emote.py" "$@"; else python3 "$TOOLS/suite.py" "$@"; fi
 exit $?
 }

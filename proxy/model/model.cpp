@@ -1,6 +1,7 @@
 // See model.h. Mutants (-DWM_MUT_...) each break one thing on purpose; the T0 test must fail for every one of them.
 #include "model.h"
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstring>
 
@@ -367,6 +368,25 @@ void Avatar::Update(uint64_t nowMs, bool valid, unsigned seq, const float pos[3]
 #ifdef WM_MUT_NO_RUNREF
     runPhase_ = phase_;
 #endif
+}
+
+static bool SameNoCase(const std::string& a, const char* b) { size_t i = 0; for (; i < a.size() && b[i]; ++i) if (tolower((unsigned char)a[i]) != tolower((unsigned char)b[i])) return false; return i == a.size() && !b[i]; }
+static int ClipExact(const Model& m, const char* name) { for (size_t i = 0; i < m.clips.size(); ++i) if (SameNoCase(m.clips[i].name, name)) return (int)i; return -1; }
+int EmoteClip(const Model& m, int emote) {
+    int c = -1;
+    switch (emote) {
+    case 1: c = FindClip(m, "wave"); break;
+    case 2: c = FindClip(m, "dance"); break;
+    case 3: c = FindClip(m, "thumbs"); if (c < 0) c = FindClip(m, "jump"); break;
+    case 4: c = ClipExact(m, "yes"); if (c < 0) c = FindClip(m, "agree"); break;
+    case 5:
+#ifdef WM_MUT_EMOTE_SUBSTRING
+        c = FindClip(m, "no"); break;          // any clip with "no" in its name: Snow, Annotate, ...
+#else
+        c = ClipExact(m, "no"); if (c < 0) c = FindClip(m, "headshake"); break;
+#endif
+    }
+    return c;
 }
 
 Avatar::Sel Avatar::Choose(const Model& m) const {

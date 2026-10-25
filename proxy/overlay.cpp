@@ -184,7 +184,8 @@ static void DrawMarkers(IDXGISwapChain* sc) {
         wm::Cam wc = {{cam[0], cam[1], cam[2]}, ang[0], ang[1], kVFovDeg, aspect, 0.1f, 2000.0f};
         bool first = true;
         for (const auto& rp : remotes) if (rp.ageMs < 2000) {
-            ModelGpuDraw(rtv, td.Width, td.Height, wc, true, rp.seq, rp.pos, rp.ang[0], rp.id, first); first = false;
+            ModelExtra ex; ex.character = rp.character; { int e = 0; float t = 0; if (SocialEmoteOf(rp.id, &e, &t)) { ex.emote = e; ex.emoteT = t; } }
+            ModelGpuDraw(rtv, td.Width, td.Height, wc, true, rp.seq, rp.pos, rp.ang[0], rp.id, first, &ex); first = false;
         }
         if (first) { float p[3] = {}; ModelGpuDraw(rtv, td.Width, td.Height, wc, false, 0, p, 0); }
         std::vector<LineVert> lv; unsigned nl = 0; if (!GetCfg().noLineDraw) nl = BuildLineVerts(wc.pos, lv);

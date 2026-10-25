@@ -24,6 +24,8 @@ struct Cfg {
     bool noModelDepth = false;   // test mutant: draw the model over walls
     bool pauseWrongFlag = false; // test mutant: the first, wrong pause flag (it flips with F6 / F7 and with entering a puzzle)
     unsigned keyChat = 'T', keyPing = 'P', keyEmote = 'G', keyDraw = 'X', keyChar = 'C';   // key_chat= ... : a letter or F1..F12
+    std::string character;       // character=<model name>: the model this player announces as its own (others draw this player with it); empty: none announced
+    bool noEmoteAnim = false, noEmoteClips = false, noCharacterAnnounce = false, noEmoteSend = false;   // test mutants: emotes shown but not animated / never play a model's own clip / characters not announced or not honoured / emotes not sent
     bool noChatUi = false, noTypingDots = false, noPingMarks = false;      // test mutants: T does nothing; typing is not announced; pings are not drawn
     bool noPauseHide = false;    // test mutant: draw puppets, lines and name tags over the pause menu
     bool skipEntityZero = false; // test mutant: restore the old census that lost the second tutorial door

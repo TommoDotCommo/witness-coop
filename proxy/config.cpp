@@ -55,6 +55,11 @@ const Cfg& GetCfg() {
             else if (sscanf(line, "no_model_depth=%d", &v) == 1) r.noModelDepth = v != 0;
             else if (sscanf(line, "no_pause_hide=%d", &v) == 1) r.noPauseHide = v != 0;
             else if (sscanf(line, "no_chat_ui=%d", &v) == 1) r.noChatUi = v != 0;
+            else if (sscanf(line, "no_emote_anim=%d", &v) == 1) r.noEmoteAnim = v != 0;
+            else if (sscanf(line, "no_emote_clips=%d", &v) == 1) r.noEmoteClips = v != 0;
+            else if (sscanf(line, "no_character_announce=%d", &v) == 1) r.noCharacterAnnounce = v != 0;
+            else if (sscanf(line, "no_emote_send=%d", &v) == 1) r.noEmoteSend = v != 0;
+            else if (sscanf(line, "character=%63s", s) == 1) r.character = s;
             else if (sscanf(line, "no_typing_dots=%d", &v) == 1) r.noTypingDots = v != 0;
             else if (sscanf(line, "no_ping_marks=%d", &v) == 1) r.noPingMarks = v != 0;
             else if (sscanf(line, "key_chat=%15s", kn) == 1 && KeyFromName(kn)) r.keyChat = KeyFromName(kn);

@@ -66,10 +66,10 @@ static UINT WINAPI HookGetRawInputData(HRAWINPUT h, UINT cmd, LPVOID data, PUINT
         InterlockedIncrement(&g_stats[2]);
         UINT r = g_orig(h, cmd, data, size, hdr);
         if (data && r != (UINT)-1 && cmd == RID_INPUT && r >= sizeof(RAWINPUTHEADER) && !DevMenuOpen()) BoostMouse((RAWINPUT*)data);
-        if ((DevMenuOpen() || PovRosterOpen() || SocialCapturing()) && data && r != (UINT)-1 && cmd == RID_INPUT && r >= sizeof(RAWINPUTHEADER)) {      // the dev menu or the player list is open: it takes the mouse motion, the game gets an empty event
+        if ((DevMenuOpen() || PovRosterOpen() || SocialMouseCaptured()) && data && r != (UINT)-1 && cmd == RID_INPUT && r >= sizeof(RAWINPUTHEADER)) {      // the dev menu or the player list is open: it takes the mouse motion, the game gets an empty event
             RAWINPUT* ri = (RAWINPUT*)data;
-            if (ri->header.dwType == RIM_TYPEMOUSE) { if (DevMenuOpen() && !(ri->data.mouse.usFlags & MOUSE_MOVE_ABSOLUTE)) DevMenuRawMove(ri->data.mouse.lLastX, ri->data.mouse.lLastY); ri->data.mouse.lLastX = ri->data.mouse.lLastY = 0; ri->data.mouse.usButtonFlags = 0; ri->data.mouse.usButtonData = 0; }
-            else if (ri->header.dwType == RIM_TYPEKEYBOARD && !(ri->data.keyboard.Flags & RI_KEY_BREAK)) { ri->data.keyboard.VKey = 0; ri->data.keyboard.MakeCode = 0; ri->data.keyboard.Flags |= RI_KEY_BREAK; }
+            if (ri->header.dwType == RIM_TYPEMOUSE) { if (!(ri->data.mouse.usFlags & MOUSE_MOVE_ABSOLUTE)) { if (DevMenuOpen()) DevMenuRawMove(ri->data.mouse.lLastX, ri->data.mouse.lLastY); else if (SocialMouseCaptured()) SocialRawMove(ri->data.mouse.lLastX, ri->data.mouse.lLastY); } ri->data.mouse.lLastX = ri->data.mouse.lLastY = 0; ri->data.mouse.usButtonFlags = 0; ri->data.mouse.usButtonData = 0; }
+            else if (ri->header.dwType == RIM_TYPEKEYBOARD && !(ri->data.keyboard.Flags & RI_KEY_BREAK) && (DevMenuOpen() || PovRosterOpen() || SocialCapturing())) { ri->data.keyboard.VKey = 0; ri->data.keyboard.MakeCode = 0; ri->data.keyboard.Flags |= RI_KEY_BREAK; }
         }
         if (GetCfg().debugMsgs && data && r != (UINT)-1 && r >= sizeof(RAWINPUTHEADER) && cmd == RID_INPUT) {    // diagnostic (debug_msgs=1): what a REAL event looks like (first few, and every button event)
             const RAWINPUT* ri = (const RAWINPUT*)data; static LONG n;
@@ -94,6 +94,10 @@ static UINT WINAPI HookGetRawInputData(HRAWINPUT h, UINT cmd, LPVOID data, PUINT
     if (DevMenuOpen()) {      // our own (bot) events go to the dev menu while it is open
         if (!e.key) { DevMenuRawMove(e.dx, e.dy); ri.data.mouse.lLastX = ri.data.mouse.lLastY = 0; ri.data.mouse.usButtonFlags = 0; }
         else if (e.down) { ri.data.keyboard.VKey = 0; ri.data.keyboard.MakeCode = 0; ri.data.keyboard.Flags = RI_KEY_BREAK; }
+    }
+    else if (SocialMouseCaptured()) {      // ... and to the emote wheel / chat box / character list
+        if (!e.key) { SocialRawMove(e.dx, e.dy); ri.data.mouse.lLastX = ri.data.mouse.lLastY = 0; ri.data.mouse.usButtonFlags = 0; }
+        else if (e.down && SocialCapturing()) { ri.data.keyboard.VKey = 0; ri.data.keyboard.MakeCode = 0; ri.data.keyboard.Flags = RI_KEY_BREAK; }
     }
     UINT total = ri.header.dwSize;
     if (cmd == RID_HEADER) { if (!data) { *size = sizeof(RAWINPUTHEADER); return 0; } if (*size < sizeof(RAWINPUTHEADER)) return (UINT)-1; memcpy(data, &ri.header, sizeof(RAWINPUTHEADER)); return sizeof(RAWINPUTHEADER); }

@@ -5,12 +5,16 @@
 #include <d3d11.h>
 #include "model/model.h"
 
-struct ModelDrawStats { unsigned visiblePixels; unsigned frames; unsigned submittedPlayers; int clip; float speed; float animTime; int from; float blend; float eye; float yaw; bool drawn; float pos[3], cam[3]; };
+struct ModelDrawStats { unsigned visiblePixels; unsigned frames; unsigned submittedPlayers; int clip; float speed; float animTime; int from; float blend; float eye; float yaw; int emote; float lift, lean, roll, dyaw; bool drawn; float pos[3], cam[3]; };
 bool ModelGpuInit(ID3D11Device* dev, ID3D11DeviceContext* ctx);      // loads the configured model; false: use the flat puppet instead
 bool ModelGpuReady();
 // Draws the player at `pos` (eye position), heading `yaw`. `valid` false: the peer is gone, nothing is drawn.
 // sceneDepth: a shader resource view of a copy of the game's depth buffer, or null (nothing hides the model).
-bool ModelGpuDraw(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Cam& cam, bool valid, unsigned seq, const float pos[3], float yaw, unsigned playerId = 0, bool first = true);
+// What the social layer says about a player: the character it announced (a model name; empty or unknown: the viewer's own choice), and the emote it is playing (1..8, 0 none) for emoteT seconds.
+struct ModelExtra { const char* character = nullptr; int emote = 0; float emoteT = 0; };
+bool ModelGpuDraw(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Cam& cam, bool valid, unsigned seq, const float pos[3], float yaw, unsigned playerId = 0, bool first = true, const ModelExtra* extra = nullptr);
+int ModelGpuCount();                      // the models on offer (every .glb of witness_models\)
+const char* ModelGpuName(int i);
 // Coloured ribbons in world space (the other players' drawn lines), depth-tested against the game's scene. Triangle list; each vertex: position, rgba.
 struct LineVert { float p[3]; float c[4]; };
 struct LineDrawStats { unsigned lines, verts, visiblePixels, frames; };

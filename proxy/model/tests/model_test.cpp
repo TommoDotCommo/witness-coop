@@ -243,6 +243,18 @@ int main(int argc, char** argv) {
                   "flat colours: first mesh (%d %d %d %d), second (%d %d %d %d), wanted red and blue with no texture", sm.verts[0].col[0], sm.verts[0].col[1], sm.verts[0].col[2], sm.verts[0].col[3], sm.verts[3].col[0], sm.verts[3].col[1], sm.verts[3].col[2], sm.verts[3].col[3]);
         }
     }
+
+    // which clip of a model an emote plays: the model's own named clips, "No" only as a whole name
+    {
+        auto mk = [](std::initializer_list<const char*> names) { wm::Model mm; for (const char* n : names) { wm::Clip c; c.name = n; c.duration = 1; mm.clips.push_back(c); } return mm; };
+        wm::Model robot = mk({"Dance", "Death", "Idle", "Jump", "No", "Punch", "Running", "Sitting", "Standing", "ThumbsUp", "Walking", "WalkJump", "Wave", "Yes"});
+        CHECK(robot.clips[wm::EmoteClip(robot, 1)].name == "Wave" && robot.clips[wm::EmoteClip(robot, 2)].name == "Dance" && robot.clips[wm::EmoteClip(robot, 3)].name == "ThumbsUp" && robot.clips[wm::EmoteClip(robot, 4)].name == "Yes" && robot.clips[wm::EmoteClip(robot, 5)].name == "No", "the robot's own emote clips");
+        wm::Model xbot = mk({"agree", "headShake", "idle", "run", "sad_pose", "sneak_pose", "walk"});
+        CHECK(xbot.clips[wm::EmoteClip(xbot, 4)].name == "agree" && xbot.clips[wm::EmoteClip(xbot, 5)].name == "headShake" && wm::EmoteClip(xbot, 1) < 0 && wm::EmoteClip(xbot, 2) < 0, "xbot: agree and headShake, nothing for wave and dance");
+        wm::Model snow = mk({"Idle", "Snow", "Annotate", "Walk"});
+        CHECK(wm::EmoteClip(snow, 5) < 0 && wm::EmoteClip(snow, 6) < 0 && wm::EmoteClip(snow, 7) < 0, "a clip with 'no' inside its name is not the No emote");
+        wm::Model samba = mk({"SambaDance", "TPose"}); CHECK(samba.clips[wm::EmoteClip(samba, 2)].name == "SambaDance", "SambaDance is a dance");
+    }
     printf("%s: %d checks, %d failed\n", g_fail ? "FAILED" : "ok", g_n, g_fail);
     return g_fail ? 1 : 0;
 }

@@ -5,8 +5,10 @@
 #include <windows.h>
 #include <d3d11.h>
 #include <d3dcompiler.h>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <strings.h>
 #include <vector>
 #include "model_gpu.h"
 #include "config.h"
@@ -171,10 +173,53 @@ static Loaded* LoadIndex(int idx) {
     Loaded* r = nl.get(); g_cache[idx] = std::move(nl); return r;
 }
 static bool LoadCurrent() { Loaded* l = LoadIndex(g_cur); if (!l) return false; g_L = l; return true; }
-// The model a player is drawn with: the selected one; with model_by_player=1 every player has their own, in the order of the list (player 1 gets the selected one, 2 the next, ...).
-static Loaded* ModelFor(unsigned playerId) {
-    int n = (int)g_list.size(); if (!GetCfg().modelByPlayer || n == 0) return g_L;
-    Loaded* l = LoadIndex((g_cur + (int)(playerId > 0 ? playerId - 1 : 0)) % n); return l ? l : g_L;
+// The model a player is drawn with: with model_by_player=1 every player has their own, in the order of the list (player 1 gets the selected one, 2 the next, ...); otherwise the
+// character the player announced if this game has a model of that name; otherwise the selected one.
+static int FindByName(const char* name) { if (!name || !*name) return -1; for (size_t i = 0; i < g_list.size(); ++i) if (!_stricmp(g_list[i].name.c_str(), name)) return (int)i; return -1; }
+static Loaded* ModelFor(unsigned playerId, const char* character) {
+    int n = (int)g_list.size(); if (n == 0) return g_L;
+    if (GetCfg().modelByPlayer) { Loaded* l = LoadIndex((g_cur + (int)(playerId > 0 ? playerId - 1 : 0)) % n); return l ? l : g_L; }
+    int idx = GetCfg().noCharacterAnnounce ? -1 : FindByName(character);
+    if (idx >= 0) { Loaded* l = LoadIndex(idx); if (l) return l; }
+    Loaded* sel = LoadIndex(g_cur); return sel ? sel : g_L;      // the selected model (g_L is only whatever was drawn last)
+}
+int ModelGpuCount() { return (int)g_list.size(); }
+const char* ModelGpuName(int i) { return i >= 0 && i < (int)g_list.size() ? g_list[i].name.c_str() : ""; }
+
+// Emotes: a clip of the model when it has one (Robot: Wave, Dance, Yes, No, ThumbsUp; Xbot: agree, headShake; Michelle: SambaDance), a motion of the whole figure on any model otherwise.
+struct EmoteFx { int clip = -1; float lift = 0, lean = 0, roll = 0, dyaw = 0; };
+static EmoteFx EmoteEffect(const wm::Model& m, int emote, float t) {
+    EmoteFx fx; const float D = 2.6f, P = 6.2831853f; if (t < 0 || t >= D) return fx;
+    fx.clip = GetCfg().noEmoteClips ? -1 : wm::EmoteClip(m, emote);
+    if (fx.clip >= 0) return fx;                                                   // the model does it itself
+    float e = std::min(1.0f, std::min(t / 0.2f, (D - t) / 0.35f));                  // fade in and out
+    switch (emote) {
+    case 1: fx.roll = 0.30f * e * sinf(P * 2.2f * t); fx.lift = 0.03f * e * fabsf(sinf(P * 1.1f * t)); break;         // wave: sways from side to side
+    case 2: fx.lift = 0.09f * e * fabsf(sinf(P * 1.25f * t)); fx.dyaw = 0.55f * e * sinf(P * 0.625f * t); fx.roll = 0.16f * e * sinf(P * 1.25f * t); break;      // dance
+    case 3: fx.lift = 0.38f * e * fabsf(sinf(P * 0.5f * t * 2.0f)); break;                                                 // cheer: hops
+    case 4: fx.lean = 0.36f * e * sinf(P * 1.6f * t); break;                                                               // yes: nods
+    case 5: fx.dyaw = 0.55f * e * sinf(P * 2.0f * t); break;                                                               // no: shakes
+    case 6: fx.lean = 0.62f * sinf(3.14159265f * t / D); break;                                                            // bow
+    case 7: fx.dyaw = P * std::min(1.0f, t / 1.3f); break;                                                                 // spin once
+    case 8: fx.lift = 0.06f * e * fabsf(sinf(P * 1.5f * t)); fx.roll = 0.10f * e; fx.lean = -0.08f * e; break;              // shrug
+    default: break;
+    }
+    return fx;
+}
+static void Mul4(const float* a, const float* b, float* o) { float r[16]; for (int c = 0; c < 4; ++c) for (int rr = 0; rr < 4; ++rr) { float s = 0; for (int k = 0; k < 4; ++k) s += a[k * 4 + rr] * b[c * 4 + k]; r[c * 4 + rr] = s; } memcpy(o, r, 64); }
+static void Ident4(float* m) { memset(m, 0, 64); m[0] = m[5] = m[10] = m[15] = 1; }
+static void Rot4(float x, float y, float z, float a, float* m) {      // about the unit axis (x y z), angle a (right-hand)
+    float c = cosf(a), s = sinf(a), t = 1 - c; Ident4(m);
+    m[0] = t * x * x + c; m[4] = t * x * y - s * z; m[8] = t * x * z + s * y; m[1] = t * x * y + s * z; m[5] = t * y * y + c; m[9] = t * y * z - s * x; m[2] = t * x * z - s * y; m[6] = t * y * z + s * x; m[10] = t * z * z + c;
+}
+// the model matrix, moved about the feet: lift (up), a turn about the vertical, a lean forward and a roll sideways (angle `heading` is where the figure faces)
+static void ApplyEmote(float* model, const float feet[3], float heading, const EmoteFx& fx) {
+    if (!fx.lift && !fx.lean && !fx.roll && !fx.dyaw) return;
+    float fwd[3] = {cosf(heading), sinf(heading), 0}, left[3] = {-sinf(heading), cosf(heading), 0};
+    float A[16], B[16], C[16], D[16], T0[16], T1[16]; Ident4(T0); T0[12] = -feet[0]; T0[13] = -feet[1]; T0[14] = -feet[2];
+    Ident4(T1); T1[12] = feet[0]; T1[13] = feet[1]; T1[14] = feet[2] + fx.lift;
+    Rot4(0, 0, 1, fx.dyaw, A); Rot4(left[0], left[1], 0, fx.lean, B); Rot4(fwd[0], fwd[1], 0, fx.roll, C);
+    Mul4(T0, model, D); Mul4(C, D, D); Mul4(B, D, D); Mul4(A, D, D); Mul4(T1, D, model);
 }
 static bool LoadFile(const std::wstring& path, wm::Model* out, std::string* err) {
     HANDLE f = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
@@ -340,11 +385,11 @@ static void AnswerCenterDepth(UINT w, UINT h) {
 }
 
 
-bool ModelGpuDraw(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Cam& cam, bool valid, unsigned seq, const float pos[3], float yaw, unsigned playerId, bool first) {
+bool ModelGpuDraw(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Cam& cam, bool valid, unsigned seq, const float pos[3], float yaw, unsigned playerId, bool first, const ModelExtra* extra) {
     if (!g_ready) return false;
     if (first && InterlockedExchange(&g_centerReq, 0)) AnswerCenterDepth(w, h);
     if (!GetCfg().noModelSelect) ApplySelection(); else InterlockedExchange(&g_selReq, 0);
-    g_L = ModelFor(playerId); g_drawnIdx = g_L->index;
+    g_L = ModelFor(playerId, extra ? extra->character : nullptr); g_drawnIdx = g_L->index;
     PanelAtExit panel{rtv, w, h};
     static unsigned s_frames; if (first) { g_stats.frames = ++s_frames; g_stats.submittedPlayers = 0; g_playerDraws.clear(); }
     auto& avatar = g_L->avatars[GetCfg().noGroupAvatarState ? 0 : playerId]; if (!avatar) avatar = std::make_unique<wm::Avatar>(g_L->gait);
@@ -355,11 +400,14 @@ bool ModelGpuDraw(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Cam& ca
     if (!valid || !EnsureDepth(w, h)) return valid;
     const Cfg& cfg = GetCfg();
     wm::ClipPick pk = g_avatar->Pick(g_L->model);
+    EmoteFx fx; if (extra && extra->emote > 0 && !cfg.noEmoteAnim) { fx = EmoteEffect(g_L->model, extra->emote, extra->emoteT); if (fx.clip >= 0) { pk.from = -1; pk.blend = 1; pk.clip = fx.clip; pk.time = extra->emoteT; } }
     std::vector<float> bones(wm::kMaxJoints * 16, 0.0f);
     wm::JointMatricesBlend(g_L->model, pk.from, pk.fromTime, pk.clip, pk.time, pk.blend, bones.data());
     FrameCB fc; wm::ViewProj(cam, fc.viewProj);
     float feet[3] = {g_avatar->pos()[0], g_avatar->pos()[1], g_avatar->pos()[2] - wm::kCameraEye};
     wm::ModelMatrix(feet, g_avatar->yaw(), g_L->fit, g_L->yaw, fc.model);
+    ApplyEmote(fc.model, feet, g_avatar->yaw() + g_L->yaw, fx);
+    g_stats.emote = extra ? extra->emote : 0; g_stats.lift = fx.lift; g_stats.lean = fx.lean; g_stats.roll = fx.roll; g_stats.dyaw = fx.dyaw;
     float L[4] = {0.35f, 0.25f, 0.9f, 0.55f}, T[4] = {1, 1, 1, 1}; memcpy(fc.light, L, 16); memcpy(fc.tint, T, 16);
     ID3D11ShaderResourceView* sceneSrv = nullptr; bool ms = false;
     bool haveScene = !cfg.noModelDepth && DepthScene(&sceneSrv, &ms);
@@ -444,6 +492,6 @@ void ModelGpuDumpPlayers() {
 }
 
 void ModelGpuLogStats() {
-    ModelDrawStats s = ModelGpuStats(); char m[200];
-    snprintf(m, sizeof m, "modelstat: visible_px %u drawn %d clip %d speed %.2f anim %.3f from %d blend %.2f eye %.3f yaw %.3f frames %u model %s %d/%d pos %.2f %.2f %.2f cam %.2f %.2f %.2f", s.visiblePixels, (int)s.drawn, s.clip, s.speed, s.animTime, s.from, s.blend, s.eye, s.yaw, s.frames, g_list.empty() ? "-" : g_list[g_drawnIdx].name.c_str(), g_drawnIdx + 1, (int)g_list.size(), s.pos[0], s.pos[1], s.pos[2], s.cam[0], s.cam[1], s.cam[2]); Log(m);
+    ModelDrawStats s = ModelGpuStats(); char m[480];
+    snprintf(m, sizeof m, "modelstat: visible_px %u drawn %d clip %d speed %.2f anim %.3f from %d blend %.2f eye %.3f yaw %.3f frames %u model %s %d/%d pos %.2f %.2f %.2f cam %.2f %.2f %.2f fx emote %d lift %.3f lean %.3f roll %.3f dyaw %.3f", s.visiblePixels, (int)s.drawn, s.clip, s.speed, s.animTime, s.from, s.blend, s.eye, s.yaw, s.frames, g_list.empty() ? "-" : g_list[g_drawnIdx].name.c_str(), g_drawnIdx + 1, (int)g_list.size(), s.pos[0], s.pos[1], s.pos[2], s.cam[0], s.cam[1], s.cam[2], s.emote, s.lift, s.lean, s.roll, s.dyaw); Log(m);
 }

@@ -44,6 +44,8 @@ void SkinPosition(const Model& m, const float* jointMats, const Vertex& v, float
 // Index of the clip whose name contains `word` (case-insensitive), or -1.
 void Slerp(const float* a, const float* b, float t, float* out);       // unit quaternions x y z w
 int FindClip(const Model& m, const char* word);
+// The clip a model has for an emote (1 wave, 2 dance, 3 cheer, 4 yes, 5 no; others have none), or -1: Wave, Dance / Samba, ThumbsUp / Jump, Yes / agree, No / headShake. "No" must be the whole name.
+int EmoteClip(const Model& m, int emote);
 
 // How the model is scaled and put on the ground: feet at the origin, centred, `height` metres tall.
 struct Fit { float scale, offset[3]; };
