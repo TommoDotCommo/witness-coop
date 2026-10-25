@@ -75,6 +75,66 @@ Player 2 draws the cable-driving maze with real mouse input (through the game's 
 while it is drawn. When the line is finished the panel is solved in both games and the cable lights up: panel and power state travel as reliable events, lines are drawn from
 what the other game sends.
 
+## Chat, typing dots, pings, voice
+
+![Chat, typing dots and pings](showcase/social.png)
+
+Seven players speak at once: each line floats over its player and is in the log at the bottom left. The player with the three green dots over the head is typing. The poles
+with a name and a distance are pings (the sender's colour); the arrow at the bottom is a ping behind the camera. The bars beside some names are the players who are talking
+(here the even players, a test voice instead of a microphone), and the line at the bottom left is this player's own microphone (`hold N to talk`).
+
+![Voice](showcase/voice.png)
+
+## Emotes and characters
+
+![Eight emotes at once](showcase/emotes.png)
+
+Spin, bow, no, yes, cheer, dance, wave, each with its name over the head: a model's own clip when it has one, otherwise a procedural motion (a hop, a nod, a turn).
+
+![The emote wheel](showcase/emote_wheel.png)
+
+Hold G and move the mouse toward a slot (the up-right one, Dance, is lit); release plays it. The camera does not turn while the wheel is open.
+
+![The character list](showcase/character_list.png)
+
+C opens the list of models; the one you choose is what everyone else sees you as.
+
+## Drawing
+
+![Three players drawing](showcase/drawing.png)
+
+X draws under the cross-hair, Z turns the mouse into a pen; the ink is put on the surface under the pen (the game's own scene depth) and drawn as ribbons in the world, so a
+player standing in front of a line hides it, as the red circle shows. Everyone sees it as it is drawn.
+
+## The map picture
+
+![The dev menu map with the island under it](showcase/map_picture.png)
+
+The dev menu's map (F8) with a picture of the island under the panels and doors. It was made by the button at the top right: the player is flown over the island looking forward and
+down (the game does not allow looking straight down: its pitch stops at 53 degrees), 103 frames are rectified onto the ground and stitched. Nothing of the mod is drawn
+into those frames. The picture stays on the machine that made it (`witness_map\`).
+
+## The launcher
+
+![Play](showcase/launcher_play.png)
+![Video](showcase/launcher_video.png)
+![Sound and voice](showcase/launcher_sound.png)
+![Game options](showcase/launcher_options.png)
+![Saves](showcase/launcher_saves.png)
+
+Every option outside the game: the game's own video file, the sound and voice settings, the options that live inside a save (mouse speed, field of view, ...), and the saves, each with
+the players who were in the game and how far it got.
+
+![New game](showcase/launcher_newgame.png)
+
+New game: tick the parts of the map that are done; the window says how many panels that is (103 here: Desert, Keep and Town) and what else the game needs first (the tutorial gate's
+8 panels and one from the jungle), and the game starts with exactly those solved, in the order it needs them.
+
+## Listen
+
+The voice is not in a picture: `proxy/voice/voice_demo.cpp` writes WAV files of what the mixer makes of one (synthetic) voice at 3, 10, 22, 28 and 80 m and walking away (3 to 70 m):
+`g++ -std=c++17 -O2 proxy/voice/voice_demo.cpp proxy/voice/voice.cpp -o voice-demo && ./voice-demo <folder>`.
+
 ## Models
 
 Three open-licence models are bundled (`assets/models/CREDITS.md`). The others in these pictures are not part of the repository:

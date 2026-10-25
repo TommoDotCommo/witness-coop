@@ -12,6 +12,8 @@ No game files are in this repo. You need your own copy of The Witness, Steam bui
 
 ## What works
 
+Chat, pings, emotes, drawing, voice, a launcher, saves that say who played and a new game that starts with chosen parts of the map done are described in [features.md](features.md); pictures of all of it are in [showcase.md](showcase.md).
+
 - **Player model.** Each player sees the other as an animated, skinned character (glTF `.glb`), drawn into the game's frame by a
   hook on the Direct3D 11 `Present` call. It stands at the other player's feet, faces where they look, plays a walk clip at a rate
   matched to their measured speed (and an idle or run clip when the model has one), and is hidden by walls and doors: the proxy reads
