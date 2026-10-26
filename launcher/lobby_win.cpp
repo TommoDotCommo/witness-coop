@@ -135,7 +135,8 @@ void Voice::Play() {
     if (device) for (int i = 0; i < 6; ++i) { hdr[i].lpData = (LPSTR)bufs[i]; hdr[i].dwBufferLength = sizeof bufs[i]; waveOutPrepareHeader(out, &hdr[i], sizeof hdr[i]); hdr[i].dwFlags |= WHDR_DONE; }
     ULONGLONG next = GetTickCount64(); int cur = 0;
     while (!stop_) {
-        float st[wvoice::kFrame * 2]; { Guard l(mu_); wvoice::Settings ms; ms.volume = c_.outVolume / 100.0f; ms.self = s_ ? s_->MyId() : 0; mixer_.Configure(ms); mixer_.Render({}, st); }
+        unsigned self = s_ ? s_->MyId() : 0;      // (asked before the mixer is locked: the network thread holds the session and then wants the mixer, so the other order would be a deadlock)
+        float st[wvoice::kFrame * 2]; { Guard l(mu_); wvoice::Settings ms; ms.volume = c_.outVolume / 100.0f; ms.self = self; mixer_.Configure(ms); mixer_.Render({}, st); }
         if (device) { while (!(hdr[cur].dwFlags & WHDR_DONE) && !stop_) Sleep(2); if (stop_) break; for (int i = 0; i < wvoice::kFrame * 2; ++i) bufs[cur][i] = (int16_t)(st[i] * 32767.0f); hdr[cur].dwFlags &= ~WHDR_DONE; waveOutWrite(out, &hdr[cur], sizeof hdr[cur]); cur = (cur + 1) % 6; }
         else { next += 20; ULONGLONG now = GetTickCount64(); if (next > now) Sleep((DWORD)(next - now)); else next = now; }
     }

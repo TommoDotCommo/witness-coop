@@ -18,7 +18,7 @@ clean:
 
 # the window (not part of the test): witness_launcher.exe goes next to the game's exe
 launcher: $(BUILD)/witness_launcher.exe
-LMUTANTS = NO_VIDEO_WRITE NO_SAVE_WRITE CFG_DROP
+LMUTANTS = NO_VIDEO_WRITE NO_SAVE_WRITE CFG_DROP LOBBY_NO_CFG LOBBY_NO_RESULT LOBBY_NO_RESTORE LOBBY_NO_VOICE
 launcher-mutants: $(addsuffix .exe,$(addprefix $(BUILD)/witness_launcher_,$(LMUTANTS)))
 $(BUILD)/witness_launcher_%.exe: main.cpp core.cpp core.h theme.cpp theme.h lobby.cpp lobby.h lobby_win.cpp lobby_win.h ../proxy/voice/voice.cpp $(BUILD)/launcher_res.o ../proxy/progress/progress.cpp ../proxy/progress/progress_data.cpp ../proxy/progress/savemeta.cpp
 	$(CXX) -std=c++17 -O2 -D_WIN32_WINNT=0x0601 -mwindows -municode -static -DWL_MUT_$* -o $@ main.cpp core.cpp theme.cpp lobby.cpp lobby_win.cpp ../proxy/voice/voice.cpp ../proxy/progress/progress.cpp ../proxy/progress/progress_data.cpp ../proxy/progress/savemeta.cpp $(BUILD)/launcher_res.o -lcomctl32 -lshell32 -lole32 -luuid -luxtheme -lws2_32 -lwinmm -lgdi32 -lmsimg32

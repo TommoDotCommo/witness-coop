@@ -59,15 +59,15 @@ void AddFields() {
     add(2, "Shading quality", "vid:shading", kCombo, q); add(2, "Reflection quality", "vid:reflection", kCombo, q); add(2, "Texture quality", "vid:texture", kCombo, q); add(2, "Texture detail", "vid:textureDetail", kCombo, q); add(2, "Geometry detail", "vid:geometry", kCombo, q);
     add(2, "Frame rate limit (0: none)", "cfg:cap_fps", kEdit, {}, "0");
     add(3, "Game sound off (starts the game with -no_sound)", "cfg:launcher_no_sound", kCheck); add(3, "Game volume, percent", "cfg:game_volume", kEdit, {}, "100", "the game's own sound, set through the Windows volume mixer when it starts");
-    add(3, "Voice chat", "cfg:voice_mode", kCombo, {"off", "open", "ptt"}, "ptt", "off, open (voice gate) or ptt (push to talk)"); add(3, "Push-to-talk key", "cfg:key_voice", kEdit, {}, "N", "a letter or F1 to F12");
+    add(3, "Voice chat", "cfg:voice_mode", kCombo, {"off", "open", "ptt"}, "ptt", "off, open (voice gate) or ptt (push to talk)"); add(3, "Push-to-talk key", "cfg:key_voice", kEdit, {}, "N", "a letter or F1 to F12"); add(3, "Who hears you (voice channel)", "cfg:voice_channel", kCombo, {"proximity", "radio", "global"}, "proximity", "proximity, radio (any distance), global (an open line)"); 
     add(3, "Voice volume, percent", "cfg:voice_volume", kEdit, {}, "100"); add(3, "Microphone volume, percent", "cfg:mic_volume", kEdit, {}, "100"); add(3, "Hear players within (metres)", "cfg:voice_range", kEdit, {}, "25", "beyond it the voice turns into radio");
     add(3, "Radio range (metres, 0: unlimited)", "cfg:voice_radio_range", kEdit, {}, "0"); add(3, "Radio sound when far away", "cfg:voice_radio", kCheck, {}, "1");
     add(4, "Chat", "cfg:key_chat", kEdit, {}, "T", "a letter or F1 to F12"); add(4, "Ping a place", "cfg:key_ping", kEdit, {}, "P"); add(4, "Emote wheel (hold)", "cfg:key_emote", kEdit, {}, "G"); add(4, "Draw (hold)", "cfg:key_draw", kEdit, {}, "X");
-    add(4, "Drawing canvas", "cfg:key_canvas", kEdit, {}, "Z"); add(4, "Ink colour", "cfg:key_color", kEdit, {}, "B"); add(4, "Character list", "cfg:key_character", kEdit, {}, "C");
+    add(4, "Drawing canvas", "cfg:key_canvas", kEdit, {}, "Z"); add(4, "Ink colour", "cfg:key_color", kEdit, {}, "B"); add(4, "Character list", "cfg:key_character", kEdit, {}, "C"); add(4, "Next voice channel", "cfg:key_voice_channel", kEdit, {}, "H", "steps proximity, radio, open line, then one on one with each player");
     for (const auto& d : wl::SaveOptionDefs()) add(5, d.label, (std::string("opt:") + d.name).c_str(), d.kind == wl::OptKind::Bool ? kCheck : kEdit);
     add(6, "Player number (1, 2, ...)", "cfg:id", kEdit, {}, "1"); add(6, "Name shown to the others", "cfg:name", kEdit); add(6, "UDP port to listen on", "cfg:listen", kEdit, {}, "47001");
     add(6, "Other players (one per line: number,address,port)", "cfgmulti:peer", kMulti); add(6, "Your character", "cfg:character", kCombo, {}, ""); add(6, "Show other players as different models", "cfg:model_by_player", kCheck);
-    add(6, "Developer menu (F8)", "cfg:dev_menu", kCheck);
+    add(6, "Developer menu (F8)", "cfg:dev_menu", kCheck); add(6, "See through players who are in the way of a puzzle", "cfg:see_through", kCheck, {}, "1");
 }
 Field* ByKey(const std::string& k) { for (auto& f : g_fields) if (f.key == k) return &f; return nullptr; }
 std::string GetVal(Field& f) {
@@ -307,6 +307,9 @@ lw::VoiceCfg VoiceCfgNow() {
     v.micVolume = atoi(c.Get("mic_volume", "100").c_str()); v.outVolume = atoi(c.Get("voice_volume", "100").c_str()); v.testTone = c.Get("voice_test_tone", ""); v.muteOutput = c.Get("voice_mute_output", "0") == "1"; return v;
 }
 void StartVoice() {
+#ifdef WL_MUT_LOBBY_NO_VOICE
+    return;
+#endif
     if (!g_sess.Active() || g_game || !g_sess.Joined() || g_voice.Running() || !g_voiceWanted) return;
     g_sess.SetVoiceSink([](const wvoice::Packet& p) { g_voice.Push(p); g_everHeard.insert(p.from); });
     g_voice.SetMuted(SendMessageW(LB(ID_LB_MUTE), BM_GETCHECK, 0, 0) == BST_CHECKED); g_voice.SetDeaf(SendMessageW(LB(ID_LB_DEAF), BM_GETCHECK, 0, 0) == BST_CHECKED); g_voice.Start(&g_sess, VoiceCfgNow());
@@ -345,7 +348,11 @@ void LaunchFromLobby(const wlobby::Launch& l) {
     std::wstring exe = g_dir + L"\\witness64_d3d11.exe"; if (!Exists(exe)) exe = g_dir + L"\\witness_d3d11.exe"; if (!Exists(exe)) { LobbyStatus(L"The game was not found in " + g_dir); g_sess.SetInGame(false); return; }
     std::wstring msg; if (!ApplyAll(&msg)) { LobbyStatus(msg); return; }
     g_cfgBackup = ReadFile8(CfgPath());      // the player's own settings: put back when the game is over
-    std::string cfg = wlobby::BuildGameCfg(g_cfgBackup, l, g_sess.HostIp()); WriteFile8(CfgPath(), cfg); g_lastLaunchCfg = cfg;
+    std::string cfg = wlobby::BuildGameCfg(g_cfgBackup, l, g_sess.HostIp());
+#ifndef WL_MUT_LOBBY_NO_CFG
+    WriteFile8(CfgPath(), cfg);
+#endif
+    g_lastLaunchCfg = cfg;
     wl::CfgFile c = LoadCfg(); std::wstring sf = SaveFolder(c); if (l.state.settings.newGame) DeleteFileW((sf + L"\\coop_progress.txt").c_str());
     DeleteFileW((g_dir + L"\\witness_race_result.txt").c_str()); g_gameWasRace = l.state.settings.mode == wlobby::kRace;
     std::wstring cmd = L"\"" + exe + L"\" " + W(wl::LaunchArgs(c, l.state.settings.newGame)); STARTUPINFOW si = {sizeof si}; PROCESS_INFORMATION pi = {}; if (g_noActivate) { si.dwFlags = STARTF_USESHOWWINDOW; si.wShowWindow = SW_SHOWNOACTIVATE; }
@@ -354,9 +361,15 @@ void LaunchFromLobby(const wlobby::Launch& l) {
     } else { WriteFile8(CfgPath(), g_cfgBackup); LobbyStatus(L"Could not start the game."); g_sess.SetInGame(false); }
 }
 void GameEnded() {
-    CloseHandle(g_game); g_game = nullptr; g_gamePid = 0; if (!g_cfgBackup.empty()) { WriteFile8(CfgPath(), g_cfgBackup); g_cfgBackup.clear(); }
+    CloseHandle(g_game); g_game = nullptr; g_gamePid = 0;
+#ifndef WL_MUT_LOBBY_NO_RESTORE
+    if (!g_cfgBackup.empty()) WriteFile8(CfgPath(), g_cfgBackup);
+#endif
+    g_cfgBackup.clear();
     std::string res = g_gameWasRace ? RaceResultText() : ""; if (res.empty()) res = g_gameWasRace ? "Race: no result (the game was closed before it ended)" : "The game ended."; g_lastResult = res;
+#ifndef WL_MUT_LOBBY_NO_RESULT
     if (g_sess.IsHost()) g_sess.SetResult(res);
+#endif
     g_sess.SetInGame(false); StartVoice(); LobbyStatus(L"The game ended. Back in the lobby."); LoadAll();
 }
 void RefreshLobbyUi() {
@@ -463,7 +476,7 @@ void WriteStat() {      // tests: what the lobby is, as text lines, rewritten ev
     snprintf(b, sizeof b, "invite %s\n", g_sess.Invite().c_str()); o += b;
     for (const auto& m : st.members) { snprintf(b, sizeof b, "member %u name %s host %d ready %d ingame %d speaking %d playing %d port %u ip %s\n", m.id, m.name.c_str(), m.host, m.ready, m.inGame, m.speaking, m.playing, m.gamePort, wlobby::IpText(m.ip).c_str()); o += b; }
     snprintf(b, sizeof b, "settings mode %d goal %s newgame %d progress %s\n", (int)st.settings.mode, st.settings.raceGoal.c_str(), st.settings.newGame ? 1 : 0, st.settings.progress.c_str()); o += b;
-    o += "result " + st.lastResult + "\n"; o += "chat " + U(g_chatLog) + "\n";
+    { std::string chat = U(g_chatLog); for (size_t i; (i = chat.find("\r\n")) != std::string::npos;) chat.replace(i, 2, " | "); o += "result " + st.lastResult + "\n"; o += "chat " + chat + "\n"; }
     snprintf(b, sizeof b, "voice running %d sent %u received %u level %u speaking %d muted_ui %d\n", g_voice.Running() ? 1 : 0, v.sent, v.received, v.level, v.speaking ? 1 : 0, (int)SendMessageW(LB(ID_LB_MUTE), BM_GETCHECK, 0, 0)); o += b;
     for (const auto& s : v.speakers) { snprintf(b, sizeof b, "voice_speaker %u talking %d rms %.4f tone %.4f %.4f %.4f packets %u\n", s.id, s.talking ? 1 : 0, s.rms, s.tone[0], s.tone[1], s.tone[2], s.packets); o += b; }
     snprintf(b, sizeof b, "game pid %lu running %d launches %u\n", (unsigned long)g_gamePid, g_game ? 1 : 0, g_launches); o += b;
