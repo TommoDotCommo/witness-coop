@@ -126,6 +126,6 @@ else:
 if mode == 'open':
     s = vstat(db)
     if s and s['game_volume'] >= 0: check('6. game_volume is set on the game\'s Windows audio session (read back from the system)', abs(s['game_volume'] - GV) < 0.02, s['game_volume'])
-    else: print('  6. game volume: unknown (the game has no audio session on this machine)', flush=True)
+    else: check('6. game_volume is set on the game\'s Windows audio session: the game has an audio session and it can be read (without the setting there is none)', False, s and s['game_volume'])
 send(da, ['hover off'])
 print('ALL OK' if ok else 'FAILED'); sys.exit(0 if ok else 1)
