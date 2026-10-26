@@ -220,10 +220,10 @@ void OpenNewGame(bool forLobby = false) {
     if (g_ng) { SetForegroundWindow(g_ng); return; }
     g_ngLobby = forLobby;
     static bool reg; if (!reg) { WNDCLASSW wc = {}; wc.lpfnWndProc = NgProc; wc.hInstance = GetModuleHandleW(nullptr); wc.lpszClassName = L"WitnessNewGame"; wc.hbrBackground = th::BgBrush(); wc.hCursor = LoadCursorW(nullptr, IDC_ARROW); RegisterClassW(&wc); reg = true; }
-    g_ng = CreateWindowExW(WS_EX_DLGMODALFRAME, L"WitnessNewGame", L"New game: what is already completed", WS_CAPTION | WS_SYSMENU | WS_VISIBLE, CW_USEDEFAULT, CW_USEDEFAULT, 620, 640, g_main, nullptr, GetModuleHandleW(nullptr), nullptr);
-    HFONT font = (HFONT)SendMessageW(g_main, WM_GETFONT, 0, 0); auto mk = [&](const wchar_t* cls, const wchar_t* text, DWORD style, int x, int y, int w, int h, int id) { HWND c = CreateWindowExW(0, cls, text, WS_CHILD | WS_VISIBLE | style, x, y, w, h, g_ng, (HMENU)(INT_PTR)id, nullptr, nullptr); SendMessageW(c, WM_SETFONT, (WPARAM)font, TRUE); return c; };
-    mk(L"STATIC", L"Tick the parts of the map that are done when the game starts. Whatever the game needs before them (the gate of the tutorial, the doors on the way) is solved too, in its own order.", SS_LEFT, 12, 8, 590, 36, 0);
-    const auto& d = wprog::Builtin(); g_ngAreas.clear(); int y = 50, col = 0, k = 0;
+    g_ng = CreateWindowExW(WS_EX_DLGMODALFRAME, L"WitnessNewGame", L"New game: what is already completed", WS_CAPTION | WS_SYSMENU | WS_VISIBLE, CW_USEDEFAULT, CW_USEDEFAULT, 620, 665, g_main, nullptr, GetModuleHandleW(nullptr), nullptr);
+    HFONT font = (HFONT)SendMessageW(g_main, WM_GETFONT, 0, 0); auto mk = [&](const wchar_t* cls, const wchar_t* text, DWORD style, int x, int y, int w, int h, int id) { HWND c = CreateWindowExW(0, cls, text, WS_CHILD | WS_VISIBLE | style, x, y, w, h, g_ng, (HMENU)(INT_PTR)id, nullptr, nullptr); SendMessageW(c, WM_SETFONT, (WPARAM)font, TRUE); th::Style(c); return c; };
+    mk(L"STATIC", L"Tick the parts of the map that are done when the game starts. Whatever the game needs before them (the gate of the tutorial, the doors on the way) is solved too, in its own order.", SS_LEFT, 12, 8, 590, 58, 0);
+    const auto& d = wprog::Builtin(); g_ngAreas.clear(); int y = 70, col = 0, k = 0;
     for (size_t i = 0; i < d.areas.size(); ++i) { if (!d.AreaCount((int)i)) continue; int id = ID_NG_AREAS + k++; g_ngAreas.push_back({id, d.areas[i]}); std::string lab = d.areas[i]; for (size_t q = 0; q < lab.size(); ++q) if (lab[q] == '&') { lab.insert(q, "&"); ++q; }      // (an & in a button label would underline the next letter)
         mk(L"BUTTON", W(lab + "  (" + std::to_string(d.AreaCount((int)i)) + ")").c_str(), BS_AUTOCHECKBOX, 16 + col * 290, y, 280, 22, id); if (++col == 2) { col = 0; y += 24; } }
     if (col) y += 24; y += 8;
