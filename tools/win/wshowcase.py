@@ -1,5 +1,5 @@
 # The showcase scenes, run with Windows Python by tools/showcase.py once N real games are up in one group. Every picture is the game's own back-buffer capture (`shot`),
-# converted to PNG; showcase.json lists the pictures with their captions (tools/showcase.md is written from the same words).
+# converted to PNG; showcase.json lists the pictures with their captions (docs/SHOWCASE.md is written from the same pictures).
 # usage: wshowcase.py <out dir> <scenes: all or a comma list> <spot panel (hex)> <drawing plan 'panel:node,node,...' or -> <pid|game dir> ...      (game 1 is the camera of most scenes)
 import os, sys, time, math, json, struct
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -181,6 +181,7 @@ def window_picture(h, name, caption):
     u.GetWindowRect.argtypes = [wt.HWND, ctypes.POINTER(wt.RECT)]; u.PrintWindow.argtypes = [wt.HWND, wt.HDC, wt.UINT]; u.GetWindowDC.restype = wt.HDC; u.GetWindowDC.argtypes = [wt.HWND]; u.ReleaseDC.argtypes = [wt.HWND, wt.HDC]
     g32.CreateCompatibleDC.restype = ctypes.c_void_p; g32.CreateCompatibleBitmap.restype = ctypes.c_void_p; g32.SelectObject.argtypes = [ctypes.c_void_p, ctypes.c_void_p]; g32.GetDIBits.argtypes = [ctypes.c_void_p, ctypes.c_void_p, wt.UINT, wt.UINT, ctypes.c_void_p, ctypes.c_void_p, wt.UINT]
     g32.CreateCompatibleBitmap.argtypes = [wt.HDC, ctypes.c_int, ctypes.c_int]; g32.CreateCompatibleDC.argtypes = [wt.HDC]; g32.DeleteObject.argtypes = [ctypes.c_void_p]; g32.DeleteDC.argtypes = [ctypes.c_void_p]
+    u.RedrawWindow.argtypes = [wt.HWND, ctypes.c_void_p, ctypes.c_void_p, wt.UINT]; u.RedrawWindow(h, None, None, 0x1 | 0x80 | 0x100); time.sleep(0.3)      # every control painted before the picture (a button that was enabled a moment ago was missing once)
     r = wt.RECT(); u.GetWindowRect(h, ctypes.byref(r)); w, hh = r.right - r.left, r.bottom - r.top
     dc = u.GetWindowDC(h); mdc = g32.CreateCompatibleDC(dc); bmp = g32.CreateCompatibleBitmap(dc, w, hh); g32.SelectObject(mdc, bmp); u.PrintWindow(h, mdc, 2)
     class BIH(ctypes.Structure): _fields_ = [('size', wt.DWORD), ('w', ctypes.c_long), ('h', ctypes.c_long), ('planes', wt.WORD), ('bits', wt.WORD), ('comp', wt.DWORD), ('img', wt.DWORD), ('x', ctypes.c_long), ('y', ctypes.c_long), ('u', wt.DWORD), ('i', wt.DWORD)]
@@ -194,11 +195,11 @@ def window_picture(h, name, caption):
 def ghost_scene(vi):
     """See-through players: one stands between the camera and the first panel and becomes a ghost, then steps aside and is solid again."""
     V = games[vi]; B = games[1 if vi == 0 else 0]
-    V.send(['menusel 64', 'menudo teleport'], 5.0); (vx, vy, vz), (th, ph) = V.cam()
+    B.send(['menusel 64', 'menudo teleport'], 5.0); V.send(['menusel 64', 'menudo teleport'], 5.0); (vx, vy, vz), (th, ph) = V.cam()      # both go to the panel first (a plain tp is refused beyond 28 m)
     B.send(['tp %.3f %.3f %.3f %.4f 0' % (vx + math.cos(th) * 1.7, vy + math.sin(th) * 1.7, vz - 1.69, th)], 3.5)
     snap(V, 'ghost_in_way', 'See-through players: player %d stands between the camera and the puzzle panel and is drawn as a ghost, so the puzzle can be read through them.' % (B.idx + 1))
-    B.send(['tp %.3f %.3f %.3f %.4f 0' % (vx + math.cos(th) * 1.7 + math.sin(th) * 2.4, vy + math.sin(th) * 1.7 - math.cos(th) * 2.4, vz - 1.69, th)], 3.5)
-    snap(V, 'ghost_aside', 'The same player two metres to the side, out of the way of the panel: solid again.')
+    B.send(['tp %.3f %.3f %.3f %.4f 0' % (vx + math.cos(th) * 2.2 + math.sin(th) * 1.4, vy + math.sin(th) * 2.2 - math.cos(th) * 1.4, vz - 1.69, th)], 3.5)
+    snap(V, 'ghost_aside', 'The same player a step to the side, out of the line to the panel: solid again.')
 
 def lobby_scene():
     """The lobby of the launcher with two members: A hosts (its player talks with a test voice), B joins with the invite, they chat."""
@@ -222,6 +223,7 @@ def lobby_scene():
     def stat_text(g):
         try: return open(os.path.join(g.dir, 'lobby_stat.txt'), errors='ignore').read()
         except OSError: return ''
+    with open(os.path.join(host.dir, 'witness_coop.cfg'), 'a') as f: f.write('\nlobby_advertise=127.0.0.1\n')      # the invite in the picture shows the loopback address, not this PC's address on the network
     ph, pg = start(hexe, host), start(gexe, guest); time.sleep(3.0)
     cmd(host, 'host %d' % (int(cfgv(host.dir, 'listen', '47000')) + 200)); t0 = time.time(); inv = ''
     while time.time() - t0 < 10 and not inv:
@@ -238,6 +240,7 @@ def lobby_scene():
         if p.value == ph.pid and c.value == 'WitnessLauncher' and u.IsWindowVisible(h): found.append(h)
         return True
     u.EnumWindows(cb, 0)
+    print('  host launcher state: ' + ' | '.join(l[:90] for l in stat_text(host).splitlines()[:6]), flush=True)
     if found: window_picture(found[0], 'launcher_lobby', 'The lobby (the launcher\'s first tab), seen by the host: the invite to send, who is here (the guest has said they are ready; the host shows lit while talking), the chat, and what to play. The host starts the game when everybody is ready.')
     cmd(host, 'leave'); cmd(guest, 'leave'); ph.kill(); pg.kill()
 
@@ -317,7 +320,7 @@ def launcher_scene(vi):
 SCENES = [('lineup', lambda: (lineup(0, 'lineup_a', 'Eight players in one group, each drawn with a different character model (seen by player 1: players 2 to %d).' % N),
                               lineup(1, 'lineup_b', 'The same group seen by player 2: this time player 1 is in the picture.') if N > 2 else None)),
           ('walk', lambda: walkers(0, 'walk', 'The others walking toward the camera: the walk clip of each model, at the speed the other game measured.')),
-          ('ghost', lambda: ghost_scene(0)), ('lobby', lambda: lobby_scene()), ('race', lambda: race_scene()), ('pov', lambda: pov_scene(0)), ('devmenu', lambda: devmenu_scene(0)), ('pause', lambda: pause_pair(0)), ('social', lambda: social_scene(0)), ('emote', lambda: emote_scene(0)), ('draw', lambda: draw_scene(0)), ('voice', lambda: voice_scene(0)), ('panel', lambda: panel_scene(0)), ('map', lambda: map_scene(0)), ('launcher', lambda: launcher_scene(0))]
+          ('ghost', lambda: ghost_scene(1)), ('lobby', lambda: lobby_scene()), ('race', lambda: race_scene()), ('pov', lambda: pov_scene(0)), ('devmenu', lambda: devmenu_scene(0)), ('pause', lambda: pause_pair(0)), ('social', lambda: social_scene(0)), ('emote', lambda: emote_scene(0)), ('draw', lambda: draw_scene(0)), ('voice', lambda: voice_scene(0)), ('panel', lambda: panel_scene(0)), ('map', lambda: map_scene(0)), ('launcher', lambda: launcher_scene(0))]
 t0 = time.time(); print('showcase: %d games, scenes %s, spot panel 0x%s' % (N, ','.join(want), SPOT), flush=True)
 teleport_all(SPOT)
 for name, fn in SCENES:

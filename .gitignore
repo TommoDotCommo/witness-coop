@@ -11,8 +11,8 @@ witness_cmd.taken
 tools/psolve/psolve
 tools/win/wdraw_snapshot.py
 
-# pictures of the game taken by tools/showcase.sh (they are not part of the repository)
-showcase/
+# the full-size pictures taken by tools/showcase.sh (docs/showcase/ has the small JPEGs that are in git: tools/showcase_publish.sh)
+/showcase/
 proxy/build/
 proxy/progress/build/
 launcher/build/

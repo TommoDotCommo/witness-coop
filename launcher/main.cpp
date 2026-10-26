@@ -58,16 +58,22 @@ void AddFields() {
     add(2, "Resolution", "vid:resolution", kCombo, res); add(2, "Custom width", "vid:customW", kEdit, {}, "1920"); add(2, "Custom height", "vid:customH", kEdit, {}, "1080"); add(2, "Anti-aliasing", "vid:multisampling", kCombo, msaa);
     add(2, "Shading quality", "vid:shading", kCombo, q); add(2, "Reflection quality", "vid:reflection", kCombo, q); add(2, "Texture quality", "vid:texture", kCombo, q); add(2, "Texture detail", "vid:textureDetail", kCombo, q); add(2, "Geometry detail", "vid:geometry", kCombo, q);
     add(2, "Frame rate limit (0: none)", "cfg:cap_fps", kEdit, {}, "0");
-    add(3, "Game sound off (starts the game with -no_sound)", "cfg:launcher_no_sound", kCheck); add(3, "Game volume, percent", "cfg:game_volume", kEdit, {}, "100", "the game's own sound, set through the Windows volume mixer when it starts");
-    add(3, "Voice chat", "cfg:voice_mode", kCombo, {"off", "open", "ptt"}, "ptt", "off, open (voice gate) or ptt (push to talk)"); add(3, "Push-to-talk key", "cfg:key_voice", kEdit, {}, "N", "a letter or F1 to F12"); add(3, "Who hears you (voice channel)", "cfg:voice_channel", kCombo, {"proximity", "radio", "global"}, "proximity", "proximity, radio (any distance), global (an open line)"); 
+    
+#ifdef WL_MUT_LONG_LABELS
+    add(3, "Game sound off (starts the game with -no_sound)",
+#else
+    add(3, "Game sound off (-no_sound)",
+#endif
+ "cfg:launcher_no_sound", kCheck); add(3, "Game volume, percent", "cfg:game_volume", kEdit, {}, "100", "its entry in the Windows volume mixer");
+    add(3, "Voice chat", "cfg:voice_mode", kCombo, {"off", "open", "ptt"}, "ptt", "off, open (voice gate) or ptt (push to talk)"); add(3, "Push-to-talk key", "cfg:key_voice", kEdit, {}, "N", "a letter or F1 to F12"); add(3, "Who hears you (voice channel)", "cfg:voice_channel", kCombo, {"proximity", "radio", "global"}, "proximity", "proximity, radio or global (open line)"); 
     add(3, "Voice volume, percent", "cfg:voice_volume", kEdit, {}, "100"); add(3, "Microphone volume, percent", "cfg:mic_volume", kEdit, {}, "100"); add(3, "Hear players within (metres)", "cfg:voice_range", kEdit, {}, "25", "beyond it the voice turns into radio");
     add(3, "Radio range (metres, 0: unlimited)", "cfg:voice_radio_range", kEdit, {}, "0"); add(3, "Radio sound when far away", "cfg:voice_radio", kCheck, {}, "1");
     add(4, "Chat", "cfg:key_chat", kEdit, {}, "T", "a letter or F1 to F12"); add(4, "Ping a place", "cfg:key_ping", kEdit, {}, "P"); add(4, "Emote wheel (hold)", "cfg:key_emote", kEdit, {}, "G"); add(4, "Draw (hold)", "cfg:key_draw", kEdit, {}, "X");
-    add(4, "Drawing canvas", "cfg:key_canvas", kEdit, {}, "Z"); add(4, "Ink colour", "cfg:key_color", kEdit, {}, "B"); add(4, "Character list", "cfg:key_character", kEdit, {}, "C"); add(4, "Next voice channel", "cfg:key_voice_channel", kEdit, {}, "H", "steps proximity, radio, open line, then one on one with each player");
+    add(4, "Drawing canvas", "cfg:key_canvas", kEdit, {}, "Z"); add(4, "Ink colour", "cfg:key_color", kEdit, {}, "B"); add(4, "Character list", "cfg:key_character", kEdit, {}, "C"); add(4, "Next voice channel", "cfg:key_voice_channel", kEdit, {}, "H", "steps proximity, radio, open line, one on one");
     for (const auto& d : wl::SaveOptionDefs()) add(5, d.label, (std::string("opt:") + d.name).c_str(), d.kind == wl::OptKind::Bool ? kCheck : kEdit);
     add(6, "Player number (1, 2, ...)", "cfg:id", kEdit, {}, "1"); add(6, "Name shown to the others", "cfg:name", kEdit); add(6, "UDP port to listen on", "cfg:listen", kEdit, {}, "47001");
-    add(6, "Other players (one per line: number,address,port)", "cfgmulti:peer", kMulti); add(6, "Your character", "cfg:character", kCombo, {}, ""); add(6, "Show other players as different models", "cfg:model_by_player", kCheck);
-    add(6, "Developer menu (F8)", "cfg:dev_menu", kCheck); add(6, "See through players who are in the way of a puzzle", "cfg:see_through", kCheck, {}, "1"); add(6, "Keep running at full speed when this window is not active", "cfg:run_unfocused", kCheck, {}, "0", "two windows on one PC: the other one stays smooth");
+    add(6, "Other players: number,address,port", "cfgmulti:peer", kMulti); add(6, "Your character", "cfg:character", kCombo, {}, ""); add(6, "Show other players as different models", "cfg:model_by_player", kCheck);
+    add(6, "Developer menu (F8)", "cfg:dev_menu", kCheck); add(6, "See through players in the way of a puzzle", "cfg:see_through", kCheck, {}, "1"); add(6, "Keep running when this window is not active", "cfg:run_unfocused", kCheck, {}, "0", "two windows on one PC: stays smooth");
 }
 Field* ByKey(const std::string& k) { for (auto& f : g_fields) if (f.key == k) return &f; return nullptr; }
 std::string GetVal(Field& f) {
@@ -448,9 +454,9 @@ void BuildLobbyPage() {
     label(L"CHAT", 362, 126, 200, true); mk(L"EDIT", L"", WS_BORDER | ES_MULTILINE | ES_READONLY | WS_VSCROLL | ES_AUTOVSCROLL, 362, 148, 462, 190, ID_LB_LOG);
     HWND ce = mk(L"EDIT", L"", WS_BORDER | ES_AUTOHSCROLL, 362, 346, 372, 28, ID_LB_CHAT); SetWindowSubclass(ce, ChatEditProc, 3, 0); mk(L"BUTTON", L"Send", BS_PUSHBUTTON, 742, 344, 82, 32, ID_LB_SEND);
     label(L"VOICE", 16, 390, 200, true); mk(L"BUTTON", L"Mute my microphone", BS_AUTOCHECKBOX, 16, 412, 170, 22, ID_LB_MUTE); mk(L"BUTTON", L"Deafen", BS_AUTOCHECKBOX, 196, 412, 100, 22, ID_LB_DEAF);
-    mk(L"STATIC", L"", SS_OWNERDRAW, 16, 442, 330, 8, ID_LB_LEVEL); label(L"Voice mode and keys are on the Sound and voice page.", 16, 456, 330, true);
+    mk(L"STATIC", L"", SS_OWNERDRAW, 16, 442, 330, 8, ID_LB_LEVEL); label(L"Voice mode and keys: Sound and voice page.", 16, 456, 330, true);
     label(L"WHAT TO PLAY  (the host chooses)", 362, 390, 300, true); label(L"Game", 362, 416, 50); { HWND mc = mk(L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_VSCROLL, 414, 412, 120, 100, ID_LB_MODE); SendMessageW(mc, CB_ADDSTRING, 0, (LPARAM)L"Co-op"); SendMessageW(mc, CB_ADDSTRING, 0, (LPARAM)L"Race"); SendMessageW(mc, CB_SETCURSEL, 0, 0); }
-    label(L"Race goal", 552, 416, 70); mk(L"EDIT", L"panel:9F7F", WS_BORDER | ES_AUTOHSCROLL, 626, 412, 104, 24, ID_LB_GOAL); label(L"panel:ID or count:N", 736, 416, 140, true);
+    label(L"Race goal", 540, 416, 70); mk(L"EDIT", L"panel:9F7F", WS_BORDER | ES_AUTOHSCROLL, 612, 412, 100, 24, ID_LB_GOAL); label(L"panel:ID or count:N", 718, 416, 140, true);
     HWND ng = mk(L"BUTTON", L"New game", BS_AUTOCHECKBOX, 362, 448, 110, 22, ID_LB_NEWGAME); SendMessageW(ng, BM_SETCHECK, BST_CHECKED, 0); mk(L"BUTTON", L"Parts of the map done...", BS_PUSHBUTTON, 480, 444, 190, 30, ID_LB_PARTS); { HWND pi = label(L"", 680, 450, 150, true); SetWindowLongPtrW(pi, GWLP_ID, ID_LB_PARTSINFO); }
     mk(L"BUTTON", L"I am ready", BS_AUTOCHECKBOX, 16, 494, 130, 28, ID_LB_READY); mk(L"BUTTON", L"Start the game", BS_DEFPUSHBUTTON, 154, 488, 200, 38, ID_LB_START);
     HWND rs = label(L"", 362, 494, 462); th::MarkMuted(rs); SetWindowLongPtrW(rs, GWLP_ID, ID_LB_RESULT); PartsInfo(); RefreshLobbyUi();

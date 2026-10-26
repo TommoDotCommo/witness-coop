@@ -10,9 +10,13 @@ Built with the [Co-op Anything](https://github.com/cranebeaker/coop-anything) pl
 No game files are in this repo. You need your own copy of The Witness, Steam build 11370412
 (`witness64_d3d11.exe` SHA-256 `8d672d444df6a6df7130f25a517bdab1af92731fe2138dc5b324d519561d55a5`).
 
+[![Seven players in the garden, each drawn as a different character, with name tags and pings](docs/showcase/lineup_a.jpg)](docs/SHOWCASE.md)
+
+**[See the showcase](docs/SHOWCASE.md)** for pictures of every feature.
+
 ## What works
 
-Chat, pings, emotes, drawing, voice (with channels: proximity, radio, an open line, one on one), see-through players, a race mode, a lobby in the launcher (invite friends, see and talk to them before and after the game), saves that say who played and a new game that starts with chosen parts of the map done are described in [features.md](features.md); pictures of all of it are in [showcase.md](showcase.md).
+Chat, pings, emotes, drawing, voice (with channels: proximity, radio, an open line, one on one), see-through players, a race mode, a lobby in the launcher (invite friends, see and talk to them before and after the game), saves that say who played and a new game that starts with chosen parts of the map done are described in [features.md](features.md); pictures of all of it are in [the showcase](docs/SHOWCASE.md).
 
 - **Player model.** Each player sees the other as an animated, skinned character (glTF `.glb`), drawn into the game's frame by a
   hook on the Direct3D 11 `Present` call. It stands at the other player's feet, faces where they look, plays a walk clip at a rate
