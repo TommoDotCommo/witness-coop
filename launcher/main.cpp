@@ -67,7 +67,7 @@ void AddFields() {
     for (const auto& d : wl::SaveOptionDefs()) add(5, d.label, (std::string("opt:") + d.name).c_str(), d.kind == wl::OptKind::Bool ? kCheck : kEdit);
     add(6, "Player number (1, 2, ...)", "cfg:id", kEdit, {}, "1"); add(6, "Name shown to the others", "cfg:name", kEdit); add(6, "UDP port to listen on", "cfg:listen", kEdit, {}, "47001");
     add(6, "Other players (one per line: number,address,port)", "cfgmulti:peer", kMulti); add(6, "Your character", "cfg:character", kCombo, {}, ""); add(6, "Show other players as different models", "cfg:model_by_player", kCheck);
-    add(6, "Developer menu (F8)", "cfg:dev_menu", kCheck); add(6, "See through players who are in the way of a puzzle", "cfg:see_through", kCheck, {}, "1");
+    add(6, "Developer menu (F8)", "cfg:dev_menu", kCheck); add(6, "See through players who are in the way of a puzzle", "cfg:see_through", kCheck, {}, "1"); add(6, "Keep running at full speed when this window is not active", "cfg:run_unfocused", kCheck, {}, "0", "two windows on one PC: the other one stays smooth");
 }
 Field* ByKey(const std::string& k) { for (auto& f : g_fields) if (f.key == k) return &f; return nullptr; }
 std::string GetVal(Field& f) {
@@ -277,8 +277,14 @@ void BuildPages(HWND parent) {
         Make(pg, L"STATIC", W(f.label).c_str(), SS_LEFT, 16, ry + 3, lw, 20, 0);
         if (f.kind == kCheck) f.h = Make(pg, L"BUTTON", L"", BS_AUTOCHECKBOX, 330, ry, 24, 22, f.id);
         else if (f.kind == kEdit) f.h = Make(pg, L"EDIT", L"", WS_BORDER | ES_AUTOHSCROLL, 330, ry, 120, 22, f.id);
-        else { f.h = Make(pg, L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_VSCROLL, 330, ry, 220, 200, f.id); if (f.key == "cfg:character") { f.choices = {"(default)"}; for (auto& m : models) f.choices.push_back(m); } for (auto& c : f.choices) SendMessageW(f.h, CB_ADDSTRING, 0, (LPARAM)W(c).c_str()); }
-        if (!f.hint.empty()) th::MarkMuted(Make(pg, L"STATIC", W(f.hint).c_str(), SS_LEFT, 460, ry + 3, 340, 20, 0));
+        else { 
+#ifdef WL_MUT_WIDE_COMBOS
+        f.h = Make(pg, L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_VSCROLL, 330, ry, 220, 200, f.id);
+#else
+        f.h = Make(pg, L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_VSCROLL, 330, ry, 190, 200, f.id);
+#endif
+        if (f.key == "cfg:character") { f.choices = {"(default)"}; for (auto& m : models) f.choices.push_back(m); } for (auto& c : f.choices) SendMessageW(f.h, CB_ADDSTRING, 0, (LPARAM)W(c).c_str()); }
+        if (!f.hint.empty()) th::MarkMuted(Make(pg, L"STATIC", W(f.hint).c_str(), SS_LEFT, 540, ry + 3, 300, 20, 0));
         rowY[f.page] += 28;
     }
     // saves
@@ -472,7 +478,7 @@ void PollCommands() {      // tests: one command per line in launcher_cmd.txt, t
 void WriteStat() {      // tests: what the lobby is, as text lines, rewritten every 250 ms
     if (g_statFile.empty() || GetTickCount64() - g_statAt < 250) return; g_statAt = GetTickCount64(); char b[600]; std::string o;
     wlobby::State st = g_sess.Active() ? g_sess.State() : wlobby::State(); lw::VoiceStats v = g_voice.Stats();
-    snprintf(b, sizeof b, "lobby active %d host %d joined %d id %u phase %d start_in %d refused %d\n", g_sess.Active() ? 1 : 0, g_sess.IsHost() ? 1 : 0, g_sess.Joined() ? 1 : 0, g_sess.MyId(), (int)st.phase, st.startInMs, (int)g_sess.Refused()); o += b;
+    snprintf(b, sizeof b, "tabpaints %u\nlobby active %d host %d joined %d id %u phase %d start_in %d refused %d\n", th::TabPaintCount(), g_sess.Active() ? 1 : 0, g_sess.IsHost() ? 1 : 0, g_sess.Joined() ? 1 : 0, g_sess.MyId(), (int)st.phase, st.startInMs, (int)g_sess.Refused()); o += b;
     snprintf(b, sizeof b, "invite %s\n", g_sess.Invite().c_str()); o += b;
     for (const auto& m : st.members) { snprintf(b, sizeof b, "member %u name %s host %d ready %d ingame %d speaking %d playing %d port %u ip %s\n", m.id, m.name.c_str(), m.host, m.ready, m.inGame, m.speaking, m.playing, m.gamePort, wlobby::IpText(m.ip).c_str()); o += b; }
     snprintf(b, sizeof b, "settings mode %d goal %s newgame %d progress %s\n", (int)st.settings.mode, st.settings.raceGoal.c_str(), st.settings.newGame ? 1 : 0, st.settings.progress.c_str()); o += b;

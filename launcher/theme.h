@@ -11,6 +11,7 @@ HBRUSH BgBrush(); HBRUSH SurfaceBrush();
 void Style(HWND h);                                                    // paint this control in the theme (by its class); call after it is created and has its text
 void MarkMuted(HWND h);                                                // a static text that is a hint: dimmer
 LRESULT CtlColor(UINT msg, HDC dc, HWND ctl);                          // the answer to WM_CTLCOLOR*
+unsigned TabPaintCount();                                              // how many times the tab row was painted (the test counts them: a hover must not repaint it again and again)
 void StyleTab(HWND tab);                                               // the row of tabs as words
 void StyleList(HWND list);                                             // a list view
 void PaintHeader(HDC dc, const RECT& client, int height, const wchar_t* subtitle);       // the banner at the top of the window
