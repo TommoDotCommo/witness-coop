@@ -12,7 +12,7 @@ No game files are in this repo. You need your own copy of The Witness, Steam bui
 
 ## What works
 
-Chat, pings, emotes, drawing, voice, a launcher, saves that say who played and a new game that starts with chosen parts of the map done are described in [features.md](features.md); pictures of all of it are in [showcase.md](showcase.md).
+Chat, pings, emotes, drawing, voice (with channels: proximity, radio, an open line, one on one), see-through players, a race mode, a lobby in the launcher (invite friends, see and talk to them before and after the game), saves that say who played and a new game that starts with chosen parts of the map done are described in [features.md](features.md); pictures of all of it are in [showcase.md](showcase.md).
 
 - **Player model.** Each player sees the other as an animated, skinned character (glTF `.glb`), drawn into the game's frame by a
   hook on the Direct3D 11 `Present` call. It stands at the other player's feet, faces where they look, plays a walk clip at a rate
@@ -137,6 +137,8 @@ started by the function call. Panel requested power is at `+0x2A4`; the visible 
 off by default, so a player's own game is unchanged): `save_dir=instance` (the game's save folder, `%APPDATA%\The Witness`, becomes
 `<game folder>\appdata`, or give a path; the owner's real saves are then never touched), `cap_fps=N` (frame cap), `share_zip=1`
 (see above), `force_active=1` (the game believes its window is always active: full speed, and it accepts injected input, without taking the focus or the mouse; the real cursor is replaced by a virtual one). Test-only switches: `drop_first_event=1`, `no_resend=1`, `no_echo_guard=1`, `no_resync_on_restart=1`, `skip_entity_zero=1`, `no_panel_power=1`, `no_cable_sync=1`, `no_cable_off=1`, `no_off_snapshot=1`, `no_snap_reassert=1`, `no_cable_arbiter=1`, `no_power_link=1`, `no_target_dispatch=1`. The log is `witness_proxy.log` next to the DLL.
+
+Keys added with the lobby and the race (all optional): `game_mode=race` (nothing of the world is shared, see features.md) with `race_goal=panel:<hex>|count:<n>` and `race_countdown_ms=` (default 5000), `voice_channel=proximity|radio|global|direct:<player>` and `key_voice_channel=` (default `H`), `see_through=0|1` and `ghost_alpha=`, and for the launcher `lobby_port=` and `lobby_advertise=`; test switches `race_emits=1`, `race_applies=1`, `no_race_hud=1`, `no_voice_channel=1`, `no_voice_channel_key=1`, `voice_no_self=1`. `racestat`, `ghoststat` (in `modelstat`) and the channel in `voicestat` are the readouts the tests use.
 
 Player model keys (also optional): `model=<name or path>` (default `cesium-man`; a bundled name is looked up in `witness_models\` next to the DLL, anything else is a `.glb` path; `model=none` draws the flat puppet), `model_height=<m>`, `model_speed=<m/s the walk clip was made for>`, `model_yaw=<degrees>` (each model's own defaults come from its `<file>.glb.txt`), `depth_bias=<fraction>` and `depth_near=<m>` (how the game's depth is compared; `depth_near=0.0597` was measured), and the test mutants `no_model_depth=1`, `no_model_gait=1` and `no_model_select=1`. `tools/install.sh` copies `assets/models/` next to the DLL.
 
