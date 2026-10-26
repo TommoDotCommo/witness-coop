@@ -30,7 +30,7 @@ void Init() { if (!g_csInit) { InitializeCriticalSection(&g_cs); g_csInit = true
 ID3D11Texture2D* g_stage; UINT g_sw, g_sh; DXGI_FORMAT g_sfmt; enum { Idle, Copied } g_state; LONG g_copyFrame; DWORD g_lastCap; LONG g_frames;
 std::vector<uint8_t> g_outRgba;                      // the newest downsampled picture, waiting for the encoder
 bool g_outFresh; HANDLE g_outEvent; HANDLE g_thread;
-volatile LONG g_sent, g_recv, g_decoded; volatile int g_mode;
+volatile LONG g_sent, g_recv, g_decoded; volatile int g_mode = 1;      // 1: the other player's screen is shown small, 2: large (F9). It started at 0, and a screen asked for with V, [ ] or the list was never drawn.
 
 // ---- who watches whom (see core/pov.h): the sender streams only to players who asked, the viewer asks the one it watches about once a second
 witness::PovSubs g_subs; witness::PovView g_view; DWORD g_lastReq; unsigned g_reqTarget; volatile LONG g_requests; volatile LONG g_stopSent;
@@ -92,7 +92,7 @@ DWORD WINAPI EncodeThread(LPVOID) {
 
 bool VideoEnabled() { return !GetCfg().noPartnerView || GetCfg().devMenu; }
 static unsigned LowestRemote() { unsigned best = 0; for (const auto& r : CoopGetRemotes()) if (r.valid && (!best || r.id < best)) best = r.id; return best; }
-int VideoViewMode() { Init(); EnterCriticalSection(&g_cs); unsigned w = g_view.current(); LeaveCriticalSection(&g_cs); return w ? g_mode : 0; }
+int VideoViewMode() { Init(); EnterCriticalSection(&g_cs); unsigned w = g_view.current(); LeaveCriticalSection(&g_cs); return w ? (GetCfg().povModeZero ? 0 : g_mode) : 0; }
 unsigned VideoWatching() { Init(); EnterCriticalSection(&g_cs); unsigned w = g_view.current(); LeaveCriticalSection(&g_cs); return w; }
 void VideoWatch(unsigned id) { Init(); EnterCriticalSection(&g_cs); g_view.watch(id); LeaveCriticalSection(&g_cs); }
 void VideoClear() { Init(); EnterCriticalSection(&g_cs); g_view.clear(); LeaveCriticalSection(&g_cs); }

@@ -2,6 +2,7 @@
 #include <cstdint>
 // Calls into the game's own functions (build 11370412, RVAs from the module base).
 void HooksCursorStat(unsigned* clip, unsigned* setpos);    // hooks.cpp: how often the game tried to cage or move the mouse while its window was not the foreground one
+void OverlayPovDrawn(unsigned* box, unsigned* pic);        // overlay.cpp: frames the other player's screen was drawn / drawn with a picture
 void OverlayLineDump();                                // test command linedump (overlay.cpp)
 void GameStart();       // starts the command-file poller (witness_cmd.txt next to the DLL)
 void GameRunQueued();   // call from the render thread (Present hook): runs queued commands
