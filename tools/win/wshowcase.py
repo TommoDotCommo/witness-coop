@@ -170,6 +170,98 @@ def voice_scene(vi):
     """Voice: the even players talk (a test voice instead of a microphone); their speaking marks show beside their heads, and the microphone line at the bottom left."""
     V = games[vi]; lineup(vi, None, None); time.sleep(1.5)
     snap(V, 'voice', 'Voice chat: moving bars beside the head of every player who is talking, the microphone line at the bottom left (hold N to talk). Near players are heard in the world, far ones over the radio.')
+    for ch, name, what in (('radio', 'voice_radio', 'Radio: everybody hears you at any distance, with the walkie-talkie sound.'), ('global', 'voice_global', 'Open line: everybody hears you as you sound, as loud far away as next to you.'), ('direct:2', 'voice_direct', 'One on one: only that player hears you (over the radio); the label names them.')):
+        V.send(['voicechannel ' + ch], 1.5); snap(V, name, 'Voice channel (H steps through them; the label is in the microphone line at the bottom left). ' + what)
+    V.send(['voicechannel proximity'], 0.5)
+
+def window_picture(h, name, caption):
+    """A picture of one window, asked of the window itself (PrintWindow): nothing in front of it can end up in the picture."""
+    import ctypes, ctypes.wintypes as wt
+    u = ctypes.WinDLL('user32', use_last_error=True); g32 = ctypes.WinDLL('gdi32', use_last_error=True)
+    u.GetWindowRect.argtypes = [wt.HWND, ctypes.POINTER(wt.RECT)]; u.PrintWindow.argtypes = [wt.HWND, wt.HDC, wt.UINT]; u.GetWindowDC.restype = wt.HDC; u.GetWindowDC.argtypes = [wt.HWND]; u.ReleaseDC.argtypes = [wt.HWND, wt.HDC]
+    g32.CreateCompatibleDC.restype = ctypes.c_void_p; g32.CreateCompatibleBitmap.restype = ctypes.c_void_p; g32.SelectObject.argtypes = [ctypes.c_void_p, ctypes.c_void_p]; g32.GetDIBits.argtypes = [ctypes.c_void_p, ctypes.c_void_p, wt.UINT, wt.UINT, ctypes.c_void_p, ctypes.c_void_p, wt.UINT]
+    g32.CreateCompatibleBitmap.argtypes = [wt.HDC, ctypes.c_int, ctypes.c_int]; g32.CreateCompatibleDC.argtypes = [wt.HDC]; g32.DeleteObject.argtypes = [ctypes.c_void_p]; g32.DeleteDC.argtypes = [ctypes.c_void_p]
+    r = wt.RECT(); u.GetWindowRect(h, ctypes.byref(r)); w, hh = r.right - r.left, r.bottom - r.top
+    dc = u.GetWindowDC(h); mdc = g32.CreateCompatibleDC(dc); bmp = g32.CreateCompatibleBitmap(dc, w, hh); g32.SelectObject(mdc, bmp); u.PrintWindow(h, mdc, 2)
+    class BIH(ctypes.Structure): _fields_ = [('size', wt.DWORD), ('w', ctypes.c_long), ('h', ctypes.c_long), ('planes', wt.WORD), ('bits', wt.WORD), ('comp', wt.DWORD), ('img', wt.DWORD), ('x', ctypes.c_long), ('y', ctypes.c_long), ('u', wt.DWORD), ('i', wt.DWORD)]
+    bi = BIH(40, w, -hh, 1, 32, 0, 0, 0, 0, 0, 0); buf = ctypes.create_string_buffer(w * hh * 4); g32.GetDIBits(mdc, bmp, 0, hh, buf, ctypes.byref(bi), 0)
+    path = os.path.join(out, name + '.bmp'); f = open(path, 'wb'); f.write(struct.pack('<2sIHHI', b'BM', 54 + w * hh * 4, 0, 0, 54) + struct.pack('<IiiHHIIiiII', 40, w, -hh, 1, 32, 0, w * hh * 4, 0, 0, 0, 0))
+    raw = bytearray(buf.raw)
+    for i in range(3, len(raw), 4): raw[i] = 255
+    f.write(bytes(raw)); f.close(); g32.DeleteObject(bmp); g32.DeleteDC(mdc); u.ReleaseDC(h, dc)
+    bmp_to_png(path, os.path.join(out, name + '.png'), 1, None); os.remove(path); manifest.append(dict(file=name + '.png', caption=caption, player=0)); print('  picture', name, flush=True)
+
+def ghost_scene(vi):
+    """See-through players: one stands between the camera and the first panel and becomes a ghost, then steps aside and is solid again."""
+    V = games[vi]; B = games[1 if vi == 0 else 0]
+    V.send(['menusel 64', 'menudo teleport'], 5.0); (vx, vy, vz), (th, ph) = V.cam()
+    B.send(['tp %.3f %.3f %.3f %.4f 0' % (vx + math.cos(th) * 1.7, vy + math.sin(th) * 1.7, vz - 1.69, th)], 3.5)
+    snap(V, 'ghost_in_way', 'See-through players: player %d stands between the camera and the puzzle panel and is drawn as a ghost, so the puzzle can be read through them.' % (B.idx + 1))
+    B.send(['tp %.3f %.3f %.3f %.4f 0' % (vx + math.cos(th) * 1.7 + math.sin(th) * 2.4, vy + math.sin(th) * 1.7 - math.cos(th) * 2.4, vz - 1.69, th)], 3.5)
+    snap(V, 'ghost_aside', 'The same player two metres to the side, out of the way of the panel: solid again.')
+
+def lobby_scene():
+    """The lobby of the launcher with two members: A hosts (its player talks with a test voice), B joins with the invite, they chat."""
+    import subprocess, ctypes, ctypes.wintypes as wt
+    host, guest = games[1 if N > 1 else 0], games[0]; hexe, gexe = os.path.join(host.dir, 'witness_launcher.exe'), os.path.join(guest.dir, 'witness_launcher.exe')
+    if not (os.path.exists(hexe) and os.path.exists(gexe)): print('  no launcher exes: skipping the lobby scene'); return
+    def cfgv(d, key, default):
+        for l in open(os.path.join(d, 'witness_coop.cfg'), errors='ignore'):
+            if l.startswith(key + '='): return l.split('=', 1)[1].strip()
+        return default
+    si = subprocess.STARTUPINFO(); si.dwFlags |= subprocess.STARTF_USESHOWWINDOW; si.wShowWindow = 4
+    def start(exe, g): 
+        for f in ('launcher_cmd.txt', 'lobby_stat.txt'):
+            try: os.remove(os.path.join(g.dir, f))
+            except OSError: pass
+        return subprocess.Popen([exe, '--dir', g.dir, '--no-activate', '--cmd-file', os.path.join(g.dir, 'launcher_cmd.txt'), '--stat-file', os.path.join(g.dir, 'lobby_stat.txt')], startupinfo=si)
+    def cmd(g, *lines):
+        p = os.path.join(g.dir, 'launcher_cmd.txt'); t = time.time()
+        while os.path.exists(p) and time.time() - t < 8: time.sleep(0.05)
+        open(p + '.tmp', 'w').write('\n'.join(lines) + '\n'); os.replace(p + '.tmp', p); time.sleep(0.5)
+    def stat_text(g):
+        try: return open(os.path.join(g.dir, 'lobby_stat.txt'), errors='ignore').read()
+        except OSError: return ''
+    ph, pg = start(hexe, host), start(gexe, guest); time.sleep(3.0)
+    cmd(host, 'host %d' % (int(cfgv(host.dir, 'listen', '47000')) + 200)); t0 = time.time(); inv = ''
+    while time.time() - t0 < 10 and not inv:
+        for l in stat_text(host).splitlines():
+            if l.startswith('invite ') and len(l) > 10: inv = l[7:].strip()
+        time.sleep(0.3)
+    cmd(guest, 'join ' + inv); time.sleep(3.0)
+    cmd(host, 'chat Everybody here? The panel in the garden is a good start.', 'mode coop'); cmd(guest, 'chat Here. Hold N and say something, I can hear the test voice.', 'ready 1'); cmd(host, 'voicestart'); cmd(guest, 'voicestart'); time.sleep(4.0)
+    u = ctypes.WinDLL('user32', use_last_error=True); WinEnum = ctypes.WINFUNCTYPE(wt.BOOL, wt.HWND, wt.LPARAM)
+    found = []
+    @WinEnum
+    def cb(h, l):
+        p = wt.DWORD(); u.GetWindowThreadProcessId(h, ctypes.byref(p)); c = ctypes.create_unicode_buffer(40); u.GetClassNameW(h, c, 40)
+        if p.value == ph.pid and c.value == 'WitnessLauncher' and u.IsWindowVisible(h): found.append(h)
+        return True
+    u.EnumWindows(cb, 0)
+    if found: window_picture(found[0], 'launcher_lobby', 'The lobby (the launcher\'s first tab), seen by the host: the invite to send, who is here (the guest has said they are ready; the host shows lit while talking), the chat, and what to play. The host starts the game when everybody is ready.')
+    cmd(host, 'leave'); cmd(guest, 'leave'); ph.kill(); pg.kill()
+
+def race_scene():
+    """A race (game_mode=race, goal: 3 panels): the countdown, the race with the standings, and the winner."""
+    import re
+    V, B = games[0], games[1 if N > 1 else 0]
+    def rstat(g):
+        log = os.path.join(g.dir, 'witness_proxy.log'); n0 = sum(1 for l in open(log, errors='ignore') if l.startswith('racestat: phase')); g.send(['racestat']); t = time.time()
+        while time.time() - t < 8:
+            ls = [l for l in open(log, errors='ignore') if l.startswith('racestat: phase')]
+            if len(ls) > n0:
+                m = re.match(r'racestat: phase (\w+) go_in (-?\d+)', ls[-1]); return m[1], int(m[2])
+            time.sleep(0.05)
+        return None, 0
+    ph, go = rstat(V); t0 = time.time()
+    while time.time() - t0 < 120 and not (ph == 'countdown' and go < 3500): time.sleep(0.4); ph, go = rstat(V)
+    snap(V, 'race_countdown', 'Race mode: everybody waits until all the worlds are loaded, then the countdown; GO is the same moment for all.')
+    t0 = time.time()
+    while time.time() - t0 < 60 and ph != 'running': time.sleep(0.5); ph, go = rstat(V)
+    time.sleep(2.0); B.send(['solve 5d'], 0.5); V.send(['solve 5d', 'solve 5e'], 2.5)
+    snap(V, 'race_running', 'The race: the clock, the goal (solve 3 panels), and the standings with each player\'s count. Nothing one player solves is solved in the other\'s world.')
+    V.send(['solve 5f'], 2.5); time.sleep(2.5)
+    snap(V, 'race_winner', 'The first to the goal wins: the banner shows the winner and the time; the other player is still racing.')
 
 def map_scene(vi):
     """The island picture: the player flies over the island and stitches the game's own frames, then the dev menu map shows it."""
@@ -181,12 +273,9 @@ def map_scene(vi):
 def launcher_scene(vi):
     """The launcher window: the pages and the new-game window, captured from the window itself."""
     import subprocess, ctypes, ctypes.wintypes as wt
+    u = ctypes.WinDLL('user32', use_last_error=True)
     exe = os.path.join(games[vi].dir, 'witness_launcher.exe')
     if not os.path.exists(exe): print('  no launcher exe in the game folder: skipping the launcher scene'); return
-    u = ctypes.WinDLL('user32', use_last_error=True); g32 = ctypes.WinDLL('gdi32', use_last_error=True)
-    u.GetWindowRect.argtypes = [wt.HWND, ctypes.POINTER(wt.RECT)]; u.PrintWindow.argtypes = [wt.HWND, wt.HDC, wt.UINT]; u.GetWindowDC.restype = wt.HDC; u.GetWindowDC.argtypes = [wt.HWND]; u.ReleaseDC.argtypes = [wt.HWND, wt.HDC]
-    g32.CreateCompatibleDC.restype = ctypes.c_void_p; g32.CreateCompatibleBitmap.restype = ctypes.c_void_p; g32.SelectObject.argtypes = [ctypes.c_void_p, ctypes.c_void_p]; g32.GetDIBits.argtypes = [ctypes.c_void_p, ctypes.c_void_p, wt.UINT, wt.UINT, ctypes.c_void_p, ctypes.c_void_p, wt.UINT]
-    g32.CreateCompatibleBitmap.argtypes = [wt.HDC, ctypes.c_int, ctypes.c_int]; g32.CreateCompatibleDC.argtypes = [wt.HDC]; g32.DeleteObject.argtypes = [ctypes.c_void_p]; g32.DeleteDC.argtypes = [ctypes.c_void_p]
     WinEnum = ctypes.WINFUNCTYPE(wt.BOOL, wt.HWND, wt.LPARAM)
     def find(pid, cls):
         found = []
@@ -196,28 +285,19 @@ def launcher_scene(vi):
             if p.value == pid and c.value == cls and u.IsWindowVisible(h): found.append(h)
             return True
         u.EnumWindows(cb, 0); return found[0] if found else None
-    def grab_window(h, name, caption):
-        r = wt.RECT(); u.GetWindowRect(h, ctypes.byref(r)); w, hh = r.right - r.left, r.bottom - r.top
-        dc = u.GetWindowDC(h); mdc = g32.CreateCompatibleDC(dc); bmp = g32.CreateCompatibleBitmap(dc, w, hh); g32.SelectObject(mdc, bmp); u.PrintWindow(h, mdc, 2)
-        class BIH(ctypes.Structure): _fields_ = [('size', wt.DWORD), ('w', ctypes.c_long), ('h', ctypes.c_long), ('planes', wt.WORD), ('bits', wt.WORD), ('comp', wt.DWORD), ('img', wt.DWORD), ('x', ctypes.c_long), ('y', ctypes.c_long), ('u', wt.DWORD), ('i', wt.DWORD)]
-        bi = BIH(40, w, -hh, 1, 32, 0, 0, 0, 0, 0, 0); buf = ctypes.create_string_buffer(w * hh * 4); g32.GetDIBits(mdc, bmp, 0, hh, buf, ctypes.byref(bi), 0)
-        path = os.path.join(out, name + '.bmp'); f = open(path, 'wb'); f.write(struct.pack('<2sIHHI', b'BM', 54 + w * hh * 4, 0, 0, 54) + struct.pack('<IiiHHIIiiII', 40, w, -hh, 1, 32, 0, w * hh * 4, 0, 0, 0, 0))
-        raw = bytearray(buf.raw)
-        for i in range(3, len(raw), 4): raw[i] = 255
-        f.write(bytes(raw)); f.close(); g32.DeleteObject(bmp); g32.DeleteDC(mdc); u.ReleaseDC(h, dc)
-        bmp_to_png(path, os.path.join(out, name + '.png'), 1, None); os.remove(path); manifest.append(dict(file=name + '.png', caption=caption, player=0)); print('  picture', name, flush=True)
+    grab_window = window_picture
     si = subprocess.STARTUPINFO(); si.dwFlags |= subprocess.STARTF_USESHOWWINDOW; si.wShowWindow = 4
-    pages = [(0, 'launcher_play', 'The launcher (witness_launcher.exe): Play. Continue starts the game on the latest save with the settings of every page; New game asks what is already completed.'),
-             (1, 'launcher_video', 'Video: the game\'s own Launcher.variables, edited outside the game and written in its format (render profile, full screen, vsync, resolution or a custom size, anti-aliasing, the quality settings).'),
-             (2, 'launcher_sound', 'Sound and voice: the game\'s volume (set on its Windows audio session), voice mode, push-to-talk key, voice and microphone volume, proximity and radio ranges.'),
-             (4, 'launcher_options', 'Game options: the options that live inside each save (mouse speed, invert, brightness, field of view, ...), patched in place with a copy of the save kept.'),
-             (6, 'launcher_saves', 'Saves: each save with the players who were in the game and how far it got (panels, lasers, time played); the details on the right of the list show the progress by area.')]
+    pages = [(1, 'launcher_play', 'The launcher (witness_launcher.exe): Play. Continue starts the game on the latest save with the settings of every page; New game asks what is already completed.'),
+             (2, 'launcher_video', 'Video: the game\'s own Launcher.variables, edited outside the game and written in its format (render profile, full screen, vsync, resolution or a custom size, anti-aliasing, the quality settings).'),
+             (3, 'launcher_sound', 'Sound and voice: the game\'s volume (set on its Windows audio session), voice mode, push-to-talk key, voice and microphone volume, proximity and radio ranges.'),
+             (5, 'launcher_options', 'Game options: the options that live inside each save (mouse speed, invert, brightness, field of view, ...), patched in place with a copy of the save kept.'),
+             (7, 'launcher_saves', 'Saves: each save with the players who were in the game and how far it got (panels, lasers, time played); the details on the right of the list show the progress by area.')]
     for page, name, caption in pages:
         p = subprocess.Popen([exe, '--dir', games[vi].dir, '--page', str(page), '--no-activate'], startupinfo=si); h = None; t0 = time.time()
         while time.time() - t0 < 10 and not h: h = find(p.pid, 'WitnessLauncher'); time.sleep(0.2)
         time.sleep(0.8)
         if h:
-            if page == 6:      # select the newest save so the details are shown
+            if page == 7:      # select the newest save so the details are shown
                 pass
             grab_window(h, name, caption)
         p.kill()
@@ -237,9 +317,9 @@ def launcher_scene(vi):
 SCENES = [('lineup', lambda: (lineup(0, 'lineup_a', 'Eight players in one group, each drawn with a different character model (seen by player 1: players 2 to %d).' % N),
                               lineup(1, 'lineup_b', 'The same group seen by player 2: this time player 1 is in the picture.') if N > 2 else None)),
           ('walk', lambda: walkers(0, 'walk', 'The others walking toward the camera: the walk clip of each model, at the speed the other game measured.')),
-          ('pov', lambda: pov_scene(0)), ('devmenu', lambda: devmenu_scene(0)), ('pause', lambda: pause_pair(0)), ('social', lambda: social_scene(0)), ('emote', lambda: emote_scene(0)), ('draw', lambda: draw_scene(0)), ('voice', lambda: voice_scene(0)), ('panel', lambda: panel_scene(0)), ('map', lambda: map_scene(0)), ('launcher', lambda: launcher_scene(0))]
+          ('ghost', lambda: ghost_scene(0)), ('lobby', lambda: lobby_scene()), ('race', lambda: race_scene()), ('pov', lambda: pov_scene(0)), ('devmenu', lambda: devmenu_scene(0)), ('pause', lambda: pause_pair(0)), ('social', lambda: social_scene(0)), ('emote', lambda: emote_scene(0)), ('draw', lambda: draw_scene(0)), ('voice', lambda: voice_scene(0)), ('panel', lambda: panel_scene(0)), ('map', lambda: map_scene(0)), ('launcher', lambda: launcher_scene(0))]
 t0 = time.time(); print('showcase: %d games, scenes %s, spot panel 0x%s' % (N, ','.join(want), SPOT), flush=True)
 teleport_all(SPOT)
 for name, fn in SCENES:
-    if 'all' in want or name in want: print('scene', name, flush=True); fn()
+    if name in want or ('all' in want and name != 'race'): print('scene', name, flush=True); fn()      # (the race needs its own run: SHOWCASE_CFG_EXTRA=game_mode=race tools/showcase.sh 2 race)
 json.dump(manifest, open(os.path.join(out, 'showcase.json'), 'w'), indent=1); print('done in %.0f s, %d pictures' % (time.time() - t0, len(manifest)))

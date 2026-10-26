@@ -39,6 +39,7 @@ def prepare(c, config, names, avail):
     mine = names[(c.id - 1) % len(names)]
     config += 'name=%s\nmodel=%s\nmodel_by_player=1\nforce_active=1\ncap_fps=30\ndev_menu=1\nvoice_mute_output=1\n' % (NAMES.get(mine, mine), names[0])
     config += 'voice_mode=open\nvoice_test_tone=300,900,1700\n' if c.id % 2 == 0 else 'voice_mode=ptt\n'      # the even players are talking (a test voice: no microphone is needed)
+    config += os.environ.get('SHOWCASE_CFG_EXTRA', '').replace('\\n', '\n') + '\n'      # e.g. the race: SHOWCASE_CFG_EXTRA='game_mode=race\\nrace_goal=count:3\\nrace_countdown_ms=60000' tools/showcase.sh 2 race
     cfg = d / 'witness_coop.cfg'; cfg.unlink(missing_ok=True); cfg.write_text(config)
     for name in ('witness_cmd.txt', 'witness_proxy.log', 'witness_net.json'): (d / name).unlink(missing_ok=True)
     for leftover in ('shots', 'presets', 'savepoints'): shutil.rmtree(d / leftover, ignore_errors=True)      # pictures and save points of earlier runs
