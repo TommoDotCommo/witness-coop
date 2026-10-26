@@ -36,6 +36,7 @@ struct Cfg {
     bool voiceRadio = true;      // voice_radio=0: a voice beyond the range is not heard at all
     bool race = false; std::string raceGoal = "panel:9F7F"; bool noRaceHud = false; int raceCountdownMs = 5000;      // game_mode=race: nothing of the world is shared and the players race (race/race.h); race_goal=panel:<hex>|count:<n>; no_race_hud=1: nothing drawn (test)
     bool lineOldAnchor = false, lineWholeEdge = false;      // test mutants: lines are sent as offsets from the panel's position now (the old way), the tip of a line being drawn is the end of its edge
+    bool povNeedsAim = false;      // test mutant pov_needs_aim=1: V does nothing unless the crosshair is on a player (the old behaviour)
     bool runUnfocused = false;      // run_unfocused=1: the game keeps running at full speed (not the ~10 fps of a background window) when its window is not active; the keyboard and mouse still only reach the window that has the focus
     bool noSeeThrough = false; float ghostAlpha = 0.22f;      // see_through=0: players stay solid when they are in the way of a puzzle; ghost_alpha=: how see-through they become (ghost/ghost.h)
     unsigned keyVoice = 'N';     // key_voice=: push to talk

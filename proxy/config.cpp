@@ -78,6 +78,7 @@ const Cfg& GetCfg() {
             else if (sscanf(line, "race_goal=%39s", s) == 1) r.raceGoal = s;
             else if (sscanf(line, "race_countdown_ms=%d", &v) == 1) r.raceCountdownMs = std::max(1000, std::min(600000, v));
             else if (sscanf(line, "no_race_hud=%d", &v) == 1) r.noRaceHud = v != 0;
+            else if (sscanf(line, "pov_needs_aim=%d", &v) == 1) r.povNeedsAim = v != 0;
             else if (sscanf(line, "run_unfocused=%d", &v) == 1) r.runUnfocused = v != 0;
             else if (sscanf(line, "line_old_anchor=%d", &v) == 1) r.lineOldAnchor = v != 0;
             else if (sscanf(line, "line_whole_edge=%d", &v) == 1) r.lineWholeEdge = v != 0;

@@ -295,7 +295,10 @@ bool PovKey(unsigned vk, bool down) {       // V: watch the player you look at (
     }
     if (!down) return false;
     if (vk == VK_F5) { g_rosterOpen = true; g_rosterSel = 0; return true; }
-    if (vk == 'V') { unsigned a = g_aimed.load(); if (a) { VideoToggleWatch(a); return true; } if (VideoWatching()) { VideoClear(); return true; } return false; }
+    if (vk == 'V') {      // the player the crosshair is on; failing that, the only other player, or the list when there are several (so the key never does nothing while somebody is there)
+        unsigned a = g_aimed.load(); if (a) { VideoToggleWatch(a); return true; } if (VideoWatching()) { VideoClear(); return true; }
+        if (GetCfg().povNeedsAim) return false;
+        std::vector<unsigned> ids = PlayerIds(); if (ids.size() == 1) { VideoWatch(ids[0]); return true; } if (ids.size() > 1) { g_rosterOpen = true; g_rosterSel = 0; return true; } return false; }
     if (vk == VK_OEM_6) { VideoNext(PlayerIds()); return true; }
     if (vk == VK_OEM_4) { VideoPrev(PlayerIds()); return true; }
     return false;
@@ -336,6 +339,13 @@ static void DrawNameTags(float W, float H) {
         char b[96]; snprintf(b, sizeof b, watching ? "[V] stop watching %s" : "[V] watch %s's view", aimedName && aimedName[0] ? aimedName : "player"); (void)aimedPing;
         float tw = UiTextWidth(b, k), th = UiLineHeight(k), x = W / 2 - tw / 2, y = H / 2 + 70 * k;
         UiRect(x - 8 * k, y - 4 * k, tw + 16 * k, th + 8 * k, Rgba(0, 0, 0, 0.6f)); UiText(x, y, b, Rgba(col[0], col[1], col[2], 1), k);
+    }
+    if (!aimed && !g_rosterOpen.load() && !VideoWatching() && !GamePaused()) {      // a quiet reminder that the other players' screens can be watched
+        std::vector<unsigned> ids = PlayerIds(); if (!ids.empty()) {
+            float k = std::max(1.0f, H / 1080.0f); char b[96]; const char* nm = nullptr; if (ids.size() == 1) for (const auto& r : CoopGetRemotes()) if (r.id == ids[0] && r.name[0]) nm = r.name;
+            if (nm) snprintf(b, sizeof b, "V  watch %s's view", nm); else snprintf(b, sizeof b, "V  watch a player's view   F5  list");
+            float tw = UiTextWidth(b, 0.8f * k), x = W - tw - 24 * k, y = H - 50 * k; UiRect(x - 6 * k, y - 4 * k, tw + 12 * k, UiLineHeight(0.8f * k) + 8 * k, Rgba(0, 0, 0, 0.4f)); UiText(x, y, b, Rgba(0.7f, 0.75f, 0.85f, 1), 0.8f * k);
+        }
     }
     if (g_rosterOpen.load()) {          // the player list: Up/Down, Enter watches, Backspace clears, F5 / Esc closes
         std::vector<unsigned> ids = PlayerIds(); float k = std::max(1.0f, H / 1080.0f), lh = UiLineHeight(k) + 6 * k, x = 24 * k, y = 90 * k, w = 520 * k;
