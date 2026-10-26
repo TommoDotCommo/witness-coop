@@ -5,8 +5,10 @@
 #include <cstdio>
 #include <cstdint>
 #include <cstring>
+#include <map>
 #include <vector>
 #include "coop.h"
+#include "frame/panelframe.h"
 #include "game.h"
 #include "state.h"
 #include "config.h"
@@ -65,24 +67,33 @@ public:
     // 1.0, 1.0, the world position of a (3 floats), of b (3 floats), a zero). It stays after the panel is solved. Each node goes out with its place in
     // millimetres from the panel's own position, so the other game never has to know how the panel's graph sits in the world.
     bool scanLines(std::vector<witness::LineOut>& out) override {
+        // A drawn line is kept by the game as world positions that are written while it is drawn and never updated, but a panel can move afterwards (the first ones are part of a door that
+        // swings open). So the line is sent in the panel's own frame, turned into it with the panel's pose from the moment the trace last changed, and the other game turns it back with
+        // its own panel's pose (overlay.cpp). Each record is a segment: its two node numbers, where it starts and where it ends in the world; the tip of the segment being drawn is the
+        // fraction of the way (word 4) from the start to the end, which the game keeps apart from the end.
         for (unsigned id : panelIds_) {
             uintptr_t e = GameEntity(id); if (!e) continue;
             uint32_t n = Rd32(e + 0x228); if (n == 0 || n > 600) continue;
             uintptr_t ptr = 0; if (!Rd(e + 0x230, &ptr, 8) || !ptr) continue;
             std::vector<uint32_t> rec(size_t(n) * 13); if (!Rd(ptr, rec.data(), rec.size() * 4)) continue;
-            float pp[3]; if (!Rd(e + 0x24, pp, 12)) continue;
+            float pp[3], qq[4]; if (!Rd(e + 0x24, pp, 12) || !Rd(e + 0x34, qq, 16)) continue;
+            Frame& fr = frames_[id]; if (fr.rec != rec) { fr.rec = rec; memcpy(fr.pos, pp, 12); memcpy(fr.q, qq, 16); }      // the trace changed: the panel is where the trace was written
+            if (GetCfg().lineOldAnchor) { memcpy(fr.pos, pp, 12); fr.q[0] = fr.q[1] = fr.q[2] = 0; fr.q[3] = 1; }      // (mutant: the old way, world offsets from where the panel is now)
+            wframe::Q q = {fr.q[0], fr.q[1], fr.q[2], fr.q[3]};
             witness::LineOut l; l.panel = id; l.final = PanelSolved(e);
-            auto point = [&](uint32_t node, const uint32_t* w) {
-                witness::LinePoint p; p.node = uint16_t(node);
-                for (int k = 0; k < 3; ++k) { float f; memcpy(&f, w + k, 4); float mm = (f - pp[k]) * 1000.0f; p.d[k] = int16_t(mm > 32000 ? 32000 : mm < -32000 ? -32000 : mm); }
+            auto point = [&](uint32_t node, const float* world) {
+                float local[3]; wframe::ToLocal(fr.pos, q, world, local); witness::LinePoint p; p.node = uint16_t(node);
+                for (int k = 0; k < 3; ++k) { float mm = local[k] * 1000.0f; p.d[k] = int16_t(mm > 32000 ? 32000 : mm < -32000 ? -32000 : mm); }
                 l.pts.push_back(p);
             };
             bool bad = false;
             for (uint32_t i = 0; i < n && !bad; ++i) {
                 const uint32_t* r = rec.data() + size_t(i) * 13;
                 if (r[0] > 4000 || r[1] > 4000) { bad = true; break; }
-                if (i == 0) point(r[0], r + 6);
-                point(r[1], r + 9);
+                float a[3], b[3], tip[3], t; memcpy(a, r + 6, 12); memcpy(b, r + 9, 12); memcpy(&t, r + 4, 4);
+                wframe::Tip(a, b, (i + 1 == n && !GetCfg().lineWholeEdge) ? t : 1.0f, tip);
+                if (i == 0) point(r[0], a);
+                point(r[1], tip);
             }
             if (!bad) out.push_back(std::move(l));
         }
@@ -95,6 +106,7 @@ public:
         ang[0] = a[0]; ang[1] = a[1]; return true;
     }
 private:
+    struct Frame { float pos[3] = {}, q[4] = {0, 0, 0, 1}; std::vector<uint32_t> rec; }; std::map<unsigned, Frame> frames_;      // the pose of each panel when its trace last changed
     std::vector<uintptr_t> tbl_; std::vector<unsigned> cables_, panelIds_;
 };
 

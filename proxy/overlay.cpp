@@ -27,6 +27,7 @@ static const float kVFovDeg = 60.0f;                 // calibrated: horizontal ~
 #include "input.h"
 #include "ui.h"
 #include "race_game.h"
+#include "frame/panelframe.h"
 #include "devmenu.h"
 #include "video.h"
 #include "model_gpu.h"
@@ -157,9 +158,11 @@ static unsigned BuildLineVerts(const float cam[3], std::vector<LineVert>& out) {
     for (const auto& r : CoopGetRemoteLines()) {
         uintptr_t e = r.panel < 0x40000 ? GameEntity(r.panel) : 0; if (!e || !Readable((void*)(e + 0x24), 12)) continue;
         const float* pp = (const float*)(e + 0x24); float col[3]; PlayerColor(r.from, col); bool any = false;
+        if (!Readable((void*)(e + 0x34), 16)) continue; const float* qp = (const float*)(e + 0x34); wframe::Q pq = {qp[0], qp[1], qp[2], qp[3]};      // this game's panel, where it is now and how it is turned (a door may have swung it): the line is in the panel's frame
         for (size_t i = 0; i + 1 < r.pts.size(); ++i) {
-            float a[3], b[3];
-            for (int k = 0; k < 3; ++k) { a[k] = pp[k] + r.pts[i].d[k] * 0.001f; b[k] = pp[k] + r.pts[i + 1].d[k] * 0.001f; }
+            float a[3], b[3], la[3], lb[3];
+            for (int k = 0; k < 3; ++k) { la[k] = r.pts[i].d[k] * 0.001f; lb[k] = r.pts[i + 1].d[k] * 0.001f; }
+            wframe::ToWorld(pp, pq, la, a); wframe::ToWorld(pp, pq, lb, b);
             float d[3] = {b[0] - a[0], b[1] - a[1], b[2] - a[2]}, len = sqrtf(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
             if (len < 1e-5f || len > 3.0f) continue;
             float v[3] = {(a[0] + b[0]) * 0.5f - cam[0], (a[1] + b[1]) * 0.5f - cam[1], (a[2] + b[2]) * 0.5f - cam[2]};
@@ -177,6 +180,16 @@ static unsigned BuildLineVerts(const float cam[3], std::vector<LineVert>& out) {
     return lines;
 }
 
+void OverlayLineDump() {      // test command linedump: every line another player has on a panel, as this game holds it, and where that panel is now
+    char m[400]; unsigned n = 0;
+    for (const auto& r : CoopGetRemoteLines()) {
+        uintptr_t e = r.panel < 0x40000 ? GameEntity(r.panel) : 0; const float* pp = e && Readable((void*)(e + 0x24), 12) ? (const float*)(e + 0x24) : nullptr;
+        snprintf(m, sizeof m, "linedump: from %u panel %#x final %d points %zu panel_at %.3f %.3f %.3f age_ms %llu", r.from, r.panel, r.final ? 1 : 0, r.pts.size(), pp ? pp[0] : 0, pp ? pp[1] : 0, pp ? pp[2] : 0, (unsigned long long)r.ageMs); Log(m);
+        for (size_t i = 0; i < r.pts.size() && i < 8; ++i) { snprintf(m, sizeof m, "linedump:   point %zu node %u d_mm %d %d %d", i, (unsigned)r.pts[i].node, (int)r.pts[i].d[0], (int)r.pts[i].d[1], (int)r.pts[i].d[2]); Log(m); }
+        ++n;
+    }
+    snprintf(m, sizeof m, "linedump: %u lines", n); Log(m);
+}
 static void DrawMarkers(IDXGISwapChain* sc) {
     ID3D11Texture2D* bb = nullptr;
     if (FAILED(sc->GetBuffer(0, __uuidof(ID3D11Texture2D), (void**)&bb))) return;

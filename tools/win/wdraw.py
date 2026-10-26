@@ -250,7 +250,10 @@ for i in range(1, len(path)):
     last = i == len(path) - 1
     if last:      # the end stub: its length by dead reckoning and a little more (a cursor pushed past the panel's edge cancels the line)
         stub_gain = gain.get('h' if abs(vx) >= abs(vy) else 'v') or per_px or 2.9      # the gain of the stub's own axis (swamp panels: 2.4 sideways, 5.5 up)
-        mouse(vx, vy, stub_gain * norm + float(os.environ.get('WDRAW_STUB_EXTRA') or 40))
+        total = stub_gain * norm + float(os.environ.get('WDRAW_STUB_EXTRA') or 40); hold = float(os.environ.get('WDRAW_HOLD_FRACTION') or 0)
+        if hold:      # a test that wants to look at a line half drawn: stop part of the way, say so in a file, wait, then go on
+            mouse(vx, vy, total * hold); open(os.path.join(gdir, 'wdraw_held.txt'), 'w').write('held at %.2f' % hold); time.sleep(float(os.environ.get('WDRAW_HOLD_SECS') or 8)); mouse(vx, vy, total * (1 - hold))
+        else: mouse(vx, vy, total)
         dbg('end stub pushed', round(stub_gain * norm + 40), 'counts, traced', traced())
         continue
     used = 0.0; axis_ = 'h' if abs(vx) >= abs(vy) else 'v'
