@@ -417,9 +417,10 @@ static HRESULT STDMETHODCALLTYPE HookPresent(IDXGISwapChain* sc, UINT sync, UINT
         uintptr_t im = (g && !IsBadReadPtr((void*)g, 8)) ? *(uintptr_t*)g : 0;
         if (im && !IsBadWritePtr((void*)(im + 0xE5C), 1)) *(volatile unsigned char*)(im + 0xE5C) = 1;
     }
-    else if (GetCfg().runUnfocused) {      // only the byte that makes the game's loop sleep 100 ms (about 10 fps) while its window is not active; not the input gates, not the cursor: a person with two windows sees the other one at full speed
-        uintptr_t base = (uintptr_t)GetModuleHandleA(nullptr), p = IsBadReadPtr((void*)(base + 0x469A5B0), 8) ? 0 : *(uintptr_t*)(base + 0x469A5B0);
-        if (p && !IsBadWritePtr((void*)(p + 0x21), 1)) *(volatile unsigned char*)(p + 0x21) = 1;
+    else if (GetCfg().runUnfocused) {      // the game's loop sleeps 100 ms (about 10 fps) when both the byte +0x21 (its window is active) and the byte at exe+0x62D394 are 0. Setting +0x21 made every window believe it was active and grab the real mouse (both windows, all the time); the other byte does not touch the cursor.
+        uintptr_t base = (uintptr_t)GetModuleHandleA(nullptr);
+        if (GetCfg().runUnfocusedOldByte) { uintptr_t p = IsBadReadPtr((void*)(base + 0x469A5B0), 8) ? 0 : *(uintptr_t*)(base + 0x469A5B0); if (p && !IsBadWritePtr((void*)(p + 0x21), 1)) *(volatile unsigned char*)(p + 0x21) = 1; }
+        else if (!IsBadWritePtr((void*)(base + 0x62D394), 1)) *(volatile unsigned char*)(base + 0x62D394) = 1;
     }
     { DXGI_SWAP_CHAIN_DESC d; if (SUCCEEDED(sc->GetDesc(&d))) { g_gameWnd = d.OutputWindow; if (DevMenuEnabled() || VideoEnabled()) InstallDevWndProc(d.OutputWindow); InputPump(d.OutputWindow); } }
     if (g_shotName[0] && g_ready) { char n[64]; strcpy(n, g_shotName); g_shotName[0] = 0; TakeShot(sc, n); }

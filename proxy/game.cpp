@@ -137,6 +137,7 @@ static DWORD WINAPI CmdThread(LPVOID) {
             else if (sscanf(line, "pov %15s", a) == 1) { if (!strcmp(a, "off")) VideoClear(); else if (!strcmp(a, "next")) { std::vector<unsigned> ids; for (const auto& r : CoopGetRemotes()) if (r.valid) ids.push_back(r.id); VideoNext(ids); } else VideoWatch((unsigned)atoi(a)); }
             else if (!strncmp(line, "linestat", 8)) ModelGpuLogLineStats();
             else if (!strncmp(line, "linedump", 8)) OverlayLineDump();
+            else if (!strncmp(line, "cursorstat", 10)) { unsigned c, p; HooksCursorStat(&c, &p); char m[120]; snprintf(m, sizeof m, "cursorstat: unfocused_clip %u unfocused_setpos %u", c, p); Log(m); }
             else if (!strncmp(line, "modelstat", 9)) ModelGpuLogStats();
             else if (sscanf(line, "model %63s", a2) == 1) { if (!strcmp(a2, "next")) ModelGpuSelect(1); else if (!strcmp(a2, "prev")) ModelGpuSelect(-1); else ModelGpuSelectName(a2); }
             else if (!strncmp(line, "hover off", 9)) GameHoverOff();

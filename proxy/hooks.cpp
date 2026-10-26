@@ -145,8 +145,12 @@ extern HWND g_gameWnd;
 typedef BOOL(WINAPI* ClipCursorFn)(const RECT*); typedef BOOL(WINAPI* SetCursorPosFn)(int, int); typedef BOOL(WINAPI* GetCursorPosFn)(LPPOINT);
 typedef HWND(WINAPI* SetCaptureFn)(HWND); typedef BOOL(WINAPI* ReleaseCaptureFn)(); typedef int(WINAPI* ShowCursorFn)(BOOL);
 static ClipCursorFn g_oClip; static SetCursorPosFn g_oSetPos; static GetCursorPosFn g_oGetPos; static SetCaptureFn g_oSetCap; static ReleaseCaptureFn g_oRelCap; static ShowCursorFn g_oShow;
-static BOOL WINAPI HookClipCursor(const RECT* r) { static LONG n; if (InterlockedIncrement(&n) <= 3) { char m[120]; snprintf(m, sizeof m, "hooks: ClipCursor(%s) force_active=%d", r ? "rect" : "NULL", (int)GetCfg().forceActive); Log(m); } return GetCfg().forceActive ? TRUE : g_oClip(r); }
-static BOOL WINAPI HookSetCursorPos(int x, int y) { static LONG n; if (InterlockedIncrement(&n) <= 2) { char m[100]; snprintf(m, sizeof m, "hooks: SetCursorPos(%d,%d) force_active=%d", x, y, (int)GetCfg().forceActive); Log(m); } return GetCfg().forceActive ? TRUE : g_oSetPos(x, y); }
+// A game whose window is not the foreground one must never take the real mouse: what it tries is counted (a test reads it) and, with run_unfocused, not done (and a cage it set is lifted).
+static volatile LONG g_unfocusedClip, g_unfocusedSetPos; extern HWND g_gameWnd;
+static bool Unfocused() { return g_gameWnd && GetForegroundWindow() != g_gameWnd; }
+void HooksCursorStat(unsigned* clip, unsigned* setpos) { *clip = (unsigned)g_unfocusedClip; *setpos = (unsigned)g_unfocusedSetPos; }
+static BOOL WINAPI HookClipCursor(const RECT* r) { if (r && Unfocused()) { InterlockedIncrement(&g_unfocusedClip); if (GetCfg().runUnfocused && !GetCfg().forceActive) return g_oClip(nullptr); }  static LONG n; if (InterlockedIncrement(&n) <= 3) { char m[120]; snprintf(m, sizeof m, "hooks: ClipCursor(%s) force_active=%d", r ? "rect" : "NULL", (int)GetCfg().forceActive); Log(m); } return GetCfg().forceActive ? TRUE : g_oClip(r); }
+static BOOL WINAPI HookSetCursorPos(int x, int y) { if (Unfocused()) { InterlockedIncrement(&g_unfocusedSetPos); if (GetCfg().runUnfocused && !GetCfg().forceActive) return TRUE; }  static LONG n; if (InterlockedIncrement(&n) <= 2) { char m[100]; snprintf(m, sizeof m, "hooks: SetCursorPos(%d,%d) force_active=%d", x, y, (int)GetCfg().forceActive); Log(m); } return GetCfg().forceActive ? TRUE : g_oSetPos(x, y); }
 static BOOL WINAPI HookGetCursorPos(LPPOINT p) {
     if (GetCfg().forceActive && g_gameWnd && p) { RECT c; GetClientRect(g_gameWnd, &c); POINT q = {c.right / 2, c.bottom / 2}; ClientToScreen(g_gameWnd, &q); *p = q; return TRUE; }
     return g_oGetPos(p);
