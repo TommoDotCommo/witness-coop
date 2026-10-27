@@ -105,7 +105,7 @@ def scenario(mutant):
 
 if __name__=='__main__':
     qa.foreground=qa.probe('wfocus.py','save')
-    qa.slots=os.environ['LAB_SLOTS'].split(',')
+    qa.slots=os.environ['WITNESS_SLOTS'].split(',')
     results=[]
     # Prove the detector can fail before running the healthy implementation.
     for mutant in (True,False): results.append(scenario(mutant))

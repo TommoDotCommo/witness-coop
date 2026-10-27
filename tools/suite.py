@@ -222,7 +222,7 @@ SCENARIOS = [   # name, extra cfg for A, extra cfg for B, check(a_stats, b_stats
   ('MUTANT: panel power chain disabled', 'no_panel_power=1', '', lambda a, b, ok: (not ok, 'target panel must remain dark on B')),
 ]
 args = sys.argv[1:]; shard = None
-if args and args[0] == '--shard': shard = tuple(map(int, args[1].split('/'))); args = args[2:]      # --shard i/n: run every n-th selected scenario starting at i (1-based), for parallel runs under separate lab owners
+if args and args[0] == '--shard': shard = tuple(map(int, args[1].split('/'))); args = args[2:]      # --shard i/n: run every n-th selected scenario starting at i (1-based), for parallel runs under separate resource provider owners
 only = args; results = []
 selected = [sc for sc in SCENARIOS if not only or any(o in sc[0] for o in only)]
 if shard: selected = [sc for k, sc in enumerate(selected) if k % shard[1] == shard[0] - 1]

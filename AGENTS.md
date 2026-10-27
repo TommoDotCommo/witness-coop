@@ -1,9 +1,12 @@
-# Agent instructions
+# Witness co-op: agent instructions
 
-Read and follow [CLAUDE.md](CLAUDE.md) before starting work in this repository,
-including the Co-op Anything `AGENTS.md` it references. `CLAUDE.md` is the shared
-source of truth for session setup, research notes, testing, privacy, commit identity,
-and publishing permissions. Keep shared workflow changes there so agents stay in sync.
+This file is the shared source of truth. Read optional ignored `local/AGENTS.md`
+before work. Read the Co-op Anything playbook for research and testing methods.
+Check Git status and worktrees; preserve unfinished work and use a separate
+checkout for concurrent tasks. Record evidence and report only tests actually run.
+Keep personal paths, tools, accounts, machine configuration and session permissions
+out of tracked files. Follow explicit private publishing permissions; otherwise
+prepare a reviewable diff before asking to publish. Never force-push.
 
 ## Repository map
 
@@ -17,18 +20,17 @@ and publishing permissions. Keep shared workflow changes there so agents stay in
   archive's share mode, and the lazily read `witness_coop.cfg`). Build offsets are at the top of those files.
 - `tools/`: WSL scripts (`config.sh`, `install.sh`, `restart.sh`, `qa.sh`, `suite.py`, `solve_bot.py`,
   `state_diff.py`) and `tools/win/` (Windows Python probes and input helpers; `wlib.py` is shared).
-- `local/`: ignored. Only used without the lab (two game copies `witness-1`, `witness-2`, `run/`); in lab mode the game folders,
-  pid files and logs live under `C:\coop\lab\` (see `~/source/coop-lab/LAB.md`).
+- `local/`: ignored private configuration, disposable test copies and QA evidence.
 
 ## Build and validation
 
 - Build the DLL: `make -C proxy` (needs `x86_64-w64-mingw32-g++`).
 - Put it into the test copies: `tools/install.sh` (checks both exe hashes first and refuses any other build).
-- Restart both games with fresh new games: `tools/restart.sh` (lab mode: your slots; registers and tiles the windows). Close them: `tools/stop.sh`.
+- Restart both games with fresh new games: `tools/restart.sh` (with a resource provider: registers and places your allocated windows). Close them: `tools/stop.sh`.
 - Dev menu (F8/F4/F9), partner view and saves: `proxy/ui.cpp` (2D drawing and text atlas), `devmenu.cpp` (menu, map, actions, test commands), `video.cpp` (partner pictures), `savepoints.cpp` (save points and presets); see the README.
 - Manual testing: `WITNESS_HUMAN=1 WITNESS_FPS=60 tools/restart.sh` starts both games for a person (real mouse and keyboard, A on the first monitor, B on the second); `tools/tour.sh list|go N|next|prev|here [A|B|both]` teleports the player to numbered spots across the island (31 map cells, each in front of a real panel).
-- Full regression: `tools/qa.sh` (leases two slots, runs every scenario one after the other with its mutants, always cleans up; 28 scenarios took 48 minutes on 2026-10-24).
-  Faster: `tools/qa_par.sh` splits the same suite over 3 shards, each its own lab owner with two slots (needs 6 free slots and about 11 GB of free RAM): 23 scenarios in about 13.5 minutes. Of five parallel runs on 2026-10-24 the last one passed everything; the first four exposed load flakes (a hygiene check that counted on slow scenarios, a late door, a game not yet in the world, a missed click), fixed as listed below.
+- Full regression: `tools/qa.sh` (allocates two isolated game instances, runs every scenario one after the other with its mutants, always cleans up; 28 scenarios took 48 minutes on 2026-10-24).
+  Faster: `tools/qa_par.sh` splits the same suite over 3 shards, each its own resource owner with two slots (needs 6 free slots and about 11 GB of free RAM): 23 scenarios in about 13.5 minutes. Of five parallel runs on 2026-10-24 the last one passed everything; the first four exposed load flakes (a hygiene check that counted on slow scenarios, a late door, a game not yet in the world, a missed click), fixed as listed below.
   A scenario whose bot never reached its precondition (game not in the world yet, a click missed under load) is run once more automatically; that is logged as `RETRY`. Report only what you ran.
 - For documentation changes, check links, paths and `git diff --check`; game runs are unnecessary.
 

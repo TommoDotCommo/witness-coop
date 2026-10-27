@@ -1,6 +1,6 @@
 # Game-free (T0) tests of the sync core: builds the hub's fuzzer with our target, natively, no CMake needed.
 # HUB is the Co-op Anything clone (the fuzzer framework lives there).
-HUB ?= $(HOME)/source/coop-anything
+HUB ?= $(abspath ../../../coop-anything)
 FUZZ = $(HUB)/tools/fuzz
 BUILD = build
 FUZZSRC = $(FUZZ)/src/main.cpp $(FUZZ)/src/net.cpp $(FUZZ)/src/scenario.cpp $(FUZZ)/src/oracles.cpp $(FUZZ)/src/runner.cpp $(FUZZ)/src/targets.cpp

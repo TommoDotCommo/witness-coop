@@ -23,7 +23,7 @@ TWINS = {  # twin -> oracles that may catch it
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--count", type=int, default=500)
-    ap.add_argument("--hub", default=os.environ.get("HUB", os.path.expanduser("~/source/coop-anything")))
+    ap.add_argument("--hub", default=os.environ.get("HUB", os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../coop-anything"))))
     a = ap.parse_args()
     here = os.path.dirname(os.path.abspath(__file__))
     core = os.path.dirname(here)

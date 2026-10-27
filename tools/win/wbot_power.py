@@ -1,6 +1,6 @@
 """Naturally solve the first black/white tutorial panel (index 0x18af), powering index 0x1b.
 
-Usage: Windows Python wbot_power.py <pid> <game folder>. Calibrated for the lab's 1920x1080 back buffer.
+Usage: Windows Python wbot_power.py <pid> <game folder>. Calibrated for the resource provider's 1920x1080 back buffer.
 The middle horizontal path separates the black and white symbols. The target must remain unsolved.
 """
 import os, sys, math

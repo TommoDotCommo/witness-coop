@@ -11,7 +11,7 @@ import time
 from group_config import configs
 from witness import ROOT, TOOLS, RUN, PYW, win, real_saves
 
-LAB = os.environ.get('LAB', os.path.expanduser('~/source/coop-lab/lab'))
+WITNESS_RESOURCES = os.environ.get('WITNESS_RESOURCES', '')
 EXE_HASH = '8d672d444df6a6df7130f25a517bdab1af92731fe2138dc5b324d519561d55a5'
 DLL_HASH = '3b0677ae1e01fc17645c903c8322497785768145abbe3758364299fdaa8aff15'
 
@@ -25,7 +25,7 @@ def probe(script,*args,timeout=120):
 
 
 def replace_copy(src,dst):
-    # Lab files may be hard-linked. Always replace the directory entry, never overwrite a link.
+    # resource provider files may be hard-linked. Always replace the directory entry, never overwrite a link.
     dst = Path(dst)
     dst.unlink(missing_ok=True)
     shutil.copy2(src,dst)
@@ -61,18 +61,18 @@ class Client:
         return json.loads(dest.read_text())
     def start(self):
         import re
-        free = float(re.search(r'RAM free ([0-9.]+)', command([LAB,'status']))[1])
+        free = float(re.search(r'RAM free ([0-9.]+)', command([WITNESS_RESOURCES,'status']))[1])
         if not self.pid and free < 4.8:
             raise RuntimeError('RAM changed after preflight; preserving shared reserve')
         if self.pid: command(['taskkill.exe','/PID',self.pid,'/F']);time.sleep(2)
         self.pid=probe('launch.py',win(str(self.directory)),'-skip_config_dialog','-windowed','-new_game').splitlines()[-1]
-        command([LAB,'register-pid',self.pid])
+        command([WITNESS_RESOURCES,'register-pid',self.pid])
         # Guard only this newly launched process, with the foreground saved before any games started.
         guard_stop=Path(RUN)/f'group-guard-{self.id}.stop';guard_stop.unlink(missing_ok=True)
         subprocess.Popen([PYW,'-I',win(os.path.join(TOOLS,'win/wfocus.py')),'guard',foreground,'180',win(str(guard_stop)),self.pid],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-        rect=command([LAB,'rect',slots[self.id-1]]).split()
+        rect=command([WITNESS_RESOURCES,'rect',slots[self.id-1]]).split()
         # Wait for the game's window before placing it, without taking focus.
-        wait(lambda:'placed True' in probe('wplace.py',self.pid,*rect),f'player {self.id} placed on lab monitor',90)
+        wait(lambda:'placed True' in probe('wplace.py',self.pid,*rect),f'player {self.id} placed on resource provider monitor',90)
 
 
 def wait(predicate,description,timeout=180):
@@ -152,5 +152,5 @@ def run():
 
 if __name__=='__main__':
     foreground=probe('wfocus.py','save')
-    slots=os.environ['LAB_SLOTS'].split(',')
+    slots=os.environ['WITNESS_SLOTS'].split(',')
     run()
