@@ -2,7 +2,7 @@
 # a test whose binary has not changed since it last passed is not run again (`make retest` forces them all). The fuzz run (tests/run_t0.py) uses the hub's framework
 # (HUB is the Co-op Anything clone).
 MAKEFLAGS += -j8
-HUB ?= $(HOME)/source/coop-anything
+HUB ?= $(abspath ../../../coop-anything)
 FUZZ = $(HUB)/tools/fuzz
 BUILD = build
 CXXF = -std=c++17 -O2 -Wall -Wextra

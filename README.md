@@ -46,18 +46,19 @@ with progress (restart catch-up, a first-time late join and a same-process save 
 ## Try it (two copies on one PC)
 
 Requirements: Windows with the Steam build above; WSL2 with `make` and MinGW-w64 (`x86_64-w64-mingw32-g++`); Windows Python 3
-(default `/mnt/c/Python311/python.exe`, override with `PYW`); Python 3 in WSL. Nothing here installs anything for you.
+(default `python.exe`, override with `PYW`); Python 3 in WSL. Nothing here installs anything for you.
 
-**With the shared lab** (`~/source/coop-lab`, several agents on one PC): `tools/qa.sh` does everything below for you: it leases two
-game slots, builds hard-linked instance folders on the NTFS pool (`C:\coop\lab\witness\s<slot>`: one shared base copy, so a slot
-costs about 40 MB; the game opens `data-pc.zip` exclusively, so the mod adds `FILE_SHARE_READ` to that open, `share_zip=1`), runs
-with each instance's saves redirected into its own folder and a 30 fps cap, and kills only its own games at the end. Run `lab firewall` once (one UAC click) so the copies start without a Windows Firewall prompt.
+**Test copies.** Optional machine configuration belongs in ignored `local/env.sh`.
+Set `PYW` to Windows Python. For concurrent QA, configure `WITNESS_RESOURCES` to
+an external provider implementing the interface in [docs/RESOURCES.md](docs/RESOURCES.md).
+It supplies isolated copies, ports, process registration and cleanup. The public
+repository has no required workstation service or private checkout path.
 
-**Test copies, without the lab.** The proxy goes into two disposable copies of the install, never the real one:
+The proxy goes into two disposable copies of the install, never the real one:
 
 ```
 cp -a "<Steam library>/steamapps/common/The Witness" local/witness-1
-cp -a "<Steam library>/steamapps/common/The Witness" local/witness-2     # (then set WITNESS_DIR1/2, or use the lab)
+cp -a "<Steam library>/steamapps/common/The Witness" local/witness-2     # (then set WITNESS_DIR1/2, configure an external resource provider)
 tools/install.sh       # builds the DLL, checks both exe hashes, renames AnselSDK64.dll to AnselSDK64_real.dll, installs the proxy
 tools/restart.sh       # starts both with -skip_config_dialog -windowed -new_game, side by side
 tools/restart.sh B     # restart only B with a fresh world, keeping A and its progress running (also accepts A)
@@ -100,7 +101,7 @@ Validation so far: the eight-player game-free test covers lossy links, reorderin
 a temporarily unreachable receiver, progression from every player, all remote poses, cable conflicts and a peer restart.
 Five group mutants must fail, including recovery after 4,200 changes while one receiver is unreachable. `python3 tools/test_group_config.py` checks the 16-entry roster capacity and invalid rosters.
 The production Windows UDP layer also passed an eight-client fake-world integration test with 25% loss,
-cable on/off and a restarted client (`make -C proxy/core transport-test`; no game or lab slots).
+cable on/off and a restarted client (`make -C proxy/core transport-test`; no game or resource provider slots).
 A two-real-game group run passed a normal input-driven bot solve, door sync, progress originating on both clients,
 pose/avatar submission, packet loss, restart catch-up, empty queues and byte-identical real saves.
 `tools/qa_group_render.sh` also passed with one real game and seven lightweight protocol clients: seven actual D3D
@@ -108,7 +109,7 @@ avatar submissions with distinct positions, one moving gait and six stationary g
 a normal local bot solve and drained queues under 25% packet loss. Its shared-avatar-state mutant was caught.
 This uses one game slot; it does not count as eight real game processes. The `modelstate` command writes the latest
 render frame's submitted IDs, positions and gait speeds to `witness_models.json` for these checks.
-Eight-real-game QA is **pending** while other lab tests occupy the available RAM: `tools/qa_group.sh 8` first checks lab activity and RAM, then leases only this
+Eight-real-game QA is **pending** while other resource provider tests occupy the available RAM: `tools/qa_group.sh 8` first checks resource provider activity and RAM, then leases only this
 worktree's slots, runs a normal bot solve, checks every world's process memory, originates progress on every client,
 and verifies restart recovery and drained queues. It refuses insufficient RAM rather than displacing another test. Groups of three or more also defer while another sweep or suite is live, so a client restart cannot make occupied test capacity look temporarily free.
 Sixteen live clients and remote-PC networking have not been tested.
@@ -173,7 +174,7 @@ mouse buttons. It also takes the foreground by itself while loading (`tools/rest
 
 ## Testing every puzzle, or one puzzle
 
-The island has 594 placed panels. `tools/sweep.sh` (lab mode: leases two slots, starts both games) and `tools/sweep.py run` teleport to each one with the
+The island has 594 placed panels. `tools/sweep.sh` (resource provider mode: leases two slots, starts both games) and `tools/sweep.py run` teleport to each one with the
 dev menu, draw a solution through the in-process mouse and take the game's own solved flag as the verdict. Nothing is marked solved by a dev action.
 `tools/puzzle.sh` does the same for one puzzle, for a tester: `puzzle.sh list [text]` (size, rules, solver status), `show ID`, `go ID [A|B]` (teleport,
 then play it yourself), `solve ID [A|B]` (teleport and draw the solution). The ids are the hex ids the dev menu shows.
@@ -192,7 +193,7 @@ panels (taken from a fresh game, because it holds the stored solutions) is `<run
 
 ## Automated checks
 
-**T0, no game needed:** the sync logic lives in `proxy/core/` (`sync_core.{h,cpp}`, pure C++17, talks to the game only through a `World` interface; `state.cpp` is the game adapter). `make -C proxy/core test` (needs a clone of the Co-op Anything hub for its fuzzer; `HUB=<dir>`, default `~/source/coop-anything`) fuzzes two cores over a lossy link with a fake world: 500 sessions must pass, and each of 10 bug twins (no resend, no echo guard, no dedupe, ...) must be caught. About 3 seconds.
+**T0, no game needed:** the sync logic lives in `proxy/core/` (`sync_core.{h,cpp}`, pure C++17, talks to the game only through a `World` interface; `state.cpp` is the game adapter). `make -C proxy/core test` (needs a clone of the Co-op Anything hub for its fuzzer; `HUB=<dir>`, defaults to a sibling `coop-anything` checkout; override with `HUB`) fuzzes two cores over a lossy link with a fake world: 500 sessions must pass, and each of 10 bug twins (no resend, no echo guard, no dedupe, ...) must be caught. About 3 seconds.
 
 The same command also runs deterministic application regressions: acknowledged events survive a missing panel, a missing door,
 or repeated refused door calls, then apply without another network packet and without echoing. An unrelated door must still open,
@@ -259,7 +260,7 @@ Targeted run on 2026-10-22: both scenarios PASS; clean state identical (1 panel,
 by tracing up and left. Both games must contain both solved panels and open doors `0x34eda` and `0x0`; the mutant skips entity
 zero during A's scan and must leave exactly that door missing on B. This caught a real adapter bug: scanning from ID 1
 excluded the second tutorial door even though table index zero is valid. The second bot uses a calibrated standing point and
-cursor path for the lab's 1920x1080 back buffer; other resolutions are untested. `tools/win/wpanel.py <pid> <hex id>` reads a
+cursor path for the resource provider's 1920x1080 back buffer; other resolutions are untested. `tools/win/wpanel.py <pid> <hex id>` reads a
 panel's graph for extending the bot to more puzzles.
 Targeted run on 2026-10-22: clean and mutant both PASS (command exit 0). Clean has 2 solved panels and 11 open doors on both
 sides; mutant lacks only door `0x0` on B. Save isolation, free cursor and 30.0 fps checks passed. The clean check failed before
@@ -278,7 +279,7 @@ Save hashes, instance saves, free cursor and 30.0 fps checks passed.
 
 `tools/qa.sh 'bot-free effects'` needs no bot. It makes panel `0x32f5` solved on A with the test command `solve` (its fields plus the game's target dispatcher, as a native solve does), so its laser `0x32f9` switches on (`+0x12c` goes from 0 to -1.0). B must end with the same laser state and so must a fresh B; the mutant without the dispatcher call leaves the laser off on B. `tools/qa.sh 'panel power chain'` now also compares the target's source back-link (`+0x2C8`) and has a mutant that leaves it unset. The same scenario switches the default-lit cable `0x18458` off on A with the test command `cableoff`; it must go dark on B and stay dark on a fresh B. One mutant removes the dispatcher call and the power-off sync on B (the laser stays off and the cable stays lit there), another removes the off snapshot on A (a fresh B shows the cable lit again).
 
-**Dev menu, partner view, saves** (`dev_menu=1` in `witness_coop.cfg`; the lab tools turn it on; a normal install has it off):
+**Dev menu, partner view, saves** (`dev_menu=1` in `witness_coop.cfg`; the resource provider tools turn it on; a normal install has it off):
 - `F8` opens the dev menu: a map of the island with every panel (green solved, amber powered, grey off), the doors, and both players (you as a cyan pointer, the other player in orange); a list of 31 spots to teleport to; wheel to zoom, right-drag to pan, click a dot to select it. A selected panel shows what it targets, which panels target it, the chain upstream and downstream, and buttons: teleport in front of it, solve it (and run its target), power it, run its target, open its door, light or darken its cable. `F4` opens the nearby-puzzles page (the puzzles within a radius of you, nearest first, same details and buttons). `Tab` switches pages, `Esc` or `F8` closes. While it is open the game gets no keyboard or mouse input (key-ups still pass so nothing sticks). A teleport is checked a moment later and retried at other heights and distances when the game puts the player back at its spawn point.
 - `F9` shows the other player's screen in a corner (small, large, off). Each game sends a 480x270 JPEG of its own screen about 5 times a second in UDP chunks (a lost chunk drops that picture); the other game decodes it and draws it. It sees what the other player is looking at or tracing, including panels.
 - The Saves page makes a save point (the game's save file, copied after the pause menu opens so the game writes it) and restores one through the pause menu. The game lists saves by the time stored inside them, newest first, so the restore removes the stale copies in the instance save folder and picks the second entry (the first is the save the game just wrote of the running world). The game's save only keeps progress made through its own solve code (each solved panel has a traced solution line), so progress made by the dev tools is kept in a list of solved panels next to the save and put back after the load. A preset is that list alone: apply it to a new game to start from a given amount of progress ("complete the first N spots" makes one). Loading needs the player to be out of the intro tunnel.

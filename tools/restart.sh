@@ -4,7 +4,7 @@
 # Every copy gets its own save folder (save_dir=instance: <game folder>\appdata, so the owner's real saves are never touched) and a
 # frame cap (WITNESS_FPS, default 30). WITNESS_HUMAN=1: for a person playing both games: no force_active (the real mouse and keyboard work, the unfocused game
 # drops to ~10 fps), no focus guard, A on the first monitor and B on the second (WITNESS_RECT_A/B = "x y w h"). CFG_A / CFG_B add lines to each copy's witness_coop.cfg (test-only switches: drop_first_event=1, no_resend=1, no_echo_guard=1).
-. "$(dirname "$0")/config.sh"
+. "$(dirname "$0")/config.sh" || exit $?
 case "${1:-both}" in
   both) peers=(A B);;
   A|B) peers=("$1");;
@@ -25,16 +25,16 @@ for p in "${peers[@]}"; do
   rm -f "$d/witness_proxy.log" "$d/witness_cmd.txt"
   [ -d "$d/appdata/The Witness" ] && rm -f "$d/appdata/The Witness/"*.witness_campaign "$d/appdata/The Witness/"*.png "$d/appdata/The Witness/coop_progress.txt" "$d/appdata/The Witness/"*.coop.txt   # this instance's own saves only: reloads must start from known saves
   game_pid=$(launch "$d"); echo "$game_pid" > "$RUN/pid$p.txt"
-  [ -x "$LAB" ] && "$LAB" register-pid "$game_pid" >/dev/null 2>&1
+  [ -x "$WITNESS_RESOURCES" ] && "$WITNESS_RESOURCES" register-pid "$game_pid" >/dev/null 2>&1
   for i in $(seq 1 180); do grep -q "overlay: resources ready" "$d/witness_proxy.log" 2>/dev/null && break; sleep 0.5; done
 done
 PA=$(cat "$RUN/pidA.txt" 2>/dev/null); PB=$(cat "$RUN/pidB.txt" 2>/dev/null)     # a peer that was never started (late join) has no pid file
-# every game is registered with the lab (only registered pids are ever killed for this agent) and placed on the second monitor
-# without taking focus (tile by slot number; in a plain checkout without the lab: the first monitor)
+# every game is registered with the resource provider (only registered pids are ever killed for this agent) and placed on the second monitor
+# without taking focus (tile by slot number; in a plain checkout without the resource provider: the first monitor)
 for w in "A $PA $SLOT1" "B $PB $SLOT2"; do set -- $w
   [ -n "$2" ] || continue
   if [ -n "${WITNESS_HUMAN:-}" ]; then read -r x y ww hh <<< "$([ "$1" = A ] && echo "${WITNESS_RECT_A:-320 180 1920 1080}" || echo "${WITNESS_RECT_B:-2880 180 1920 1080}")"
-  elif [ -x "$LAB" ]; then read -r x y ww hh < <("$LAB" rect "$3"); else x=$(( ($3) * 1280 )); y=0; ww=1270; hh=760; fi
+  elif [ -x "$WITNESS_RESOURCES" ]; then read -r x y ww hh < <("$WITNESS_RESOURCES" rect "$3"); else x=$(( ($3) * 1280 )); y=0; ww=1270; hh=760; fi
   timeout 20 "$PYW" -I "$(win "$TOOLS/win/wplace.py")" "$2" "$x" "$y" "$ww" "$hh" >/dev/null
 done
 # keep the focus where it was for up to 3 minutes (the game takes the foreground by itself while it loads); the bot

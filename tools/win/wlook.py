@@ -39,7 +39,7 @@ tab = [h for h in kids if cls(h) == 'SysTabControl32'][0]
 time.sleep(0.8); p0 = paints()
 r = wt.RECT(); u.GetWindowRect(tab, ctypes.byref(r)); oldpos = wt.POINT(); u.GetCursorPos(ctypes.byref(oldpos)); covered = False
 u.SetCursorPos(r.left + 130, r.top + 17); time.sleep(0.4); pt = wt.POINT(r.left + 160, r.top + 17); covered = u.WindowFromPoint(pt) != tab
-for x in range(130, 200): u.SetCursorPos(r.left + x, r.top + 17); time.sleep(0.015)      # the real pointer along the second tab (the lab's input lock is held by the caller)
+for x in range(130, 200): u.SetCursorPos(r.left + x, r.top + 17); time.sleep(0.015)      # the real pointer along the second tab (the resource provider's input lock is held by the caller)
 u.SetCursorPos(oldpos.x, oldpos.y)
 time.sleep(0.8); p1 = paints()
 check('hovering along one tab repaints the row of tabs at most 3 times (70 mouse moves)', not covered and p0 is not None and p1 is not None and p1 - p0 <= 3, 'paints %s -> %s%s' % (p0, p1, ' (another window covers the tab)' if covered else ''))

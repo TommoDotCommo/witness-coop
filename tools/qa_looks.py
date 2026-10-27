@@ -7,9 +7,9 @@ from witness import TOOLS, ROOT, RUN, PYW, win
 LDIR = os.path.join(ROOT, 'launcher', 'build')
 
 def run(exe):
-    subprocess.run([os.path.expanduser('~/.local/bin/lab'), 'input-lock', 'acquire', '--wait', '120', '--ttl', '120'], capture_output=True)      # the real pointer is used for about a second
+    subprocess.run([os.environ['WITNESS_RESOURCES'], 'input-lock', 'acquire', '--wait', '120', '--ttl', '120'], capture_output=True, check=True)      # the real pointer is used for about a second
     try: return run_locked(exe)
-    finally: subprocess.run([os.path.expanduser('~/.local/bin/lab'), 'input-lock', 'release'], capture_output=True)
+    finally: subprocess.run([os.environ['WITNESS_RESOURCES'], 'input-lock', 'release'], capture_output=True)
 
 def run_locked(exe):
     p = os.path.join(RUN, 'looks_launcher.exe'); subprocess.run(['cp', os.path.join(LDIR, exe), p], check=True)

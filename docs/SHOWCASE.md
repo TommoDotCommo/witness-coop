@@ -192,7 +192,7 @@ Three open-licence models are bundled (`assets/models/CREDITS.md`). The others i
 | Brainstem | (c) Smith Micro, Poser EULA (the Khronos sample asset): not redistributable here |
 | Magic Frog | Sketchfab, by David Glynch ("Free Standard" licence): for your own use; `tools/frog_gait.py` adds walk and run clips |
 
-Put the files you may use in `$WITNESS_EXTRA_MODELS` (default `/mnt/c/coop/lab/run/showcase-models`) with a `<name>.glb.txt` (`height=1.8`). With fewer than eight models the
+Put the files you may use in `$WITNESS_EXTRA_MODELS` (default `$ROOT/local/showcase-models`) with a `<name>.glb.txt` (`height=1.8`). With fewer than eight models the
 script reuses them and says so.
 
 ## Run it
@@ -204,6 +204,6 @@ SHOWCASE_CFG_EXTRA='game_mode=race\nrace_goal=count:3\nrace_countdown_ms=60000' 
 tools/showcase_publish.sh         # the JPEGs of docs/showcase/ from the PNGs of showcase/
 ```
 
-It leases N game slots from the lab, builds N instance folders, starts the games, teleports them to the garden, and writes the pictures and `showcase.json` (the captions)
+It leases N game slots from the resource provider, builds N instance folders, starts the games, teleports them to the garden, and writes the pictures and `showcase.json` (the captions)
 to `showcase/` (not in git). `tools/showcase_publish.sh` makes the small JPEGs that are in git, in `docs/showcase/`. Eight games need about 11 GB of free memory (about 1.3 GB each,
-measured) plus the lab's 3 GB reserve; it refuses to start with less. The scenes live in `tools/showcase.py` and `tools/win/wshowcase.py`.
+measured) plus the resource provider's 3 GB reserve; it refuses to start with less. The scenes live in `tools/showcase.py` and `tools/win/wshowcase.py`.

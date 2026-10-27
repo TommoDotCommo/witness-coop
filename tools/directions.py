@@ -16,7 +16,7 @@ def moves(q, path):
     return out
 
 if __name__ == '__main__':
-    inv = {q['id']: q for q in json.load(open(os.environ.get('WITNESS_MANIFEST', '/mnt/c/coop/lab/run/panel-sweep/panels.json')))}
+    inv = {q['id']: q for q in json.load(open(os.environ.get('WITNESS_MANIFEST', os.path.join(os.environ.get('WITNESS_RUN', os.path.join(os.path.dirname(__file__), '../local/run')), 'panels.json'))))}
     for h in sys.argv[1:]:
         q = inv[int(h, 16)]; path = solver.solve(q)
         print(h, puzzle.describe(q)[:50])

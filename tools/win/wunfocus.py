@@ -1,4 +1,4 @@
-# T2 check of a game window that is not active, run with Windows Python: A's window gets the real focus (and the lab's input lock is held by the caller), B's window does not; B's frame rate
+# T2 check of a game window that is not active, run with Windows Python: A's window gets the real focus (and the resource provider's input lock is held by the caller), B's window does not; B's frame rate
 # (the game's global frame counter) is read for a few seconds, and A's too. The focus is given back afterwards.
 # Also: B (not active) must not try to cage or move the real mouse (the game's own attempts are counted by the proxy: `cursorstat`), and once the focus is given back no window holds the mouse in a cage
 # (the real clip rectangle is the whole screen).

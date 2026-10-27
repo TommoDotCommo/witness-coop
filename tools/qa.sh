@@ -1,21 +1,21 @@
 #!/bin/bash
 # `tools/qa.sh model [filter]` runs the character-model suite (suite_model.py) instead; `tools/qa.sh sweep` the puzzle-sweep scenario (qa_sweep.py); `tools/qa.sh lines` the shared-lines scenario (qa_lines.py); `tools/qa.sh tags` the name-tags scenario (qa_tags.py); `tools/qa.sh pov` the POV-screen scenario (qa_pov.py); `tools/qa.sh ui` the glyph-atlas check (qa_ui.py).
 # Shared-state suite (live sync, packet loss, peer restart and two tutorial doors, with mutants). Accepts scenario name filters.
-# Lab mode: leases two slots (without waiting: exit 3 = busy, run game-free tests instead or retry), builds the hard-linked
+# resource provider mode: leases two slots (without waiting: exit 3 = busy, run game-free tests instead or retry), builds the hard-linked
 # instance folders, runs, and always kills this agent's games and frees the slots. QA_WAIT=<seconds> waits for slots.
 # (the whole body is one brace group: bash reads it completely before running, so editing this file while a run is in progress cannot break that run)
 export WITNESS_FPS="${WITNESS_FPS:-60}"      # injected mouse events are taken one per frame: the bots draw about twice as fast at 60 fps as at 30 (a pair of games costs little)
 {
-. "$(dirname "$0")/config.sh"
-if [ -x "$LAB" ] && [ -z "${LAB_SLOTS:-}" ]; then
-  "$LAB" acquire --slots 2 --ttl 3600 --wait "${QA_WAIT:-0}" || { echo "no game slots free (lab status); not waiting"; exit 3; }
-  trap '"$LAB" release' EXIT
-  "$LAB" provision witness || exit 1
+WITNESS_ALLOCATING=1 . "$(dirname "$0")/config.sh" || exit $?
+if [ -x "$WITNESS_RESOURCES" ] && [ -z "${WITNESS_SLOTS:-}" ]; then
+  "$WITNESS_RESOURCES" acquire --slots 2 --ttl 3600 --wait "${QA_WAIT:-0}" || { echo "no game slots free (resource provider status); not waiting"; exit 3; }
+  trap '"$WITNESS_RESOURCES" release' EXIT
+  "$WITNESS_RESOURCES" provision witness || exit 1
   unset WITNESS_DIR1 WITNESS_DIR2 WITNESS_PORT1 WITNESS_PORT2 WITNESS_RUN
-  . "$(dirname "$0")/config.sh"       # re-read: the lease now exists
-elif [ -x "$LAB" ]; then
-  trap '"$LAB" release' EXIT
-  "$LAB" provision witness || exit 1
+  . "$(dirname "$0")/config.sh"       || exit $? # re-read: the lease now exists
+elif [ -x "$WITNESS_RESOURCES" ]; then
+  trap '"$WITNESS_RESOURCES" release' EXIT
+  "$WITNESS_RESOURCES" provision witness || exit 1
 fi
 if [ "${1:-}" = model ]; then shift; python3 "$TOOLS/suite_model.py" "$@"; elif [ "${1:-}" = sweep ]; then shift; python3 "$TOOLS/qa_sweep.py" "$@"; elif [ "${1:-}" = lines ]; then shift; python3 "$TOOLS/qa_lines.py" "$@"; elif [ "${1:-}" = tags ]; then shift; python3 "$TOOLS/qa_tags.py" "$@"; elif [ "${1:-}" = pov ]; then shift; python3 "$TOOLS/qa_pov.py" "$@"; elif [ "${1:-}" = ui ]; then shift; python3 "$TOOLS/qa_ui.py" "$@"; elif [ "${1:-}" = pause ]; then shift; python3 "$TOOLS/qa_pause.py" "$@"; elif [ "${1:-}" = social ]; then shift; python3 "$TOOLS/qa_social.py" "$@"; elif [ "${1:-}" = emote ]; then shift; python3 "$TOOLS/qa_emote.py" "$@"; elif [ "${1:-}" = ink ]; then shift; python3 "$TOOLS/qa_ink.py" "$@"; elif [ "${1:-}" = progress ]; then shift; python3 "$TOOLS/qa_progress.py" "$@"; elif [ "${1:-}" = launcher ]; then shift; python3 "$TOOLS/qa_launcher.py" "$@"; elif [ "${1:-}" = voice ]; then shift; python3 "$TOOLS/qa_voice.py" "$@"; elif [ "${1:-}" = ghost ]; then shift; python3 "$TOOLS/qa_ghost.py" "$@"; elif [ "${1:-}" = race ]; then shift; python3 "$TOOLS/qa_race.py" "$@"; elif [ "${1:-}" = lobby ]; then shift; python3 "$TOOLS/qa_lobby.py" "$@"; elif [ "${1:-}" = probe_trace ]; then shift; python3 "$TOOLS/probe_trace.py" "$@"; elif [ "${1:-}" = probe_line_shot ]; then shift; python3 "$TOOLS/probe_line_shot.py" "$@"; elif [ "${1:-}" = linemove ]; then shift; python3 "$TOOLS/qa_linemove.py" "$@"; elif [ "${1:-}" = looks ]; then shift; python3 "$TOOLS/qa_looks.py" "$@"; elif [ "${1:-}" = unfocus ]; then shift; python3 "$TOOLS/qa_unfocus.py" "$@"; elif [ "${1:-}" = probe_pov_shot ]; then shift; python3 "$TOOLS/probe_pov_shot.py" "$@"; elif [ "${1:-}" = map ]; then shift; python3 "$TOOLS/qa_map.py" "$@"; elif [ "${1:-}" = probe ]; then shift; python3 "$@"; else python3 "$TOOLS/suite.py" "$@"; fi
 exit $?

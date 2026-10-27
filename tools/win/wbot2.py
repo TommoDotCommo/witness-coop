@@ -1,7 +1,7 @@
 """Solve Tutorial Bend (0x182) through in-process input, after wbot.py solves the first door.
 
 Usage: Windows Python wbot2.py <pid> <game folder>.
-Standing point and input path verified on build 11370412 at the lab's 1920x1080 back buffer.
+Standing point and input path verified on build 11370412 at the resource provider's 1920x1080 back buffer.
 The panel's three graph nodes are (0.8,0.25), (0.8,0.75), (0.2,0.75): up, then left.
 """
 import os, sys

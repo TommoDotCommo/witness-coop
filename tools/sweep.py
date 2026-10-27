@@ -13,7 +13,7 @@ import solver
 
 RESULTS_GLOB = os.path.join(RUN, 'sweep_results')      # sweep_results.<shard>.json, one per shard so parallel runs never write the same file
 MANIFEST = os.path.join(RUN, 'panels.json')
-if not os.path.exists(MANIFEST):      # a fresh lab owner (a parallel shard) has none: take the first one another owner made (the manifest is the same for every fresh game)
+if not os.path.exists(MANIFEST):      # a fresh resource provider owner (a parallel shard) has none: take the first one another owner made (the manifest is the same for every fresh game)
     _c = sorted(glob.glob(os.path.join(os.path.dirname(RUN), '*', 'panels.json')))
     if _c: MANIFEST = _c[0]
       # master copy, taken from a game before any line was drawn (a drawn line overwrites the stored solution)
@@ -59,7 +59,7 @@ def draw(panel, path, which, timeout=420):
     gdir = DIR2 if which == 'B' else DIR1
     env = {**os.environ, 'WDRAW_KCACHE': win(KCACHE), 'WSLENV': os.environ.get('WSLENV', '') + ':WDRAW_KCACHE'}
     try:
-        out = subprocess.run([os.environ.get('PYW', '/mnt/c/Python311/python.exe'), '-I', win(os.path.join(TOOLS, 'win', 'wwalk.py' if str(panel['id']) in floor_panels() else os.environ.get('WDRAW_SCRIPT', 'wdraw.py'))), pid(which), win(gdir),
+        out = subprocess.run([os.environ.get('PYW', 'python.exe'), '-I', win(os.path.join(TOOLS, 'win', 'wwalk.py' if str(panel['id']) in floor_panels() else os.environ.get('WDRAW_SCRIPT', 'wdraw.py'))), pid(which), win(gdir),
                               '%x' % panel['id'], ','.join(map(str, path))], capture_output=True, text=True, timeout=timeout, env=env).stdout
     except subprocess.TimeoutExpired:
         if not alive(which): restart_game(which)
@@ -132,7 +132,7 @@ def run(args):
         time.sleep(5)
 
 def report(folders=None):
-    """Merge the result files of every run folder (one per lab owner) and say what the sweep has done."""
+    """Merge the result files of every run folder (one per resource provider owner) and say what the sweep has done."""
     import glob, collections
     folders = folders or sorted(glob.glob(os.path.join(os.path.dirname(RUN), 'panel-sweep*')))
     results = {}

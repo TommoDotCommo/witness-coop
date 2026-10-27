@@ -8,7 +8,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from witness import TOOLS, ROOT, DIR1, DIR2, PYW, RUN, win
 
 LDIR = os.path.join(ROOT, 'launcher', 'build')
-LAB = os.path.expanduser('~/.local/bin/lab')
+WITNESS_RESOURCES = os.environ['WITNESS_RESOURCES']
 
 def base_cfg(name, port, tone):
     return ('id=1\nlisten=%d\npeer=%d\nsave_dir=instance\nshare_zip=1\nforce_active=1\ncap_fps=30\ndev_menu=1\nvoice_mute_output=1\nname=%s\nrace_countdown_ms=9000\n%s' % (port, port + 1, name, tone))
@@ -23,17 +23,17 @@ def run(launcher_exe='witness_launcher.exe'):
             try: os.remove(os.path.join(d, f))
             except OSError: pass
         subprocess.run(['cp', os.path.join(LDIR, launcher_exe), os.path.join(d, 'witness_launcher_under_test.exe')], check=True)
-    rects = [subprocess.run([LAB, 'rect', s], capture_output=True, text=True).stdout.strip() or '0 0 1280 760' for s in (os.environ.get('LAB_SLOTS', '0,1').split(',') + ['0', '1'])[:2]]
+    rects = [subprocess.run([WITNESS_RESOURCES, 'rect', s], capture_output=True, text=True).stdout.strip() or '0 0 1280 760' for s in (os.environ.get('WITNESS_SLOTS', '0,1').split(',') + ['0', '1'])[:2]]
     out = os.path.join(RUN, 'lobby_out.txt'); lport = p1 + 100
     with open(out, 'w') as f:
         proc = subprocess.Popen([PYW, '-I', win(os.path.join(TOOLS, 'win', 'wlobby.py')), win(os.path.join(DIR1, 'witness_launcher_under_test.exe')), win(DIR1), win(os.path.join(DIR2, 'witness_launcher_under_test.exe')), win(DIR2), str(lport), win(RUN), rects[0], rects[1]], stdout=f, stderr=subprocess.STDOUT, text=True)
         reg = set(); t0 = time.time()
         while proc.poll() is None and time.time() - t0 < 900:
-            for w in 'AB':      # the games the launchers start are registered with the lab, so a failed run cannot leave them behind
+            for w in 'AB':      # the games the launchers start are registered with the resource provider, so a failed run cannot leave them behind
                 fp = os.path.join(RUN, 'pid%s.txt' % w)
                 if os.path.exists(fp):
                     v = open(fp).read().strip()
-                    if v and (w, v) not in reg: subprocess.run([LAB, 'register-pid', v], capture_output=True); reg.add((w, v))
+                    if v and (w, v) not in reg: subprocess.run([WITNESS_RESOURCES, 'register-pid', v], capture_output=True); reg.add((w, v))
             time.sleep(1)
         if proc.poll() is None: proc.kill()
     text = open(out, errors='ignore').read(); print(text, end='')

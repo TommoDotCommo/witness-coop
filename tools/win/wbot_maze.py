@@ -4,7 +4,7 @@ Usage: Windows Python wbot_maze.py <pid> <game folder> <panel id hex> [--no-fini
 The panel graph (positions, flags, connections) is read from the game. Node flag 0x2 is the start, 0x1 the end. The bot stands
 3 m in front of the panel (head-on: yaw = panel rotation about z + pi), enters the puzzle, puts the cursor on the start circle and
 walks the shortest path in small mouse steps, checking the game's traced-node count (panel +0x228) after every step instead of
-trusting a distance. Calibrated on build 11370412 at the lab's 1920x1080 back buffer: 3 m away the panel spans about 222 px per
+trusting a distance. Calibrated on build 11370412 at the resource provider's 1920x1080 back buffer: 3 m away the panel spans about 222 px per
 unit of its 0..1 coordinates, and free cursor motion is 2 counts per pixel.
 """
 import os, sys, math, struct, time, collections

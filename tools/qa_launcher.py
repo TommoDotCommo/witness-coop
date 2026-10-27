@@ -53,7 +53,7 @@ def main():
     log = os.path.join(DIR1, 'logs', 'log.txt'); before = os.path.getmtime(log) if os.path.exists(log) else 0
     ok, gp = run_window('witness_launcher.exe', 'launch')
     if gp:
-        subprocess.run([os.path.expanduser('~/.local/bin/lab'), 'register-pid', gp], capture_output=True)
+        subprocess.run([os.environ['WITNESS_RESOURCES'], 'register-pid', gp], capture_output=True)
         open(os.path.join(RUN, 'pidA.txt'), 'w').write(gp)
         t0 = time.time(); block = ''
         while time.time() - t0 < 360:      # (a game starting beside other games takes minutes)

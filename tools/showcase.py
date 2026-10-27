@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Showcase driver, run by tools/showcase.sh (which owns the lab lease): N real games in one full-mesh group, each player with its own character model (model_by_player=1:
+"""Showcase driver, run by tools/showcase.sh (which owns the resource provider lease): N real games in one full-mesh group, each player with its own character model (model_by_player=1:
 player i is drawn with the i-th model of the list, in alphabetical order, by every other game), then the scenes of tools/win/wshowcase.py take the pictures.
 usage: showcase.py <N> <scenes: all | comma list>"""
 import os, shutil, subprocess, sys, time
@@ -59,7 +59,7 @@ def draw_plan():
 def main():
     count = int(sys.argv[1]); scenes = sys.argv[2] if len(sys.argv) > 2 else 'all'
     out = Path(os.environ.get('SHOWCASE_OUT', Path(ROOT) / 'showcase')); out.mkdir(parents=True, exist_ok=True)
-    gs.foreground = gs.probe('wfocus.py', 'save'); gs.slots = os.environ['LAB_SLOTS'].split(',')
+    gs.foreground = gs.probe('wfocus.py', 'save'); gs.slots = os.environ['WITNESS_SLOTS'].split(',')
     names, avail = model_files(count)
     print('models (player i is drawn with model i, in this order): %s' % ', '.join(names), flush=True)
     clients = [gs.Client(i) for i in range(1, count + 1)]
