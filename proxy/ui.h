@@ -3,9 +3,7 @@
 // batched into one dynamic vertex buffer and drawn over the game's back buffer at the end of the frame.
 #include <cstdint>
 #include <d3d11.h>
-
-struct UiColor { float r, g, b, a; };
-inline UiColor Rgba(float r, float g, float b, float a = 1) { return {r, g, b, a}; }
+#include "ui/theme.h"
 
 bool UiInit(ID3D11Device* dev, ID3D11DeviceContext* ctx);                       // false: the menu stays off
 void UiBegin(float width, float height);                                         // start a frame, in back-buffer pixels
@@ -21,3 +19,7 @@ void UiEnd(ID3D11RenderTargetView* rtv);                                        
 ID3D11ShaderResourceView* UiMakeTexture(const uint8_t* bgra, int w, int h);     // an RGBA picture as a texture (the caller keeps it; null on failure)
 void UiClip(float x, float y, float w, float h);                                 // scissor for the following quads (flushes the batch); w<=0 clears
 void UiImage(float x, float y, float w, float h, ID3D11ShaderResourceView* srv, UiColor tint = {1, 1, 1, 1});   // a whole RGBA texture, stretched into the rectangle
+
+void UiLogStats(); // test oracle: previous frame text bounds and smallest font
+
+void UiCheckTarget(float width, float height, float scale); // accessible target-size oracle

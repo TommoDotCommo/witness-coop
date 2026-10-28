@@ -108,7 +108,7 @@ inline Columns Content(const Cfg& c) {
         "PLAY TOGETHER",
         "Explore independently. See animated teammates, names, typing dots, pings and emotes.",
         "Co-op shares solved panels, traced puzzle lines, opened doors, panel power and cable lighting. Late arrivals recover shared progress.",
-        "Players fade when blocking a puzzle. Watch a partner's view to compare clues. Draw on surfaces or use the precise screen canvas.",
+        "Players fade during close body overlap. Watch a partner's view to compare clues. Draw on surfaces or use the precise screen canvas.",
         "Voice: proximity is spatial nearby, radio farther away. Channels: proximity, radio, open line (global), or one on one. The mic indicator names yours.",
         "Race mode keeps worlds and puzzle lines separate. Players, chat and voice remain. Wait for all worlds, countdown, GO; first to the chosen goal wins.",
         "HOST / JOIN - in the launcher",
@@ -130,8 +130,8 @@ inline Columns Content(const Cfg& c) {
     };
     return out;
 }
-// Fixed-width wrapping matches the game's existing 10-pixel glyph cells and the
-// launcher's monospace guide font. No elision: every word remains on screen.
+// Character-cell wrapping for the launcher's monospace guide. The game uses
+// measured glyph advances instead. No elision: every word remains on screen.
 inline Columns Wrap(const Columns& input, size_t width = 48) {
     Columns out;
     for (size_t c = 0; c < input.size(); ++c) for (const auto& paragraph : input[c]) {

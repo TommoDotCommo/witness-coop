@@ -9,6 +9,7 @@
 #include <d3dcompiler.h>
 #include <cstdio>
 #include <cstdint>
+#include <cctype>
 #include <cmath>
 #include <cstring>
 #include <algorithm>
@@ -42,6 +43,7 @@ static const float kVFovDeg = 60.0f;                 // calibrated: horizontal ~
 #include "social.h"
 #include "povui.h"
 #include <atomic>
+#include <cctype>
 
 typedef HRESULT(STDMETHODCALLTYPE* PresentFn)(IDXGISwapChain*, UINT, UINT);
 static PresentFn g_origPresent;
@@ -65,9 +67,10 @@ static char g_shotName[64];     // set by RequestShot from another thread, taken
 void RequestShot(const char* name) { strncpy(g_shotName, name, sizeof g_shotName - 1); }
 
 // Back buffer to <dll folder>\shots\<name>.bmp (32-bit, top-down). Works while the window is covered or unfocused.
-static void TakeShot(IDXGISwapChain* sc, const char* name) {
+static void TakeShot(IDXGISwapChain* sc, const char* name, ID3D11Texture2D* source = nullptr) {
     ID3D11Texture2D *bb = nullptr, *st = nullptr;
-    if (FAILED(sc->GetBuffer(0, __uuidof(ID3D11Texture2D), (void**)&bb))) return;
+    if (source) { bb = source; bb->AddRef(); }
+    else if (FAILED(sc->GetBuffer(0, __uuidof(ID3D11Texture2D), (void**)&bb))) return;
     D3D11_TEXTURE2D_DESC td; bb->GetDesc(&td); td.Usage = D3D11_USAGE_STAGING; td.BindFlags = 0; td.CPUAccessFlags = D3D11_CPU_ACCESS_READ; td.MiscFlags = 0;
     if (SUCCEEDED(g_dev->CreateTexture2D(&td, nullptr, &st))) {
         g_ctx->CopyResource(st, bb);
@@ -347,6 +350,12 @@ bool PovKey(unsigned vk, bool down) {       // V: watch the player you look at (
 struct TagInfo { unsigned id; char name[25]; int ping; bool onScreen; float dist; };
 static CRITICAL_SECTION g_tagLock; static bool g_tagLockInit; static std::vector<TagInfo> g_tags;
 static bool TagsWanted() { return !GetCfg().noNameTags; }
+// One warm prompt chip (the shared look of the guide and dev menu): dark surface, thin border, accent bar, cream text.
+static void PromptChip(float x, float y, const char* text, float k, UiColor accent) {
+    float tw = UiTextWidth(text, k), th = UiLineHeight(k), pad = 9 * k;
+    UiRect(x - pad, y - 5 * k, tw + 2 * pad + 3 * k, th + 10 * k, uitheme::Surface); UiFrame(x - pad, y - 5 * k, tw + 2 * pad + 3 * k, th + 10 * k, uitheme::Border);
+    UiRect(x - pad, y - 5 * k, 3 * k, th + 10 * k, accent); UiText(x + 3 * k, y, text, uitheme::Text, k);
+}
 static void DrawNameTags(float W, float H) {
     if (!g_tagLockInit) { InitializeCriticalSection(&g_tagLock); g_tagLockInit = true; }
     uintptr_t base = (uintptr_t)GetModuleHandleA(nullptr);
@@ -379,46 +388,51 @@ static void DrawNameTags(float W, float H) {
         float col[3]; PlayerColor(aimed, col); bool watching = VideoWatching() == aimed; float k = std::max(1.0f, H / 1080.0f);
         char b[96]; snprintf(b, sizeof b, watching ? "[V] stop watching %s" : "[V] watch %s's view", aimedName.empty() ? "player" : aimedName.c_str()); (void)aimedPing;
         float tw = UiTextWidth(b, k), th = UiLineHeight(k), x = W / 2 - tw / 2, y = H / 2 + 70 * k;
-        UiRect(x - 8 * k, y - 4 * k, tw + 16 * k, th + 8 * k, Rgba(0, 0, 0, 0.6f)); UiText(x, y, b, Rgba(col[0], col[1], col[2], 1), k);
+        (void)th; PromptChip(x, y, b, k, Rgba(col[0], col[1], col[2], 1));
     }
     if((TvSeated() || TvSeatAvailable()) && !GamePaused()) {
         char b[128]; snprintf(b,sizeof b,TvSeated()?"[%s] stand up; movement exits":"[%s] sit and watch",guide::KeyName(GetCfg().keyTvSeat).c_str());
         float k=std::max(1.f,H/1080.f),tw=UiTextWidth(b,k);
-        UiText(W/2-tw/2,H/2+130*k,b,Rgba(1,.85f,.55f,1),k);
+        PromptChip(W/2-tw/2,H/2+130*k,b,k,uitheme::Accent);
     }
     unsigned deployed=TvDeploymentTarget(),tvTarget=deployed?deployed:g_tvAimed.load();
     if(tvTarget && !g_rosterOpen.load()){
         std::string name="player"; for(const auto& r:CoopGetRemotes()) if(r.id==tvTarget && r.name[0]) name=r.name;
         char b[160]; snprintf(b,sizeof b,deployed?"[%s] retract %s's sky TV":"[%s] deploy %s's sky TV",guide::KeyName(GetCfg().keyTvDeploy).c_str(),name.c_str());
         float k=std::max(1.f,H/1080.f),tw=UiTextWidth(b,k),th=UiLineHeight(k),x=W/2-tw/2,y=H/2+100*k;
-        UiRect(x-8*k,y-4*k,tw+16*k,th+8*k,Rgba(0,0,0,.6f)); UiText(x,y,b,Rgba(1,.75f,.3f,1),k);
+        (void)th; (void)tw; PromptChip(x,y,b,k,uitheme::Accent);
     }
     if (!aimed && !g_rosterOpen.load() && !VideoWatching() && !GamePaused()) {      // a quiet reminder that the other players' screens can be watched
         std::vector<unsigned> ids = PlayerIds(); if (!ids.empty()) {
             float k = std::max(1.0f, H / 1080.0f); char b[96]; std::string nm; if (ids.size() == 1) for (const auto& r : CoopGetRemotes()) if (r.id == ids[0] && r.name[0]) nm = r.name;
             if (!nm.empty()) snprintf(b, sizeof b, "V  watch %s's view", nm.c_str()); else snprintf(b, sizeof b, "V  watch a player's view   F5  list");
-            float tw = UiTextWidth(b, 0.8f * k), x = W - tw - 24 * k, y = H - 50 * k; UiRect(x - 6 * k, y - 4 * k, tw + 12 * k, UiLineHeight(0.8f * k) + 8 * k, Rgba(0, 0, 0, 0.4f)); UiText(x, y, b, Rgba(0.7f, 0.75f, 0.85f, 1), 0.8f * k);
+            float tw = UiTextWidth(b, 0.8f * k), x = W - tw - 24 * k, y = H - 50 * k; (void)tw; PromptChip(x, y, b, 0.8f * k, uitheme::Muted);
         }
     }
     if (g_rosterOpen.load()) {          // the player list: Up/Down, Enter watches, Backspace clears, F5 / Esc closes
         std::vector<unsigned> ids = PlayerIds(); auto layout=wradio::Roster(W,H,(unsigned)ids.size(),UiLineHeight(1));
         float k=layout.scale,lh=layout.rowStep,x=layout.x,y=layout.y,w=layout.width;
         int rows = (int)ids.size(); int sel = std::min(g_rosterSel.load(), std::max(0, rows - 1)); g_rosterSel = sel;
-        UiRect(x, y, w, layout.height, Rgba(0.05f, 0.06f, 0.09f, 0.88f));
-        UiText(x + 12 * k, y + 8 * k, "Players   Up/Down  Enter: watch  Backspace: clear  F5: close", Rgba(0.75f, 0.8f, 0.95f, 1), 0.8f * k);
-        UiText(x+12*k,y+lh*(rows+2)+6*k,wradio::kRosterHint,Rgba(.8f,.85f,.9f),.8f*k);
+        UiRect(x, y, w, layout.height, uitheme::Surface);
+        UiFrame(x, y, w, layout.height, uitheme::Border);
+        UiRect(x, y, 4 * k, layout.height, uitheme::Accent);
+        UiText(x + 14 * k, y + 8 * k, "Players   Up/Down  Enter: watch  Backspace: clear  F5: close", uitheme::Accent, 0.8f * k);
+        UiText(x+14*k,y+lh*(rows+2)+6*k,wradio::kRosterHint,uitheme::Muted,.8f*k);
         std::vector<RemotePose> rem = CoopGetRemotes();
         for (int i = 0; i < rows; ++i) {
             const RemotePose* p = nullptr; for (const auto& r : rem) if (r.id == ids[i]) p = &r;
             float col[3]; PlayerColor(ids[i], col); float ry = y + 10 * k + lh * (i + 1.4f);
-            if (i == sel) UiRect(x + 6 * k, ry - 3 * k, w - 12 * k, lh, Rgba(0.25f, 0.28f, 0.45f, 0.9f));
+            if (i == sel) {
+                UiRect(x + 6 * k, ry - 3 * k, w - 12 * k, lh, uitheme::Selected);
+                UiRect(x + 6 * k, ry - 3 * k, 3 * k, lh, uitheme::Accent);
+            }
             UiRect(x + 14 * k, ry + 2 * k, 10 * k, 10 * k, Rgba(col[0], col[1], col[2], 1));
             char b[96]; snprintf(b, sizeof b, "%-18.18s %s%d ms %s", p && p->name[0] ? p->name : "?", p && p->pingMs >= 0 ? "" : "- ", p && p->pingMs >= 0 ? p->pingMs : 0, VideoWatching() == ids[i] ? "  [watching]" : "");
             if (p && p->pingMs < 0) snprintf(b, sizeof b, "%-18.18s -- ms %s", p->name[0] ? p->name : "?", VideoWatching() == ids[i] ? "  [watching]" : "");
             { size_t len=strlen(b); snprintf(b+len,sizeof b-len,"  %d%%",int(VoiceGetPlayerVolume(ids[i])*100+.5f)); }
-            UiText(x + 32 * k, ry, b, Rgba(col[0], col[1], col[2], 1), k);
+            UiText(x + 32 * k, ry, b, i == sel ? uitheme::Text : uitheme::Muted, k);
         }
-        if (!rows) UiText(x + 14 * k, y + 10 * k + lh * 1.4f, "nobody else is here yet", Rgba(0.8f, 0.8f, 0.8f, 1), k);
+        if (!rows) UiText(x + 14 * k, y + 10 * k + lh * 1.4f, "nobody else is here yet", uitheme::Muted, k);
     }
     EnterCriticalSection(&g_tagLock); g_tags = std::move(now); LeaveCriticalSection(&g_tagLock);
 }
@@ -433,24 +447,69 @@ void SaveMetaTick();      // savemeta_game.cpp
 #include "mapgen.h"
 void MapGenCountOverlayFrame();
 unsigned OverlayFrames() { return (unsigned)g_frames; }
-static void DrawDevMenu(IDXGISwapChain* sc) {
-    if (!g_uiReady) return;
-    DevMenuTick(); SaveMetaTick();
-    if (!GuideOpen() && !DevMenuOpen() && !DevMenuToastWanted() && !VideoViewMode() && !TagsWanted() && !RaceActive() && !g_rosterOpen.load() && !TvConsent() && !TvEnabled() && !TvDeploymentTarget()) return;
-    ID3D11Texture2D* bb = nullptr; if (FAILED(sc->GetBuffer(0, __uuidof(ID3D11Texture2D), (void**)&bb))) return;
-    D3D11_TEXTURE2D_DESC td; bb->GetDesc(&td); ID3D11RenderTargetView* rtv = nullptr;
-    if (SUCCEEDED(g_dev->CreateRenderTargetView(bb, nullptr, &rtv))) { UiBegin((float)td.Width, (float)td.Height); DrawNameTags((float)td.Width, (float)td.Height); { uintptr_t b0 = (uintptr_t)GetModuleHandleA(nullptr); const float* c0 = (const float*)(b0 + kCamPos); const float* a0 = (const float*)(b0 + kCamAng); if (!IsBadReadPtr(c0, 12) && !IsBadReadPtr(a0, 8)) SocialFrame((float)td.Width, (float)td.Height, c0, a0); } RaceDraw((float)td.Width, (float)td.Height); if (DevMenuOpen()) DevMenuDraw((float)td.Width, (float)td.Height); else DevMenuToast((float)td.Width, (float)td.Height);
-        if (TvConsent() || TvEnabled()) UiText(14, 14, TvConsent() ? "SHARING MY TV POV [F11 STOP]  [F10 back TV]" : "BACK TV ON [F10 OFF]  [F11 share my POV]", Rgba(1, 0.55f, 0.2f), 0.9f);
+// A test capture uses the exact live scene renderer at a requested size. This
+// avoids desktop/work-area limits on native windows when checking ultrawide/4K.
+static SRWLOCK g_uiCaptureLock = SRWLOCK_INIT;
+static unsigned g_uiCaptureW, g_uiCaptureH;
+static char g_uiCaptureName[16];
+void OverlayRequestUiCapture(unsigned width, unsigned height, const char* name) {
+    if (width < 320 || width > 7680 || height < 200 || height > 4320) return;
+    for (const char* p = name; *p; ++p) if (!isalnum((unsigned char)*p) && *p != '_') return;
+    AcquireSRWLockExclusive(&g_uiCaptureLock);
+    g_uiCaptureW = width; g_uiCaptureH = height;
+    snprintf(g_uiCaptureName, sizeof g_uiCaptureName, "%s", name);
+    ReleaseSRWLockExclusive(&g_uiCaptureLock);
+}
+static void DrawUiScene(float width, float height, ID3D11RenderTargetView* rtv) {
+    UiBegin(width, height); DrawNameTags(width, height); { uintptr_t b0 = (uintptr_t)GetModuleHandleA(nullptr); const float* c0 = (const float*)(b0 + kCamPos); const float* a0 = (const float*)(b0 + kCamAng); if (!IsBadReadPtr(c0, 12) && !IsBadReadPtr(a0, 8)) SocialFrame(width, height, c0, a0); } RaceDraw(width, height); if (DevMenuOpen()) DevMenuDraw(width, height); else DevMenuToast(width, height);
+        if (TvConsent() || TvEnabled()) PromptChip(14, 14, TvConsent() ? "Sharing my TV view   F11 stop   F10 back TV" : "Back TV on   F10 off   F11 share my view", 0.9f * std::max(1.f, height / 1080.f), uitheme::Accent);
         if (VideoViewMode()) {      // the partner's screen, in a corner (F9: small, large, off)
             int vw = 0, vh = 0; unsigned long age = 0; ID3D11ShaderResourceView* srv = VideoRemoteSrv(&vw, &vh, &age); InterlockedIncrement(&g_povBox); if (srv) InterlockedIncrement(&g_povPic);
-            float k = (VideoViewMode() == 2 ? 2.0f : 1.0f) * std::max(1.f, td.Height / 1080.f), iw = (vw ? vw : 480) * k, ih = (vh ? vh : 270) * k, x = td.Width - iw - 14, y = 14;
+            float k = (VideoViewMode() == 2 ? 2.0f : 1.0f) * std::max(1.f, height / 1080.f), iw = (vw ? vw : 480) * k, ih = (vh ? vh : 270) * k, x = width - iw - 14, y = 14;
             UiRect(x - 3, y - 3, iw + 6, ih + 6 + UiLineHeight(0.85f), Rgba(0, 0, 0, 0.8f));
             if (srv) UiImage(x, y, iw, ih, srv); else UiText(x + 10, y + ih / 2 - 10, "waiting for the picture", Rgba(1, 0.8f, 0.5f), 0.9f);
             { const char* nm = "player"; unsigned wid = VideoWatching(); float pc[3] = {1, 0.6f, 0.2f}; PlayerColor(wid, pc); std::vector<RemotePose> rem = CoopGetRemotes(); for (const auto& r : rem) if (r.id == wid && r.name[0]) nm = r.name;
               char b[96]; snprintf(b, sizeof b, "%s's view%s    [ ] cycle   V clear   F5 list", nm, srv ? (age > 2000 ? "  (stale)" : "") : "  (waiting)"); UiText(x + 2, y + ih + 2, b, Rgba(pc[0], pc[1], pc[2]), 0.85f); }
         }
-        GuideDraw((float)td.Width, (float)td.Height);
-        UiEnd(rtv); rtv->Release(); }
+        GuideDraw(width, height);
+        UiEnd(rtv);
+}
+static void CaptureUiScene(ID3D11Texture2D* background) {
+    unsigned width, height; char name[16];
+    AcquireSRWLockExclusive(&g_uiCaptureLock);
+    width = g_uiCaptureW; height = g_uiCaptureH; strcpy(name, g_uiCaptureName); g_uiCaptureW = 0;
+    ReleaseSRWLockExclusive(&g_uiCaptureLock);
+    if (!width) return;
+    D3D11_TEXTURE2D_DESC desc{}; background->GetDesc(&desc);
+    desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+    ID3D11Texture2D *copy = nullptr, *target = nullptr;
+    ID3D11ShaderResourceView* picture = nullptr;
+    ID3D11RenderTargetView* rtv = nullptr;
+    if (SUCCEEDED(g_dev->CreateTexture2D(&desc, nullptr, &copy))) {
+        g_ctx->CopyResource(copy, background);
+        g_dev->CreateShaderResourceView(copy, nullptr, &picture);
+    }
+    desc.Width = width; desc.Height = height; desc.BindFlags = D3D11_BIND_RENDER_TARGET;
+    if (SUCCEEDED(g_dev->CreateTexture2D(&desc, nullptr, &target)) &&
+        SUCCEEDED(g_dev->CreateRenderTargetView(target, nullptr, &rtv))) {
+        float clear[4] = {0, 0, 0, 1}; g_ctx->ClearRenderTargetView(rtv, clear);
+        UiBegin(float(width), float(height)); UiImage(0, 0, float(width), float(height), picture); UiEnd(rtv);
+        DrawUiScene(float(width), float(height), rtv);
+        UiLogStats(); TakeShot(nullptr, name, target);
+    } else Log("uicapture: render target failed");
+    if (rtv) rtv->Release(); if (target) target->Release();
+    if (picture) picture->Release(); if (copy) copy->Release();
+}
+static void DrawDevMenu(IDXGISwapChain* sc) {
+    if (!g_uiReady) return;
+    DevMenuTick(); SaveMetaTick();
+    if (!GuideOpen() && !DevMenuOpen() && !DevMenuToastWanted() && !VideoViewMode() && !TagsWanted() && !RaceActive() && !g_rosterOpen.load() && !TvConsent() && !TvEnabled() && !TvDeploymentTarget()) return;
+    ID3D11Texture2D* bb = nullptr; if (FAILED(sc->GetBuffer(0, __uuidof(ID3D11Texture2D), (void**)&bb))) return;
+    CaptureUiScene(bb);
+    D3D11_TEXTURE2D_DESC td; bb->GetDesc(&td); ID3D11RenderTargetView* rtv = nullptr;
+    if (SUCCEEDED(g_dev->CreateRenderTargetView(bb, nullptr, &rtv))) {
+        DrawUiScene(float(td.Width), float(td.Height), rtv); rtv->Release();
+    }
     bb->Release();
 }
 

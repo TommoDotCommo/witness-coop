@@ -1,5 +1,7 @@
 #include "guide_ui.h"
 #include "ui.h"
+#include "ui/theme.h"
+#include "ui/guide_layout.h"
 #include "../common/guide.h"
 namespace { guide::Hold hold; }
 bool GuideKey(unsigned vk, bool down) { return hold.Key(vk, down); }
@@ -7,18 +9,25 @@ bool GuideOpen() { return hold.Open(); }
 void GuideReset() { hold.Reset(); }
 void GuideDraw(float w, float h) {
     if (!GuideOpen()) return;
-    auto cols = guide::Wrap(guide::Content(GetCfg()));
-    auto layout = guide::Fit(w, h, cols);
+    auto layout = uitext::FitGuide(w, h, guide::Content(GetCfg()), UiTextWidth);
+    const auto& cols = layout.columns;
     float sc = layout.scale, row = layout.rowHeight, cw = layout.columnWidth;
-    UiRect(0, 0, w, h, Rgba(0.015f, 0.03f, 0.04f, 0.98f));
-    UiText(16, 12, "THE WITNESS CO-OP - QUICK GUIDE", Rgba(1, .86f, .6f), sc * 1.2f);
-    UiText(16, 40, "Hold F1 to read / release to return", Rgba(.4f, .85f, .95f), sc);
+    UiRect(0, 0, w, h, uitheme::Canvas);
+    float cardX = 16, cardY = 12, cardW = w - 32, cardH = h - 24;
+    UiRect(cardX, cardY, cardW, cardH, uitheme::Surface);
+    UiFrame(cardX, cardY, cardW, cardH, uitheme::Border);
+    UiRect(cardX, cardY, 4 * sc, cardH, uitheme::Accent);
+    UiText(cardX + 18 * sc, cardY + 12 * sc, "THE WITNESS CO-OP - QUICK GUIDE", uitheme::Text, sc * 1.25f);
+    UiText(cardX + 18 * sc, cardY + 42 * sc, "Hold F1 to read / release to return", uitheme::Muted, sc * 0.85f);
+    float topY = cardY + 70 * sc, paneH = cardH - (topY - cardY) - 14 * sc;
     for (int c = 0; c < 3; ++c) {
-        float x = 16 + c * cw, y = 72;
-        UiRect(x - 4, 67, cw - 6, h - 77, Rgba(.04f, .075f, .09f));
+        float x = cardX + 14 + c * cw, y = topY + 10 * sc;
+        UiRect(x, topY, cw - 8 * sc, paneH, uitheme::Inset);
+        UiFrame(x, topY, cw - 8 * sc, paneH, uitheme::Border);
+        UiRect(x + 1, topY + 1, cw - 10 * sc, 2, Rgba(uitheme::Accent.r, uitheme::Accent.g, uitheme::Accent.b, 0.25f));
         for (const auto& line : cols[c]) {
             bool heading = !line.empty() && line.find_first_of("abcdefghijklmnopqrstuvwxyz") == std::string::npos;
-            UiText(x, y, line.c_str(), heading ? Rgba(1, .86f, .6f) : Rgba(.87f, .91f, .93f), sc);
+            UiText(x + 10 * sc, y, line.c_str(), heading ? uitheme::Accent : uitheme::Text, sc);
             y += row;
         }
     }

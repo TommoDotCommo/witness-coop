@@ -4,7 +4,7 @@ the proxy reads must be 1) and the puppet must not be drawn; Esc again closes it
 usage: qa_pause.py (called by tools/qa.sh pause)"""
 import os, subprocess, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from witness import TOOLS, DIR1, DIR2, PYW, pid, win
+from witness import TOOLS, DIR1, DIR2, PYW, pid, win, real_saves
 import qa_sweep
 
 def run(cfg_a=''):
@@ -13,10 +13,13 @@ def run(cfg_a=''):
     print(r.stdout, end=''); return r.returncode == 0 and 'ALL OK' in r.stdout
 
 def main():
-    results = []
+    before = real_saves(); results = []
     print('=== pause: clean build', flush=True); ok = run(); results.append(('clean', ok)); print('clean: %s' % ('PASS' if ok else 'FAIL'), flush=True)
     for name, cfg in (('no_pause_hide (puppets drawn over the pause menu)', 'no_pause_hide=1'), ('pause_wrong_flag (the first flag candidate, which flips with F6 / F7 and puzzles)', 'pause_wrong_flag=1')):
         print('=== pause: MUTANT %s' % name, flush=True); caught = not run(cfg); results.append((name, caught)); print('mutant: %s' % ('caught' if caught else 'NOT CAUGHT'), flush=True)
+    safe = real_saves() == before
+    results.append(('real saves byte-identical', safe))
+    print('real saves byte-identical: %s' % safe, flush=True)
     bad = [n for n, ok in results if not ok]
     print('ALL OK' if not bad else 'FAILED: %s' % bad); return 1 if bad else 0
 

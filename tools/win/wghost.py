@@ -1,11 +1,20 @@
-# T2 check of see-through players, run with Windows Python. B looks at a puzzle panel with A standing between B's camera and the panel; the alpha B draws A with (read from B's own
-# draw: `ghoststat`) must go down to a ghost, come back when A steps out of the line, go down again when A steps back in, and drop when A stands in B's face. The positions are put
-# with the hover command and read back from both games' memory.
+# T2 check of body-overlap transparency, run with Windows Python. B reads the alpha it draws A with (`ghoststat`).
+# A stays solid between B and a puzzle, at shoulder-to-shoulder distance, and on another level; only intersecting B's body fades A.
+# Positions are set with hover and read back from both games' memory.
 # usage: wghost.py <pidA> <dirA> <pidB> <dirB> <see_through 1|0>
 import os, sys, time, math, re
 exec(compile(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'wlib.py')).read(), 'wlib.py', 'exec'))
 pa, da, pb, db, on = int(sys.argv[1]), sys.argv[2], int(sys.argv[3]), sys.argv[4], sys.argv[5] == '1'
 A, B = attach(pa), attach(pb)
+output = sys.argv[6] if len(sys.argv) > 6 else None
+if output:
+    os.makedirs(output, exist_ok=True)
+    exec(compile(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'wimg.py')).read(), 'wimg.py', 'exec'))
+def capture(name):
+    if output:
+        send(db, ['shot ' + name], .5)
+        bmp_to_png(os.path.join(db, 'shots', name + '.bmp'), os.path.join(output, name + '.png'))
+
 def send(d, lines, settle=0.0):
     cmd = os.path.join(d, 'witness_cmd.txt'); t = time.time()
     while os.path.exists(cmd) and time.time() - t < 8: time.sleep(0.01)
@@ -26,7 +35,6 @@ ok = True
 def check(name, cond, detail=''):
     global ok; ok = ok and bool(cond); print('  %-100s %s  (%s)' % (name, 'ok' if cond else 'FAILED', detail), flush=True)
 def settle(want_low, secs=4.0):
-    """wait for the alpha to arrive (it moves a step at a time) and return the last reading"""
     end = time.time() + secs; g = None
     while time.time() < end:
         g = ghost(db)
@@ -35,22 +43,36 @@ def settle(want_low, secs=4.0):
     return g
 send(da, ['menusel c335', 'menudo teleport'], 4.0)
 (ax, ay, az), (ath, aph) = A.camera()
-send(db, ['tp %.4f %.4f %.4f %.5f 0' % (ax - math.cos(ath) * 2.0, ay - math.sin(ath) * 2.0, az, ath)], 3.0)      # B two metres behind A, looking the same way: at the panel, A in between
+send(db, ['tp %.4f %.4f %.4f %.5f 0' % (ax - math.cos(ath) * 2.0, ay - math.sin(ath) * 2.0, az, ath)], 3.0)
 (bx, by, bz), (bth, bph) = B.camera()
-def put_a(fwd, side):
-    """A's eye `fwd` metres ahead of B's camera along B's heading and `side` metres to its right"""
+def put_a(fwd, side, dz=0.0):
+    """A's eye relative to B's camera: forward, right and vertical metres."""
     x = bx + fwd * math.cos(bth) + side * math.sin(bth); y = by + fwd * math.sin(bth) - side * math.cos(bth)
-    send(da, ['hover %.3f %.3f %.3f %.4f 0' % (x, y, bz, bth)], 1.0)
-put_a(2.0, 0.0); g = settle(True)
-check('1. A stands between B and the panel: B draws A as a ghost', g and (g[0] < 0.3 if on else g[0] > 0.95) and (g[1] < 0.3 if on else g[1] > 0.95), g)
-check('   B knows where the panels are (the table of the world is there)', g and g[2] >= 300, g and g[2])
-put_a(2.0, 3.5); g = settle(False)
-check('2. A steps 3.5 m to the side, out of the line: solid again', g and g[0] > 0.95 and g[1] > 0.95, g)
-put_a(2.0, 0.0); g = settle(True)
-check('3. A steps back in front of the panel: a ghost again', g and (g[0] < 0.3 if on else g[0] > 0.95), g)
-put_a(6.0, 0.0); g = settle(True)
-check('4. A further away, still in the line: still a ghost', g and (g[0] < 0.3 if on else g[0] > 0.95), g)
-put_a(-0.7, 0.3); g = settle(True)
-check('5. A right behind B\'s camera (0.8 m, in the way of no panel): faded so as not to blind', g and (g[0] < 0.45 if on else g[0] > 0.95), g)
+    send(da, ['hover %.3f %.3f %.3f %.4f 0' % (x, y, bz + dz, bth)], 1.0)
+    actual = A.camera()[0]
+    check('   Actual process camera reached the requested overlap position', math.dist(actual, (x, y, bz + dz)) < .05, actual)
+put_a(2.0, 0.0); g = settle(False)
+check('1. A between B and the panel stays fully solid', g and g[0] > 0.95 and g[1] > 0.95, g)
+capture('ghost_panel')
+put_a(0.0, 0.65); g = settle(False)
+check('2. A at ordinary shoulder-to-shoulder distance (0.65 m) stays solid', g and g[0] > 0.95 and g[1] > 0.95, g)
+put_a(0.0, 0.0); g = settle(True)
+capture('ghost_overlap')
+check('3. A intersecting B\'s body fades', g and (g[0] < 0.3 if on else g[0] > 0.95) and (g[1] < 0.3 if on else g[1] > 0.95), g)
+put_a(0.0, 0.65); g = settle(False)
+check('4. A restores opacity quickly after leaving overlap', g and g[0] > 0.95 and g[1] > 0.95, g)
+put_a(0.0, 0.0, 2.2); g = settle(False)
+check('5. A directly above B but vertically separated stays solid', g and g[0] > 0.95 and g[1] > 0.95, g)
+put_a(0.0, 0.0); g = settle(True)
+check('6. Returning to vertical and horizontal body overlap fades again', g and (g[0] < 0.3 if on else g[0] > 0.95), g)
+put_a(.65, 0); g = settle(False)
+check('7. A nearby in front of B remains fully solid', g and g[0] > .95 and g[1] > .95, g)
+capture('ghost_near')
+put_a(.47, 0); time.sleep(.4); g = ghost(db)
+check('8. Horizontal overlap edge is partially faded', g and .25 < g[1] < .95, g)
+capture('ghost_edge')
+put_a(0, 0, 1.81); time.sleep(.4); g = ghost(db)
+check('9. Vertical grazing overlap has a smooth partial target', g and .25 < g[1] < .95, g)
+capture('ghost_vertical')
 send(da, ['hover off'])
 print('ALL OK' if ok else 'FAILED'); sys.exit(0 if ok else 1)

@@ -15,6 +15,8 @@
 #include "coop.h"
 #include "config.h"
 #include "ui.h"
+#include "ui/text.h"
+#include "guide_ui.h"
 #include "input.h"
 #include "model_gpu.h"
 #include "playercolor.h"
@@ -47,7 +49,6 @@ bool g_wheel = false; float g_wx = 0, g_wy = 0;
 struct RemoteEmote { bool seen = false; uint8_t seq = 0; int id = 0; ULONGLONG start = 0; };
 std::map<unsigned, RemoteEmote> g_remoteEmotes;
 int g_emotePage = 0; witness::EmoteGate g_emoteGate;
-bool g_guide = false;
 bool EmoteAlive(int id, ULONGLONG age) { return witness::EmoteActive(id,float(age)/1000.f); }
 int WheelSlot() { return witness::EmoteSlot(g_wx,g_wy,g_emotePage)-1; }
 void TriggerEmote(int id, ULONGLONG now) { if (!g_emoteGate.Accept(now,id,true)) return; g_emote = id; g_emoteAt = now; ++g_emoteSeq; }
@@ -138,26 +139,28 @@ bool ToScreen(const float* cam, float th, float ph, const float* w, float W, flo
     float tv = tanf(kVFovDeg * 3.14159265f / 360.0f), th_ = tv * (W / H);
     float nx = (r / f) / th_, ny = (u / f) / tv; *sx = (nx * 0.5f + 0.5f) * W; *sy = (0.5f - ny * 0.5f) * H; return true;
 }
-std::vector<std::string> Wrap(const std::string& s, size_t width, size_t maxLines) {
-    std::vector<std::string> out; std::string cur;
-    size_t i = 0;
-    while (i < s.size() && out.size() < maxLines) {
-        size_t j = i; std::string word; while (j < s.size() && s[j] != ' ') word.push_back(s[j++]); while (j < s.size() && s[j] == ' ') ++j; i = j;
-        while (word.size() > width) { if (!cur.empty()) { out.push_back(cur); cur.clear(); if (out.size() >= maxLines) return out; } out.push_back(word.substr(0, width)); word = word.substr(width); if (out.size() >= maxLines) return out; }
-        if (!cur.empty() && cur.size() + 1 + word.size() > width) { out.push_back(cur); cur.clear(); if (out.size() >= maxLines) return out; }
-        if (!cur.empty()) cur.push_back(' '); cur += word;
+std::vector<std::string> Wrap(const std::string& s, float width, size_t maxLines, float scale) {
+    std::vector<std::string> out;
+    std::string wrapped = uitext::Wrap(s.c_str(), width, [&](const char* t) { return UiTextWidth(t, scale); });
+    size_t at = 0;
+    while (out.size() < maxLines) {
+        size_t end = wrapped.find('\n', at);
+        out.push_back(wrapped.substr(at, end - at));
+        if (end == std::string::npos) break;
+        at = end + 1;
     }
-    if (!cur.empty() && out.size() < maxLines) out.push_back(cur);
     return out;
 }
 void Bubbled(float cx, float bottom, const std::vector<std::string>& lines, bool dots, const float col[3], float k, ULONGLONG now) {
     float lh = UiLineHeight(0.9f * k), pad = 7 * k; float w = 0;
     if (dots) w = 46 * k; else for (const auto& l : lines) w = std::max(w, UiTextWidth(l.c_str(), 0.9f * k));
-    float h = dots ? 22 * k : lh * lines.size(); float x = cx - w / 2 - pad, y = bottom - h - 2 * pad;
-    UiRect(x - 1, y - 1, w + 2 * pad + 2, h + 2 * pad + 2, Rgba(col[0], col[1], col[2], 0.9f)); UiRect(x, y, w + 2 * pad, h + 2 * pad, Rgba(0.06f, 0.07f, 0.1f, 0.88f));
+    float h = dots ? 22 * k : lh * lines.size(); float x = std::clamp(cx - w / 2 - pad, 8.f, std::max(8.f, g_scrW - w - 2 * pad - 8)), y = std::max(8.f, bottom - h - 2 * pad);
+    UiRect(x - 1, y - 1, w + 2 * pad + 2, h + 2 * pad + 2, Rgba(col[0], col[1], col[2], 0.9f));
+    UiRect(x, y, w + 2 * pad, h + 2 * pad, uitheme::Surface);
+    UiFrame(x, y, w + 2 * pad, h + 2 * pad, uitheme::Border);
     UiTri(cx, bottom, 7 * k, 1.5707963f, Rgba(col[0], col[1], col[2], 0.9f));
     if (dots) { for (int i = 0; i < 3; ++i) { float ph = float(now % 1200) / 1200.0f * 6.2831853f - i * 0.9f; float bob = std::max(0.0f, sinf(ph)) * 6 * k; UiRect(cx - 14 * k + i * 14 * k - 3 * k, y + pad + 8 * k - bob, 6 * k, 6 * k, Rgba(col[0], col[1], col[2], 1)); } }
-    else for (size_t i = 0; i < lines.size(); ++i) UiText(x + pad, y + pad + lh * i, lines[i].c_str(), Rgba(0.95f, 0.95f, 0.95f, 1), 0.9f * k);
+    else for (size_t i = 0; i < lines.size(); ++i) UiText(x + pad, y + pad + lh * i, lines[i].c_str(), uitheme::Text, 0.9f * k);
 }
 }  // namespace
 
@@ -182,7 +185,7 @@ unsigned SocialInkVerts(const float cam[3], std::vector<LineVert>& out, size_t m
     }
     g_segsDrawn = segs; return segs;
 }
-SocialSnapshot SocialState() { Lock l; return {g_emote,g_emoteSeq,g_emotePage,g_wheel,g_guide,GamePaused()}; }
+SocialSnapshot SocialState() { Lock l; return {g_emote,g_emoteSeq,g_emotePage,g_wheel,GuideOpen(),GamePaused()}; }
 bool SocialCapturing() { Lock l; return g_open; }
 bool SocialMouseCaptured() { Lock l; return g_open || g_wheel || g_canvas; }
 void SocialRawMove(int dx, int dy) { Lock l; if (g_canvas && !g_wheel && !g_open) { g_ox += dx * 1.6f; g_oy += dy * 1.6f; return; } if (g_wheel) { g_wx += float(dx); g_wy += float(dy); float m = sqrtf(g_wx * g_wx + g_wy * g_wy); if (m > 140) { g_wx *= 140 / m; g_wy *= 140 / m; } } }
@@ -202,7 +205,6 @@ bool SocialKey(unsigned vk, bool down) {
 bool SocialSwallowRaw(unsigned vk) { Lock l; auto it = g_swallow.find(vk); return it != g_swallow.end() && GetTickCount64() - it->second < 600; }      // (looked at, not used up: the game reads one event more than once)
 static bool SocialKeyImpl(unsigned vk, bool down) {
     const Cfg& c = GetCfg(); Lock l; ULONGLONG now = GetTickCount64();
-    if (vk == VK_F1 && down && !g_open && !GamePaused()) { g_guide=!g_guide; return true; }
     if (vk == c.keyRadio) return VoiceRadioKey(down, g_open || g_wheel || GamePaused());
     if (vk == c.keyVoiceChannel && !c.noVoiceChannelKey && down && !g_open && !g_wheel && !GamePaused()) return VoiceCycleChannel();
     if (vk == c.keyVoice) { if (!down) VoiceKey(vk, false); else if (!g_open && !GamePaused()) VoiceKey(vk, true); }
@@ -241,16 +243,6 @@ void SocialFrame(float W, float H, const float* cam, const float* ang) {
     ULONGLONG now = GetTickCount64(); witness::SyncCore* core = CoopCore(); const Cfg& cfg = GetCfg();
 
     Lock l;
-    if (g_guide && !GamePaused()) {
-        auto guide=wradio::Guide(W,H,unsigned(sizeof(kBindings)/sizeof(kBindings[0])));
-        float scale=guide.scale,x=guide.x,y=guide.y;
-        UiRect(x,y,guide.width,guide.height,Rgba(.04f,.06f,.05f,.94f));
-        UiText(x+12*scale,y+10*scale,"CO-OP KEYS (F1)",Rgba(1,.85f,.5f),scale);
-        int row=0; for (const auto& b : kBindings) { char text[100],key[16]; unsigned vk=cfg.*(b.member);
-            if(vk>=VK_F1 && vk<=VK_F12) snprintf(key,sizeof key,"F%u",vk-VK_F1+1); else snprintf(key,sizeof key,"%c",char(vk));
-            snprintf(text,sizeof text,"%-4s %s",key,b.label); UiText(x+12*scale,guide.Row(row++),text,Rgba(.9f,.94f,.88f),scale);
-        }
-    }
     if (GamePaused() || g_open || g_wheel) { VoiceRadioKey(false,true); VoiceKey(cfg.keyVoice,false); }
     if (core) {
         for (const auto& m : core->takeChat()) AddChat(m.from, m.text, now);
@@ -265,7 +257,7 @@ void SocialFrame(float W, float H, const float* cam, const float* ang) {
     for (auto it = g_bubbles.begin(); it != g_bubbles.end();) { if (it->second.until < now) it = g_bubbles.erase(it); else ++it; }
     g_dotsDrawn = g_bubblesDrawn = g_marksDrawn = g_arrowsDrawn = 0; g_speakDrawn = 0; g_micHudDrawn = false;
     if (GamePaused()) return;
-    float k = std::max(1.0f, H / 1080.0f);
+    float k = std::min(W / 1280.f, H / 900.f);
     memcpy(g_camNow, cam, 12); g_angNow[0] = ang[0]; g_angNow[1] = ang[1]; g_scrW = W; g_scrH = H;
     g_ox = std::min(std::max(g_ox, -W / 2 + 6), W / 2 - 6); g_oy = std::min(std::max(g_oy, -H / 2 + 6), H / 2 - 6);
     if (g_pen && !g_open) {      // the pen is down: ask for the depth under it; the answer (next frame) puts one point of ink on that surface, along the ray of the frame the question was asked in
@@ -309,7 +301,7 @@ void SocialFrame(float W, float H, const float* cam, const float* ang) {
         float kk = k * std::min(1.0f, std::max(0.7f, 10.0f / std::max(dist, 1.0f))); float bottom = sy - UiLineHeight(kk) - 14 * kk;
         auto bi = g_bubbles.find(rp.id);
         if (rp.typing) { Bubbled(sx, bottom, {}, true, col, kk, now); ++g_dotsDrawn; }
-        else if (bi != g_bubbles.end()) { Bubbled(sx, bottom, Wrap(bi->second.text, 28, 4), false, col, kk, now); ++g_bubblesDrawn; }
+        else if (bi != g_bubbles.end()) { Bubbled(sx, bottom, Wrap(bi->second.text, std::min(W - 40 * kk, 280 * kk), 4, .9f * kk), false, col, kk, now); ++g_bubblesDrawn; }
     }
     for (const auto& rp : rem) {      // a player who is talking: three bars moving beside the top of the head, in their colour
         if (!rp.speaking || rp.ageMs > 2000) continue;
@@ -383,30 +375,43 @@ void SocialFrame(float W, float H, const float* cam, const float* ang) {
         UiRect(cx - R - 70 * k, cy - R - 40 * k, 2 * R + 140 * k, 2 * R + 80 * k, Rgba(0, 0, 0, 0.35f));
         for (int i = 0; i < 8; ++i) {
             float a = -1.5707963f + i * 0.7853982f, px = cx + cosf(a) * R, py = cy + sinf(a) * R; bool on = i == sel;
-            float bw = 112 * k, bh = 34 * k; UiRect(px - bw / 2 - 2, py - bh / 2 - 2, bw + 4, bh + 4, on ? Rgba(col[0], col[1], col[2], 1) : Rgba(0.4f, 0.45f, 0.55f, 0.8f));
-            UiRect(px - bw / 2, py - bh / 2, bw, bh, on ? Rgba(0.2f, 0.24f, 0.4f, 0.97f) : Rgba(0.06f, 0.07f, 0.1f, 0.9f));
-            float tw = UiTextWidth(SocialEmoteName(g_emotePage*8+i+1), 1.0f * k); UiText(px - tw / 2, py - UiLineHeight(1.0f * k) / 2, SocialEmoteName(g_emotePage*8+i+1), on ? Rgba(1, 1, 1, 1) : Rgba(0.8f, 0.85f, 0.95f, 1), 1.0f * k);
+            float bw = 112 * k, bh = 34 * k; UiRect(px - bw / 2 - 2, py - bh / 2 - 2, bw + 4, bh + 4, on ? uitheme::Accent : uitheme::Border);
+            UiRect(px - bw / 2, py - bh / 2, bw, bh, on ? uitheme::Selected : uitheme::Surface);
+            float tw = UiTextWidth(SocialEmoteName(g_emotePage*8+i+1), 1.0f * k); UiText(px - tw / 2, py - UiLineHeight(1.0f * k) / 2, SocialEmoteName(g_emotePage*8+i+1), on ? uitheme::Text : uitheme::Muted, 1.0f * k);
         }
         UiLine(cx, cy, cx + g_wx * R / 140.0f, cy + g_wy * R / 140.0f, Rgba(col[0], col[1], col[2], 1), 3 * k); UiRect(cx - 5 * k, cy - 5 * k, 10 * k, 10 * k, Rgba(col[0], col[1], col[2], 1));
-        const char* hint = "point and release to play | Tab: next page | centre: cancel selection"; float hw = UiTextWidth(hint, 0.8f * k); UiText(cx - hw / 2, cy + R + 40 * k, hint, Rgba(0.8f, 0.85f, 0.95f, 1), 0.8f * k);
+        const char* hint = "point and release to play | Tab: next page | centre: cancel selection"; float hw = UiTextWidth(hint, 0.8f * k); UiText(cx - hw / 2, cy + R + 40 * k, hint, uitheme::Muted, 0.8f * k);
     }
     // the chat log (bottom left) and the box
     float lh = UiLineHeight(0.95f * k) + 4 * k, x = 24 * k, base = H - (g_open ? 150 : 120) * k; int shown = 0;
     std::vector<const ChatEntry*> vis;
     for (auto it = g_log.rbegin(); it != g_log.rend() && vis.size() < (g_open ? 12u : 8u); ++it) if (g_open || now - it->at < kChatShowMs) vis.push_back(&*it);
+    float cursorY = base + lh;
+    float chatWidth = std::min(W - 48 * k, 680 * k);
     for (size_t i = 0; i < vis.size(); ++i) {
-        const ChatEntry& e = *vis[i]; float col[3]; PlayerColor(e.from, col); float y = base - lh * i;
-        float fade = g_open ? 1.0f : std::min(1.0f, float(kChatShowMs - (now - e.at)) / 2000.0f); std::string who = e.name + ": ";
-        float ww = UiTextWidth(who.c_str(), 0.95f * k), tw = UiTextWidth(e.text.c_str(), 0.95f * k);
-        UiRect(x - 6 * k, y - 2 * k, ww + tw + 12 * k, lh, Rgba(0, 0, 0, 0.45f * fade));
-        UiText(x, y, who.c_str(), Rgba(col[0], col[1], col[2], fade), 0.95f * k); UiText(x + ww, y, e.text.c_str(), Rgba(0.95f, 0.95f, 0.95f, fade), 0.95f * k); ++shown;
+        const ChatEntry& e = *vis[i]; float col[3]; PlayerColor(e.from, col);
+        float fade = g_open ? 1.0f : std::min(1.0f, float(kChatShowMs - (now - e.at)) / 2000.0f);
+        std::string who = e.name + ": ";
+        auto lines = Wrap(who + e.text, chatWidth - 20 * k, 12, .95f * k);
+        float height = lh * lines.size() + 8 * k, y = cursorY - height;
+        if (y < 50 * k) break;
+        UiColor bg = uitheme::Surface; bg.a *= fade; UiRect(x - 6 * k, y, chatWidth, height - 3 * k, bg);
+        UiColor bd = uitheme::Border; bd.a *= fade; UiFrame(x - 6 * k, y, chatWidth, height - 3 * k, bd);
+        UiRect(x - 6 * k, y, 2 * k, height - 3 * k, Rgba(col[0], col[1], col[2], fade));
+        UiColor tc = uitheme::Text; tc.a *= fade;
+        for (size_t j = 0; j < lines.size(); ++j) UiText(x + 4 * k, y + 3 * k + j * lh, lines[j].c_str(), tc, .95f * k);
+        cursorY = y - 3 * k; ++shown;
     }
     if (g_open) {
         float col[3]; PlayerColor(CoopMyId(), col); float bw = std::min(W - 48 * k, 760 * k), by = H - 112 * k, bh = UiLineHeight(1.0f * k) + 16 * k;
-        UiRect(x - 2, by - 2, bw + 4, bh + 4, Rgba(col[0], col[1], col[2], 0.95f)); UiRect(x, by, bw, bh, Rgba(0.05f, 0.06f, 0.09f, 0.94f));
+        UiRect(x - 2, by - 2, bw + 4, bh + 4, uitheme::Accent);
+        UiRect(x, by, bw, bh, uitheme::Surface);
+        UiFrame(x, by, bw, bh, uitheme::Border);
         std::string shownText = g_input; if ((now / 450) % 2 == 0) shownText += "_";
-        UiText(x + 10 * k, by + 8 * k, shownText.c_str(), Rgba(1, 1, 1, 1), 1.0f * k);
-        UiText(x, by + bh + 6 * k, "Enter: send   Esc: cancel", Rgba(0.7f, 0.75f, 0.9f, 1), 0.75f * k);
+        // Keep the insertion point visible as the single-line editor scrolls.
+        while (!shownText.empty() && UiTextWidth(shownText.c_str(), k) > bw - 20 * k) shownText.erase(0, 1);
+        UiText(x + 10 * k, by + 8 * k, shownText.c_str(), uitheme::Text, k);
+        UiText(x, by + bh + 6 * k, "Enter: send   Esc: cancel", uitheme::Muted, 0.75f * k);
     }
     (void)shown;
 }

@@ -14,6 +14,7 @@
 #include <vector>
 #include "devmenu.h"
 #include "ui.h"
+#include "ui/text.h"
 #include "coop.h"
 #include "game.h"
 #include "config.h"
@@ -152,30 +153,31 @@ void TeleportToPlayer(const RemotePose& rp) { GameTeleport(rp.pos[0], rp.pos[1],
 struct Ui { float w, h, s; };
 float g_mx, g_my; bool g_cl, g_cr, g_cm; int g_wheel; bool g_keyEsc, g_keyTab, g_keyUp, g_keyDown, g_keyEnter;
 bool Hit(float x, float y, float w, float h) { return g_mx >= x && g_mx < x + w && g_my >= y && g_my < y + h; }
+void Pane(float x, float y, float w, float h, bool inset = false) {
+    UiRect(x, y, w, h, inset ? uitheme::Inset : uitheme::Surface); UiFrame(x, y, w, h, uitheme::Border);
+    UiRect(x + 1, y + 1, w - 2, 2, Rgba(uitheme::Accent.r, uitheme::Accent.g, uitheme::Accent.b, 0.30f));
+}
 bool Button(float x, float y, float w, float h, const char* label, bool on = false, float sc = 1) {
+    UiCheckTarget(w, h, sc);
     bool hov = Hit(x, y, w, h);
-    UiRect(x, y, w, h, on ? Rgba(0.15f, 0.45f, 0.7f, 0.95f) : hov ? Rgba(0.3f, 0.3f, 0.36f, 0.95f) : Rgba(0.18f, 0.18f, 0.22f, 0.95f)); UiFrame(x, y, w, h, Rgba(0.45f, 0.45f, 0.55f, 1));
-    float tw = UiTextWidth(label, sc), th = UiLineHeight(sc); UiText(x + (w - tw) / 2, y + (h - th) / 2, label, Rgba(1, 1, 1, 1), sc);
+    UiRect(x, y, w, h, on ? uitheme::Selected : hov ? uitheme::Hover : uitheme::Raised);
+    UiFrame(x, y, w, h, on || hov ? uitheme::Accent : uitheme::Border, on ? 2 : 1);
+    if (on) UiRect(x + 1, y + 1, 3, h - 2, uitheme::Accent);
+    float fit = uitext::ContainedScale(w - 16 * sc, UiTextWidth(label, sc), sc, sc * 0.7f);
+    float tw = UiTextWidth(label, fit), th = UiLineHeight(fit); UiText(x + (w - tw) / 2, y + (h - th) / 2, label, uitheme::Text, fit);
     return hov && g_cl;
 }
-std::string Wrap(const char* t, float maxw, float sc) {      // break a text at spaces so each line fits maxw pixels
-    std::string out, line; const char* p = t; float cw = UiTextWidth("M", sc);
-    while (*p) {
-        const char* e = p; while (*e && *e != ' ' && *e != '\n') e++; std::string word(p, e);
-        if (!line.empty() && (line.size() + 1 + word.size()) * cw > maxw) { out += line + "\n"; line.clear(); }
-        line += (line.empty() ? "" : " ") + word; p = e;
-        if (*p == '\n') { out += line + "\n"; line.clear(); p++; } else if (*p == ' ') p++;
-    }
-    return out + line;
+std::string Wrap(const char* t, float maxw, float sc) {
+    return uitext::Wrap(t, maxw, [&](const char* s) { return UiTextWidth(s, sc); });
 }
 const char* YesNo(bool b) { return b ? "yes" : "no"; }
-UiColor PanelColor(const Pn& p) { return p.solved ? Rgba(0.25f, 0.9f, 0.35f) : p.powered ? Rgba(0.95f, 0.75f, 0.2f) : Rgba(0.55f, 0.55f, 0.6f); }
+UiColor PanelColor(const Pn& p) { return p.solved ? uitheme::Good : p.powered ? uitheme::Accent : uitheme::Muted; }
 
 void SelectPanel(int i) { g_selKind = SelPanel; g_selPanel = i; }
 
 // ---- panels of the "what is connected" view: downstream and upstream chains over panel targets
 void Chain(float x, float& y, const char* title, bool down, int start, float sc) {
-    UiText(x, y, title, Rgba(0.7f, 0.8f, 1), sc); y += UiLineHeight(sc);
+    UiText(x, y, title, uitheme::Cool, sc); y += UiLineHeight(sc);
     int cur = start; std::vector<int> seen = {cur}; float px = x + 10;
     for (int depth = 0; depth < 6; depth++) {
         int next = -1;
@@ -280,14 +282,14 @@ void DetailPane(float x, float y, float w, float sc) {
     float lh = UiLineHeight(sc); char b[256];
     if (g_selKind == SelPanel && g_selPanel >= 0 && g_selPanel < (int)g_pn.size()) {
         Pn& p = g_pn[g_selPanel]; uintptr_t te = p.target >= 0 ? GameEntity(p.target) : 0; const char* tt = te ? TypeName(te) : "nothing";
-        snprintf(b, sizeof b, "Panel %#x   %u nodes", p.id, p.nodes); UiText(x, y, b, Rgba(1, 1, 1), sc * 1.15f); y += lh * 1.3f;
-        snprintf(b, sizeof b, "solved: %s    powered: %s\nat %.1f %.1f %.1f", YesNo(p.solved), YesNo(p.powered), p.x, p.y, p.z); UiText(x, y, b, Rgba(0.85f, 0.85f, 0.9f), sc); y += lh * 2.3f;
+        snprintf(b, sizeof b, "Panel %#x   %u nodes", p.id, p.nodes); UiText(x, y, b, uitheme::Text, sc * 1.15f); y += lh * 1.3f;
+        snprintf(b, sizeof b, "solved: %s    powered: %s\nat %.1f %.1f %.1f", YesNo(p.solved), YesNo(p.powered), p.x, p.y, p.z); UiText(x, y, b, uitheme::Muted, sc); y += lh * 2.3f;
         if (te) {
             bool lit = !strcmp(tt, "Power_Cable") && One(te + 0xC4) && One(te + 0xC8), open = !strcmp(tt, "Door") && One(te + 0x1D0);
-            snprintf(b, sizeof b, "Targets: %s %#x%s", tt, (unsigned)p.target, lit ? " (lit)" : open ? " (open)" : ""); UiText(x, y, b, Rgba(1, 0.9f, 0.5f), sc); y += lh * 1.3f;
-        } else { UiText(x, y, "Targets: nothing", Rgba(0.7f, 0.7f, 0.7f), sc); y += lh * 1.3f; }
+            snprintf(b, sizeof b, "Targets: %s %#x%s", tt, (unsigned)p.target, lit ? " (lit)" : open ? " (open)" : ""); UiText(x, y, b, uitheme::Accent, sc); y += lh * 1.3f;
+        } else { UiText(x, y, "Targets: nothing", uitheme::Muted, sc); y += lh * 1.3f; }
         auto rv = g_rev.find((int)p.id); size_t nrev = rv == g_rev.end() ? 0 : rv->second.size();
-        snprintf(b, sizeof b, "Targeted by %zu panel(s)", nrev); UiText(x, y, b, Rgba(0.7f, 0.8f, 1), sc); y += lh * 1.2f;
+        snprintf(b, sizeof b, "Targeted by %zu panel(s)", nrev); UiText(x, y, b, uitheme::Cool, sc); y += lh * 1.2f;
         float px = x; for (size_t k = 0; k < nrev && k < 8; k++) { int i = rv->second[k]; snprintf(b, sizeof b, "%#x", g_pn[i].id); float bw = UiTextWidth(b, sc) + 12; if (Button(px, y, bw, lh + 4, b, false, sc)) SelectPanel(i); px += bw + 6; }
         y += lh + 12;
         Chain(x, y, "Powers on from here:", true, g_selPanel, sc); Chain(x, y, "Fed by:", false, g_selPanel, sc);
@@ -302,20 +304,20 @@ void DetailPane(float x, float y, float w, float sc) {
         if (te && !strcmp(tt, "Power_Cable") && act("Cable off")) Do("cableoff", g_selPanel);
         if (te && p.target >= 0 && g_pidx.count((unsigned)p.target) && act("Select target panel")) SelectPanel(g_pidx[(unsigned)p.target]);
     } else if (g_selKind == SelPoint) {
-        snprintf(b, sizeof b, "Point %.0f %.0f", g_selX, g_selY); UiText(x, y, b, Rgba(1, 1, 1), sc * 1.15f); y += lh * 1.5f;
+        snprintf(b, sizeof b, "Point %.0f %.0f", g_selX, g_selY); UiText(x, y, b, uitheme::Text, sc * 1.15f); y += lh * 1.5f;
         float z; bool ok = GroundNear(g_selX, g_selY, &z);
-        UiText(x, y, Wrap(ok ? "Ground height is taken from the nearest panel; you drop in from 6 m above it." : "No panel within 30 m: no known ground here.", w, sc).c_str(), Rgba(0.85f, 0.85f, 0.9f), sc); y += lh * 3.2f;
+        UiText(x, y, Wrap(ok ? "Ground height is taken from the nearest panel; you drop in from 6 m above it." : "No panel within 30 m: no known ground here.", w, sc).c_str(), uitheme::Muted, sc); y += lh * 3.2f;
         if (ok && Button(x, y, 170 * sc, lh + 12, "Teleport here", false, sc)) TeleportToPoint(g_selX, g_selY);
     } else if (g_selKind == SelPlayer) {
         RemotePose rp; bool have = CoopGetRemote(&rp, (unsigned)g_selPlayer);
-        snprintf(b, sizeof b, "Player %d", g_selPlayer); UiText(x, y, b, Rgba(1, 0.6f, 0.2f), sc * 1.15f); y += lh * 1.5f;
-        if (have) { snprintf(b, sizeof b, "at %.1f %.1f %.1f\nseen %lu ms ago", rp.pos[0], rp.pos[1], rp.pos[2], (unsigned long)rp.ageMs); UiText(x, y, b, Rgba(0.85f, 0.85f, 0.9f), sc); y += lh * 2.5f; if (Button(x, y, 200 * sc, lh + 12, "Teleport to them", false, sc)) TeleportToPlayer(rp); }
-        else UiText(x, y, "Not connected.", Rgba(0.8f, 0.5f, 0.5f), sc);
-    } else UiText(x, y, Wrap("Click a dot on the map, a spot in the list, or a panel in the nearby list.", w, sc).c_str(), Rgba(0.7f, 0.7f, 0.75f), sc);
+        snprintf(b, sizeof b, "Player %d", g_selPlayer); UiText(x, y, b, uitheme::Accent, sc * 1.15f); y += lh * 1.5f;
+        if (have) { snprintf(b, sizeof b, "at %.1f %.1f %.1f\nseen %lu ms ago", rp.pos[0], rp.pos[1], rp.pos[2], (unsigned long)rp.ageMs); UiText(x, y, b, uitheme::Muted, sc); y += lh * 2.5f; if (Button(x, y, 200 * sc, lh + 12, "Teleport to them", false, sc)) TeleportToPlayer(rp); }
+        else UiText(x, y, "Not connected.", uitheme::Danger, sc);
+    } else UiText(x, y, Wrap("Click a dot on the map, a spot in the list, or a panel in the nearby list.", w, sc).c_str(), uitheme::Muted, sc);
 }
 
 void MapPage(float x, float y, float w, float h, float sc) {
-    UiRect(x, y, w, h, Rgba(0.04f, 0.05f, 0.07f, 0.97f)); UiFrame(x, y, w, h, Rgba(0.4f, 0.4f, 0.5f));
+    Pane(x, y, w, h, true);
     if (!g_viewInit && g_built) { g_vx = (g_minx + g_maxx) / 2; g_vy = (g_miny + g_maxy) / 2; g_vscale = std::min(w / (g_maxx - g_minx + 40), h / (g_maxy - g_miny + 40)); g_viewInit = true; }
     auto sx = [&](float wx) { return x + w / 2 + (wx - g_vx) * g_vscale; }; auto sy = [&](float wy) { return y + h / 2 - (wy - g_vy) * g_vscale; };
     bool over = Hit(x, y, w, h);
@@ -358,7 +360,7 @@ void MapPage(float x, float y, float w, float h, float sc) {
     bool onBtn = false;
     {      // the map picture: made from the game's own frames by flying the player over the island (a few minutes); the button starts it
         bool have = g_underlayLoaded; const char* label = have ? "Make the island picture again" : "Make a picture of the island under the map"; float bw = UiTextWidth(label, sc) + 16, bh = UiLineHeight(sc) + 10, bx = x + w - bw - 8, by = y + 8; bool hov = Hit(bx, by, bw, bh); onBtn = hov;
-        UiRect(bx, by, bw, bh, hov ? Rgba(0.25f, 0.3f, 0.5f, 0.95f) : Rgba(0.12f, 0.14f, 0.22f, 0.92f)); UiFrame(bx, by, bw, bh, Rgba(0.5f, 0.55f, 0.75f)); UiText(bx + 8, by + 5, label, Rgba(1, 1, 1), sc);
+        UiRect(bx, by, bw, bh, hov ? uitheme::Hover : uitheme::Raised); UiFrame(bx, by, bw, bh, hov ? uitheme::Accent : uitheme::Border); UiText(bx + 8, by + 5, label, uitheme::Text, sc);
         if (hov && g_cl) { MapGenCommand("start"); g_open = false; Msg("flying over the island to take its picture: the menu comes back when the map has one"); }
     }
     if (over && g_cl && !onBtn) {
@@ -367,11 +369,11 @@ void MapPage(float x, float y, float w, float h, float sc) {
         else { g_selKind = SelPoint; g_selX = g_vx + (g_mx - x - w / 2) / g_vscale; g_selY = g_vy - (g_my - y - h / 2) / g_vscale; }
     }
     if (over && hover >= 0) { char b[64]; snprintf(b, sizeof b, "%#x  %s", g_pn[hover].id, g_pn[hover].solved ? "solved" : g_pn[hover].powered ? "powered" : "off"); float tw = UiTextWidth(b, sc) + 10; UiRect(g_mx + 14, g_my + 8, tw, UiLineHeight(sc) + 4, Rgba(0, 0, 0, 0.85f)); UiText(g_mx + 19, g_my + 10, b, Rgba(1, 1, 1), sc); }
-    UiText(x + 8, y + h - UiLineHeight(sc) - 6, "wheel: zoom   right-drag: pan   click: select   green solved, amber powered, grey off, boxes = doors (blue open)", Rgba(0.6f, 0.6f, 0.65f), sc * 0.85f);
+    UiText(x + 8, y + h - UiLineHeight(sc * .7f) - 6, "Wheel zoom / right-drag pan / click select", uitheme::Muted, sc * .7f);
 }
 
 void SpotList(float x, float y, float w, float h, float sc) {
-    UiRect(x, y, w, h, Rgba(0.08f, 0.09f, 0.12f, 0.97f)); UiFrame(x, y, w, h, Rgba(0.4f, 0.4f, 0.5f));
+    Pane(x, y, w, h);
     float rh = UiLineHeight(sc) + 6; bool over = Hit(x, y, w, h);
     if (over && g_wheel) g_spotScroll -= g_wheel * rh * 2; g_spotScroll = std::max(0.f, std::min(g_spotScroll, std::max(0.f, rh * g_spots.size() - h)));
     UiClip(x + 1, y + 1, w - 2, h - 2);
@@ -380,51 +382,63 @@ void SpotList(float x, float y, float w, float h, float sc) {
         int solved = 0; for (auto& q : g_pn) if (q.solved && hypotf(q.x - p.x, q.y - p.y) < 56) solved++;
         char b[80]; snprintf(b, sizeof b, "%2zu  panel %#x  (%d panels)", i + 1, p.id, g_spots[i].count);
         bool sel = g_selKind == SelPanel && g_selPanel == g_spots[i].pn;
-        if (Hit(x, ry, w, rh) && g_cl) { SelectPanel(g_spots[i].pn); g_vx = p.x; g_vy = p.y; }
-        UiRect(x + 2, ry + 1, w - 4, rh - 2, sel ? Rgba(0.15f, 0.45f, 0.7f, 0.9f) : Hit(x, ry, w, rh) ? Rgba(0.25f, 0.25f, 0.3f, 0.9f) : Rgba(0, 0, 0, 0)); UiText(x + 8, ry + 3, b, p.solved ? Rgba(0.4f, 1, 0.5f) : Rgba(0.9f, 0.9f, 0.95f), sc);
+        bool hov = Hit(x, ry, w, rh);
+        if (hov && g_cl) { SelectPanel(g_spots[i].pn); g_vx = p.x; g_vy = p.y; }
+        UiRect(x + 2, ry + 1, w - 4, rh - 2, sel ? uitheme::Selected : hov ? uitheme::Hover : Rgba(0, 0, 0, 0));
+        if (sel) UiRect(x + 2, ry + 1, 3, rh - 2, uitheme::Accent);
+        UiText(x + 8, ry + 3, b, p.solved ? uitheme::Good : p.powered ? uitheme::Accent : uitheme::Muted, sc);
         (void)solved;
     }
     UiClip(0, 0, 0, 0);
 }
 
 void NearbyPage(float x, float y, float w, float h, float sc) {
-    UiRect(x, y, w, h, Rgba(0.08f, 0.09f, 0.12f, 0.97f)); UiFrame(x, y, w, h, Rgba(0.4f, 0.4f, 0.5f));
-    float pos[3], ang[2]; if (!Camera(pos, ang)) { UiText(x + 10, y + 10, "no player position yet", Rgba(1, 0.6f, 0.6f), sc); return; }
+    Pane(x, y, w, h);
+    float pos[3], ang[2]; if (!Camera(pos, ang)) { UiText(x + 10, y + 10, "no player position yet", uitheme::Danger, sc); return; }
     struct R { int i; float d; }; std::vector<R> rows;
     for (size_t i = 0; i < g_pn.size(); i++) { float d = hypotf(g_pn[i].x - pos[0], g_pn[i].y - pos[1]); if (d <= g_radius && fabsf(g_pn[i].z - pos[2]) < 40) rows.push_back({(int)i, d}); }
     std::sort(rows.begin(), rows.end(), [](const R& a, const R& b) { return a.d < b.d; });
-    char b[120]; snprintf(b, sizeof b, "%zu puzzles within %.0f m", rows.size(), g_radius); UiText(x + 8, y + 6, b, Rgba(1, 1, 1), sc);
-    if (Button(x + w - 130, y + 4, 28, UiLineHeight(sc) + 4, "-", false, sc)) g_radius = std::max(10.f, g_radius - 10);
-    if (Button(x + w - 96, y + 4, 28, UiLineHeight(sc) + 4, "+", false, sc)) g_radius = std::min(300.f, g_radius + 10);
+    char b[120]; snprintf(b, sizeof b, "%zu puzzles within %.0f m", rows.size(), g_radius); UiText(x + 8, y + 6, b, uitheme::Text, sc);
+    if (Button(x + w - 72 * sc, y + 4 * sc, 28 * sc, UiLineHeight(sc) + 4 * sc, "-", false, sc)) g_radius = std::max(10.f, g_radius - 10);
+    if (Button(x + w - 38 * sc, y + 4 * sc, 28 * sc, UiLineHeight(sc) + 4 * sc, "+", false, sc)) g_radius = std::min(300.f, g_radius + 10);
     float ly = y + UiLineHeight(sc) + 14, rh = UiLineHeight(sc) + 6, lh = h - (ly - y) - 4;
     if (Hit(x, ly, w, lh) && g_wheel) g_nearScroll -= g_wheel * rh * 2; g_nearScroll = std::max(0.f, std::min(g_nearScroll, std::max(0.f, rh * rows.size() - lh)));
     UiClip(x + 1, ly, w - 2, lh);
     for (size_t k = 0; k < rows.size(); k++) {
         float ry = ly + k * rh - g_nearScroll; if (ry + rh < ly || ry > ly + lh) continue; Pn& p = g_pn[rows[k].i];
         bool sel = g_selKind == SelPanel && g_selPanel == rows[k].i;
-        if (Hit(x, ry, w, rh) && g_cl && Hit(x, ly, w, lh)) SelectPanel(rows[k].i);
-        UiRect(x + 2, ry + 1, w - 4, rh - 2, sel ? Rgba(0.15f, 0.45f, 0.7f, 0.9f) : Hit(x, ry, w, rh) ? Rgba(0.25f, 0.25f, 0.3f, 0.9f) : Rgba(0, 0, 0, 0));
+        bool hov = Hit(x, ry, w, rh);
+        if (hov && g_cl && Hit(x, ly, w, lh)) SelectPanel(rows[k].i);
+        UiRect(x + 2, ry + 1, w - 4, rh - 2, sel ? uitheme::Selected : hov ? uitheme::Hover : Rgba(0, 0, 0, 0));
+        if (sel) UiRect(x + 2, ry + 1, 3, rh - 2, uitheme::Accent);
         snprintf(b, sizeof b, "%#8x %5.1fm %-3s %-3s -> %s", p.id, rows[k].d, p.solved ? "S" : "", p.powered ? "P" : "", p.ttype); UiText(x + 8, ry + 3, b, PanelColor(p), sc);
     }
     UiClip(0, 0, 0, 0);
 }
 void SavesPage(float x, float y, float w, float h, float sc) {
-    UiRect(x, y, w, h, Rgba(0.08f, 0.09f, 0.12f, 0.97f)); UiFrame(x, y, w, h, Rgba(0.4f, 0.4f, 0.5f));
+    Pane(x, y, w, h);
     float lh = UiLineHeight(sc), bh = lh + 14, bx = x + 12, by = y + 12; static int nSpots = 4; static char nm[64];
-    auto act = [&](const char* label) { float bw = UiTextWidth(label, sc) + 26; bool r = Button(bx, by, bw, bh, label, false, sc); bx += bw + 10; return r; };
+    auto act = [&](const char* label) { float bw = UiTextWidth(label, sc) + 26 * sc; bool r = Button(bx, by, bw, bh, label, false, sc); bx += bw + 10 * sc; return r; };
     SYSTEMTIME st; GetLocalTime(&st); snprintf(nm, sizeof nm, "%02d%02d%02d-%02d%02d%02d", st.wYear % 100, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
     if (act("Save point now") && !SaveBusy()) { SaveStartSave(std::string("save-") + nm, false, ProgressNote()); g_open = false; }
     if (act("Preset from current progress (list only)") && !SaveBusy()) { SaveStartPreset(std::string("preset-") + nm, ProgressNote()); }
-    UiText(x + 12, by + bh + 8, SaveBusy() ? "working... (the pause menu opens and closes by itself; do not touch anything)" : (SaveStatus()[0] ? SaveStatus() : "A save point is a copy of the game's save; a restore loads it through the pause menu. Presets are kept for starting from a given amount of progress."), SaveBusy() ? Rgba(1, 0.8f, 0.4f) : Rgba(0.75f, 0.8f, 0.9f), sc * 0.9f);
-    float ty = by + bh + 8 + lh * 2.2f; char b[120]; snprintf(b, sizeof b, "Make progress for a preset: complete the first %d of %zu spots (all their panels)", nSpots, g_spots.size()); UiText(x + 12, ty, b, Rgba(1, 1, 1), sc);
+    UiText(x + 12, by + bh + 8, Wrap(SaveBusy() ? "working... (the pause menu opens and closes by itself; do not touch anything)" : (SaveStatus()[0] ? SaveStatus() : "A save point is a copy of the game's save; a restore loads it through the pause menu. Presets are kept for starting from a given amount of progress."), w - 24, sc * 0.9f).c_str(), SaveBusy() ? uitheme::Accent : uitheme::Muted, sc * 0.9f);
+    float ty = by + bh + 8 + lh * 2.2f; char b[120]; snprintf(b, sizeof b, "Make progress for a preset: complete the first %d of %zu spots (all their panels)", nSpots, g_spots.size()); UiText(x + 12, ty, b, uitheme::Text, sc);
     bx = x + 12; by = ty + lh + 6;
     if (act("-")) nSpots = std::max(1, nSpots - 1); if (act("+")) nSpots = std::min((int)g_spots.size(), nSpots + 1); if (act("Solve them now")) { QueueSolveSpots(nSpots); g_open = false; }
-    if (!g_solveQ.empty()) { snprintf(b, sizeof b, "%zu panels left to solve", g_solveQ.size()); UiText(bx + 20, by + 6, b, Rgba(1, 0.8f, 0.4f), sc); }
-    float ly = by + bh + 16; UiText(x + 12, ly, "Saved:", Rgba(0.7f, 0.8f, 1), sc); ly += lh + 4; float rh = bh;
-    auto& L = SaveList(); if (L.empty()) UiText(x + 12, ly, "nothing yet", Rgba(0.7f, 0.7f, 0.7f), sc);
+    if (!g_solveQ.empty()) { snprintf(b, sizeof b, "%zu panels left to solve", g_solveQ.size()); UiText(bx + 20, by + 6, b, uitheme::Accent, sc); }
+    float ly = by + bh + 16; UiText(x + 12, ly, "Saved:", uitheme::Accent, sc); ly += lh + 4; float rh = bh;
+    auto& L = SaveList(); if (L.empty()) UiText(x + 12, ly, "nothing yet", uitheme::Muted, sc);
     for (size_t i = 0; i < L.size() && ly + rh < y + h; i++) {
-        UiRect(x + 8, ly, w - 16, rh - 2, Rgba(0.12f, 0.12f, 0.16f, 0.9f)); snprintf(b, sizeof b, "%s  %s", L[i].preset ? "[preset]" : "[save]  ", L[i].name.c_str());
-        UiText(x + 16, ly + 7, b, L[i].preset ? Rgba(1, 0.85f, 0.4f) : Rgba(0.9f, 0.9f, 0.95f), sc); UiText(x + 16 + 36 * UiTextWidth("M", sc), ly + 7, L[i].note.c_str(), Rgba(0.7f, 0.75f, 0.8f), sc * 0.9f);
+        bool hov = Hit(x + 8, ly, w - 16, rh - 2);
+        UiRect(x + 8, ly, w - 16, rh - 2, hov ? uitheme::Hover : uitheme::Raised);
+        UiFrame(x + 8, ly, w - 16, rh - 2, uitheme::Border);
+        snprintf(b, sizeof b, "%s  %s", L[i].preset ? "[preset]" : "[save]  ", L[i].name.c_str());
+        UiClip(x + 16, ly, std::max(1.f, w - 360 * sc), rh);
+        UiText(x + 16, ly + 7, b, L[i].preset ? uitheme::Accent : uitheme::Text, sc); UiClip(0, 0, 0, 0);
+        float nameW = UiTextWidth(b, sc); float noteX = x + 16 + std::max(220.f * sc, nameW + 16 * sc);
+        float noteRight = x + w - 340 * sc;
+        if (noteRight > noteX) { UiClip(noteX, ly, noteRight - noteX, rh); UiText(noteX, ly + 7, L[i].note.c_str(), uitheme::Muted, sc * 0.9f); UiClip(0, 0, 0, 0); }
         const char* lab = L[i].hasGameSave ? "Restore (load save + progress)" : "Apply progress list"; float rw = UiTextWidth(lab, sc) + 26; if (Button(x + w - rw - 14, ly + 1, rw, rh - 4, lab, false, sc) && !SaveBusy()) { SaveStartRestore(L[i]); g_open = false; }
         ly += rh;
     }
@@ -480,8 +494,11 @@ void DevMenuTick() {      // every frame, open or not: test commands, saves, the
 }
 bool DevMenuToastWanted() { return !g_open && g_msg[0] && (GetTickCount() - g_msgAt <= 6000 || SaveBusy()); }
 void DevMenuToast(float W, float H) {      // the last message, for a few seconds after the menu closed
-    if (g_open || !g_msg[0] || (GetTickCount() - g_msgAt > 6000 && !SaveBusy())) return; float sc = std::max(1.f, H / 1080.f), tw = UiTextWidth(g_msg, sc) + 20;
-    UiRect(W / 2 - tw / 2, H - 80 * sc, tw, UiLineHeight(sc) + 12, Rgba(0, 0, 0, 0.75f)); UiText(W / 2 - tw / 2 + 10, H - 80 * sc + 6, g_msg, Rgba(1, 0.95f, 0.5f), sc);
+    if (g_open || !g_msg[0] || (GetTickCount() - g_msgAt > 6000 && !SaveBusy())) return;
+    float sc = std::max(1.f, H / 1080.f); sc = uitext::ContainedScale(W - 48 * sc, UiTextWidth(g_msg, sc), sc, sc * 0.7f);
+    float tw = UiTextWidth(g_msg, sc) + 24 * sc;
+    UiRect(W / 2 - tw / 2, H - 84 * sc, tw, UiLineHeight(sc) + 14 * sc, uitheme::Surface); UiFrame(W / 2 - tw / 2, H - 84 * sc, tw, UiLineHeight(sc) + 14 * sc, uitheme::Border);
+    UiText(W / 2 - tw / 2 + 12 * sc, H - 84 * sc + 7 * sc, g_msg, uitheme::Accent, sc);
 }
 bool DevMenuOpen() { return g_open; }
 static void Init() { if (!g_csInit) { InitializeCriticalSection(&g_cs); g_csInit = true; } }
@@ -531,26 +548,36 @@ void DevMenuDraw(float W, float H) {
     if (g_cl || g_cr) { char m[100]; snprintf(m, sizeof m, "devmenu: click %s at %.0f %.0f", g_cl ? "left" : "right", g_mx, g_my); Log(m); }
     if (g_keyEsc) { g_open = false; return; }
     if (g_keyTab) g_page = (g_page + 1) % 3;
-    float sc = std::max(1.f, H / 1080.f), pad = 14 * sc; float x0 = pad, y0 = pad, w = W - 2 * pad, h = H - 2 * pad;
-    UiRect(0, 0, W, H, Rgba(0, 0, 0, 0.55f)); UiRect(x0, y0, w, h, Rgba(0.1f, 0.1f, 0.14f, 0.97f)); UiFrame(x0, y0, w, h, Rgba(0.5f, 0.5f, 0.65f), 2);
-    UiText(x0 + 12, y0 + 8, "WITNESS CO-OP  DEV MENU", Rgba(1, 1, 1), sc * 1.2f);
-    float tx = x0 + 380 * sc, ty = y0 + 6, th = UiLineHeight(sc) + 10;
-    if (Button(tx, ty, 120 * sc, th, "Map", g_page == 0, sc)) g_page = 0; if (Button(tx + 128 * sc, ty, 160 * sc, th, "Nearby puzzles", g_page == 1, sc)) g_page = 1; if (Button(tx + 296 * sc, ty, 120 * sc, th, "Saves", g_page == 2, sc)) { g_page = 2; SaveListRefresh(); }
-    { const char* hint = "F8/Esc close   F4 nearby   Tab page"; UiText(x0 + w - UiTextWidth(hint, sc * 0.9f) - 14, y0 + 10, hint, Rgba(0.6f, 0.6f, 0.65f), sc * 0.9f); }
-    float tvY = y0 + th + 18, tvW = std::min(240.f * sc, (w - 40) / 3);
-    if (Button(x0 + 10, tvY, tvW, th, TvEnabled() ? "Back TV: ON [F10]" : "Back TV: off [F10]", TvEnabled(), sc)) TvEnable(!TvEnabled());
-    if (Button(x0 + 20 + tvW, tvY, tvW, th, TvConsent() ? "Share my POV: ON [F11]" : "Share my POV: off [F11]", TvConsent(), sc)) TvAllow(!TvConsent());
-    if (Button(x0 + 30 + 2 * tvW, tvY, tvW, th, TvDeploymentTarget() ? "Retract sky TV [J]" : "Deploy aimed sky TV [J]", TvDeploymentTarget() != 0, sc)) TvDeployAction(OverlayTvAim());
-    float cy0 = tvY + th + 10, ch = h - (cy0 - y0) - UiLineHeight(sc) - 18, lw = 360 * sc, gap = 10;
-    if (!g_built) { UiText(x0 + 20, cy0 + 20, "The world is not loaded yet.", Rgba(1, 0.7f, 0.7f), sc); }
+    float sc = std::min(W / 1280.f, H / 900.f), pad = 18 * sc; float x0 = pad, y0 = pad, w = W - 2 * pad, h = H - 2 * pad;
+    UiRect(0, 0, W, H, uitheme::Canvas); UiRect(x0, y0, w, h, uitheme::Surface); UiFrame(x0, y0, w, h, uitheme::Border, 1);
+    UiRect(x0, y0, 4 * sc, h, uitheme::Accent);
+    UiText(x0 + 20 * sc, y0 + 12 * sc, "WITNESS / CO-OP", uitheme::Text, sc * 1.25f);
+    UiText(x0 + 21 * sc, y0 + 43 * sc, "FIELD NOTES & SHARED WORLD", uitheme::Muted, sc * 0.72f);
+    float ty = y0 + 12 * sc, th = UiLineHeight(sc) + 10 * sc;
+    float mapW = 84 * sc, nearW = 156 * sc, savesW = 88 * sc, tabGap = 8 * sc;
+    float tx = x0 + w - mapW - nearW - savesW - 2 * tabGap - 18 * sc;
+    if (Button(tx, ty, mapW, th, "Map", g_page == 0, sc)) g_page = 0;
+    if (Button(tx + mapW + tabGap, ty, nearW, th, "Nearby puzzles", g_page == 1, sc)) g_page = 1;
+    if (Button(tx + mapW + nearW + 2 * tabGap, ty, savesW, th, "Saves", g_page == 2, sc)) { g_page = 2; SaveListRefresh(); }
+    { const char* hint = "F8 / Esc close    F4 nearby    Tab page"; float hs = sc * 0.75f; UiText(x0 + w - UiTextWidth(hint, hs) - 20 * sc, y0 + 45 * sc, hint, uitheme::Muted, hs); }
+    float tvY = y0 + 68 * sc, tvW = std::min(250.f * sc, (w - 60 * sc) / 3);
+    if (Button(x0 + 20 * sc, tvY, tvW, th, TvEnabled() ? "Back TV: ON [F10]" : "Back TV: off [F10]", TvEnabled(), sc)) TvEnable(!TvEnabled());
+    if (Button(x0 + 30 * sc + tvW, tvY, tvW, th, TvConsent() ? "Share my POV: ON [F11]" : "Share my POV: off [F11]", TvConsent(), sc)) TvAllow(!TvConsent());
+    if (Button(x0 + 40 * sc + 2 * tvW, tvY, tvW, th, TvDeploymentTarget() ? "Retract sky TV [J]" : "Deploy aimed sky TV [J]", TvDeploymentTarget() != 0, sc)) TvDeployAction(OverlayTvAim());
+    float cy0 = tvY + th + 12 * sc, ch = h - (cy0 - y0) - UiLineHeight(sc) - 18 * sc, lw = std::max(300 * sc, std::min(380 * sc, w * 0.29f)), gap = 12 * sc;
+    if (!g_built) { UiText(x0 + 20 * sc, cy0 + 20 * sc, "The world is not loaded yet.", uitheme::Danger, sc); }
     else {
-        float rx = x0 + 10 + lw + gap, rw = w - 20 - lw - gap, dh = std::min(ch * 0.46f, 440.f * sc);
-        if (g_page == 2) SavesPage(x0 + 10, cy0, w - 20, ch, sc);
-        else if (g_page == 0) { SpotList(x0 + 10, cy0, lw, ch - dh - gap, sc); MapPage(rx, cy0, rw, ch, sc); }
-        else if (g_page == 1) { NearbyPage(x0 + 10, cy0, lw, ch, sc); UiRect(rx, cy0, rw, ch, Rgba(0.08f, 0.09f, 0.12f, 0.97f)); UiFrame(rx, cy0, rw, ch, Rgba(0.4f, 0.4f, 0.5f)); }
-        if (g_page == 0) { UiRect(x0 + 10, cy0 + ch - dh, lw, dh, Rgba(0.08f, 0.09f, 0.12f, 0.97f)); UiFrame(x0 + 10, cy0 + ch - dh, lw, dh, Rgba(0.4f, 0.4f, 0.5f)); DetailPane(x0 + 20, cy0 + ch - dh + 8, lw - 20, sc * 0.9f); }
-        else if (g_page == 1) DetailPane(rx + 14, cy0 + 10, rw - 28, sc);
+        float rx = x0 + 20 * sc + lw + gap, rw = w - 40 * sc - lw - gap, dh = std::min(ch * 0.46f, 440.f * sc);
+        if (g_page == 2) SavesPage(x0 + 20 * sc, cy0, w - 40 * sc, ch, sc);
+        else if (g_page == 0) { SpotList(x0 + 20 * sc, cy0, lw, ch - dh - gap, sc); MapPage(rx, cy0, rw, ch, sc); }
+        else if (g_page == 1) { NearbyPage(x0 + 20 * sc, cy0, lw, ch, sc); Pane(rx, cy0, rw, ch); }
+        if (g_page == 0) {
+            float dy = cy0 + ch - dh; Pane(x0 + 20 * sc, dy, lw, dh); UiClip(x0 + 21 * sc, dy + 1, lw - 2 * sc, dh - 2 * sc);
+            DetailPane(x0 + 30 * sc, dy + 10 * sc, lw - 20 * sc, sc * 0.9f); UiClip(0, 0, 0, 0);
+        } else if (g_page == 1) {
+            UiClip(rx + 1, cy0 + 1, rw - 2, ch - 2); DetailPane(rx + 16 * sc, cy0 + 12 * sc, rw - 32 * sc, sc); UiClip(0, 0, 0, 0);
+        }
     }
-    if (GetTickCount() - g_msgAt < 6000 && g_msg[0]) UiText(x0 + 12, y0 + h - UiLineHeight(sc) - 8, g_msg, Rgba(1, 0.95f, 0.5f), sc);
+    if (GetTickCount() - g_msgAt < 6000 && g_msg[0]) UiText(x0 + 20 * sc, y0 + h - UiLineHeight(sc) - 8 * sc, g_msg, uitheme::Accent, sc);
     UiTri(g_cx + 2, g_cy + 2, 12, 0.9f, Rgba(1, 1, 1)); UiTri(g_cx + 2, g_cy + 2, 8, 0.9f, Rgba(0, 0, 0));
 }

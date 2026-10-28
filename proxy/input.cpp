@@ -19,6 +19,24 @@ static CRITICAL_SECTION g_lock; static bool g_init;
 static Ev g_q[512]; static int g_n;                         // not yet posted
 static Ev g_sent[256]; static volatile LONG g_stats[4];   // posted, answered, calls for real (OS) handles, calls for our handles     // posted, indexed by token & 255
 static const ULONG_PTR kTokenBase = 0xC0DE0000;
+// Keep the complete press/release owned by a menu, including after it closes.
+// The game also reads raw keyboard events and opens pause on Escape release.
+// A repeat from a key held before the menu opened must still release into the game.
+static volatile LONG g_menuKeyHeld[256] = {}, g_menuKeyAt[256] = {};
+static bool MenuSwallowRaw(unsigned vk) {
+    return vk < 256 && g_menuKeyHeld[vk] && DWORD(GetTickCount() - DWORD(g_menuKeyAt[vk])) < 600;
+}
+static bool MenuKey(unsigned vk, bool down, bool repeat = false) {
+    bool took = DevMenuKey(vk, down);
+    if (vk < 256 && !GetCfg().noKeySwallow) {
+        if (down && took && (g_menuKeyHeld[vk] || !repeat)) {
+            InterlockedExchange(&g_menuKeyAt[vk], LONG(GetTickCount()));
+            InterlockedExchange(&g_menuKeyHeld[vk], 1);
+        } else if (!down && InterlockedExchange(&g_menuKeyHeld[vk], 0)) took = true;
+    }
+    return took;
+}
+
 
 static void Init() { if (!g_init) { InitializeCriticalSection(&g_lock); g_init = true; } }
 static void Push(const Ev& e) { Init(); EnterCriticalSection(&g_lock); if (g_n < 512) g_q[g_n++] = e; LeaveCriticalSection(&g_lock); }
@@ -73,7 +91,7 @@ static UINT WINAPI HookGetRawInputData(HRAWINPUT h, UINT cmd, LPVOID data, PUINT
             if (ri->header.dwType == RIM_TYPEMOUSE) { if (!(ri->data.mouse.usFlags & MOUSE_MOVE_ABSOLUTE)) { if (DevMenuOpen()) DevMenuRawMove(ri->data.mouse.lLastX, ri->data.mouse.lLastY); else if (SocialMouseCaptured()) SocialRawMove(ri->data.mouse.lLastX, ri->data.mouse.lLastY); } ri->data.mouse.lLastX = ri->data.mouse.lLastY = 0; ri->data.mouse.usButtonFlags = 0; ri->data.mouse.usButtonData = 0; }
             else if (ri->header.dwType == RIM_TYPEKEYBOARD && !(ri->data.keyboard.Flags & RI_KEY_BREAK) && (DevMenuOpen() || PovRosterOpen() || SocialCapturing())) { ri->data.keyboard.VKey = 0; ri->data.keyboard.MakeCode = 0; ri->data.keyboard.Flags |= RI_KEY_BREAK; }
         }
-        if (data && r != (UINT)-1 && cmd == RID_INPUT && r >= sizeof(RAWINPUTHEADER) && ((RAWINPUT*)data)->header.dwType == RIM_TYPEKEYBOARD && !(((RAWINPUT*)data)->data.keyboard.Flags & RI_KEY_BREAK) && (SocialSwallowRaw(((RAWINPUT*)data)->data.keyboard.VKey) || ((RAWINPUT*)data)->data.keyboard.VKey == guide::Help)) { RAWINPUT* ri = (RAWINPUT*)data; ri->data.keyboard.VKey = 0; ri->data.keyboard.MakeCode = 0; ri->data.keyboard.Flags |= RI_KEY_BREAK; }      // a key the mod took (it closed the chat box): the game must not see its raw press either
+        if (data && r != (UINT)-1 && cmd == RID_INPUT && r >= sizeof(RAWINPUTHEADER) && ((RAWINPUT*)data)->header.dwType == RIM_TYPEKEYBOARD && !(((RAWINPUT*)data)->data.keyboard.Flags & RI_KEY_BREAK) && (SocialSwallowRaw(((RAWINPUT*)data)->data.keyboard.VKey) || MenuSwallowRaw(((RAWINPUT*)data)->data.keyboard.VKey) || ((RAWINPUT*)data)->data.keyboard.VKey == guide::Help)) { RAWINPUT* ri = (RAWINPUT*)data; ri->data.keyboard.VKey = 0; ri->data.keyboard.MakeCode = 0; ri->data.keyboard.Flags |= RI_KEY_BREAK; }      // a key the mod took (it closed the chat box): the game must not see its raw press either
         if (GetCfg().debugMsgs && data && r != (UINT)-1 && r >= sizeof(RAWINPUTHEADER) && cmd == RID_INPUT) {    // diagnostic (debug_msgs=1): what a REAL event looks like (first few, and every button event)
             const RAWINPUT* ri = (const RAWINPUT*)data; static LONG n;
             bool btn = ri->header.dwType == RIM_TYPEMOUSE && ri->data.mouse.usButtonFlags;
@@ -102,7 +120,7 @@ static UINT WINAPI HookGetRawInputData(HRAWINPUT h, UINT cmd, LPVOID data, PUINT
         if (!e.key) { SocialRawMove(e.dx, e.dy); ri.data.mouse.lLastX = ri.data.mouse.lLastY = 0; ri.data.mouse.usButtonFlags = 0; }
         else if (e.down && SocialCapturing()) { ri.data.keyboard.VKey = 0; ri.data.keyboard.MakeCode = 0; ri.data.keyboard.Flags = RI_KEY_BREAK; }
     }
-    if (e.key && e.down && ri.data.keyboard.VKey && (SocialSwallowRaw(e.vk) || e.vk == guide::Help)) { ri.data.keyboard.VKey = 0; ri.data.keyboard.MakeCode = 0; ri.data.keyboard.Flags = RI_KEY_BREAK; }      // (as above, for the bot's own keys)
+    if (e.key && e.down && ri.data.keyboard.VKey && (SocialSwallowRaw(e.vk) || MenuSwallowRaw(e.vk) || e.vk == guide::Help)) { ri.data.keyboard.VKey = 0; ri.data.keyboard.MakeCode = 0; ri.data.keyboard.Flags = RI_KEY_BREAK; }      // (as above, for the bot's own keys)
     UINT total = ri.header.dwSize;
     if (cmd == RID_HEADER) { if (!data) { *size = sizeof(RAWINPUTHEADER); return 0; } if (*size < sizeof(RAWINPUTHEADER)) return (UINT)-1; memcpy(data, &ri.header, sizeof(RAWINPUTHEADER)); return sizeof(RAWINPUTHEADER); }
     if (!data) { *size = total; return 0; }
@@ -125,8 +143,8 @@ static BOOL WINAPI HookPeekMessageA(LPMSG m, HWND w, UINT lo, UINT hi, UINT rm) 
     if (!(DevMenuEnabled() || VideoEnabled())) return r;
     bool take = false;
     switch (m->message) {
-    case WM_KEYDOWN: case WM_SYSKEYDOWN: take = DevMenuKey((unsigned)m->wParam, true) || SocialKey((unsigned)m->wParam, true); break;
-    case WM_KEYUP: case WM_SYSKEYUP: DevMenuKey((unsigned)m->wParam, false); take = SocialKey((unsigned)m->wParam, false); break;
+    case WM_KEYDOWN: case WM_SYSKEYDOWN: take = MenuKey((unsigned)m->wParam, true, (m->lParam & (LPARAM(1) << 30)) != 0) || SocialKey((unsigned)m->wParam, true); break;
+    case WM_KEYUP: case WM_SYSKEYUP: take = MenuKey((unsigned)m->wParam, false); take = SocialKey((unsigned)m->wParam, false) || take; break;
     case WM_CHAR: take = DevMenuOpen() || PovRosterOpen() || SocialChar((unsigned)m->wParam) || SocialCapturing(); break;
     case WM_LBUTTONDOWN: take = DevMenuMouseButton(0, true) || PovRosterOpen() || SocialCapturing(); break;
     case WM_RBUTTONDOWN: take = DevMenuMouseButton(1, true) || PovRosterOpen() || SocialCapturing(); break;
