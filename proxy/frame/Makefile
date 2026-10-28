@@ -25,3 +25,15 @@ test-ribbon: $(BUILD)/ribbon-test $(BUILD)/ribbon-mutant-VIEW_FACING $(BUILD)/ri
 	@ulimit -c 0; for m in VIEW_FACING EXTEND; do if $(BUILD)/ribbon-mutant-$$m >/dev/null 2>&1; then echo "MUTANT $$m SURVIVED"; exit 1; else echo "mutant $$m killed"; fi; done
 test: test-ribbon
 .PHONY: test-ribbon
+
+$(BUILD)/gamecam-test: gamecam_test.cpp ../gamecam.h ../model/model.cpp ../model/model.h
+	mkdir -p $(BUILD)
+	g++ -std=c++17 -O2 -o $@ gamecam_test.cpp ../model/model.cpp
+$(BUILD)/gamecam-mutant-%: gamecam_test.cpp ../gamecam.h ../model/model.cpp ../model/model.h
+	mkdir -p $(BUILD)
+	g++ -std=c++17 -O2 -DWG_MUT_$* -o $@ gamecam_test.cpp ../model/model.cpp
+test-gamecam: $(BUILD)/gamecam-test $(BUILD)/gamecam-mutant-OLD $(BUILD)/gamecam-mutant-SWAP
+	$(BUILD)/gamecam-test
+	@for m in OLD SWAP; do if $(BUILD)/gamecam-mutant-$$m >/dev/null 2>&1; then echo "MUTANT $$m SURVIVED"; exit 1; else echo "mutant $$m killed"; fi; done
+test: test-gamecam
+.PHONY: test-gamecam

@@ -14,6 +14,7 @@
 #include "social.h"
 #include "coop.h"
 #include "config.h"
+#include "gamecam.h"
 #include "ui.h"
 #include "input.h"
 #include "model_gpu.h"
@@ -23,7 +24,6 @@
 void Log(const char* msg);
 
 namespace {
-const float kVFovDeg = 60.0f;                       // the game's vertical field of view (as overlay.cpp)
 const ULONGLONG kChatShowMs = 12000, kBubbleMs = 7000, kMarkMs = 25000;
 const size_t kMaxInput = 200;
 
@@ -135,7 +135,7 @@ void CamSpace(const float* cam, float th, float ph, const float* w, float* r, fl
 }
 bool ToScreen(const float* cam, float th, float ph, const float* w, float W, float H, float* sx, float* sy) {
     float r, u, f; CamSpace(cam, th, ph, w, &r, &u, &f); if (f < 0.1f) return false;
-    float tv = tanf(kVFovDeg * 3.14159265f / 360.0f), th_ = tv * (W / H);
+    float tv = tanf(GameProjection().vfovDeg * 3.14159265f / 360.0f), th_ = tv * (W / H);
     float nx = (r / f) / th_, ny = (u / f) / tv; *sx = (nx * 0.5f + 0.5f) * W; *sy = (0.5f - ny * 0.5f) * H; return true;
 }
 std::vector<std::string> Wrap(const std::string& s, size_t width, size_t maxLines) {
@@ -274,7 +274,7 @@ void SocialFrame(float W, float H, const float* cam, const float* ang) {
             g_penAsked = false; float th = g_reqAng[0], ph = g_reqAng[1];
             if (d < 0.05f || d > 300.0f) d = std::min(std::max(g_lastDist, 3.0f), 60.0f); else g_lastDist = d;
             if (cfg.noDrawDepth) d = 4.0f;
-            float tv = tanf(kVFovDeg * 3.14159265f / 360.0f), tw = tv * (W / H), rr = (g_reqF[0] * 2 - 1) * tw, uu = (1 - g_reqF[1] * 2) * tv;
+            float tv = tanf(GameProjection().vfovDeg * 3.14159265f / 360.0f), tw = tv * (W / H), rr = (g_reqF[0] * 2 - 1) * tw, uu = (1 - g_reqF[1] * 2) * tv;
             float fwd[3] = {cosf(ph) * cosf(th), cosf(ph) * sinf(th), sinf(ph)}, rt[3] = {sinf(th), -cosf(th), 0}, up[3] = {-sinf(ph) * cosf(th), -sinf(ph) * sinf(th), cosf(ph)}, p[3];
             for (int i = 0; i < 3; ++i) p[i] = g_reqCam[i] + (fwd[i] + rt[i] * rr + up[i] * uu) * d;
             AddPenPoint(p, now);
