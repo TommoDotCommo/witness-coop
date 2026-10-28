@@ -19,3 +19,7 @@ void UiEnd(ID3D11RenderTargetView* rtv);                                        
 ID3D11ShaderResourceView* UiMakeTexture(const uint8_t* bgra, int w, int h);     // an RGBA picture as a texture (the caller keeps it; null on failure)
 void UiClip(float x, float y, float w, float h);                                 // scissor for the following quads (flushes the batch); w<=0 clears
 void UiImage(float x, float y, float w, float h, ID3D11ShaderResourceView* srv, UiColor tint = {1, 1, 1, 1});   // a whole RGBA texture, stretched into the rectangle
+
+void UiLogStats(); // test oracle: previous frame text bounds and smallest font
+
+void UiCheckTarget(float width, float height, float scale); // accessible target-size oracle

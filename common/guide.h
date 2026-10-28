@@ -130,8 +130,8 @@ inline Columns Content(const Cfg& c) {
     };
     return out;
 }
-// Fixed-width wrapping matches the game's existing 10-pixel glyph cells and the
-// launcher's monospace guide font. No elision: every word remains on screen.
+// Character-cell wrapping for the launcher's monospace guide. The game uses
+// measured glyph advances instead. No elision: every word remains on screen.
 inline Columns Wrap(const Columns& input, size_t width = 48) {
     Columns out;
     for (size_t c = 0; c < input.size(); ++c) for (const auto& paragraph : input[c]) {

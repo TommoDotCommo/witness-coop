@@ -12,6 +12,7 @@ struct Params {
     float headroom = 0.18f;        // local capsule above the camera
     float radius = 0.38f;          // full fade inside this horizontal body radius
     float margin = 0.17f;          // smooth edge; fully solid at radius + margin (0.55 m)
+    float verticalMargin = 0.17f; // fade only inside the shared vertical interval
     float minAlpha = 0.22f;
 };
 inline float Smooth(float x) { x = x < 0 ? 0 : (x > 1 ? 1 : x); return x * x * (3 - 2 * x); }
@@ -60,7 +61,15 @@ inline float Alpha(const float cam[3], const float fwd[3], const float feet[3], 
     if (localBottom[2] > remoteTop[2] || feet[2] > localTop[2]) return 1.0f;
 #endif
     float d = std::hypot(feet[0] - cam[0], feet[1] - cam[1]);
-    return OverlapAlpha(d, p);
+    float alpha = OverlapAlpha(d, p);
+#ifndef WG_MUT_NOVERTICAL
+#ifndef WG_MUT_VERTICAL_STEP
+    float penetration = std::min(localTop[2] - feet[2], remoteTop[2] - localBottom[2]);
+    float vertical = p.minAlpha + (1.0f - p.minAlpha) * (1.0f - Smooth(penetration / p.verticalMargin));
+    alpha = std::max(alpha, vertical);
+#endif
+#endif
+    return alpha;
 }
 
 // Move toward the target without popping; at 5 units/s a fully clear body is solid again in about 0.16 s.

@@ -20,6 +20,9 @@ int main() {
     check("a body above the viewer stays solid", at(0, 0, 2.0f) == 1.0f);
     check("a body below the viewer stays solid", at(0, 0, -2.0f) == 1.0f);
     check("vertical overlap still fades", at(0, 0, 0.5f) == p.minAlpha && at(0, 0, -0.5f) == p.minAlpha);
+    float upper = cam[2] + p.headroom, lower = cam[2] - p.eyeHeight - p.bodyHeight;
+    check("vertical grazing is partial on both ends", at(0, 0, upper - .08f) > p.minAlpha && at(0, 0, upper - .08f) < 1 && at(0, 0, lower + .08f) > p.minAlpha && at(0, 0, lower + .08f) < 1);
+    check("vertical boundaries are continuous", std::fabs(at(0, 0, upper - .001f) - at(0, 0, upper + .001f)) < .001f && std::fabs(at(0, 0, lower - .001f) - at(0, 0, lower + .001f)) < .001f);
     float prev = 0.0f; bool mono = true;
     for (float x = 0; x <= 0.8f; x += 0.01f) { float a = at(x, 0, 0); if (a < prev - 1e-6f) mono = false; prev = a; }
     check("alpha rises monotonically out of overlap", mono);

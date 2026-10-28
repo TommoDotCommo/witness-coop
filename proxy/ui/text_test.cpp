@@ -1,5 +1,6 @@
 #include "text.h"
 #include "theme.h"
+#include "guide_layout.h"
 #include <cstdio>
 #include <string>
 static int failures;
@@ -21,6 +22,16 @@ int main() {
     check(longWord == "MM\nMM\nMM\nMM", "long words split without clipping or loss");
     check(uitext::ContainedScale(100, 200, 1) == 0.5f, "layout shrinks text to its container");
     check(uitext::ContainedScale(200, 100, 1) == 1, "layout does not enlarge beyond the requested size");
+    check(uitext::ContainedScale(100, 400, 2) == 0.5f, "fitting scaled text accounts for its existing scale");
+    check(uitext::Wrap("ii\n\nMM", 100, measure) == "ii\n\nMM", "explicit blank lines survive wrapping");
+    for (const auto& size : {std::pair<float,float>{1280,720}, {1920,1080}, {2560,1440}, {3440,1440}, {3840,2160}, {1024,768}}) {
+        auto layout = uitext::FitGuide(size.first, size.second, guide::Content(Cfg()),
+            [&](const char* t, float sc) { return uitext::Width(t, sc, glyphs); });
+        for (const auto& col : layout.columns) {
+            check((col.size() * 24 + 94) * layout.scale <= size.second - 24.0f + .01f, "guide rows fit vertically");
+            for (const auto& line : col) check(uitext::Width(line.c_str(), layout.scale, glyphs) <= layout.columnWidth - 28 * layout.scale + .01f, "measured guide lines fit column");
+        }
+    }
     using namespace uitheme;
     check(Contrast(Text, Surface) >= 7, "primary text has accessible contrast on menu surfaces");
     check(Contrast(Muted, Surface) >= 4.5f, "secondary text has accessible contrast");

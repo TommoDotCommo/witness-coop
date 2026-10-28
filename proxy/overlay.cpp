@@ -9,6 +9,7 @@
 #include <d3dcompiler.h>
 #include <cstdio>
 #include <cstdint>
+#include <cctype>
 #include <cmath>
 #include <cstring>
 #include <algorithm>
@@ -41,6 +42,7 @@ static const float kVFovDeg = 60.0f;                 // calibrated: horizontal ~
 #include "social.h"
 #include "povui.h"
 #include <atomic>
+#include <cctype>
 
 typedef HRESULT(STDMETHODCALLTYPE* PresentFn)(IDXGISwapChain*, UINT, UINT);
 static PresentFn g_origPresent;
@@ -64,9 +66,10 @@ static char g_shotName[64];     // set by RequestShot from another thread, taken
 void RequestShot(const char* name) { strncpy(g_shotName, name, sizeof g_shotName - 1); }
 
 // Back buffer to <dll folder>\shots\<name>.bmp (32-bit, top-down). Works while the window is covered or unfocused.
-static void TakeShot(IDXGISwapChain* sc, const char* name) {
+static void TakeShot(IDXGISwapChain* sc, const char* name, ID3D11Texture2D* source = nullptr) {
     ID3D11Texture2D *bb = nullptr, *st = nullptr;
-    if (FAILED(sc->GetBuffer(0, __uuidof(ID3D11Texture2D), (void**)&bb))) return;
+    if (source) { bb = source; bb->AddRef(); }
+    else if (FAILED(sc->GetBuffer(0, __uuidof(ID3D11Texture2D), (void**)&bb))) return;
     D3D11_TEXTURE2D_DESC td; bb->GetDesc(&td); td.Usage = D3D11_USAGE_STAGING; td.BindFlags = 0; td.CPUAccessFlags = D3D11_CPU_ACCESS_READ; td.MiscFlags = 0;
     if (SUCCEEDED(g_dev->CreateTexture2D(&td, nullptr, &st))) {
         g_ctx->CopyResource(st, bb);
@@ -408,24 +411,69 @@ void SaveMetaTick();      // savemeta_game.cpp
 #include "mapgen.h"
 void MapGenCountOverlayFrame();
 unsigned OverlayFrames() { return (unsigned)g_frames; }
-static void DrawDevMenu(IDXGISwapChain* sc) {
-    if (!g_uiReady) return;
-    DevMenuTick(); SaveMetaTick();
-    if (!GuideOpen() && !DevMenuOpen() && !DevMenuToastWanted() && !VideoViewMode() && !TagsWanted() && !RaceActive() && !g_rosterOpen.load() && !TvConsent() && !TvEnabled()) return;
-    ID3D11Texture2D* bb = nullptr; if (FAILED(sc->GetBuffer(0, __uuidof(ID3D11Texture2D), (void**)&bb))) return;
-    D3D11_TEXTURE2D_DESC td; bb->GetDesc(&td); ID3D11RenderTargetView* rtv = nullptr;
-    if (SUCCEEDED(g_dev->CreateRenderTargetView(bb, nullptr, &rtv))) { UiBegin((float)td.Width, (float)td.Height); DrawNameTags((float)td.Width, (float)td.Height); { uintptr_t b0 = (uintptr_t)GetModuleHandleA(nullptr); const float* c0 = (const float*)(b0 + kCamPos); const float* a0 = (const float*)(b0 + kCamAng); if (!IsBadReadPtr(c0, 12) && !IsBadReadPtr(a0, 8)) SocialFrame((float)td.Width, (float)td.Height, c0, a0); } RaceDraw((float)td.Width, (float)td.Height); if (DevMenuOpen()) DevMenuDraw((float)td.Width, (float)td.Height); else DevMenuToast((float)td.Width, (float)td.Height);
+// A test capture uses the exact live scene renderer at a requested size. This
+// avoids desktop/work-area limits on native windows when checking ultrawide/4K.
+static SRWLOCK g_uiCaptureLock = SRWLOCK_INIT;
+static unsigned g_uiCaptureW, g_uiCaptureH;
+static char g_uiCaptureName[16];
+void OverlayRequestUiCapture(unsigned width, unsigned height, const char* name) {
+    if (width < 320 || width > 7680 || height < 200 || height > 4320) return;
+    for (const char* p = name; *p; ++p) if (!isalnum((unsigned char)*p) && *p != '_') return;
+    AcquireSRWLockExclusive(&g_uiCaptureLock);
+    g_uiCaptureW = width; g_uiCaptureH = height;
+    snprintf(g_uiCaptureName, sizeof g_uiCaptureName, "%s", name);
+    ReleaseSRWLockExclusive(&g_uiCaptureLock);
+}
+static void DrawUiScene(float width, float height, ID3D11RenderTargetView* rtv) {
+    UiBegin(width, height); DrawNameTags(width, height); { uintptr_t b0 = (uintptr_t)GetModuleHandleA(nullptr); const float* c0 = (const float*)(b0 + kCamPos); const float* a0 = (const float*)(b0 + kCamAng); if (!IsBadReadPtr(c0, 12) && !IsBadReadPtr(a0, 8)) SocialFrame(width, height, c0, a0); } RaceDraw(width, height); if (DevMenuOpen()) DevMenuDraw(width, height); else DevMenuToast(width, height);
         if (TvConsent() || TvEnabled()) UiText(14, 14, TvConsent() ? "SHARING MY TV POV [F11 STOP]  [F10 back TV]" : "BACK TV ON [F10 OFF]  [F11 share my POV]", Rgba(1, 0.55f, 0.2f), 0.9f);
         if (VideoViewMode()) {      // the partner's screen, in a corner (F9: small, large, off)
             int vw = 0, vh = 0; unsigned long age = 0; ID3D11ShaderResourceView* srv = VideoRemoteSrv(&vw, &vh, &age); InterlockedIncrement(&g_povBox); if (srv) InterlockedIncrement(&g_povPic);
-            float k = (VideoViewMode() == 2 ? 2.0f : 1.0f) * std::max(1.f, td.Height / 1080.f), iw = (vw ? vw : 480) * k, ih = (vh ? vh : 270) * k, x = td.Width - iw - 14, y = 14;
+            float k = (VideoViewMode() == 2 ? 2.0f : 1.0f) * std::max(1.f, height / 1080.f), iw = (vw ? vw : 480) * k, ih = (vh ? vh : 270) * k, x = width - iw - 14, y = 14;
             UiRect(x - 3, y - 3, iw + 6, ih + 6 + UiLineHeight(0.85f), Rgba(0, 0, 0, 0.8f));
             if (srv) UiImage(x, y, iw, ih, srv); else UiText(x + 10, y + ih / 2 - 10, "waiting for the picture", Rgba(1, 0.8f, 0.5f), 0.9f);
             { const char* nm = "player"; unsigned wid = VideoWatching(); float pc[3] = {1, 0.6f, 0.2f}; PlayerColor(wid, pc); std::vector<RemotePose> rem = CoopGetRemotes(); for (const auto& r : rem) if (r.id == wid && r.name[0]) nm = r.name;
               char b[96]; snprintf(b, sizeof b, "%s's view%s    [ ] cycle   V clear   F5 list", nm, srv ? (age > 2000 ? "  (stale)" : "") : "  (waiting)"); UiText(x + 2, y + ih + 2, b, Rgba(pc[0], pc[1], pc[2]), 0.85f); }
         }
-        GuideDraw((float)td.Width, (float)td.Height);
-        UiEnd(rtv); rtv->Release(); }
+        GuideDraw(width, height);
+        UiEnd(rtv);
+}
+static void CaptureUiScene(ID3D11Texture2D* background) {
+    unsigned width, height; char name[16];
+    AcquireSRWLockExclusive(&g_uiCaptureLock);
+    width = g_uiCaptureW; height = g_uiCaptureH; strcpy(name, g_uiCaptureName); g_uiCaptureW = 0;
+    ReleaseSRWLockExclusive(&g_uiCaptureLock);
+    if (!width) return;
+    D3D11_TEXTURE2D_DESC desc{}; background->GetDesc(&desc);
+    desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+    ID3D11Texture2D *copy = nullptr, *target = nullptr;
+    ID3D11ShaderResourceView* picture = nullptr;
+    ID3D11RenderTargetView* rtv = nullptr;
+    if (SUCCEEDED(g_dev->CreateTexture2D(&desc, nullptr, &copy))) {
+        g_ctx->CopyResource(copy, background);
+        g_dev->CreateShaderResourceView(copy, nullptr, &picture);
+    }
+    desc.Width = width; desc.Height = height; desc.BindFlags = D3D11_BIND_RENDER_TARGET;
+    if (SUCCEEDED(g_dev->CreateTexture2D(&desc, nullptr, &target)) &&
+        SUCCEEDED(g_dev->CreateRenderTargetView(target, nullptr, &rtv))) {
+        float clear[4] = {0, 0, 0, 1}; g_ctx->ClearRenderTargetView(rtv, clear);
+        UiBegin(float(width), float(height)); UiImage(0, 0, float(width), float(height), picture); UiEnd(rtv);
+        DrawUiScene(float(width), float(height), rtv);
+        UiLogStats(); TakeShot(nullptr, name, target);
+    } else Log("uicapture: render target failed");
+    if (rtv) rtv->Release(); if (target) target->Release();
+    if (picture) picture->Release(); if (copy) copy->Release();
+}
+static void DrawDevMenu(IDXGISwapChain* sc) {
+    if (!g_uiReady) return;
+    DevMenuTick(); SaveMetaTick();
+    if (!GuideOpen() && !DevMenuOpen() && !DevMenuToastWanted() && !VideoViewMode() && !TagsWanted() && !RaceActive() && !g_rosterOpen.load() && !TvConsent() && !TvEnabled()) return;
+    ID3D11Texture2D* bb = nullptr; if (FAILED(sc->GetBuffer(0, __uuidof(ID3D11Texture2D), (void**)&bb))) return;
+    CaptureUiScene(bb);
+    D3D11_TEXTURE2D_DESC td; bb->GetDesc(&td); ID3D11RenderTargetView* rtv = nullptr;
+    if (SUCCEEDED(g_dev->CreateRenderTargetView(bb, nullptr, &rtv))) {
+        DrawUiScene(float(td.Width), float(td.Height), rtv); rtv->Release();
+    }
     bb->Release();
 }
 

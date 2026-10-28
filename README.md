@@ -16,7 +16,7 @@ No game files are in this repo. You need your own copy of The Witness, Steam bui
 
 ## What works
 
-The adventurer has [24 procedural emotes and proximity speech gestures](docs/GESTURES.md), with game-free pose checks, sync simulation and a software preview. Hold `G` for the wheel, use `Tab` to change its page, and press `F1` for the binding guide. Live visual quality remains unverified.
+The adventurer has [24 procedural emotes and proximity speech gestures](docs/GESTURES.md), with game-free pose checks, sync simulation and a software preview. Hold `G` for the wheel, use `Tab` to change its page, and hold `F1` for the binding guide. Live visual quality remains unverified.
 
 Chat, pings, emotes, drawing, voice (with channels: proximity, radio, an open line, one on one), see-through players, a race mode, a lobby in the launcher (invite friends, see and talk to them before and after the game), saves that say who played and a new game that starts with chosen parts of the map done are described in [features.md](features.md); pictures of all of it are in [the showcase](docs/SHOWCASE.md).
 
@@ -47,6 +47,16 @@ with progress (restart catch-up, a first-time late join and a same-process save 
 ## Quick guide (hold F1)
 
 Hold **F1** in the game or launcher to show a three-column guide; release it to return.
+The in-game guide and menus use a proportional Segoe UI font from a padded 2x atlas,
+measured wrapping, warm surfaces and amber selection borders. Chat wraps to its panel,
+and long input scrolls to keep the cursor visible. `make -C proxy/ui test` checks text
+metrics, wrapping, fitting and guide bounds with three mutants. The focused live layout
+check is `tools/qa.sh probe tools/qa_cozy.py`; it renders the live UI scene into D3D11
+render targets (over a copy of the current game frame) at
+1024x768, 1280x720, 1920x1080, 2560x1440, 3440x1440 and 3840x2160. Add `--native`
+to capture the actual 1280x720 game back buffer instead; larger native windows can be
+limited by the desktop work area.
+
 It covers the current mod bindings, co-op and race features, host/join flow, shared state,
 networking and troubleshooting. The game uses its existing text renderer; both views share
 `common/guide.h` and `common/bindings.def`. Configurable keys come from that binding table,

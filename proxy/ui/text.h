@@ -6,12 +6,15 @@
 namespace uitext {
 struct Glyph { float advance = 0; };
 
-template <size_t N>
-float Width(const char* text, float scale, const Glyph (&glyphs)[N], int first = 32) {
+template <typename G, size_t N>
+float Width(const char* text, float scale, const G (&glyphs)[N], int first = 32) {
     float line = 0, widest = 0;
     for (; *text; ++text) {
         if (*text == '\n') { widest = std::max(widest, line); line = 0; continue; }
         int ch = static_cast<unsigned char>(*text) - first;
+#ifdef UI_MUT_WIDTH
+        line += 8 * scale; continue;
+#endif
         line += (ch >= 0 && static_cast<size_t>(ch) < N ? glyphs[ch].advance : glyphs['?' - first].advance) * scale;
     }
     return std::max(widest, line);
@@ -19,6 +22,9 @@ float Width(const char* text, float scale, const Glyph (&glyphs)[N], int first =
 
 template <typename Measure>
 std::string Wrap(const char* text, float maxWidth, Measure measure) {
+#ifdef UI_MUT_WRAP
+    return text;
+#endif
     std::string out, line;
     const char* p = text;
     while (*p) {
@@ -42,6 +48,9 @@ std::string Wrap(const char* text, float maxWidth, Measure measure) {
 
 inline float ContainedScale(float available, float needed, float wanted, float minimum = 0.0f) {
     if (needed <= 0 || available <= 0) return minimum;
-    return std::max(minimum, std::min(wanted, available / needed));
+    #ifdef UI_MUT_SCALE
+    return wanted;
+#endif
+    return std::max(minimum, wanted * std::min(1.0f, available / needed));
 }
 } // namespace uitext

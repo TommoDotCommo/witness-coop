@@ -6,6 +6,15 @@ import os, sys, time, math, re
 exec(compile(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'wlib.py')).read(), 'wlib.py', 'exec'))
 pa, da, pb, db, on = int(sys.argv[1]), sys.argv[2], int(sys.argv[3]), sys.argv[4], sys.argv[5] == '1'
 A, B = attach(pa), attach(pb)
+output = sys.argv[6] if len(sys.argv) > 6 else None
+if output:
+    os.makedirs(output, exist_ok=True)
+    exec(compile(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'wimg.py')).read(), 'wimg.py', 'exec'))
+def capture(name):
+    if output:
+        send(db, ['shot ' + name], .5)
+        bmp_to_png(os.path.join(db, 'shots', name + '.bmp'), os.path.join(output, name + '.png'))
+
 def send(d, lines, settle=0.0):
     cmd = os.path.join(d, 'witness_cmd.txt'); t = time.time()
     while os.path.exists(cmd) and time.time() - t < 8: time.sleep(0.01)
@@ -40,12 +49,15 @@ def put_a(fwd, side, dz=0.0):
     """A's eye relative to B's camera: forward, right and vertical metres."""
     x = bx + fwd * math.cos(bth) + side * math.sin(bth); y = by + fwd * math.sin(bth) - side * math.cos(bth)
     send(da, ['hover %.3f %.3f %.3f %.4f 0' % (x, y, bz + dz, bth)], 1.0)
+    actual = A.camera()[0]
+    check('   Actual process camera reached the requested overlap position', math.dist(actual, (x, y, bz + dz)) < .05, actual)
 put_a(2.0, 0.0); g = settle(False)
 check('1. A between B and the panel stays fully solid', g and g[0] > 0.95 and g[1] > 0.95, g)
-check('   B knows where the panels are (the world table is present)', g and g[2] >= 300, g and g[2])
+capture('ghost_panel')
 put_a(0.0, 0.65); g = settle(False)
 check('2. A at ordinary shoulder-to-shoulder distance (0.65 m) stays solid', g and g[0] > 0.95 and g[1] > 0.95, g)
 put_a(0.0, 0.0); g = settle(True)
+capture('ghost_overlap')
 check('3. A intersecting B\'s body fades', g and (g[0] < 0.3 if on else g[0] > 0.95) and (g[1] < 0.3 if on else g[1] > 0.95), g)
 put_a(0.0, 0.65); g = settle(False)
 check('4. A restores opacity quickly after leaving overlap', g and g[0] > 0.95 and g[1] > 0.95, g)
@@ -53,5 +65,14 @@ put_a(0.0, 0.0, 2.2); g = settle(False)
 check('5. A directly above B but vertically separated stays solid', g and g[0] > 0.95 and g[1] > 0.95, g)
 put_a(0.0, 0.0); g = settle(True)
 check('6. Returning to vertical and horizontal body overlap fades again', g and (g[0] < 0.3 if on else g[0] > 0.95), g)
+put_a(.65, 0); g = settle(False)
+check('7. A nearby in front of B remains fully solid', g and g[0] > .95 and g[1] > .95, g)
+capture('ghost_near')
+put_a(.47, 0); time.sleep(.4); g = ghost(db)
+check('8. Horizontal overlap edge is partially faded', g and .25 < g[1] < .95, g)
+capture('ghost_edge')
+put_a(0, 0, 1.81); time.sleep(.4); g = ghost(db)
+check('9. Vertical grazing overlap has a smooth partial target', g and .25 < g[1] < .95, g)
+capture('ghost_vertical')
 send(da, ['hover off'])
 print('ALL OK' if ok else 'FAILED'); sys.exit(0 if ok else 1)

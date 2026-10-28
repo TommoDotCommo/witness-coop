@@ -158,6 +158,7 @@ void Pane(float x, float y, float w, float h, bool inset = false) {
     UiRect(x + 1, y + 1, w - 2, 2, Rgba(uitheme::Accent.r, uitheme::Accent.g, uitheme::Accent.b, 0.30f));
 }
 bool Button(float x, float y, float w, float h, const char* label, bool on = false, float sc = 1) {
+    UiCheckTarget(w, h, sc);
     bool hov = Hit(x, y, w, h);
     UiRect(x, y, w, h, on ? uitheme::Selected : hov ? uitheme::Hover : uitheme::Raised);
     UiFrame(x, y, w, h, on || hov ? uitheme::Accent : uitheme::Border, on ? 2 : 1);
@@ -359,7 +360,7 @@ void MapPage(float x, float y, float w, float h, float sc) {
     bool onBtn = false;
     {      // the map picture: made from the game's own frames by flying the player over the island (a few minutes); the button starts it
         bool have = g_underlayLoaded; const char* label = have ? "Make the island picture again" : "Make a picture of the island under the map"; float bw = UiTextWidth(label, sc) + 16, bh = UiLineHeight(sc) + 10, bx = x + w - bw - 8, by = y + 8; bool hov = Hit(bx, by, bw, bh); onBtn = hov;
-        UiRect(bx, by, bw, bh, hov ? Rgba(0.25f, 0.3f, 0.5f, 0.95f) : Rgba(0.12f, 0.14f, 0.22f, 0.92f)); UiFrame(bx, by, bw, bh, Rgba(0.5f, 0.55f, 0.75f)); UiText(bx + 8, by + 5, label, Rgba(1, 1, 1), sc);
+        UiRect(bx, by, bw, bh, hov ? uitheme::Hover : uitheme::Raised); UiFrame(bx, by, bw, bh, hov ? uitheme::Accent : uitheme::Border); UiText(bx + 8, by + 5, label, uitheme::Text, sc);
         if (hov && g_cl) { MapGenCommand("start"); g_open = false; Msg("flying over the island to take its picture: the menu comes back when the map has one"); }
     }
     if (over && g_cl && !onBtn) {
@@ -368,7 +369,7 @@ void MapPage(float x, float y, float w, float h, float sc) {
         else { g_selKind = SelPoint; g_selX = g_vx + (g_mx - x - w / 2) / g_vscale; g_selY = g_vy - (g_my - y - h / 2) / g_vscale; }
     }
     if (over && hover >= 0) { char b[64]; snprintf(b, sizeof b, "%#x  %s", g_pn[hover].id, g_pn[hover].solved ? "solved" : g_pn[hover].powered ? "powered" : "off"); float tw = UiTextWidth(b, sc) + 10; UiRect(g_mx + 14, g_my + 8, tw, UiLineHeight(sc) + 4, Rgba(0, 0, 0, 0.85f)); UiText(g_mx + 19, g_my + 10, b, Rgba(1, 1, 1), sc); }
-    UiText(x + 8, y + h - UiLineHeight(sc) - 6, "wheel: zoom   right-drag: pan   click: select   green solved, amber powered, grey off, boxes = doors (blue open)", Rgba(0.6f, 0.6f, 0.65f), sc * 0.85f);
+    UiText(x + 8, y + h - UiLineHeight(sc * .7f) - 6, "Wheel zoom / right-drag pan / click select", uitheme::Muted, sc * .7f);
 }
 
 void SpotList(float x, float y, float w, float h, float sc) {
@@ -398,8 +399,8 @@ void NearbyPage(float x, float y, float w, float h, float sc) {
     for (size_t i = 0; i < g_pn.size(); i++) { float d = hypotf(g_pn[i].x - pos[0], g_pn[i].y - pos[1]); if (d <= g_radius && fabsf(g_pn[i].z - pos[2]) < 40) rows.push_back({(int)i, d}); }
     std::sort(rows.begin(), rows.end(), [](const R& a, const R& b) { return a.d < b.d; });
     char b[120]; snprintf(b, sizeof b, "%zu puzzles within %.0f m", rows.size(), g_radius); UiText(x + 8, y + 6, b, uitheme::Text, sc);
-    if (Button(x + w - 130, y + 4, 28, UiLineHeight(sc) + 4, "-", false, sc)) g_radius = std::max(10.f, g_radius - 10);
-    if (Button(x + w - 96, y + 4, 28, UiLineHeight(sc) + 4, "+", false, sc)) g_radius = std::min(300.f, g_radius + 10);
+    if (Button(x + w - 72 * sc, y + 4 * sc, 28 * sc, UiLineHeight(sc) + 4 * sc, "-", false, sc)) g_radius = std::max(10.f, g_radius - 10);
+    if (Button(x + w - 38 * sc, y + 4 * sc, 28 * sc, UiLineHeight(sc) + 4 * sc, "+", false, sc)) g_radius = std::min(300.f, g_radius + 10);
     float ly = y + UiLineHeight(sc) + 14, rh = UiLineHeight(sc) + 6, lh = h - (ly - y) - 4;
     if (Hit(x, ly, w, lh) && g_wheel) g_nearScroll -= g_wheel * rh * 2; g_nearScroll = std::max(0.f, std::min(g_nearScroll, std::max(0.f, rh * rows.size() - lh)));
     UiClip(x + 1, ly, w - 2, lh);
@@ -417,11 +418,11 @@ void NearbyPage(float x, float y, float w, float h, float sc) {
 void SavesPage(float x, float y, float w, float h, float sc) {
     Pane(x, y, w, h);
     float lh = UiLineHeight(sc), bh = lh + 14, bx = x + 12, by = y + 12; static int nSpots = 4; static char nm[64];
-    auto act = [&](const char* label) { float bw = UiTextWidth(label, sc) + 26; bool r = Button(bx, by, bw, bh, label, false, sc); bx += bw + 10; return r; };
+    auto act = [&](const char* label) { float bw = UiTextWidth(label, sc) + 26 * sc; bool r = Button(bx, by, bw, bh, label, false, sc); bx += bw + 10 * sc; return r; };
     SYSTEMTIME st; GetLocalTime(&st); snprintf(nm, sizeof nm, "%02d%02d%02d-%02d%02d%02d", st.wYear % 100, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
     if (act("Save point now") && !SaveBusy()) { SaveStartSave(std::string("save-") + nm, false, ProgressNote()); g_open = false; }
     if (act("Preset from current progress (list only)") && !SaveBusy()) { SaveStartPreset(std::string("preset-") + nm, ProgressNote()); }
-    UiText(x + 12, by + bh + 8, SaveBusy() ? "working... (the pause menu opens and closes by itself; do not touch anything)" : (SaveStatus()[0] ? SaveStatus() : "A save point is a copy of the game's save; a restore loads it through the pause menu. Presets are kept for starting from a given amount of progress."), SaveBusy() ? uitheme::Accent : uitheme::Muted, sc * 0.9f);
+    UiText(x + 12, by + bh + 8, Wrap(SaveBusy() ? "working... (the pause menu opens and closes by itself; do not touch anything)" : (SaveStatus()[0] ? SaveStatus() : "A save point is a copy of the game's save; a restore loads it through the pause menu. Presets are kept for starting from a given amount of progress."), w - 24, sc * 0.9f).c_str(), SaveBusy() ? uitheme::Accent : uitheme::Muted, sc * 0.9f);
     float ty = by + bh + 8 + lh * 2.2f; char b[120]; snprintf(b, sizeof b, "Make progress for a preset: complete the first %d of %zu spots (all their panels)", nSpots, g_spots.size()); UiText(x + 12, ty, b, uitheme::Text, sc);
     bx = x + 12; by = ty + lh + 6;
     if (act("-")) nSpots = std::max(1, nSpots - 1); if (act("+")) nSpots = std::min((int)g_spots.size(), nSpots + 1); if (act("Solve them now")) { QueueSolveSpots(nSpots); g_open = false; }
@@ -433,9 +434,11 @@ void SavesPage(float x, float y, float w, float h, float sc) {
         UiRect(x + 8, ly, w - 16, rh - 2, hov ? uitheme::Hover : uitheme::Raised);
         UiFrame(x + 8, ly, w - 16, rh - 2, uitheme::Border);
         snprintf(b, sizeof b, "%s  %s", L[i].preset ? "[preset]" : "[save]  ", L[i].name.c_str());
-        UiText(x + 16, ly + 7, b, L[i].preset ? uitheme::Accent : uitheme::Text, sc);
+        UiClip(x + 16, ly, std::max(1.f, w - 360 * sc), rh);
+        UiText(x + 16, ly + 7, b, L[i].preset ? uitheme::Accent : uitheme::Text, sc); UiClip(0, 0, 0, 0);
         float nameW = UiTextWidth(b, sc); float noteX = x + 16 + std::max(220.f * sc, nameW + 16 * sc);
-        UiText(noteX, ly + 7, L[i].note.c_str(), uitheme::Muted, sc * 0.9f);
+        float noteRight = x + w - 340 * sc;
+        if (noteRight > noteX) { UiClip(noteX, ly, noteRight - noteX, rh); UiText(noteX, ly + 7, L[i].note.c_str(), uitheme::Muted, sc * 0.9f); UiClip(0, 0, 0, 0); }
         const char* lab = L[i].hasGameSave ? "Restore (load save + progress)" : "Apply progress list"; float rw = UiTextWidth(lab, sc) + 26; if (Button(x + w - rw - 14, ly + 1, rw, rh - 4, lab, false, sc) && !SaveBusy()) { SaveStartRestore(L[i]); g_open = false; }
         ly += rh;
     }
@@ -541,7 +544,7 @@ void DevMenuDraw(float W, float H) {
     if (g_cl || g_cr) { char m[100]; snprintf(m, sizeof m, "devmenu: click %s at %.0f %.0f", g_cl ? "left" : "right", g_mx, g_my); Log(m); }
     if (g_keyEsc) { g_open = false; return; }
     if (g_keyTab) g_page = (g_page + 1) % 3;
-    float sc = std::max(1.f, H / 1080.f), pad = 18 * sc; float x0 = pad, y0 = pad, w = W - 2 * pad, h = H - 2 * pad;
+    float sc = std::min(W / 1280.f, H / 900.f), pad = 18 * sc; float x0 = pad, y0 = pad, w = W - 2 * pad, h = H - 2 * pad;
     UiRect(0, 0, W, H, uitheme::Canvas); UiRect(x0, y0, w, h, uitheme::Surface); UiFrame(x0, y0, w, h, uitheme::Border, 1);
     UiRect(x0, y0, 4 * sc, h, uitheme::Accent);
     UiText(x0 + 20 * sc, y0 + 12 * sc, "WITNESS / CO-OP", uitheme::Text, sc * 1.25f);
