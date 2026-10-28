@@ -493,6 +493,7 @@ void PanelBoostMsg(bool on, float gain) { Msg("panel mouse boost %s (x%.1f, F3 t
 bool DevMenuKey(unsigned vk, bool down) {
     Init(); if (down && vk == guide::TvView) { TvEnable(!TvEnabled()); return true; }
     if (down && vk == guide::TvConsent) { TvAllow(!TvConsent()); return true; }
+    if (down && vk == GetCfg().keyTvDeploy) { TvDeployAction(OverlayTvAim()); return true; }
     if (PovKey(vk, down)) return true;
     if (vk == guide::Boost && down) { PanelBoostToggle(); return true; }
     if (vk == guide::Video && down && VideoEnabled()) { VideoToggleView(); return true; }
@@ -533,9 +534,10 @@ void DevMenuDraw(float W, float H) {
     float tx = x0 + 380 * sc, ty = y0 + 6, th = UiLineHeight(sc) + 10;
     if (Button(tx, ty, 120 * sc, th, "Map", g_page == 0, sc)) g_page = 0; if (Button(tx + 128 * sc, ty, 160 * sc, th, "Nearby puzzles", g_page == 1, sc)) g_page = 1; if (Button(tx + 296 * sc, ty, 120 * sc, th, "Saves", g_page == 2, sc)) { g_page = 2; SaveListRefresh(); }
     { const char* hint = "F8/Esc close   F4 nearby   Tab page"; UiText(x0 + w - UiTextWidth(hint, sc * 0.9f) - 14, y0 + 10, hint, Rgba(0.6f, 0.6f, 0.65f), sc * 0.9f); }
-    float tvY = y0 + th + 18, tvW = std::min(240.f * sc, (w - 30) / 2);
+    float tvY = y0 + th + 18, tvW = std::min(240.f * sc, (w - 40) / 3);
     if (Button(x0 + 10, tvY, tvW, th, TvEnabled() ? "Back TV: ON [F10]" : "Back TV: off [F10]", TvEnabled(), sc)) TvEnable(!TvEnabled());
     if (Button(x0 + 20 + tvW, tvY, tvW, th, TvConsent() ? "Share my POV: ON [F11]" : "Share my POV: off [F11]", TvConsent(), sc)) TvAllow(!TvConsent());
+    if (Button(x0 + 30 + 2 * tvW, tvY, tvW, th, TvDeploymentTarget() ? "Retract sky TV [J]" : "Deploy aimed sky TV [J]", TvDeploymentTarget() != 0, sc)) TvDeployAction(OverlayTvAim());
     float cy0 = tvY + th + 10, ch = h - (cy0 - y0) - UiLineHeight(sc) - 18, lw = 360 * sc, gap = 10;
     if (!g_built) { UiText(x0 + 20, cy0 + 20, "The world is not loaded yet.", Rgba(1, 0.7f, 0.7f), sc); }
     else {

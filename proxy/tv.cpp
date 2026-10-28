@@ -3,40 +3,76 @@
 #include "coop.h"
 #include "config.h"
 #include <cstdio>
+#include <set>
 namespace {
 SRWLOCK lock=SRWLOCK_INIT;
 struct Guard { Guard(){ AcquireSRWLockExclusive(&lock); } ~Guard(){ ReleaseSRWLockExclusive(&lock); } };
+struct AudienceStream {
+    wtv::Receiver receiver; uint64_t requestAt=0,noiseAt=0;
+    ID3D11Texture2D* texture=nullptr; ID3D11ShaderResourceView* srv=nullptr;
+    unsigned uploaded=0,uploadedSequence=0,uploadHash=0; bool wasLive=false;
+};
+struct AudienceStats { unsigned draws=0,vertices=0,visiblePixels=0; bool drawnLive=false; };
 struct State {
     bool enabled=GetCfg().povTv, capture=false; wtv::Sender sender; wtv::Receiver receiver;
     uint64_t requestAt=0; unsigned displayTarget=0; uint64_t disabledAt=0; unsigned sequence=0,sent=0,uploaded=0,draws=0,vertices=0; bool drawnLive=false;
     float sway=0,power=0; unsigned maxCaptureUs=0,visiblePixels=0,uploadHash=0,uploadedSequence=0;
     std::vector<std::pair<unsigned,unsigned>> hashes;
-    State(){ sender.allow(GetCfg().povTvConsent); receiver.ticket=GetTickCount()|1u; }
+    wtv::Deployments deployments; std::map<unsigned,AudienceStream> audience; std::map<unsigned,AudienceStats> audienceStats;
+    unsigned nextTicket=1; uint64_t deploymentBroadcastAt=0;
+    State(){ sender.allow(GetCfg().povTvConsent); receiver.ticket=GetTickCount()|1u; nextTicket=receiver.ticket+1; }
 };
 State& state(){ static State s; return s; }
 void send(wtv::Control c){ auto b=wtv::control(c); CoopSendRawTo(c.to,b.data(),b.size()); }
+void sendDeployment(const wtv::Deployment& d){ if(!d.sequence) return; auto b=wtv::deploymentPacket(d); CoopSendRaw(b.data(),b.size()); }
 ID3D11Texture2D* texture; ID3D11ShaderResourceView* srv;
 }
 bool TvEnabled(){ Guard g; return state().enabled; }
 bool TvConsent(){ Guard g; return state().sender.consent; }
 void TvEnable(bool on){ Guard g; auto& s=state(); s.enabled=on; s.disabledAt=GetTickCount64(); if(!on) { if(s.receiver.target) send({CoopMyId(),s.receiver.target,s.receiver.ticket,0}); s.receiver.select(0); } }
-void TvAllow(bool on){ Guard g; auto& s=state(); if(!on) for(auto p:s.sender.subs) send({CoopMyId(),p.first,p.second.ticket,2}); s.sender.allow(on); }
+void TvAllow(bool on){ Guard g; auto& s=state(); if(!on) for(auto p:s.sender.subs) send({CoopMyId(),p.second.viewer,p.second.ticket,2}); s.sender.allow(on); }
 unsigned TvTarget(){ Guard g; auto& s=state(); return s.enabled?s.receiver.target:(GetTickCount64()-s.disabledAt<350?s.displayTarget:0); }
-void TvTick(const float camera[3],bool captureAllowed){
-    unsigned nearest=0; float distance=12*12;
-    for(auto r:CoopGetRemotes()) if(r.valid && r.ageMs<1000){
-        float d=0; for(int i=0;i<3;++i) d+=(r.pos[i]-camera[i])*(r.pos[i]-camera[i]);
-        if(d<distance || (d==distance && r.id<nearest)){ distance=d; nearest=r.id; }
+bool TvDeployAction(unsigned target){
+    Guard g; auto& s=state(); uint64_t now=GetTickCount64(); s.deployments.me=CoopMyId();
+    if(s.deployments.local().active){ bool ok=s.deployments.retract(now); if(ok) sendDeployment(s.deployments.local()); return ok; }
+    if(!target || target==CoopMyId()) return false;
+    for(const auto& r:CoopGetRemotes()) if(r.id==target && r.valid && r.ageMs<1000){
+        if(!s.deployments.deploy(target,r.pos,r.ang[0],now)) return false;
+        sendDeployment(s.deployments.local()); return true;
     }
-    Guard g; auto& s=state(); s.capture=captureAllowed; if(!s.enabled || !captureAllowed) nearest=0;
+    return false;
+}
+unsigned TvDeploymentTarget(){ Guard g; return state().deployments.local().active?state().deployments.local().target:0; }
+std::vector<wtv::Deployment> TvAudienceScreens(){
+    Guard g; std::vector<wtv::Deployment> out; for(const auto& screen:state().deployments.screens) if(screen.second.active) out.push_back(screen.second); return out;
+}
+void TvTick(const float camera[3],bool captureAllowed){
+    auto remotes=CoopGetRemotes(); std::vector<unsigned> alive; unsigned nearest=0; float distance=12*12;
+    for(const auto& r:remotes) if(r.valid && r.ageMs<2000){
+        alive.push_back(r.id); float d=0; for(int i=0;i<3;++i) d+=(r.pos[i]-camera[i])*(r.pos[i]-camera[i]);
+        if(r.ageMs<1000 && (d<distance || (d==distance && r.id<nearest))){ distance=d; nearest=r.id; }
+    }
+    Guard g; auto& s=state(); uint64_t now=GetTickCount64(); s.capture=captureAllowed; s.deployments.me=CoopMyId();
+    if(!s.enabled || !captureAllowed) nearest=0;
     if(nearest!=s.receiver.target){
         if(s.receiver.target) send({CoopMyId(),s.receiver.target,s.receiver.ticket,0});
         s.receiver.select(nearest); s.requestAt=0; if(s.enabled) s.displayTarget=nearest;
     }
-    uint64_t now=GetTickCount64();
     if(nearest && (!s.requestAt || now-s.requestAt>=500)){ send({CoopMyId(),nearest,s.receiver.ticket,1}); s.requestAt=now; }
+    s.deployments.tick(now,alive);
+    if(s.deployments.local().sequence && now-s.deploymentBroadcastAt>=500){ sendDeployment(s.deployments.local()); s.deploymentBroadcastAt=now; }
+    std::set<unsigned> wanted; for(const auto& screen:s.deployments.screens) if(screen.second.active) wanted.insert(screen.second.target);
+    for(auto it=s.audience.begin();it!=s.audience.end();){
+        if(wanted.count(it->first)) ++it;
+        else { send({CoopMyId(),it->first,it->second.receiver.ticket,0}); it=s.audience.erase(it); }
+    }
+    if(captureAllowed) for(unsigned target:wanted){
+        auto& stream=s.audience[target];
+        if(stream.receiver.target!=target){ stream.receiver.select(target); stream.receiver.ticket=s.nextTicket++; if(!stream.receiver.ticket) stream.receiver.ticket=s.nextTicket++; stream.requestAt=0; }
+        if(!stream.requestAt || now-stream.requestAt>=500){ if(target!=CoopMyId()) send({CoopMyId(),target,stream.receiver.ticket,1}); stream.requestAt=now; }
+    }
 }
-bool TvWanted(){ Guard g; auto& s=state(); s.sender.expire(GetTickCount64()); return s.capture && s.sender.consent && !s.sender.subs.empty(); }
+bool TvWanted(){ Guard g; auto& s=state(); s.sender.expire(GetTickCount64()); return s.capture && s.sender.consent && (!s.sender.subs.empty() || s.audience.count(CoopMyId())); }
 void TvCapture(const uint8_t* rgba,unsigned w,unsigned h){
     Guard g; auto& s=state(); if(!s.capture || !s.sender.due(GetTickCount64()) || !w || !h) return;
     LARGE_INTEGER start,end,freq; QueryPerformanceCounter(&start); QueryPerformanceFrequency(&freq);
@@ -48,17 +84,25 @@ void TvCapture(const uint8_t* rgba,unsigned w,unsigned h){
         px[(y+(wtv::H-oh)/2)*wtv::W+x+(wtv::W-ow)/2]=(p[0]&224)|((p[1]>>3)&28)|(p[2]>>6);
     }
     if(!++s.sequence) ++s.sequence;
-    for(auto sub:s.sender.subs) for(auto& b:wtv::frame(CoopMyId(),sub.second.ticket,s.sequence,px)) CoopSendRawTo(sub.first,b.data(),b.size());
+    auto itSelf=s.audience.find(CoopMyId());
+    if(itSelf!=s.audience.end()) itSelf->second.receiver.inject(s.sequence,px,GetTickCount64());
+    for(auto sub:s.sender.subs) for(auto& b:wtv::frame(CoopMyId(),sub.second.ticket,s.sequence,px)) CoopSendRawTo(sub.second.viewer,b.data(),b.size());
     s.hashes.push_back({s.sequence,wtv::hash(px.data(),px.size())}); if(s.hashes.size()>16) s.hashes.erase(s.hashes.begin());
     ++s.sent; QueryPerformanceCounter(&end); s.maxCaptureUs=std::max(s.maxCaptureUs,unsigned((end.QuadPart-start.QuadPart)*1000000/freq.QuadPart));
 }
 void TvOnPacket(const uint8_t* p,size_t n){
-    Guard g; auto& s=state(); uint64_t now=GetTickCount64(); wtv::Control c;
+    Guard g; auto& s=state(); uint64_t now=GetTickCount64(); s.deployments.me=CoopMyId();
+    if(n>=4 && !memcmp(p,"WTD1",4)){ s.deployments.packet(p,n,now); return; }
+    wtv::Control c;
     if(wtv::parseControl(p,n,c)){
         if(c.to!=CoopMyId()) return;
-        if(c.kind==2){ s.receiver.deny(c); return; }
+        if(c.kind==2){ s.receiver.deny(c); for(auto& stream:s.audience) stream.second.receiver.deny(c); return; }
         if(!s.sender.request(c,now) && c.kind==1) send({CoopMyId(),c.from,c.ticket,2});
-    } else if(s.enabled) s.receiver.packet(p,n,now);
+        return;
+    }
+    if(n<8) return;
+    if(s.enabled && s.receiver.target==wtv::get(p+4)) s.receiver.packet(p,n,now);
+    for(auto& stream:s.audience) if(stream.first==wtv::get(p+4)) stream.second.receiver.packet(p,n,now);
 }
 ID3D11ShaderResourceView* TvTexture(ID3D11Device* dev,ID3D11DeviceContext* ctx,bool* live){
     Guard g; auto& s=state(); *live=s.enabled && s.receiver.fresh(GetTickCount64());
@@ -81,16 +125,45 @@ ID3D11ShaderResourceView* TvTexture(ID3D11Device* dev,ID3D11DeviceContext* ctx,b
     }
     wasLive=*live; return srv;
 }
+ID3D11ShaderResourceView* TvAudienceTexture(ID3D11Device* dev,ID3D11DeviceContext* ctx,unsigned source,bool* live){
+    Guard g; auto& s=state(); auto it=s.audience.find(source); if(it==s.audience.end()) return nullptr; auto& stream=it->second; uint64_t now=GetTickCount64();
+    *live=stream.receiver.fresh(now) && (source!=CoopMyId() || s.sender.consent);
+    if(!stream.texture){
+        D3D11_TEXTURE2D_DESC d={}; d.Width=wtv::W; d.Height=wtv::H; d.MipLevels=d.ArraySize=1; d.Format=DXGI_FORMAT_R8G8B8A8_UNORM; d.SampleDesc.Count=1; d.BindFlags=D3D11_BIND_SHADER_RESOURCE;
+        if(FAILED(dev->CreateTexture2D(&d,nullptr,&stream.texture))) return nullptr;
+        if(FAILED(dev->CreateShaderResourceView(stream.texture,nullptr,&stream.srv))){ stream.texture->Release(); stream.texture=nullptr; return nullptr; }
+    }
+    bool update=*live?(stream.uploaded!=stream.receiver.decoded || !stream.wasLive):(stream.wasLive || now-stream.noiseAt>=wtv::Period);
+    if(update){
+        std::array<uint8_t,wtv::Pixels*4> px; uint32_t rng=unsigned(now/wtv::Period)^source;
+        for(unsigned i=0;i<wtv::Pixels;++i){ auto* p=px.data()+i*4;
+            if(*live){ uint8_t c=stream.receiver.pixels[i]; p[0]=uint8_t(((c>>5)*255)/7); p[1]=uint8_t((((c>>2)&7)*255)/7); p[2]=uint8_t((c&3)*85); }
+            else { rng=rng*1664525+1013904223; p[0]=p[1]=p[2]=uint8_t(24+(rng>>27)*3); }
+            p[3]=255;
+        }
+        ctx->UpdateSubresource(stream.texture,0,nullptr,px.data(),wtv::W*4,0); stream.uploaded=stream.receiver.decoded;
+        stream.uploadedSequence=*live?stream.receiver.sequence():0; stream.uploadHash=*live?wtv::hash(stream.receiver.pixels.data(),stream.receiver.pixels.size()):0; stream.noiseAt=now;
+    }
+    stream.wasLive=*live; return stream.srv;
+}
 void TvDrawn(unsigned vertices,bool live,float sway,float power){ Guard g; auto& s=state(); ++s.draws; s.vertices=vertices; s.drawnLive=live; s.sway=sway; s.power=power; }
 void TvVisible(unsigned pixels){ Guard g; state().visiblePixels=pixels; }
+void TvAudienceDrawn(unsigned owner,unsigned vertices,bool live){ Guard g; auto& stats=state().audienceStats[owner]; ++stats.draws; stats.vertices=vertices; stats.drawnLive=live; }
+void TvAudienceVisible(unsigned owner,unsigned pixels){ Guard g; state().audienceStats[owner].visiblePixels=pixels; }
 extern HMODULE g_selfModule();
 void TvDump(){
-    Guard g; auto& s=state(); wchar_t path[MAX_PATH]; GetModuleFileNameW(g_selfModule(),path,MAX_PATH); auto* slash=wcsrchr(path,L'\\'); if(slash) slash[1]=0;
+    Guard g; auto& s=state(); uint64_t now=GetTickCount64(); wchar_t path[MAX_PATH]; GetModuleFileNameW(g_selfModule(),path,MAX_PATH); auto* slash=wcsrchr(path,L'\\'); if(slash) slash[1]=0;
     wcscat_s(path,L"witness_tv.json"); wchar_t tmp[MAX_PATH]; wcscpy_s(tmp,path); wcscat_s(tmp,L".tmp");
-    FILE* f=_wfopen(tmp,L"w"); if(!f) return; s.sender.expire(GetTickCount64());
-    fprintf(f,"{\"enabled\":%d,\"consent\":%d,\"target\":%u,\"subscribers\":%zu,\"sent\":%u,\"decoded\":%u,\"fresh\":%d,\"draws\":%u,\"vertices\":%u,\"drawn_live\":%d,\"sway\":%.6f,\"power\":%.5f,\"capture_cpu_max_us\":%u,",s.enabled,s.sender.consent,s.receiver.target,s.sender.subs.size(),s.sent,s.receiver.decoded,s.receiver.fresh(GetTickCount64()),s.draws,s.vertices,s.drawnLive,s.sway,s.power,s.maxCaptureUs);
+    FILE* f=_wfopen(tmp,L"w"); if(!f) return; s.sender.expire(now);
+    fprintf(f,"{\"enabled\":%d,\"consent\":%d,\"target\":%u,\"deploy_target\":%u,\"subscribers\":%zu,\"sent\":%u,\"decoded\":%u,\"fresh\":%d,\"draws\":%u,\"vertices\":%u,\"drawn_live\":%d,\"sway\":%.6f,\"power\":%.5f,\"capture_cpu_max_us\":%u,",s.enabled,s.sender.consent,s.receiver.target,s.deployments.local().active?s.deployments.local().target:0,s.sender.subs.size(),s.sent,s.receiver.decoded,s.receiver.fresh(now),s.draws,s.vertices,s.drawnLive,s.sway,s.power,s.maxCaptureUs);
     fprintf(f,"\"visible_pixels\":%u,\"received_sequence\":%u,\"upload_hash\":%u,\"uploaded_sequence\":%u,\"sent_hashes\":[",s.visiblePixels,s.receiver.sequence(),s.uploadHash,s.uploadedSequence);
     for(size_t i=0;i<s.hashes.size();++i) fprintf(f,"%s[%u,%u]",i?",":"",s.hashes[i].first,s.hashes[i].second);
-    fprintf(f,"]}\n");
-    fclose(f); MoveFileExW(tmp,path,MOVEFILE_REPLACE_EXISTING);
+    fprintf(f,"],\"audience\":[");
+    bool comma=false; for(const auto& entry:s.deployments.screens){ const auto& d=entry.second; if(!d.active) continue; auto p=wtv::placement(d); const auto& stats=s.audienceStats[d.from];
+        auto stream=s.audience.find(d.target); bool fresh=stream!=s.audience.end() && stream->second.receiver.fresh(now);
+        fprintf(f,"%s{\"owner\":%u,\"source\":%u,\"sequence\":%u,\"center\":[%.5f,%.5f,%.5f],\"ground\":%.5f,\"bottom\":%.5f,\"width\":%.2f,\"height\":%.2f,\"draws\":%u,\"vertices\":%u,\"drawn_live\":%d,\"fresh\":%d,\"visible_pixels\":%u",comma?",":"",d.from,d.target,d.sequence,p.center[0],p.center[1],p.center[2],p.ground,p.bottom,wtv::ScreenWidth,wtv::ScreenHeight,stats.draws,stats.vertices,stats.drawnLive,fresh,stats.visiblePixels);
+        if(stream!=s.audience.end()) fprintf(f,",\"decoded\":%u,\"upload_hash\":%u,\"uploaded_sequence\":%u",stream->second.receiver.decoded,stream->second.uploadHash,stream->second.uploadedSequence);
+        else fprintf(f,",\"decoded\":0,\"upload_hash\":0,\"uploaded_sequence\":0"); fprintf(f,"}"); comma=true;
+    }
+    fprintf(f,"]}\n"); fclose(f); MoveFileExW(tmp,path,MOVEFILE_REPLACE_EXISTING);
 }

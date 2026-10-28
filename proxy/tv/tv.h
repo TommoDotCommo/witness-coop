@@ -10,6 +10,7 @@
 namespace wtv {
 using Bytes = std::vector<uint8_t>;
 constexpr unsigned W = 128, H = 96, Pixels = W * H, Chunk = 1024, MaxChunks = 12;
+constexpr unsigned MaxPlayers = 16, MaxSubscriptions = 2 * (MaxPlayers - 1);
 constexpr uint64_t Period = 200, Lease = 1500, Fresh = 800;
 inline uint32_t get(const uint8_t* p) { return uint32_t(p[0]) | uint32_t(p[1])<<8 | uint32_t(p[2])<<16 | uint32_t(p[3])<<24; }
 inline void put(Bytes& b, size_t at, uint32_t v) { for (unsigned i=0;i<4;++i) b[at+i]=uint8_t(v>>(i*8)); }
@@ -22,26 +23,27 @@ inline bool parseControl(const uint8_t* p,size_t n,Control& c) {
     if(n!=24 || memcmp(p,"WTU1",4) || !checked(p,n)) return false;
     c={get(p+4),get(p+8),get(p+12),get(p+16)}; return c.from && c.to && c.from!=c.to && c.ticket && c.kind<=2;
 }
-struct Sub { unsigned ticket; uint64_t at; };
+struct Sub { unsigned viewer,ticket; uint64_t at; };
+inline uint64_t subKey(unsigned viewer,unsigned ticket) { return (uint64_t(viewer)<<32)|ticket; }
 class Sender {
 public:
     bool consent=false;
-    std::map<unsigned,Sub> subs;
+    std::map<uint64_t,Sub> subs;
     void expire(uint64_t now) {
         for(auto i=subs.begin();i!=subs.end();) if(now-i->second.at>Lease) i=subs.erase(i); else ++i;
     }
     void allow(bool v) { consent=v; if(!v) subs.clear(); }
     bool request(Control c,uint64_t now) {
-        expire(now);
-        if(c.kind==0) { subs.erase(c.from); return false; }
+        expire(now); uint64_t key=subKey(c.from,c.ticket);
+        if(c.kind==0) { subs.erase(key); return false; }
 #ifndef TV_MUT_CONSENT
         if(!consent) return false;
 #endif
 #ifndef TV_MUT_SUB_CAP
-        if(!subs.count(c.from) && subs.size()>=2) return false;
+        if(!subs.count(key) && subs.size()>=MaxSubscriptions) return false;
 #endif
         if(c.kind!=1) return false;
-        subs[c.from]={c.ticket,now}; return true;
+        subs[key]={c.from,c.ticket,now}; return true;
     }
     bool due(uint64_t now) {
         expire(now);
@@ -113,10 +115,94 @@ public:
         pixels.swap(out); at=now; done_=seq; completed_=true; lastComplete_=now; ++decoded; return true;
     }
     void reset() { pixels.clear(); at=0; cur_=done_=have_=0; completed_=false; for(auto& c:chunks_) c.clear(); }
+    void inject(unsigned seq,Bytes px,uint64_t now) { if(px.size()==Pixels) { pixels=std::move(px); at=now; done_=seq; completed_=true; lastComplete_=now; ++decoded; } }
 private:
     std::array<Bytes,MaxChunks> chunks_; unsigned cur_=0,done_=0,have_=0,count_=0,mode_=0,budget_=0;
     uint64_t start_=0,window_=0,lastComplete_=0; bool completed_=false;
 };
+struct Deployment {
+    unsigned from=0,target=0,sequence=0; float eye[3]={},yaw=0; bool active=false; uint64_t at=0;
+};
+inline bool validDeployment(const Deployment& d) {
+    if(!d.from || !d.sequence) return false;
+    if(!d.active) return d.target==0;
+    if(!d.target || d.target==d.from || !std::isfinite(d.yaw)) return false;
+    for(float v:d.eye) if(!std::isfinite(v) || fabsf(v)>100000) return false;
+    return true;
+}
+inline Bytes deploymentPacket(const Deployment& d) {
+    Bytes b(40); memcpy(b.data(),"WTD1",4); put(b,4,d.from); put(b,8,d.target); put(b,12,d.sequence);
+    for(unsigned i=0;i<3;++i) { uint32_t v; memcpy(&v,&d.eye[i],4); put(b,16+4*i,v); }
+    uint32_t yaw; memcpy(&yaw,&d.yaw,4); put(b,28,yaw); put(b,32,d.active); seal(b); return b;
+}
+inline bool parseDeployment(const uint8_t* p,size_t n,Deployment& d) {
+    if(n!=40 || memcmp(p,"WTD1",4) || !checked(p,n)) return false;
+    d={}; d.from=get(p+4); d.target=get(p+8); d.sequence=get(p+12);
+    for(unsigned i=0;i<3;++i) { uint32_t v=get(p+16+4*i); memcpy(&d.eye[i],&v,4); }
+    uint32_t yaw=get(p+28); memcpy(&d.yaw,&yaw,4); d.active=get(p+32)!=0;
+    return get(p+32)<=1 && validDeployment(d);
+}
+class Deployments {
+public:
+    unsigned me=0;
+    std::map<unsigned,Deployment> screens;
+    bool deploy(unsigned target,const float eye[3],float yaw,uint64_t now) {
+        Deployment d; d.from=me; d.target=target; d.sequence=local_.sequence+1; if(!d.sequence) ++d.sequence;
+        for(unsigned i=0;i<3;++i) d.eye[i]=eye[i];
+        d.yaw=yaw; d.active=true; d.at=now;
+        if(!me || !validDeployment(d)) return false;
+        local_=d; screens[me]=d; missing_[me]=0; return true;
+    }
+    bool retract(uint64_t now) {
+        if(!local_.active) return false;
+        local_.active=false; local_.target=0; ++local_.sequence; if(!local_.sequence) ++local_.sequence; local_.at=now; screens[me]=local_; return true;
+    }
+    bool packet(const uint8_t* p,size_t n,uint64_t now) {
+        Deployment d; if(!parseDeployment(p,n,d)) return false;
+#ifndef TV_MUT_AUTHORITY
+        if(d.from==me) return false;
+#endif
+        auto it=screens.find(d.from);
+#ifndef TV_MUT_SEQUENCE
+        if(it!=screens.end() && int32_t(d.sequence-it->second.sequence)<=0) return false;
+#endif
+#ifndef TV_MUT_DEPLOY_CAP
+        if(it==screens.end() && screens.size()>=MaxPlayers) return false;
+#endif
+        d.at=now; screens[d.from]=d; missing_[d.from]=0; return true;
+    }
+    void tick(uint64_t now,const std::vector<unsigned>& alive) {
+        for(auto it=screens.begin();it!=screens.end();) {
+            Deployment d=it->second; unsigned owner=it->first;
+            if(owner!=me && now-d.at>2*Lease) { screens.erase(it++); missing_.erase(owner); continue; }
+            bool gone=d.active && d.target!=me && std::find(alive.begin(),alive.end(),d.target)==alive.end();
+            uint64_t& since=missing_[owner]; if(gone) { if(!since) since=now; } else since=0;
+#ifndef TV_MUT_DISCONNECT
+            if(gone && now-since>2*Lease) {
+                if(owner==me) { retract(now); ++it; } else { screens.erase(it++); missing_.erase(owner); }
+                continue;
+            }
+#endif
+            ++it;
+        }
+    }
+    const Deployment& local() const { return local_; }
+private:
+    Deployment local_; std::map<unsigned,uint64_t> missing_;
+};
+constexpr float ScreenWidth=4.0f,ScreenHeight=2.5f,ScreenBottom=2.0f,ScreenBehind=3.0f,CameraEye=1.71f;
+struct Placement { float center[3],right[3],forward[3],ground,bottom; };
+inline Placement placement(const Deployment& d) {
+    Placement p={}; p.forward[0]=cosf(d.yaw); p.forward[1]=sinf(d.yaw); p.right[0]=p.forward[1]; p.right[1]=-p.forward[0];
+    p.ground=d.eye[2]-CameraEye;
+#ifdef TV_MUT_PLACEMENT
+    p.bottom=p.ground;
+#else
+    p.bottom=p.ground+ScreenBottom;
+#endif
+    for(unsigned i=0;i<2;++i) p.center[i]=d.eye[i]-p.forward[i]*ScreenBehind;
+    p.center[2]=p.bottom+ScreenHeight*.5f; return p;
+}
 struct Motion {
     float sway=0,velocity=0,antenna=0,power=0;
     void step(float dt,float speed,bool on) {

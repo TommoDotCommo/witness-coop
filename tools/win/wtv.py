@@ -76,5 +76,63 @@ b5 = wait(lambda: dump(db), lambda s: not s['fresh'] and not s['drawn_live'] and
 a5 = dump(da); time.sleep(.5); a6 = dump(da)
 check('revocation wipes display, source stops without consent', not a6['consent'] and not a6['subscribers'] and a5['sent']==a6['sent'])
 send(db, ['shot tv_revoked', 'hover off']); send(da, ['hover off'])
+key(db, 'F10')
+wait(lambda: dump(db), lambda s: not s['enabled'])
+
+# Audience POV screen: B aims at A, deploys A's backpack TV into a giant in-world screen.
+send(da, ['menusel c335', 'menudo teleport'])
+time.sleep(3)
+(ax, ay, az), (yaw, _) = A.camera()
+send(db, ['hover %.5f %.5f %.5f %.6f -0.10' % (ax-math.cos(yaw)*3.5, ay-math.sin(yaw)*3.5, az, yaw)])
+wait(B.camera, lambda c: abs(c[0][0]-(ax-math.cos(yaw)*3.5)) < .3 and abs(c[0][1]-(ay-math.sin(yaw)*3.5)) < .3)
+time.sleep(2)
+
+# Deploy aimed sky TV via key J
+key(db, 'J')
+time.sleep(.5)
+if not dump(db).get('deploy_target'): send(db, ['tvdeploy'])
+aud_b1 = wait(lambda: dump(db), lambda s: s.get('deploy_target')!=0 and len(s.get('audience',[]))>=1, timeout=15, failure='deploy aimed sky TV failed')
+check('deploy action sets deployment target and creates audience screen', aud_b1['deploy_target']==1)
+scr1 = aud_b1['audience'][0]
+check('audience screen size is 4.0m x 2.5m', abs(scr1['width']-4.0)<1e-3 and abs(scr1['height']-2.5)<1e-3)
+check('screen bottom is 2.0m above ground', abs(scr1['bottom']-(scr1['ground']+2.0))<1e-3)
+behind_dist = (scr1['center'][0]-ax)*math.cos(yaw) + (scr1['center'][1]-ay)*math.sin(yaw)
+check('screen is anchored ~3.0m behind wearer deployment pose', abs(behind_dist+3.0)<0.35)
+time.sleep(1)
+aud_b1 = dump(db)
+check('audience screen with no consent shows static noise', not aud_b1['audience'][0]['fresh'] and not aud_b1['audience'][0]['drawn_live'] and aud_b1['audience'][0]['draws']>0)
+send(db, ['shot tv_audience_static'])
+
+# Wearer A consents to share POV
+key(da, 'F11')
+aud_b2 = wait(lambda: dump(db), lambda s: s.get('audience') and s['audience'][0]['fresh'] and s['audience'][0]['drawn_live'] and s['audience'][0]['upload_hash']!=0, timeout=15, failure='live feed did not reach audience screen')
+check('audience screen receives live source POV from consenting wearer', aud_b2['audience'][0]['fresh'] and aud_b2['audience'][0]['drawn_live'])
+send(db, ['shot tv_audience_live'])
+
+# Wearer moves around: screen stays stationary in-world at deployment pose while stream continues
+orig_center = list(aud_b2['audience'][0]['center'])
+orig_bottom = aud_b2['audience'][0]['bottom']
+send(da, ['hover %.5f %.5f %.5f %.6f .15' % (ax+3.5, ay+3.5, az, yaw+.8)])
+wait(A.camera, lambda c: abs(c[0][0]-(ax+3.5))<.3)
+time.sleep(1)
+aud_b3 = wait(lambda: dump(db), lambda s: s.get('audience') and s['audience'][0]['fresh'] and s['audience'][0]['drawn_live'])
+scr3 = aud_b3['audience'][0]
+check('audience screen stays stationary in-world at deployment pose while wearer moves',
+      abs(scr3['center'][0]-orig_center[0])<1e-3 and abs(scr3['center'][1]-orig_center[1])<1e-3 and abs(scr3['bottom']-orig_bottom)<1e-3)
+send(db, ['shot tv_audience_moved'])
+
+# Wearer revokes consent: audience screen wipes live display back to static noise
+key(da, 'F11')
+aud_b4 = wait(lambda: dump(db), lambda s: s.get('audience') and not s['audience'][0]['fresh'] and not s['audience'][0]['drawn_live'] and s['audience'][0]['upload_hash']==0, timeout=15, failure='revocation did not wipe audience screen')
+check('wearer revocation wipes audience screen back to static noise', True)
+send(db, ['shot tv_audience_revoked'])
+
+# Retract sky TV: key J again retracts the deployed screen
+key(db, 'J')
+aud_b5 = wait(lambda: dump(db), lambda s: s.get('deploy_target')==0 and len(s.get('audience',[]))==0, timeout=15, failure='retract sky TV failed')
+check('retracting sky TV clears screen from world', len(aud_b5.get('audience',[]))==0)
+send(db, ['shot tv_audience_retracted'])
+send(da, ['hover off']); send(db, ['hover off'])
+
 print('CPU encode/send maximum (us):', a6['capture_cpu_max_us'])
 print('ALL OK', flush=True)

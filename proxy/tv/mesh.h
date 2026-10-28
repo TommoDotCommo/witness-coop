@@ -50,4 +50,36 @@ inline Mesh mesh(unsigned chest,const Motion& motion) {
     box(.10f+motion.antenna*.10f,1.635f,-.38f,.018f,.018f,.018f,trim);
     return out;
 }
+inline Mesh audienceMesh(const Deployment& deployment) {
+    Mesh out; Placement p=placement(deployment);
+    auto point=[&](float x,float y,float z) {
+        std::array<float,3> q={p.center[0],p.center[1],p.center[2]};
+        for(unsigned i=0;i<3;++i) q[i]+=p.right[i]*x+p.forward[i]*z;
+        q[2]+=y; return q;
+    };
+    auto vertex=[&](const std::array<float,3>& q,const std::array<float,3>& n,const std::array<uint8_t,3>& color,bool textured,float u,float v) {
+        wm::Vertex vtx={}; for(unsigned i=0;i<3;++i) { vtx.pos[i]=q[i]; vtx.nrm[i]=n[i]; vtx.col[i]=color[i]; }
+        vtx.weights[0]=1; vtx.col[3]=textured?255:0; vtx.uv[0]=u; vtx.uv[1]=v; return vtx;
+    };
+    auto quad=[&](const std::array<std::array<float,3>,4>& q,const std::array<uint8_t,3>& color,bool screen) {
+        std::array<float,3> a={},b={},n={}; for(unsigned i=0;i<3;++i) { a[i]=q[1][i]-q[0][i]; b[i]=q[2][i]-q[0][i]; }
+        n[0]=a[1]*b[2]-a[2]*b[1]; n[1]=a[2]*b[0]-a[0]*b[2]; n[2]=a[0]*b[1]-a[1]*b[0];
+        float len=sqrtf(n[0]*n[0]+n[1]*n[1]+n[2]*n[2]); for(float& v:n) v/=std::max(len,1e-6f);
+        if(screen) for(unsigned i=0;i<3;++i) n[i]=p.forward[i];
+        const unsigned idx[]={0,1,2,0,2,3}; const float uv[4][2]={{0,1},{1,1},{1,0},{0,0}};
+        auto& verts=screen?out.screen:out.body; for(unsigned i:idx) verts.push_back(vertex(q[i],n,color,screen,uv[i][0],uv[i][1]));
+    };
+    auto box=[&](float x,float y,float z,float w,float h,float d,const std::array<uint8_t,3>& color) {
+        std::array<std::array<float,3>,8> q; for(unsigned i=0;i<8;++i) q[i]=point(x+(i&1?w:-w)/2,y+(i&2?h:-h)/2,z+(i&4?d:-d)/2);
+        const unsigned face[6][4]={{0,2,3,1},{4,5,7,6},{0,4,6,2},{1,3,7,5},{0,1,5,4},{2,6,7,3}};
+        for(auto& f:face) quad({q[f[0]],q[f[1]],q[f[2]],q[f[3]]},color,false);
+    };
+    const std::array<uint8_t,3> shell={54,63,61},trim={22,26,25},brass={164,130,69};
+    box(0,0,-.12f,4.34f,2.84f,.22f,shell);
+    box(0,1.335f,.035f,4.38f,.17f,.15f,trim); box(0,-1.335f,.035f,4.38f,.17f,.15f,trim);
+    box(-2.085f,0,.035f,.17f,2.54f,.15f,trim); box(2.085f,0,.035f,.17f,2.54f,.15f,trim);
+    box(0,1.43f,-.12f,1.1f,.06f,.25f,brass);
+    quad({point(-ScreenWidth/2,-ScreenHeight/2,.081f),point(ScreenWidth/2,-ScreenHeight/2,.081f),point(ScreenWidth/2,ScreenHeight/2,.081f),point(-ScreenWidth/2,ScreenHeight/2,.081f)},{255,255,255},true);
+    return out;
+}
 } // namespace wtv

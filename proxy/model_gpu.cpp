@@ -41,6 +41,9 @@ static ID3D11VertexShader *g_vs, *g_vsFull; static ID3D11PixelShader *g_psDepth,
 static ID3D11VertexShader* g_vsUnused; static ID3D11PixelShader* g_ps; static ID3D11InputLayout* g_layout;
 static ID3D11Buffer *g_cbFrame, *g_cbBones;
 static ID3D11Buffer* g_vbTv;
+static ID3D11Buffer* g_vbAudience;
+struct AudienceQuery { ID3D11Query* query=nullptr; bool pending=false; };
+static std::map<unsigned,AudienceQuery> g_audienceQueries;
 static ID3D11Query* g_tvQuery; static bool g_tvQueryPending;
 static wtv::Motion g_tvMotion; static uint64_t g_tvTime; static unsigned g_tvPlayer;
 static ID3D11SamplerState* g_samp;
@@ -400,6 +403,34 @@ bool ModelGpuDraw(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Cam& ca
         if(ModelGpuDrawLines(rtv,w,h,cam,item.data(),item.size(),1,true)) RadioRecord(playerId,radio.first.value,(unsigned)item.size(),wrist);
     }
     return true;
+}
+
+bool ModelGpuDrawAudience(ID3D11RenderTargetView* rtv,UINT w,UINT h,const wm::Cam& cam) {
+    if(!g_ready) return false; auto screens=TvAudienceScreens(); if(screens.empty()) return true; if(!EnsureDepth(w,h)) return false;
+    if(!g_vbAudience){ D3D11_BUFFER_DESC d={}; d.ByteWidth=1024*sizeof(wm::Vertex); d.Usage=D3D11_USAGE_DYNAMIC; d.BindFlags=D3D11_BIND_VERTEX_BUFFER; d.CPUAccessFlags=D3D11_CPU_ACCESS_WRITE; if(FAILED(g_dev->CreateBuffer(&d,nullptr,&g_vbAudience))) return false; }
+    FrameCB fc={}; wm::ViewProj(cam,fc.viewProj); for(unsigned i=0;i<4;++i) fc.model[i*5]=1;
+    float L[4]={.35f,.25f,.9f,.55f},T[4]={1,1,1,1}; memcpy(fc.light,L,16); memcpy(fc.tint,T,16); fc.screen[0]=float(w); fc.screen[1]=float(h);
+    const Cfg& cfg=GetCfg(); ID3D11ShaderResourceView* sceneSrv=nullptr; bool ms=false; bool haveScene=!cfg.noModelDepth && DepthScene(&sceneSrv,&ms);
+    fc.depthp[0]=haveScene?(ms?2.f:1.f):0; fc.depthp[1]=4; fc.depthp[2]=cfg.depthBias; fc.depthp[3]=cfg.depthNear;
+    std::vector<float> bones(wm::kMaxJoints*16,0); for(unsigned i=0;i<wm::kMaxJoints;++i) for(unsigned k=0;k<4;++k) bones[i*16+k*5]=1;
+    g_ctx->UpdateSubresource(g_cbBones,0,nullptr,bones.data(),0,0); g_ctx->UpdateSubresource(g_cbFrame,0,nullptr,&fc,0,0);
+    if(g_playerDraws.empty()) g_ctx->ClearDepthStencilView(g_dsv,D3D11_CLEAR_DEPTH,1.f,0);
+    D3D11_VIEWPORT vp={0,0,float(w),float(h),0,1}; g_ctx->OMSetRenderTargets(1,&rtv,g_dsv); g_ctx->RSSetViewports(1,&vp); g_ctx->RSSetState(g_rs);
+    g_ctx->OMSetBlendState(haveScene?g_blendAlpha:g_blend,nullptr,0xffffffff); g_ctx->OMSetDepthStencilState(g_dss,0);
+    UINT stride=sizeof(wm::Vertex),off=0; g_ctx->IASetInputLayout(g_layout); g_ctx->IASetVertexBuffers(0,1,&g_vbAudience,&stride,&off); g_ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    g_ctx->VSSetShader(g_vs,nullptr,0); g_ctx->PSSetShader(g_ps,nullptr,0); ID3D11Buffer* cbs[2]={g_cbFrame,g_cbBones}; g_ctx->VSSetConstantBuffers(0,2,cbs); g_ctx->PSSetConstantBuffers(0,1,cbs); g_ctx->PSSetSamplers(0,1,&g_samp);
+    if(haveScene) g_ctx->PSSetShaderResources(ms?1:2,1,&sceneSrv); g_ctx->GSSetShader(nullptr,nullptr,0); g_ctx->HSSetShader(nullptr,nullptr,0); g_ctx->DSSetShader(nullptr,nullptr,0);
+    for(const auto& screen:screens){
+        auto prop=wtv::audienceMesh(screen); bool live=false; ID3D11ShaderResourceView* picture=TvAudienceTexture(g_dev,g_ctx,screen.target,&live); if(!picture || prop.body.size()+prop.screen.size()>1024) continue;
+        D3D11_MAPPED_SUBRESOURCE mapped; if(FAILED(g_ctx->Map(g_vbAudience,0,D3D11_MAP_WRITE_DISCARD,0,&mapped))) continue;
+        memcpy(mapped.pData,prop.body.data(),prop.body.size()*sizeof(wm::Vertex)); memcpy((wm::Vertex*)mapped.pData+prop.body.size(),prop.screen.data(),prop.screen.size()*sizeof(wm::Vertex)); g_ctx->Unmap(g_vbAudience,0);
+        auto& query=g_audienceQueries[screen.from]; if(!query.query){ D3D11_QUERY_DESC d={D3D11_QUERY_OCCLUSION,0}; g_dev->CreateQuery(&d,&query.query); }
+        if(query.pending){ UINT64 n; if(g_ctx->GetData(query.query,&n,sizeof n,D3D11_ASYNC_GETDATA_DONOTFLUSH)==S_OK){ TvAudienceVisible(screen.from,unsigned(n)); query.pending=false; } }
+        g_ctx->Draw(UINT(prop.body.size()),0); fc.light[3]=1; g_ctx->UpdateSubresource(g_cbFrame,0,nullptr,&fc,0,0); g_ctx->PSSetShaderResources(0,1,&picture);
+        bool timed=query.query && !query.pending; if(timed) g_ctx->Begin(query.query); g_ctx->Draw(UINT(prop.screen.size()),UINT(prop.body.size())); if(timed){ g_ctx->End(query.query); query.pending=true; }
+        TvAudienceDrawn(screen.from,unsigned(prop.body.size()+prop.screen.size()),live); fc.light[3]=.55f; g_ctx->UpdateSubresource(g_cbFrame,0,nullptr,&fc,0,0);
+    }
+    ID3D11ShaderResourceView* z[3]={nullptr,nullptr,nullptr}; g_ctx->PSSetShaderResources(0,3,z); return true;
 }
 
 bool ModelGpuDrawLines(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Cam& cam, const LineVert* verts, size_t count, unsigned lineCount, bool prop, bool viewModel) {

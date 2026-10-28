@@ -24,6 +24,7 @@ void RequestShot(const char* name);
 void OverlayLogTags();
 #include "ui.h"
 void OverlayPovState(unsigned* aimed, int* rosterOpen);
+unsigned OverlayTvAim();
 extern HMODULE g_selfModule();
 
 static const uintptr_t kGlobals = 0x62D0A0, kDoorTypeInfo = 0x62DE70, kDoorOpenStart = 0x8E4B0;
@@ -73,6 +74,7 @@ void GameRunQueued() {
         if (batch[i].type == 10) { TvDump(); continue; }
         if (batch[i].type == 11) { TvEnable(batch[i].id != 0); continue; }
         if (batch[i].type == 12) { TvAllow(batch[i].id != 0); continue; }
+        if (batch[i].type == 13) { TvDeployAction(batch[i].id); continue; }
         if (batch[i].type == 9) { ModelGpuLogStats(); continue; }
         if (batch[i].type == 8) { ModelGpuDumpPlayers(); continue; }
         if (batch[i].type == 7) { auto social=SocialState(); CoopDumpStatus(ModelGpuStats().submittedPlayers, &social); continue; }
@@ -129,7 +131,7 @@ static DWORD WINAPI CmdThread(LPVOID) {
             else if (!strncmp(line, "mapgen ", 7)) MapGenCommand(line + 7);
             else if (!strncmp(line, "mapstat", 7)) DevMenuCommand("mapstat", 0);
             else if (sscanf(line, "key %15s %15s", a, b) == 2) {       // key W down|up
-                struct { const char* n; unsigned vk, sc; } keys[] = {{"W", 0x57, 0x11}, {"A", 0x41, 0x1E}, {"S", 0x53, 0x1F}, {"D", 0x44, 0x20}, {"SPACE", 0x20, 0x39}, {"ENTER", 0x0D, 0x1C}, {"ESC", 0x1B, 0x01}, {"F1", 0x70, 0x3B}, {"F2", 0x71, 0x3C}, {"F4", 0x73, 0x3E}, {"F6", 0x75, 0x40}, {"F7", 0x76, 0x41}, {"F8", 0x77, 0x42}, {"TAB", 0x09, 0x0F}, {"F9", 0x78, 0x43}, {"F5", 0x74, 0x3F}, {"V", 0x56, 0x2F}, {"LB", 0xDB, 0x1A}, {"RB", 0xDD, 0x1B}, {"BACK", 0x08, 0x0E}, {"UP", 0x26, 0x48}, {"DOWN", 0x28, 0x50}, {"F3", 0x72, 0x3D}, {"SHIFT", 0xA0, 0x2A}, {"T", 0x54, 0x14}, {"P", 0x50, 0x19}, {"G", 0x47, 0x22}, {"X", 0x58, 0x2D}, {"C", 0x43, 0x2E}, {"Z", 0x5A, 0x2C}, {"B", 0x42, 0x30}, {"N", 0x4E, 0x31}, {"H", 0x48, 0x23}, {"L", 0x4C, 0x26}, {"M", 0x4D, 0x32}, {"R", 0x52, 0x13}, {"O", 0x4F, 0x18}, {"F10", 0x79, 0x44}, {"F11", 0x7A, 0x57}, {"F12", 0x7B, 0x58}};
+                struct { const char* n; unsigned vk, sc; } keys[] = {{"W", 0x57, 0x11}, {"A", 0x41, 0x1E}, {"S", 0x53, 0x1F}, {"D", 0x44, 0x20}, {"SPACE", 0x20, 0x39}, {"ENTER", 0x0D, 0x1C}, {"ESC", 0x1B, 0x01}, {"F1", 0x70, 0x3B}, {"F2", 0x71, 0x3C}, {"F4", 0x73, 0x3E}, {"F6", 0x75, 0x40}, {"F7", 0x76, 0x41}, {"F8", 0x77, 0x42}, {"TAB", 0x09, 0x0F}, {"F9", 0x78, 0x43}, {"F5", 0x74, 0x3F}, {"V", 0x56, 0x2F}, {"LB", 0xDB, 0x1A}, {"RB", 0xDD, 0x1B}, {"BACK", 0x08, 0x0E}, {"UP", 0x26, 0x48}, {"DOWN", 0x28, 0x50}, {"F3", 0x72, 0x3D}, {"SHIFT", 0xA0, 0x2A}, {"T", 0x54, 0x14}, {"P", 0x50, 0x19}, {"G", 0x47, 0x22}, {"X", 0x58, 0x2D}, {"C", 0x43, 0x2E}, {"Z", 0x5A, 0x2C}, {"B", 0x42, 0x30}, {"N", 0x4E, 0x31}, {"H", 0x48, 0x23}, {"L", 0x4C, 0x26}, {"M", 0x4D, 0x32}, {"R", 0x52, 0x13}, {"O", 0x4F, 0x18}, {"J", 0x4A, 0x24}, {"F10", 0x79, 0x44}, {"F11", 0x7A, 0x57}, {"F12", 0x7B, 0x58}};
                 for (auto& k : keys) if (!_stricmp(a, k.n)) { Cmd c = {1, 0, 0, k.vk, k.sc, !_stricmp(b, "down"), 0, 0, 0}; EnterCriticalSection(&g_lock); if (g_n < 64) g_q[g_n++] = c; LeaveCriticalSection(&g_lock); }
             } else if (sscanf(line, "mouse %d %d", &dx, &dy) == 2) { Cmd c = {2, 0, 0, 0, 0, false, dx, dy, 0}; EnterCriticalSection(&g_lock); if (g_n < 64) g_q[g_n++] = c; LeaveCriticalSection(&g_lock); }
             else if (sscanf(line, "shot %15s", a) == 1) RequestShot(a);
@@ -137,6 +139,11 @@ static DWORD WINAPI CmdThread(LPVOID) {
             else if (!strncmp(line, "depthview ", 10)) ModelGpuDepthView(!strncmp(line + 10, "on", 2));
             else if (!strncmp(line, "fakepose off", 12)) CoopSetFakeRemote(false, nullptr, 0);
             else if (!strncmp(line, "fakepose ", 9)) { float f[4]; if (sscanf(line, "fakepose %f %f %f %f", &f[0], &f[1], &f[2], &f[3]) == 4) CoopSetFakeRemote(true, f, f[3]); }
+            else if (sscanf(line, "tvdeploy %u", &id) == 1 || !strncmp(line, "tvdeploy", 8) || !strncmp(line, "tvretract", 9)) {
+                if(!strncmp(line, "tvretract", 9)) id=0;
+                else if(sscanf(line, "tvdeploy %u", &id) != 1) id=OverlayTvAim();
+                EnterCriticalSection(&g_lock); if (g_n < 64) g_q[g_n++] = {13, id, 0, 0, 0, false, 0, 0, 0}; LeaveCriticalSection(&g_lock);
+            }
             else if (!strncmp(line, "tvstate", 7) || sscanf(line, "tv %u", &id) == 1 || sscanf(line, "tvconsent %u", &id) == 1) {
                 int type = !strncmp(line, "tvstate", 7) ? 10 : (!strncmp(line, "tvconsent", 9) ? 12 : 11);
                 EnterCriticalSection(&g_lock); if (g_n < 64) g_q[g_n++] = {type, id, 0, 0, 0, false, 0, 0, 0}; LeaveCriticalSection(&g_lock);

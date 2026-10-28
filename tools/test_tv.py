@@ -26,12 +26,18 @@ mutations = {
     'reserved-header': ('|| p[19] || mode>1', '|| mode>1'),
     'decoded-size': ('if(out.size()!=Pixels) return false;', 'if(false) return false;'),
     'rle-overflow': ('out.size()+data[i]>Pixels', 'false'),
+    'deploy-authority': ('#ifndef TV_MUT_AUTHORITY', '#if 0'),
+    'deploy-sequence': ('#ifndef TV_MUT_SEQUENCE', '#if 0'),
+    'deploy-cap': ('#ifndef TV_MUT_DEPLOY_CAP', '#if 0'),
+    'deploy-disconnect': ('#ifndef TV_MUT_DISCONNECT', '#if 0'),
+    'deploy-placement': ('#ifdef TV_MUT_PLACEMENT', '#if 1'),
 }
 mesh_mutations = {
     'screen-behind-case': ('1.21f-sh,-.481f', '1.21f-sh,-.40f'),
     'screen-uv': ('{1,1},{1,0}', '{0,1},{0,0}'),
     'screen-power': ('.015f+.985f*motion.power', '1.f'),
     'chest-weight': ('p.joints[0]=uint8_t(chest)', 'p.joints[0]=0'),
+    'audience-screen-facing': ('for(unsigned i=0;i<3;++i) n[i]=p.forward[i];', 'for(unsigned i=0;i<3;++i) n[i]=-p.forward[i];'),
 }
 def run(name, text, geometry):
     with tempfile.TemporaryDirectory(prefix='witness-tv-') as folder:

@@ -14,6 +14,7 @@ bool ModelGpuReady();
 // What the social layer says about a player: the emote it is playing (1..24, 0 none) for emoteT seconds.
 struct ModelExtra { witness::Appearance appearance; int emote = 0; float emoteT = 0; bool proximitySpeaking = false; bool radioEquipped = false, radioTx = false; };
 bool ModelGpuDraw(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Cam& cam, bool valid, unsigned seq, const float pos[3], float yaw, unsigned playerId = 0, bool first = true, const ModelExtra* extra = nullptr);
+bool ModelGpuDrawAudience(ID3D11RenderTargetView* rtv,UINT w,UINT h,const wm::Cam& cam);
 // Coloured ribbons in world space (the other players' drawn lines), depth-tested against the game's scene. Triangle list; each vertex: position, rgba.
 struct LineVert { float p[3]; float c[4]; };
 struct LineDrawStats { unsigned lines, verts, visiblePixels, frames; };

@@ -216,6 +216,7 @@ static void DrawMarkers(IDXGISwapChain* sc) {
             ModelGpuDraw(rtv, td.Width, td.Height, wc, true, rp.seq, rp.pos, rp.ang[0], rp.id, first, &ex); first = false;
         }
         if (first) { float p[3] = {}; ModelGpuDraw(rtv, td.Width, td.Height, wc, false, 0, p, 0); }
+        ModelGpuDrawAudience(rtv,td.Width,td.Height,wc);
         std::vector<LineVert> lv; unsigned nl = 0; if (!GetCfg().noLineDraw) nl = BuildLineVerts(wc.pos, lv);
         nl += SocialInkVerts(wc.pos, lv, 60000);
         ModelGpuDrawLines(rtv, td.Width, td.Height, wc, lv.data(), lv.size(), nl);
@@ -292,8 +293,9 @@ static void InstallDevWndProc(HWND w) {
 // Name tags: every other player's name and ping over their head, in their colour, visible through walls (so a friend can always be found).
 static volatile LONG g_povBox, g_povPic;      // frames the other player's screen was drawn, and of those the ones with a real picture in it (the test reads them)
 void OverlayPovDrawn(unsigned* box, unsigned* pic) { *box = (unsigned)g_povBox; *pic = (unsigned)g_povPic; }
-static std::atomic<unsigned> g_aimed{0};          // the player the crosshair is on (0: none), set while drawing, read by the key handler
+static std::atomic<unsigned> g_aimed{0},g_tvAimed{0};          // the player the crosshair is on (0: none), set while drawing, read by the key handler
 static std::atomic<bool> g_rosterOpen{false}; static std::atomic<int> g_rosterSel{0};
+unsigned OverlayTvAim(){ return g_tvAimed.load(); }
 bool PovRosterOpen() { return g_rosterOpen.load(); }
 void OverlayPovState(unsigned* aimed, int* rosterOpen) { *aimed = g_aimed.load(); *rosterOpen = g_rosterOpen.load() ? 1 : 0; }
 static std::vector<unsigned> PlayerIds() { std::vector<unsigned> ids; for (const auto& rp : CoopGetRemotes()) if (rp.valid && rp.ageMs < 5000) ids.push_back(rp.id); std::sort(ids.begin(), ids.end()); return ids; }
@@ -350,15 +352,22 @@ static void DrawNameTags(float W, float H) {
     if (TagsWanted() && !GamePaused() && !IsBadReadPtr(cam, 12) && !IsBadReadPtr(ang, 8)) for (const auto& rp : CoopGetRemotes()) if (rp.ageMs < 2000) {
         float body[3] = {rp.pos[0], rp.pos[1], rp.pos[2] - 0.55f}, nx, ny, d[3] = {rp.pos[0] - cam[0], rp.pos[1] - cam[1], rp.pos[2] - cam[2]};
         float dist = sqrtf(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
-        if (dist < 60.0f && Project(cam, ang[0], ang[1], body, W / H, &nx, &ny) && fabsf(nx) < 0.07f * 9.0f / std::max(dist, 9.0f) + 0.035f && fabsf(ny) < 0.30f && dist < best) { best = dist; aimed = rp.id; aimedName = rp.name; aimedPing = rp.pingMs; }
+        if (dist < 60.0f && Project(cam, ang[0], ang[1], body, W / H, &nx, &ny) && fabsf(nx) < 0.07f * 9.0f / std::max(dist, 9.0f) + 0.035f && fabsf(ny) < 0.35f * 9.0f / std::max(dist, 9.0f) + 0.10f && dist < best) { best = dist; aimed = rp.id; aimedName = rp.name; aimedPing = rp.pingMs; }
     }
-    g_aimed = g_rosterOpen.load() ? 0 : aimed;
+    g_aimed = g_rosterOpen.load() ? 0 : aimed; g_tvAimed = g_rosterOpen.load() || best>12 ? 0 : aimed;
     VideoUpdatePlayers(PlayerIds());
     if (aimed && !g_rosterOpen.load()) {
         float col[3]; PlayerColor(aimed, col); bool watching = VideoWatching() == aimed; float k = std::max(1.0f, H / 1080.0f);
         char b[96]; snprintf(b, sizeof b, watching ? "[V] stop watching %s" : "[V] watch %s's view", aimedName.empty() ? "player" : aimedName.c_str()); (void)aimedPing;
         float tw = UiTextWidth(b, k), th = UiLineHeight(k), x = W / 2 - tw / 2, y = H / 2 + 70 * k;
         UiRect(x - 8 * k, y - 4 * k, tw + 16 * k, th + 8 * k, Rgba(0, 0, 0, 0.6f)); UiText(x, y, b, Rgba(col[0], col[1], col[2], 1), k);
+    }
+    unsigned deployed=TvDeploymentTarget(),tvTarget=deployed?deployed:g_tvAimed.load();
+    if(tvTarget && !g_rosterOpen.load()){
+        std::string name="player"; for(const auto& r:CoopGetRemotes()) if(r.id==tvTarget && r.name[0]) name=r.name;
+        char b[160]; snprintf(b,sizeof b,deployed?"[%s] retract %s's sky TV":"[%s] deploy %s's sky TV",guide::KeyName(GetCfg().keyTvDeploy).c_str(),name.c_str());
+        float k=std::max(1.f,H/1080.f),tw=UiTextWidth(b,k),th=UiLineHeight(k),x=W/2-tw/2,y=H/2+100*k;
+        UiRect(x-8*k,y-4*k,tw+16*k,th+8*k,Rgba(0,0,0,.6f)); UiText(x,y,b,Rgba(1,.75f,.3f,1),k);
     }
     if (!aimed && !g_rosterOpen.load() && !VideoWatching() && !GamePaused()) {      // a quiet reminder that the other players' screens can be watched
         std::vector<unsigned> ids = PlayerIds(); if (!ids.empty()) {
@@ -403,7 +412,7 @@ unsigned OverlayFrames() { return (unsigned)g_frames; }
 static void DrawDevMenu(IDXGISwapChain* sc) {
     if (!g_uiReady) return;
     DevMenuTick(); SaveMetaTick();
-    if (!GuideOpen() && !DevMenuOpen() && !DevMenuToastWanted() && !VideoViewMode() && !TagsWanted() && !RaceActive() && !g_rosterOpen.load() && !TvConsent() && !TvEnabled()) return;
+    if (!GuideOpen() && !DevMenuOpen() && !DevMenuToastWanted() && !VideoViewMode() && !TagsWanted() && !RaceActive() && !g_rosterOpen.load() && !TvConsent() && !TvEnabled() && !TvDeploymentTarget()) return;
     ID3D11Texture2D* bb = nullptr; if (FAILED(sc->GetBuffer(0, __uuidof(ID3D11Texture2D), (void**)&bb))) return;
     D3D11_TEXTURE2D_DESC td; bb->GetDesc(&td); ID3D11RenderTargetView* rtv = nullptr;
     if (SUCCEEDED(g_dev->CreateRenderTargetView(bb, nullptr, &rtv))) { UiBegin((float)td.Width, (float)td.Height); DrawNameTags((float)td.Width, (float)td.Height); { uintptr_t b0 = (uintptr_t)GetModuleHandleA(nullptr); const float* c0 = (const float*)(b0 + kCamPos); const float* a0 = (const float*)(b0 + kCamAng); if (!IsBadReadPtr(c0, 12) && !IsBadReadPtr(a0, 8)) SocialFrame((float)td.Width, (float)td.Height, c0, a0); } RaceDraw((float)td.Width, (float)td.Height); if (DevMenuOpen()) DevMenuDraw((float)td.Width, (float)td.Height); else DevMenuToast((float)td.Width, (float)td.Height);

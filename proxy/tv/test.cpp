@@ -14,8 +14,9 @@ using namespace wtv;
 bool deliver(Receiver& r,const std::vector<Bytes>& f,uint64_t now){ bool complete=false; for(auto& p:f) complete=r.packet(p.data(),p.size(),now)||complete; return complete; }
 int main(){
     Sender s; Control c{2,1,7,1}; CHECK(!s.consent); CHECK(!s.request(c,100)); CHECK(s.subs.empty());
-    s.allow(true); CHECK(s.request(c,100)); CHECK(s.due(100)); CHECK(!s.due(101)); CHECK(s.due(300));
-    CHECK(s.request({3,1,8,1},100)); CHECK(!s.request({4,1,9,1},100)); CHECK(s.subs.size()==2);
+    s.allow(true); for(unsigned i=0;i<MaxSubscriptions;++i) CHECK(s.request({2+i%(MaxPlayers-1),1,100+i/(MaxPlayers-1),1},100));
+    CHECK(s.subs.size()==MaxSubscriptions); CHECK(!s.request({4,1,999,1},100)); CHECK(s.due(100)); CHECK(!s.due(101)); CHECK(s.due(300));
+    s.request({2,1,100,0},100); CHECK(s.subs.size()==MaxSubscriptions-1); CHECK(s.subs.count(subKey(2,101)));
     s.expire(1601); CHECK(s.subs.empty()); CHECK(!s.due(1700));
     CHECK(s.request(c,1800)); s.allow(false); CHECK(s.subs.empty()); CHECK(!s.due(2000));
     auto ctl=control(c); Control parsed; CHECK(parseControl(ctl.data(),ctl.size(),parsed)); CHECK(parsed.ticket==7);
@@ -85,5 +86,25 @@ int main(){
     CHECK(minx==0 && maxx==1 && miny==0 && maxy==1);
     for(auto v:model.body) for(float p:v.pos) CHECK(std::isfinite(p));
     auto off=mesh(3,Motion{}); float open=fabsf(model.screen[2].pos[1]-model.screen[0].pos[1]),closed=fabsf(off.screen[2].pos[1]-off.screen[0].pos[1]); CHECK(closed<open*.02f);
-    puts("TV: consent, wire, caps, expiry, loss/reorder/replay, 500 sessions, 100000 malformed packets, spring and mesh passed");
+    Deployments owner; owner.me=1; float eye[3]={10,20,5}; CHECK(owner.deploy(2,eye,.4f,100)); CHECK(!owner.deploy(1,eye,0,100));
+    Deployment deployed=owner.local(); auto wire=deploymentPacket(deployed); Deployment decoded; CHECK(parseDeployment(wire.data(),wire.size(),decoded)); CHECK(decoded.target==2 && decoded.active);
+    Deployments viewer; viewer.me=3; CHECK(viewer.packet(wire.data(),wire.size(),110)); CHECK(!viewer.packet(wire.data(),wire.size(),120));
+    Deployment spoof=deployed; spoof.from=viewer.me; auto spoofWire=deploymentPacket(spoof); CHECK(!viewer.packet(spoofWire.data(),spoofWire.size(),125));
+    CHECK(!viewer.screens.empty()); viewer.tick(200,{}); CHECK(viewer.screens.count(1)); viewer.tick(3201,{}); CHECK(!viewer.screens.count(1));
+    CHECK(viewer.packet(wire.data(),wire.size(),3300)); CHECK(!viewer.packet(deploymentPacket(owner.local()).data(),40,3400));
+    Deployments dcOwner; dcOwner.me=1; CHECK(dcOwner.deploy(2,eye,.4f,100));
+    dcOwner.tick(200,{}); CHECK(dcOwner.local().active); dcOwner.tick(3300,{}); CHECK(!dcOwner.local().active);
+    Deployments bounded; bounded.me=1; for(unsigned i=0;i<MaxPlayers;++i){ Deployment d=deployed; d.from=2+i; d.target=30; d.sequence=1; auto b=deploymentPacket(d); CHECK(bounded.packet(b.data(),b.size(),100)); }
+    Deployment excess=deployed; excess.from=40; excess.target=30; excess.sequence=1; auto excessWire=deploymentPacket(excess); CHECK(!bounded.packet(excessWire.data(),excessWire.size(),100));
+    Deployment bad=deployed; bad.eye[0]=std::numeric_limits<float>::quiet_NaN(); auto badWire=deploymentPacket(bad); CHECK(!parseDeployment(badWire.data(),badWire.size(),decoded));
+    auto place=placement(deployed); float behind=(place.center[0]-eye[0])*place.forward[0]+(place.center[1]-eye[1])*place.forward[1];
+    CHECK(fabsf(behind+ScreenBehind)<1e-4f); CHECK(fabsf(place.ground-(eye[2]-CameraEye))<1e-5f); CHECK(fabsf(place.bottom-place.ground-ScreenBottom)<1e-5f);
+    auto giant=audienceMesh(deployed); CHECK(giant.screen.size()==6 && giant.body.size()+giant.screen.size()<=1024);
+    float minz=1e9f,maxz=-1e9f,minu=1,maxu=-1,minv=1,maxv=-1;
+    for(const auto& v:giant.screen){ CHECK(v.col[3]==255 && v.weights[0]==1); CHECK(fabsf(v.nrm[0]*place.forward[0]+v.nrm[1]*place.forward[1]+v.nrm[2]*place.forward[2]-1)<1e-5f);
+        minz=std::min(minz,v.pos[2]); maxz=std::max(maxz,v.pos[2]); minu=std::min(minu,v.uv[0]); maxu=std::max(maxu,v.uv[0]); minv=std::min(minv,v.uv[1]); maxv=std::max(maxv,v.uv[1]); }
+    CHECK(fabsf(minz-place.bottom)<1e-4f && fabsf(maxz-minz-ScreenHeight)<1e-4f); CHECK(minu==0 && maxu==1 && minv==0 && maxv==1);
+    for(const auto& v:giant.body) for(float x:v.pos) CHECK(std::isfinite(x));
+    CHECK(owner.retract(3500)); auto offWire=deploymentPacket(owner.local()); CHECK(viewer.packet(offWire.data(),offWire.size(),3500)); CHECK(!viewer.screens[1].active);
+    puts("TV: consent, shared subscriptions, deployment authority/placement, wire, caps, expiry, loss/replay, fuzz, spring and meshes passed");
 }
