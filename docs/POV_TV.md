@@ -105,9 +105,9 @@ Privacy is enforced through strict opt-in controls:
    - The viewer toggle shows the prop. Without sender consent, its screen shows static and no POV snapshots are sent.
 2. **On-Screen HUD Notice**:
    - When consent is active, a prominent indicator appears on screen:
-     `SHARING MY TV POV [F11 STOP]  [F10 back TV]`
+     `Sharing my TV view   F11 stop   F10 back TV`
    - When viewer mode is active without consent:
-     `BACK TV ON [F10 OFF]  [F11 share my POV]`
+     `Back TV on   F10 off   F11 share my view`
 3. **Instantaneous Revocation**:
    - Pressing F11 or disabling consent immediately sends `kind=2` (denied/revoked) packets to all subscribers.
    - Senders immediately drop subscriptions and cease capture (`TvWanted() == false`).
