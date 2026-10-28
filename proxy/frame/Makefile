@@ -13,3 +13,15 @@ test: $(BUILD)/frame-test $(addprefix $(BUILD)/mutant-,$(MUTANTS))
 clean:
 	rm -rf $(BUILD)
 .PHONY: test clean
+
+$(BUILD)/ribbon-test: ribbon_test.cpp ribbon.h panelframe.h
+	mkdir -p $(BUILD)
+	g++ -std=c++17 -O2 -o $@ ribbon_test.cpp
+$(BUILD)/ribbon-mutant-%: ribbon_test.cpp ribbon.h panelframe.h
+	mkdir -p $(BUILD)
+	g++ -std=c++17 -O2 -DWR_MUT_$* -o $@ ribbon_test.cpp
+test-ribbon: $(BUILD)/ribbon-test $(BUILD)/ribbon-mutant-VIEW_FACING $(BUILD)/ribbon-mutant-EXTEND
+	$(BUILD)/ribbon-test
+	@ulimit -c 0; for m in VIEW_FACING EXTEND; do if $(BUILD)/ribbon-mutant-$$m >/dev/null 2>&1; then echo "MUTANT $$m SURVIVED"; exit 1; else echo "mutant $$m killed"; fi; done
+test: test-ribbon
+.PHONY: test-ribbon

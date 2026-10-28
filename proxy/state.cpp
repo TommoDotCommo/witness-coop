@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <cstring>
 #include <map>
+#include <cmath>
 #include <vector>
 #include "coop.h"
 #include "frame/panelframe.h"
@@ -83,7 +84,7 @@ public:
             witness::LineOut l; l.panel = id; l.final = PanelSolved(e);
             auto point = [&](uint32_t node, const float* world) {
                 float local[3]; wframe::ToLocal(fr.pos, q, world, local); witness::LinePoint p; p.node = uint16_t(node);
-                for (int k = 0; k < 3; ++k) { float mm = local[k] * 1000.0f; p.d[k] = int16_t(mm > 32000 ? 32000 : mm < -32000 ? -32000 : mm); }
+                for (int k = 0; k < 3; ++k) { float mm = local[k] * 1000.0f; p.d[k] = int16_t(std::lround(mm > 32000 ? 32000 : mm < -32000 ? -32000 : mm)); }
                 l.pts.push_back(p);
             };
             bool bad = false;

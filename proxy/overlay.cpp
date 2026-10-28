@@ -32,6 +32,7 @@ static const float kVFovDeg = 60.0f;                 // calibrated: horizontal ~
 #include "../common/guide.h"
 #include "race_game.h"
 #include "frame/panelframe.h"
+#include "frame/ribbon.h"
 #include "devmenu.h"
 #include "video.h"
 #include "tv.h"
@@ -157,7 +158,7 @@ static bool InitResources(IDXGISwapChain* sc) {
     return g_vs && g_ps && g_cb && g_blend && g_rs && g_ds;
 }
 
-// The other players' lines: each is a list of points in millimetres from its panel's position; drawn as ribbons of the owner's colour, 2.4 cm wide, turned to face the camera.
+// The other players' lines: each is a list of points in millimetres from its panel's position; drawn as 1.2 cm ribbons in the panel surface, centered on the native trace without endpoint extensions.
 static unsigned BuildLineVerts(const float cam[3], std::vector<LineVert>& out) {
     unsigned lines = 0;
     for (const auto& r : CoopGetRemoteLines()) {
@@ -170,12 +171,8 @@ static unsigned BuildLineVerts(const float cam[3], std::vector<LineVert>& out) {
             wframe::ToWorld(pp, pq, la, a); wframe::ToWorld(pp, pq, lb, b);
             float d[3] = {b[0] - a[0], b[1] - a[1], b[2] - a[2]}, len = sqrtf(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
             if (len < 1e-5f || len > 3.0f) continue;
-            float v[3] = {(a[0] + b[0]) * 0.5f - cam[0], (a[1] + b[1]) * 0.5f - cam[1], (a[2] + b[2]) * 0.5f - cam[2]};
-            float s[3] = {d[1] * v[2] - d[2] * v[1], d[2] * v[0] - d[0] * v[2], d[0] * v[1] - d[1] * v[0]}, sl = sqrtf(s[0] * s[0] + s[1] * s[1] + s[2] * s[2]);
-            if (sl < 1e-9f) continue;
-            float hw = 0.012f / sl, o[3] = {s[0] * hw, s[1] * hw, s[2] * hw};
-            float ext = 0.012f / len; float a2[3] = {a[0] - d[0] * ext, a[1] - d[1] * ext, a[2] - d[2] * ext}, b2[3] = {b[0] + d[0] * ext, b[1] + d[1] * ext, b[2] + d[2] * ext};     // square ends so corners join
-            float q[4][3] = {{a2[0] - o[0], a2[1] - o[1], a2[2] - o[2]}, {a2[0] + o[0], a2[1] + o[1], a2[2] + o[2]}, {b2[0] - o[0], b2[1] - o[1], b2[2] - o[2]}, {b2[0] + o[0], b2[1] + o[1], b2[2] + o[2]}};
+            float q[4][3];
+            if (!wframe::Ribbon(a, b, pq, 0.006f, q)) continue;
             static const int idx[6] = {0, 1, 2, 1, 3, 2};
             for (int k : idx) { LineVert lv; memcpy(lv.p, q[k], 12); lv.c[0] = col[0]; lv.c[1] = col[1]; lv.c[2] = col[2]; lv.c[3] = 1; out.push_back(lv); }
             any = true;
