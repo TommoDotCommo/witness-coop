@@ -1,6 +1,6 @@
 # Game-free (T0) test of the see-through geometry. `make test` builds the clean test and one mutant per protection; every mutant must FAIL.
 BUILD = build
-MUTANTS = FAR NOCONE BEHIND NOMARGIN NONEAR NOSMOOTH
+MUTANTS = BROAD_NEAR PANEL NOVERTICAL NOFADE NOSMOOTH
 $(BUILD)/ghost-test: ghost_test.cpp ghost.h
 	mkdir -p $(BUILD)
 	g++ -std=c++17 -O2 -Wall -Wextra -o $@ ghost_test.cpp

@@ -9,16 +9,17 @@
 #include <cstring>
 #include <vector>
 #include "ui.h"
+#include "ui/text.h"
 #include "config.h"
 
 void Log(const char* msg);
 extern HMODULE g_selfModule();
 
 namespace {
-// Each glyph has a cell kCellW x kCellH on screen, and a taller slot in the atlas (kPitch rows): brackets, parentheses, the underscore and commas reach below their cell, and in
-// a tight atlas that ink landed in the top rows of the glyph underneath ('[' above 't', ']' above 'v'): little bits of pixels over those letters.
-const int kAtlasW = 256, kAtlasH = 128, kCellW = 10, kCellH = 20, kExtra = 3, kPitchWide = 24, kCols = 25, kFirst = 32, kLast = 126;
-int g_pitch = kPitchWide; bool g_tight;      // g_tight: bug twin (ui_tight_atlas=1), the old layout
+// Proportional glyphs have individual advances and padded, clipped slots. The tight config remains as a regression mutant.
+const int kAtlasW = 512, kAtlasH = 192, kLineHeight = 24, kPitchWide = 28, kFirst = 32, kLast = 126;
+struct Glyph { float advance, x, y, w, h; } g_glyph[kLast - kFirst + 1];
+int g_pitch = kPitchWide; bool g_tight;
 const char* kHlsl = R"(
 cbuffer C : register(b0) { float2 scr; float2 pad; };
 Texture2D tex : register(t0); SamplerState smp : register(s0);
@@ -48,28 +49,38 @@ void Quad(float x0, float y0, float x1, float y1, float u0, float v0, float u1, 
     g_v.push_back({x1, y0, u1, v0, c}); g_v.push_back({x1, y1, u1, v1, c}); g_v.push_back({x0, y1, u0, v1, c});
 }
 const float kWhiteU = (kAtlasW - 3) / (float)kAtlasW, kWhiteV = (kAtlasH - 3) / (float)kAtlasH;
-int Pitch() { return g_tight ? kCellH : kPitchWide; }
+int Pitch() { return g_tight ? 20 : kPitchWide; }
 }  // namespace
 
 bool UiInit(ID3D11Device* dev, ID3D11DeviceContext* ctx) {
     g_dev = dev; g_ctx = ctx;
-    // glyph atlas: printable ASCII in a fixed-pitch font, white on black, plus a solid 4x4 block in the corner
+    // Segoe UI is a Windows system font: proportional, legible and requires no bundled asset.
     HDC dc = CreateCompatibleDC(nullptr);
     BITMAPINFO bi = {}; bi.bmiHeader = {sizeof(BITMAPINFOHEADER), kAtlasW, -kAtlasH, 1, 32, BI_RGB, 0, 0, 0, 0, 0};
     void* bits = nullptr; HBITMAP bmp = CreateDIBSection(dc, &bi, DIB_RGB_COLORS, &bits, nullptr, 0);
     if (!dc || !bmp || !bits) { Log("ui: atlas bitmap failed"); return false; }
     SelectObject(dc, bmp);
-    HFONT font = CreateFontA(-17, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, ANSI_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, ANTIALIASED_QUALITY, FIXED_PITCH | FF_MODERN, "Consolas");
+    HFONT font = CreateFontA(-20, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, ANSI_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, ANTIALIASED_QUALITY, DEFAULT_PITCH | FF_SWISS, "Segoe UI");
     SelectObject(dc, font); SetBkMode(dc, TRANSPARENT); SetTextColor(dc, RGB(255, 255, 255));
     memset(bits, 0, kAtlasW * kAtlasH * 4);
     g_tight = GetCfg().uiTightAtlas;
+    int penX = 1, penY = 1; float minAdv = 1000, maxAdv = 0;
     for (int ch = kFirst; ch <= kLast; ch++) {
-        int i = ch - kFirst, cx = (i % kCols) * kCellW, cy = (i / kCols) * Pitch(); char s[2] = {(char)ch, 0};
-        HRGN clip = g_tight ? nullptr : CreateRectRgn(cx, cy, cx + kCellW, cy + Pitch()); if (clip) SelectClipRgn(dc, clip);      // a glyph may not draw into its neighbours' slots
-        TextOutA(dc, cx, cy + 1, s, 1);
-        if (clip) { SelectClipRgn(dc, nullptr); DeleteObject(clip); }
+        char s[2] = {(char)ch, 0}; SIZE size = {}; GetTextExtentPoint32A(dc, s, 1, &size);
+        int cw = std::max(1, size.cx) + 4;
+        if (penX + cw + 1 > kAtlasW - 4) { penX = 1; penY += Pitch(); }
+        if (penY + Pitch() >= kAtlasH - 4) { Log("ui: glyph atlas overflow"); DeleteObject(font); DeleteObject(bmp); DeleteDC(dc); return false; }
+        Glyph& g = g_glyph[ch - kFirst]; g = {(float)std::max(1, size.cx), (float)penX, (float)penY, (float)cw, (float)(Pitch() - 2)};
+        minAdv = std::min(minAdv, g.advance); maxAdv = std::max(maxAdv, g.advance);
+        if (ch != ' ') {
+            HRGN clip = g_tight ? nullptr : CreateRectRgn(penX, penY, penX + cw, penY + Pitch()); if (clip) SelectClipRgn(dc, clip);
+            TextOutA(dc, penX + 2, penY + 1, s, 1);
+            if (clip) { SelectClipRgn(dc, nullptr); DeleteObject(clip); }
+        }
+        char m[120]; snprintf(m, sizeof m, "uiglyph: %d %d %d %d %d %.3f", ch, penX, penY, cw, Pitch() - 2, g.advance); Log(m);
+        penX += cw + 1;
     }
-    { char m[120]; snprintf(m, sizeof m, "ui: atlas %dx%d cell %dx%d pitch %d cols %d first %d", kAtlasW, kAtlasH, kCellW, kCellH, Pitch(), kCols, kFirst); Log(m); }
+    { char m[160]; snprintf(m, sizeof m, "ui: atlas %dx%d line %d pitch %d glyphs %d advances %.1f..%.1f", kAtlasW, kAtlasH, kLineHeight, Pitch(), kLast - kFirst + 1, minAdv, maxAdv); Log(m); }
     GdiFlush();
     std::vector<uint8_t> alpha(kAtlasW * kAtlasH);
     for (int i = 0; i < kAtlasW * kAtlasH; i++) alpha[i] = ((uint8_t*)bits)[i * 4 + 1];
@@ -139,22 +150,25 @@ void UiTri(float cx, float cy, float s, float a, UiColor c) {
     auto pt = [&](float ang, float r) { return Vtx{cx + cosf(ang) * r, cy + sinf(ang) * r, kWhiteU, kWhiteV, col}; };
     g_v.push_back(pt(a, s)); g_v.push_back(pt(a + 2.5f, s * 0.8f)); g_v.push_back(pt(a - 2.5f, s * 0.8f));
 }
-float UiLineHeight(float sc) { return kCellH * sc; }
-float UiTextWidth(const char* s, float sc) { float w = 0, m = 0; for (; *s; s++) { if (*s == '\n') { m = w > m ? w : m; w = 0; } else w += kCellW * sc; } return w > m ? w : m; }
-void UiText(float x, float y, const char* s, UiColor c, float sc) {
-    uint32_t col = Pack(c); float px = x;
-    for (; *s; s++) {
-        if (*s == '\n') { px = x; y += kCellH * sc; continue; }
+float UiLineHeight(float sc) { return kLineHeight * sc; }
+float UiTextWidth(const char* s, float sc) {
+    float w = 0, widest = 0;
+    for (; *s; ++s) {
+        if (*s == '\n') { widest = std::max(widest, w); w = 0; continue; }
         int ch = (unsigned char)*s; if (ch < kFirst || ch > kLast) ch = '?';
-        if (ch != ' ') {
-            int i = ch - kFirst, cx = (i % kCols) * kCellW, cy = (i / kCols) * Pitch();
-            if (g_tight) { Quad(px, y, px + kCellW * sc, y + kCellH * sc, cx / (float)kAtlasW, cy / (float)kAtlasH, (cx + kCellW) / (float)kAtlasW, (cy + kCellH) / (float)kAtlasH, col); }
-            else {      // the quad also covers the few rows below the cell where a descender reaches; the texture is read half a texel inside the slot so a neighbour never bleeds in
-                float h = (float)(kCellH + kExtra); const float e = 0.5f;
-                Quad(px, y, px + kCellW * sc, y + h * sc, (cx + e) / (float)kAtlasW, (cy + e) / (float)kAtlasH, (cx + kCellW - e) / (float)kAtlasW, (cy + h - e) / (float)kAtlasH, col);
-            }
-        }
-        px += kCellW * sc;
+        w += g_glyph[ch - kFirst].advance * sc;
+    }
+    return std::max(widest, w);
+}
+void UiText(float x, float y, const char* s, UiColor c, float sc) {
+    uint32_t col = Pack(c); float px = x; const float e = 0.5f;
+    for (; *s; s++) {
+        if (*s == '\n') { px = x; y += kLineHeight * sc; continue; }
+        int ch = (unsigned char)*s; if (ch < kFirst || ch > kLast) ch = '?';
+        const Glyph& g = g_glyph[ch - kFirst];
+        if (ch != ' ') Quad(px - 2 * sc, y, px + (g.w - 2) * sc, y + g.h * sc,
+            (g.x + e) / kAtlasW, (g.y + e) / kAtlasH, (g.x + g.w - e) / kAtlasW, (g.y + g.h - e) / kAtlasH, col);
+        px += g.advance * sc;
     }
 }
 

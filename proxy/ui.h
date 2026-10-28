@@ -3,9 +3,7 @@
 // batched into one dynamic vertex buffer and drawn over the game's back buffer at the end of the frame.
 #include <cstdint>
 #include <d3d11.h>
-
-struct UiColor { float r, g, b, a; };
-inline UiColor Rgba(float r, float g, float b, float a = 1) { return {r, g, b, a}; }
+#include "ui/theme.h"
 
 bool UiInit(ID3D11Device* dev, ID3D11DeviceContext* ctx);                       // false: the menu stays off
 void UiBegin(float width, float height);                                         // start a frame, in back-buffer pixels

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""T2 scenario for see-through players (proxy/ghost/ghost.h, tools/win/wghost.py): B looks at a puzzle panel with A standing between B's camera and the panel; B must draw A as a ghost,
-solid again when A steps out of the line, a ghost again when A steps back, and faded when A stands in B's face.
-Mutant: see-through switched off on B (see_through=0): A stays solid in the way of the puzzle.
+"""T2 scenario for body-overlap transparency (proxy/ghost/ghost.h, tools/win/wghost.py): A stays solid between B and a puzzle,
+at shoulder-to-shoulder distance and on another level, fading only when A's body intersects B's viewer capsule.
+Mutant: see-through switched off on B (see_through=0): A stays solid during actual body overlap.
 usage: qa_ghost.py (called by tools/qa.sh ghost)"""
 import os, subprocess, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))

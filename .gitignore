@@ -22,3 +22,6 @@ models/preview/
 
 proxy/radio/build/
 common/build/
+
+proxy/ghost/build/
+proxy/ui/build/
