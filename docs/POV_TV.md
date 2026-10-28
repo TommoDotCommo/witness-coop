@@ -165,9 +165,21 @@ Two UDP datagram formats are used:
 - **Keyboard Shortcuts**:
   - `F10`: Toggle Back TV viewer on/off.
   - `F11`: Toggle POV streaming consent on/off.
+  - `J` (`key_tv_deploy`): Aim at a nearby player's backpack to deploy a stationary
+    4 m × 2.5 m audience screen, 3 m behind their deployment pose. Press again to retract.
+    The bottom is 2 m above the deployment ground plane. Source consent still applies.
+  - `K` (`key_tv_seat`): Aim at one of the three wooden audience stools within 2.5 m
+    to sit facing the screen. Press again, move, jump, or press Escape to stand.
+    Retraction/disconnection also releases the seat. Standing restores the entry pose.
+    Seats share the screen's ground plane; use a flat, open deployment area.
+    A held Sit emote and lowered eye position synchronize the seated avatar without
+    lowering its model origin a second time (the gesture already lowers the pelvis). Occupied stools are excluded once the
+    other player's seated pose arrives; simultaneous seating is best effort.
 - **In-Process Commands (`witness_cmd.txt`)**:
   - `tv 0|1`: Enable/disable viewer.
   - `tvconsent 0|1`: Enable/disable consent.
+  - `tvdeploy [player]`, `tvretract`: Deploy the aimed/named source, or retract.
+  - `tvseat`, `tvstand`: Use the aimed stool, or exit the current seat.
   - `tvstate`: Dump metadata to `witness_tv.json`.
 
 ---
@@ -178,8 +190,10 @@ Two UDP datagram formats are used:
 - `python3 tools/test_tv.py` (and `make -C proxy/core test`):
   - Fuzzes packet reassembly with 100,000 malformed packets.
   - Tests 500 sessions under packet loss, jitter, reordering, and retransmissions.
-  - 17 wire/protocol mutations verified (all rejected).
-  - 4 geometry/shader mutations verified (all rejected).
+  - Wire, consent, same-sequence heartbeat/replay, local-only audience capture,
+    ownership destruction, bounded diagnostics, seating placement and mesh mutants.
+  - A 14-second heartbeat simulation checks every 100 ms without accepting flicker.
+  - Fake COM references exercise texture/SRV destruction through 1,000 map erasures.
   - Numerical spring-damper stability and NaN-safety verified.
 
 ### Live Two-Client Verification (T2)
@@ -192,3 +206,13 @@ Two UDP datagram formats are used:
   - Turns Alpha's camera; verifies texture update on Beta's TV.
   - Revokes consent on Alpha; verifies instantaneous screen blanking on Beta.
   - Includes mutant `no_partner_video=1` which fails the live assertion.
+
+### Live Three-Client Audience Verification
+
+`python3 tools/qa_tv3.py` uses three isolated clients through the resource provider.
+It checks uninterrupted deployment/render/live pictures for 14 seconds, visible
+screen pixels on both viewers, exact source frame hashes, late join, stationary
+placement while the source moves, consent revoke/re-enable, aimed seating and
+synchronized eye/Sit pose, movement and retraction exits, source changes, a local
+source audience with zero network subscriptions, and resource cleanup. Captures
+and process bridge snapshots are saved under ignored `local/tv3-evidence/`.

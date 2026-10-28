@@ -4,10 +4,11 @@ Tests deployment by peer B of wearer A's backpack TV, observed simultaneously by
 including independent audience subscriptions, static on no consent, live stream on consent,
 stationary in-world placement while wearer moves, revocation wiping to static, and retraction.
 """
-import hashlib, json, math, os, shutil, subprocess, sys, time
+import hashlib, json, math, os, shlex, shutil, struct, subprocess, sys, time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+EVIDENCE = ROOT / 'local/tv3-evidence'
 TOOLS = ROOT / 'tools'
 sys.path.insert(0, str(TOOLS))
 from group_config import configs
@@ -64,6 +65,14 @@ class Client:
             time.sleep(.05)
         return json.loads(dest.read_text())
 
+    def models(self):
+        dest=self.directory/'witness_models.json'; dest.unlink(missing_ok=True)
+        self.send('modelstate'); deadline=time.monotonic()+15
+        while not dest.exists():
+            if time.monotonic()>deadline: raise RuntimeError('model bridge timeout')
+            time.sleep(.05)
+        return json.loads(dest.read_text())
+
     def camera(self):
         txt = probe('wcam.py', self.pid)
         for line in txt.splitlines():
@@ -114,18 +123,20 @@ def prepare(c, config):
 def main():
     assert WITNESS_RESOURCES, 'WITNESS_RESOURCES not configured'
     count = 3
+    EVIDENCE.mkdir(parents=True, exist_ok=True)
     foreground = probe('wfocus.py', 'save')
     slots_env = os.environ.get('WITNESS_SLOTS', '')
     need_acquire = len(slots_env.split(',')) < count if slots_env else True
-    if need_acquire:
-        command([WITNESS_RESOURCES, 'acquire', '--slots', str(count), '--ttl', '3600', '--wait', '0'])
-        command([WITNESS_RESOURCES, 'provision', 'witness'])
-        env_text = command([WITNESS_RESOURCES, 'env', 'witness'])
-        for line in env_text.splitlines():
-            if '=' in line:
-                k, v = line.split('=', 1)
-                os.environ[k.strip()] = v.strip()
     try:
+        if need_acquire:
+            command([WITNESS_RESOURCES, 'acquire', '--slots', str(count), '--ttl', '3600', '--wait', '0'])
+            command([WITNESS_RESOURCES, 'provision', 'witness'])
+            env_text = command([WITNESS_RESOURCES, 'env', 'witness'])
+            for line in env_text.splitlines():
+                if '=' in line:
+                    assignment=line.removeprefix('export ')
+                    k,v=assignment.split('=',1)
+                    os.environ[k.strip()]=shlex.split(v)[0]
         slots = os.environ['WITNESS_SLOTS'].split(',')
         clients = [Client(i) for i in range(1, count + 1)]
         roster = [dict(id=c.id, host='127.0.0.1', port=c.port) for c in clients]
@@ -186,6 +197,67 @@ def main():
             wait(live_streams, 'both audience clients B and C receive live source POV independently', 20)
             c2.send('shot tv3_live_b'); c3.send('shot tv3_live_c')
 
+            # Watch from the viewing side and aim up at the raised screen.
+            center=c2.tv()['audience'][0]['center']
+            for c,side,front in ((c2,2.5,5.0),(c3,-2.0,6.0)):
+                x=center[0]+math.cos(yaw)*front+math.sin(yaw)*side
+                y=center[1]+math.sin(yaw)*front-math.cos(yaw)*side
+                look=math.atan2(center[1]-y,center[0]-x)
+                pitch=math.atan2(center[2]-az,math.hypot(center[0]-x,center[1]-y))
+                c.send(f'hover {x} {y} {az} {look} {pitch}')
+            wait(lambda:all(c.tv()['audience'][0]['visible_pixels']>100 for c in (c2,c3)),'both viewers render visible world screen pixels',20)
+            for c,name in ((c2,'tv3_visible_b'),(c3,'tv3_visible_c')):
+                shot=c.directory/'shots'/f'{name}.bmp'; shot.unlink(missing_ok=True)
+                c.send(f'shot {name}')
+                wait(lambda:shot.exists(),f'client {c.id} screen capture completed',10)
+                bmp=shot.read_bytes(); offset=struct.unpack_from('<I',bmp,10)[0]
+                width,height=struct.unpack_from('<ii',bmp,18)
+                assert struct.unpack_from('<H',bmp,28)[0]==32
+                # Both cameras aim at screen centre. A central 64px square is
+                # inside its surface; a zero avatar palette makes this all black.
+                channels=[]
+                for y in range(abs(height)//2-32,abs(height)//2+32):
+                    row=y if height<0 else abs(height)-1-y
+                    for x in range(width//2-32,width//2+32):
+                        at=offset+(row*width+x)*4; channels.extend(bmp[at:at+3])
+                mean=sum(channels)/len(channels)
+                (EVIDENCE/f'visible-pixels-{c.id}.json').write_text(json.dumps(dict(mean_rgb=mean)))
+                assert mean>10, f'client {c.id} visible live screen rendered black: {mean}'
+                print(f'PASS client {c.id} actual captured live screen brightness {mean:.2f}',flush=True)
+
+            # No wait/retry here: a disappearing/reappearing screen is a failure.
+            # This spans more than four deployment expiry windows.
+            baseline = {c.id:c.tv()['audience'][0] for c in clients}
+            deadline=time.monotonic()+14
+            samples=0
+            with (EVIDENCE/'persistent.jsonl').open('w') as evidence:
+                while time.monotonic()<deadline:
+                    for c in clients:
+                        state=c.tv(); evidence.write(json.dumps(dict(client=c.id,time=time.monotonic(),state=state))+'\n'); evidence.flush()
+                        assert len(state['audience'])==1, f'client {c.id} screen disappeared'
+                        screen=state['audience'][0]
+                        assert screen['sequence']==baseline[c.id]['sequence'] and screen['fresh'] and screen['drawn_live'], f'client {c.id} lost persistent feed: {state}'
+                        assert screen['draws']>=baseline[c.id]['draws']
+                        if c.id!=1:
+                            assert screen['visible_pixels']>100, f'client {c.id} screen invisible'
+                            source=c1.tv()
+                            assert dict(source['sent_hashes']).get(screen['uploaded_sequence'])==screen['upload_hash'], 'world texture differs from source snapshot'
+                    samples+=1; time.sleep(.10)
+            assert samples>=12
+            for c in clients:
+                current=c.tv()['audience'][0]
+                assert current['draws']>baseline[c.id]['draws'] and current['decoded']>baseline[c.id]['decoded']
+            print(f'PASS uninterrupted 14-second deployment/render/live feed on all 3 clients ({samples} samples)',flush=True)
+
+            # Restart the third client: retained owner heartbeat must hydrate late join.
+            try:
+                c3.start(foreground,slots[2])
+            except RuntimeError as error:
+                print(f'RETRY late-join launch precondition: {error}',flush=True)
+                c3.start(foreground,slots[2])
+            wait(lambda:c3.net()['ready'],'late join stable-world gate',180)
+            wait(lambda:len(c3.tv()['audience'])==1 and c3.tv()['audience'][0]['fresh'],'late join receives deployed live screen',30)
+
             # Client 1 moves around: screen stays stationary in-world
             orig_center = list(c2.tv()['audience'][0]['center'])
             c1.send(f'hover {ax+4.0:.5f} {ay+4.0:.5f} {az:.5f} {yaw+0.8:.6f} 0')
@@ -206,16 +278,89 @@ def main():
             wait(streams_revoked, 'consent revocation wipes audience screen back to static on all clients', 20)
             c2.send('shot tv3_rev_b'); c3.send('shot tv3_rev_c')
 
+            c1.send('tvconsent 1')
+            wait(live_streams,'consent re-enable restores both feeds',20)
+
+            # Aim at the middle stool, use the real input binding, and inspect the
+            # synchronized Sit emote and eye position from the other process.
+            center=c2.tv()['audience'][0]['center']; ground=c2.tv()['audience'][0]['ground']
+            stool=[center[0]+math.cos(yaw)*4,center[1]+math.sin(yaw)*4,ground]
+            entry=[stool[0]+math.cos(yaw),stool[1]+math.sin(yaw),ground+1.71]
+            face=yaw+math.pi; pitch=math.atan2(.5-1.71,1)
+            c3.send(f'hover {entry[0]} {entry[1]} {entry[2]} {face} {pitch}')
+            wait(lambda:abs(c3.camera()[0][0]-entry[0])<.1,'audience reached stool interaction',20)
+            c3.send('hover off')
+            c3.send('key K down\nkey K up')
+            wait(lambda:c3.tv()['seated'],'aimed K sits in audience stool',15)
+            def remote_seated():
+                poses=c2.net()['remotes']
+                return any(p['id']==3 and p['emote']==14 and abs(p['pos'][2]-(ground+1.31))<.15 for p in poses)
+            wait(remote_seated,'seated eye position and Sit pose synchronize to peer',15)
+            time.sleep(2)
+            model=c2.models(); (EVIDENCE/'seated-model.json').write_text(json.dumps(model,indent=2))
+            avatar=next(p for p in model['players'] if p['id']==3)
+            assert avatar['emote']==14 and avatar['gesture']>.9 and abs(avatar['model_ground']-ground)<.1, f'seated avatar origin/pose incorrect: {avatar}'
+            assert c3.tv()['audience'][0]['visible_pixels']>100,'seated player can actually see the screen'
+            c2.send('shot tv3_seated_peer'); c3.send('shot tv3_seated_view')
+            assert c3.tv()['seated']
+            c3.send('key K down\nkey K up')
+            wait(lambda:not c3.tv()['seated'],'K stands without immediately sitting again',15)
+            c3.send('key K down\nkey K up')
+            wait(lambda:c3.tv()['seated'],'K sits again from restored entry pose',15)
+            c3.send('key W down\nkey W up')
+            wait(lambda:not c3.tv()['seated'],'movement exits the stool',15)
+            assert abs(c3.camera()[0][2]-entry[2])<.25,'stand restores standing camera eye'
+
+            # Sit again, then remove the supporting screen: this must stand the
+            # viewer safely at the entry pose rather than leave a held camera.
+            c3.send(f'hover {entry[0]} {entry[1]} {entry[2]} {face} {pitch}')
+            wait(lambda:abs(c3.camera()[0][0]-entry[0])<.1,'returned to stool entry',20)
+            c3.send('hover off\ntvseat')
+            wait(lambda:c3.tv()['seated'],'aimed command sits again',15)
+
             # Client 2 retracts screen
             c2.send('tvretract')
             def screens_cleared():
                 return len(c2.tv().get('audience', [])) == 0 and len(c3.tv().get('audience', [])) == 0
             wait(screens_cleared, 'retraction clears audience screen from all clients in world', 20)
+            wait(lambda:not c3.tv()['seated'],'retraction safely stands seated viewer',15)
             c2.send('shot tv3_ret_b'); c3.send('shot tv3_ret_c')
+            wait(lambda:all(c.tv()['audience_streams']==0 and c.tv()['audience_resources']==0 and c.tv()['audience_stats']==0 for c in clients),'all audience streams, GPU references and stats cleaned after retraction',20)
 
-            for c in clients: c.send('hover off')
+            # A new deployment can choose another consenting source. Old source
+            # textures and tickets must be discarded, not shown on the new screen.
+            c3.send('tvconsent 1'); c2.send('tvdeploy 3')
+            wait(lambda:all(c.tv()['audience'] and c.tv()['audience'][0]['source']==3 and c.tv()['audience'][0]['fresh'] for c in clients),'redeployment switches all clients to new source',20)
+            assert all(c.tv()['audience_streams']==1 and c.tv()['audience_resources']==1 and c.tv()['audience_stats']==1 for c in clients)
+            c2.send('tvretract')
+            wait(lambda:all(c.tv()['audience_streams']==0 and c.tv()['audience_stats']==0 for c in clients),'source change resources cleared on retraction',20)
+
+            # Source-only audience: after remote viewers disconnect their leases
+            # expire before the last deployment heartbeat expires. Local capture
+            # must continue in that interval without a network subscriber.
+            c2.send('tvdeploy 1')
+            wait(lambda:len(c1.tv()['audience'])==1 and c1.tv()['audience'][0]['fresh'],'source sees own audience feed',20)
+            for c in (c2,c3):
+                command(['taskkill.exe','/PID',c.pid,'/F']); c.pid=None
+            def self_only():
+                state=c1.tv()
+                (EVIDENCE/'source-only.json').write_text(json.dumps(state,indent=2))
+                return state['subscribers']==0 and state['audience'] and state['audience'][0]['fresh'] and state['audience'][0]['drawn_live']
+            wait(self_only,'source-only audience remains live with zero remote subscriptions',5)
+            wait(lambda:c1.tv()['audience_streams']==0 and c1.tv()['audience_stats']==0,'disconnected deployment owner expires and frees source resources',15)
+
+
+            for c in clients:
+                if c.pid: c.send('hover off')
             print('ALL OK: 3-client live TV audience POV test passed', flush=True)
         finally:
+            for c in clients:
+                dest=EVIDENCE/f'client{c.id}'; dest.mkdir(exist_ok=True)
+                for name in ('witness_tv.json','witness_net.json','witness_models.json','witness_proxy.log'):
+                    source=c.directory/name
+                    if source.exists(): shutil.copy2(source,dest/name)
+                for source in (c.directory/'shots').glob('tv3_*.bmp'):
+                    shutil.copy2(source,dest/source.name)
             assert real_saves() == before, 'real saves changed'
             print('PASS real saves byte-identical', flush=True)
     finally:

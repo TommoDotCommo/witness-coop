@@ -49,7 +49,7 @@ static wtv::Motion g_tvMotion; static uint64_t g_tvTime; static unsigned g_tvPla
 static ID3D11SamplerState* g_samp;
 static ID3D11RasterizerState* g_rs; static ID3D11DepthStencilState* g_dss; static ID3D11BlendState *g_blend, *g_blendAlpha;
 static ID3D11Texture2D* g_depthTex; static ID3D11DepthStencilView* g_dsv; static UINT g_depthW, g_depthH;
-struct PlayerDraw { int emote=0; float gesture=0, talk=0; float hand[3]={}; witness::Appearance appearance; unsigned id, seq; float pos[3], speed; int clip; float yaw; };
+struct PlayerDraw { float ground=0; int emote=0; float gesture=0, talk=0; float hand[3]={}; witness::Appearance appearance; unsigned id, seq; float pos[3], speed; int clip; float yaw; };
 static std::vector<PlayerDraw> g_playerDraws;
 static ID3D11VertexShader* g_vsLine; static ID3D11PixelShader* g_psLine; static ID3D11InputLayout* g_layoutLine; static ID3D11Buffer* g_vbLine; static ID3D11Query* g_qLine; static bool g_qLinePending; static LineDrawStats g_lineStats;
 static const size_t kLineVerts = 65536;
@@ -293,7 +293,8 @@ bool ModelGpuDraw(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Cam& ca
     float dt=motion.at ? float(now-motion.at)/1000.f : 0; motion.at=now;
     int id=extra && !cfg.noEmoteAnim ? extra->emote : 0; float t=extra ? extra->emoteT : 0;
     if (!witness::ValidEmote(id)) id=0;
-    motion.state.Step(id,t,g_avatar->speed(),extra && extra->proximitySpeaking,dt);
+    if(extra && extra->seated) wtv::seatedGesture(motion.state,t,extra->proximitySpeaking,dt);
+    else motion.state.Step(id,t,g_avatar->speed(),extra && extra->proximitySpeaking,dt);
     std::vector<float> bones(wm::kMaxJoints * 16, 0.0f);
     static std::map<unsigned, std::pair<wradio::Raise, uint64_t>> radioPose;
     auto& radio = radioPose[playerId]; uint64_t radioNow=GetTickCount64();
@@ -304,6 +305,7 @@ bool ModelGpuDraw(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Cam& ca
     for (unsigned group = 0; group <= witness::kAppearanceFeatures; ++group)
         witness::AppearanceTint(extra ? extra->appearance : witness::Appearance{}, group, fc.appearance[group]);
     float feet[3] = {g_avatar->pos()[0], g_avatar->pos()[1], g_avatar->pos()[2] - wm::kCameraEye};
+    if(extra && extra->seated) feet[2]=wtv::seatModelGround(g_avatar->pos()[2]);
     wm::ModelMatrix(feet, g_avatar->yaw(), g_L->fit, g_L->yaw, fc.model);
 
     g_stats.emote = extra ? extra->emote : 0; g_stats.lift = g_stats.lean = g_stats.roll = g_stats.dyaw = 0;
@@ -346,7 +348,7 @@ bool ModelGpuDraw(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Cam& ca
     if (g_queryPending) { UINT64 n; if (g_ctx->GetData(g_query, &n, sizeof n, D3D11_ASYNC_GETDATA_DONOTFLUSH) == S_OK) { g_stats.visiblePixels = (unsigned)n; g_queryPending = false; } }
     bool timed = g_query && !g_queryPending; if (timed) g_ctx->Begin(g_query);
     g_ctx->DrawIndexed((UINT)g_L->model.idx.size(), 0, 0); ++g_stats.submittedPlayers;
-    PlayerDraw record = {}; record.appearance = extra ? witness::ClampAppearance(extra->appearance) : witness::Appearance{}; record.emote=motion.state.emote; record.talk=motion.state.talk;
+    PlayerDraw record = {}; record.ground=feet[2]; record.appearance = extra ? witness::ClampAppearance(extra->appearance) : witness::Appearance{}; record.emote=motion.state.emote; record.talk=motion.state.talk;
     for(const auto& j:motion.state.pose) record.gesture=std::max(record.gesture,j.weight);
     // Actual right wrist position from the submitted skin palette, model space.
     for(size_t j=0;j<g_L->model.joints.size();++j) if(g_L->model.nodes[g_L->model.joints[j]].name=="hand.R") {
@@ -406,11 +408,15 @@ bool ModelGpuDraw(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Cam& ca
 }
 
 bool ModelGpuDrawAudience(ID3D11RenderTargetView* rtv,UINT w,UINT h,const wm::Cam& cam) {
-    if(!g_ready) return false; auto screens=TvAudienceScreens(); if(screens.empty()) return true; if(!EnsureDepth(w,h)) return false;
+    if(!g_ready) return false; auto screens=TvAudienceScreens();
+    for(auto it=g_audienceQueries.begin();it!=g_audienceQueries.end();) {
+        if(std::none_of(screens.begin(),screens.end(),[&](const auto& d){return d.from==it->first;})) {
+            if(it->second.query) it->second.query->Release(); it=g_audienceQueries.erase(it);
+        } else ++it;
+    }
+    if(screens.empty()) return true; if(!EnsureDepth(w,h)) return false;
     if(!g_vbAudience){ D3D11_BUFFER_DESC d={}; d.ByteWidth=1024*sizeof(wm::Vertex); d.Usage=D3D11_USAGE_DYNAMIC; d.BindFlags=D3D11_BIND_VERTEX_BUFFER; d.CPUAccessFlags=D3D11_CPU_ACCESS_WRITE; if(FAILED(g_dev->CreateBuffer(&d,nullptr,&g_vbAudience))) return false; }
-    FrameCB fc={}; wm::ViewProj(cam,fc.viewProj); for(unsigned i=0;i<4;++i) fc.model[i*5]=1;
-    // World props use no avatar palette; zero would multiply every sampled pixel black.
-    for(auto& color:fc.appearance) color[0]=color[1]=color[2]=1;
+    FrameCB fc={}; wtv::audiencePalette(fc.appearance); wm::ViewProj(cam,fc.viewProj); for(unsigned i=0;i<4;++i) fc.model[i*5]=1;
     float L[4]={.35f,.25f,.9f,.55f},T[4]={1,1,1,1}; memcpy(fc.light,L,16); memcpy(fc.tint,T,16); fc.screen[0]=float(w); fc.screen[1]=float(h);
     const Cfg& cfg=GetCfg(); ID3D11ShaderResourceView* sceneSrv=nullptr; bool ms=false; bool haveScene=!cfg.noModelDepth && DepthScene(&sceneSrv,&ms);
     fc.depthp[0]=haveScene?(ms?2.f:1.f):0; fc.depthp[1]=4; fc.depthp[2]=cfg.depthBias; fc.depthp[3]=cfg.depthNear;
@@ -479,6 +485,7 @@ void ModelGpuDumpPlayers() {
     fprintf(f, "{\"frame\":%u,\"players\":[", g_stats.frames); bool comma = false;
     for (const auto& p : g_playerDraws) {
         fprintf(f, "%s{\"id\":%u,\"seq\":%u,\"pos\":[%.5f,%.5f,%.5f],\"speed\":%.5f,\"clip\":%d,\"yaw\":%.4f,\"model\":\"%s\"", comma ? "," : "", p.id, p.seq, p.pos[0], p.pos[1], p.pos[2], p.speed, p.clip, p.yaw, "adventurer");
+        fprintf(f,",\"model_ground\":%.5f",p.ground);
         fprintf(f, ",\"emote\":%d,\"gesture\":%.5f,\"talk\":%.5f,\"hand\":[%.5f,%.5f,%.5f]",p.emote,p.gesture,p.talk,p.hand[0],p.hand[1],p.hand[2]);
         fprintf(f, ",\"appearance\":["); for (size_t i = 0; i < witness::kAppearanceFeatures; ++i) fprintf(f, "%s%u", i ? "," : "", unsigned(p.appearance.choice[i])); fprintf(f, "]}"); comma = true;
     }

@@ -488,9 +488,12 @@ static void Init() { if (!g_csInit) { InitializeCriticalSection(&g_cs); g_csInit
 void DevMenuToggle() { Init(); g_open = !g_open; g_ldown = g_rdown = false; if (g_open) g_built = false; }      // rebuild on open: entities may have been recreated by a load
 void DevMenuSetPage(int p) { Init(); g_page = p; if (p == 2) SaveListRefresh(); if (!g_open) { g_open = true; g_built = false; } }
 #include "povui.h"
+#include "social.h"
 void PanelBoostToggle();      // input.cpp
 void PanelBoostMsg(bool on, float gain) { Msg("panel mouse boost %s (x%.1f, F3 toggles)", on ? "ON" : "off", gain); }
 bool DevMenuKey(unsigned vk, bool down) {
+    if(down && (vk=='W' || vk=='A' || vk=='S' || vk=='D' || vk==VK_SPACE || vk==VK_ESCAPE)) TvSeatExit();
+    if(down && vk==GetCfg().keyTvSeat && !DevMenuOpen() && !GamePaused() && !SocialCapturing()) { TvSeatRequest(); return true; }
     Init(); if (down && vk == guide::TvView) { TvEnable(!TvEnabled()); return true; }
     if (down && vk == guide::TvConsent) { TvAllow(!TvConsent()); return true; }
     if (down && vk == GetCfg().keyTvDeploy) { TvDeployAction(OverlayTvAim()); return true; }

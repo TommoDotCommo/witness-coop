@@ -45,9 +45,9 @@ public:
         if(c.kind!=1) return false;
         subs[key]={c.from,c.ticket,now}; return true;
     }
-    bool due(uint64_t now) {
+    bool due(uint64_t now,bool localAudience=false) {
         expire(now);
-        if(!consent || subs.empty() || (sent_ && now-last_<Period)) return false;
+        if(!consent || (subs.empty() && !localAudience) || (sent_ && now-last_<Period)) return false;
         last_=now; sent_=true; return true;
     }
 private: uint64_t last_=0; bool sent_=false;
@@ -164,7 +164,16 @@ public:
 #endif
         auto it=screens.find(d.from);
 #ifndef TV_MUT_SEQUENCE
-        if(it!=screens.end() && int32_t(d.sequence-it->second.sequence)<=0) return false;
+        if(it!=screens.end()) {
+            int32_t order=int32_t(d.sequence-it->second.sequence);
+            if(order<0) return false;
+            if(order==0) {
+                // A heartbeat is byte-identical state, including inactive tombstones.
+                // Comparing the wire form avoids padding and float equality ambiguities.
+                if(deploymentPacket(d)!=deploymentPacket(it->second)) return false;
+                it->second.at=now; return true;
+            }
+        }
 #endif
 #ifndef TV_MUT_DEPLOY_CAP
         if(it==screens.end() && screens.size()>=MaxPlayers) return false;
@@ -202,6 +211,33 @@ inline Placement placement(const Deployment& d) {
 #endif
     for(unsigned i=0;i<2;++i) p.center[i]=d.eye[i]-p.forward[i]*ScreenBehind;
     p.center[2]=p.bottom+ScreenHeight*.5f; return p;
+}
+// Three low stools on the viewing side. The Sit gesture bends the legs;
+// its eye drops 0.40 m. The existing gesture already lowers the pelvis, so
+// reconstruct the standing ground from the seated eye rather than dropping twice.
+constexpr unsigned SeatCount=3;
+constexpr float SeatHeight=.50f,SeatEye=CameraEye-.40f;
+template<class Controller> inline void seatedGesture(Controller& c,float t,bool speaking,float dt) {
+    // A prior approach/teleport may have canceled this non-mobile emote.
+    // An actively held stool is authoritative until its explicit exit.
+    c.cancelled=0; c.Step(14,std::max(t,1.f),0,speaking,dt);
+}
+inline float seatModelGround(float eyeZ) { return eyeZ-SeatEye; }
+inline std::array<float,3> seatPoint(const Deployment& d,unsigned index) {
+    auto p=placement(d); float side=(float(index)-1.f)*1.35f;
+    return {p.center[0]+p.forward[0]*4+p.right[0]*side,
+            p.center[1]+p.forward[1]*4+p.right[1]*side,p.ground};
+}
+inline int aimSeat(const Deployment& d,const float eye[3],float yaw,float pitch) {
+    if(!d.active) return -1;
+    float dir[3]={cosf(pitch)*cosf(yaw),cosf(pitch)*sinf(yaw),sinf(pitch)};
+    for(unsigned i=0;i<SeatCount;++i) {
+        auto p=seatPoint(d,i); p[2]+=SeatHeight;
+        float v[3]={p[0]-eye[0],p[1]-eye[1],p[2]-eye[2]},along=0,dist=0;
+        for(unsigned j=0;j<3;++j) { along+=v[j]*dir[j]; dist+=v[j]*v[j]; }
+        if(along>0 && dist<2.5f*2.5f && dist-along*along<.32f*.32f && fabsf(eye[2]-p[2]-(CameraEye-SeatHeight))<.5f) return int(i);
+    }
+    return -1;
 }
 struct Motion {
     float sway=0,velocity=0,antenna=0,power=0;

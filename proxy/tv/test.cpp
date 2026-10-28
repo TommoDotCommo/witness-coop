@@ -1,5 +1,8 @@
 #include "tv/tv.h"
 #include "tv/mesh.h"
+#include "tv/resources.h"
+#include <type_traits>
+#include "model/gestures.h"
 #include <cstdio>
 #include <limits>
 #include <cstdlib>
@@ -88,10 +91,37 @@ int main(){
     auto off=mesh(3,Motion{}); float open=fabsf(model.screen[2].pos[1]-model.screen[0].pos[1]),closed=fabsf(off.screen[2].pos[1]-off.screen[0].pos[1]); CHECK(closed<open*.02f);
     Deployments owner; owner.me=1; float eye[3]={10,20,5}; CHECK(owner.deploy(2,eye,.4f,100)); CHECK(!owner.deploy(1,eye,0,100));
     Deployment deployed=owner.local(); auto wire=deploymentPacket(deployed); Deployment decoded; CHECK(parseDeployment(wire.data(),wire.size(),decoded)); CHECK(decoded.target==2 && decoded.active);
-    Deployments viewer; viewer.me=3; CHECK(viewer.packet(wire.data(),wire.size(),110)); CHECK(!viewer.packet(wire.data(),wire.size(),120));
+    Deployments viewer; viewer.me=3; CHECK(viewer.packet(wire.data(),wire.size(),110)); CHECK(viewer.packet(wire.data(),wire.size(),120));
     Deployment spoof=deployed; spoof.from=viewer.me; auto spoofWire=deploymentPacket(spoof); CHECK(!viewer.packet(spoofWire.data(),spoofWire.size(),125));
     CHECK(!viewer.screens.empty()); viewer.tick(200,{}); CHECK(viewer.screens.count(1)); viewer.tick(3201,{}); CHECK(!viewer.screens.count(1));
-    CHECK(viewer.packet(wire.data(),wire.size(),3300)); CHECK(!viewer.packet(deploymentPacket(owner.local()).data(),40,3400));
+    CHECK(viewer.packet(wire.data(),wire.size(),3300)); CHECK(viewer.packet(deploymentPacket(owner.local()).data(),40,3400));
+    // Continuous identical 500 ms heartbeats must never flicker over >12 seconds.
+    Deployments persistent; persistent.me=3;
+    for(uint64_t now=100;now<14100;now+=100) {
+        if((now-100)%500==0) CHECK(persistent.packet(wire.data(),wire.size(),now));
+        persistent.tick(now,{1,2}); CHECK(persistent.screens.count(1)); CHECK(persistent.screens[1].active);
+    }
+    auto last=persistent.screens[1].at;
+    Deployment changed=deployed; changed.eye[0]+=1; auto cw=deploymentPacket(changed);
+    CHECK(!persistent.packet(cw.data(),cw.size(),last+100)); CHECK(persistent.screens[1].at==last);
+    changed=deployed; changed.target=4; cw=deploymentPacket(changed);
+    CHECK(!persistent.packet(cw.data(),cw.size(),last+200)); CHECK(persistent.screens[1].at==last);
+    changed=deployed; changed.sequence+=1; cw=deploymentPacket(changed); CHECK(persistent.packet(cw.data(),cw.size(),last+300));
+    CHECK(!persistent.packet(wire.data(),wire.size(),last+400)); CHECK(persistent.screens[1].at==last+300);
+    persistent.tick(last+300+2*Lease+1,{1,2}); CHECK(persistent.screens.empty());
+    Sender self; self.allow(true); CHECK(self.due(100,true)); CHECK(!self.due(101,true)); CHECK(self.due(300,true));
+    self.allow(false); CHECK(!self.due(500,true)); self.allow(true); CHECK(self.due(700,true)); CHECK(!self.due(900));
+    // Fake COM references exercise the very same noncopyable ownership used in the runtime map.
+    struct Ref { int* live; void Release(){ --*live; } };
+    using Resources=StreamResources<Ref,Ref>; static_assert(!std::is_copy_constructible<Resources>::value);
+    int refs=0; Ref tex{&refs},view{&refs};
+    std::map<unsigned,Resources> resources; std::map<unsigned,int> stats;
+    for(unsigned cycle=1;cycle<=1000;++cycle) {
+        auto& r=resources[cycle]; r.texture=&tex; r.srv=&view; refs+=2;
+        stats[cycle]=1; resources.erase(cycle); CHECK(refs==0);
+        pruneStats(stats,persistent.screens); CHECK(stats.empty());
+    }
+    { Resources partial; partial.texture=&tex; ++refs; } CHECK(refs==0);
     Deployments dcOwner; dcOwner.me=1; CHECK(dcOwner.deploy(2,eye,.4f,100));
     dcOwner.tick(200,{}); CHECK(dcOwner.local().active); dcOwner.tick(3300,{}); CHECK(!dcOwner.local().active);
     Deployments bounded; bounded.me=1; for(unsigned i=0;i<MaxPlayers;++i){ Deployment d=deployed; d.from=2+i; d.target=30; d.sequence=1; auto b=deploymentPacket(d); CHECK(bounded.packet(b.data(),b.size(),100)); }
@@ -99,6 +129,21 @@ int main(){
     Deployment bad=deployed; bad.eye[0]=std::numeric_limits<float>::quiet_NaN(); auto badWire=deploymentPacket(bad); CHECK(!parseDeployment(badWire.data(),badWire.size(),decoded));
     auto place=placement(deployed); float behind=(place.center[0]-eye[0])*place.forward[0]+(place.center[1]-eye[1])*place.forward[1];
     CHECK(fabsf(behind+ScreenBehind)<1e-4f); CHECK(fabsf(place.ground-(eye[2]-CameraEye))<1e-5f); CHECK(fabsf(place.bottom-place.ground-ScreenBottom)<1e-5f);
+    for(unsigned i=0;i<SeatCount;++i) {
+        auto stool=seatPoint(deployed,i); CHECK(fabsf(stool[2]-place.ground)<1e-5f);
+        float entry[3]={stool[0]+place.forward[0],stool[1]+place.forward[1],stool[2]+CameraEye};
+        float face=deployed.yaw+3.14159265f, pitch=atan2f(SeatHeight-CameraEye,1);
+        CHECK(aimSeat(deployed,entry,face,pitch)==int(i));
+        CHECK(aimSeat(deployed,entry,face+3.14159265f,pitch)==-1);
+        CHECK(aimSeat(deployed,entry,face,0)==-1);
+        entry[2]+=2; CHECK(aimSeat(deployed,entry,face,pitch)==-1);
+        CHECK(fabsf(seatModelGround(stool[2]+SeatEye)-stool[2])<1e-4f);
+    }
+    CHECK(SeatCount==3 && SeatEye<CameraEye && fabsf(SeatHeight-.5f)<1e-5f);
+    wm::GestureState seatedPose; seatedPose.Step(14,1,2,false,.1f); CHECK(seatedPose.emote==0);
+    for(unsigned i=0;i<30;++i) seatedGesture(seatedPose,1+i/30.f,false,1.f/30);
+    CHECK(seatedPose.emote==14 && seatedPose.pose[wm::ThighL].weight>.99f);
+    float palette[9][4]={}; audiencePalette(palette); for(auto& row:palette) for(float channel:row) CHECK(channel==1.f);
     auto giant=audienceMesh(deployed); CHECK(giant.screen.size()==6 && giant.body.size()+giant.screen.size()<=1024);
     float minz=1e9f,maxz=-1e9f,minu=1,maxu=-1,minv=1,maxv=-1;
     for(const auto& v:giant.screen){ CHECK(v.col[3]==255 && v.weights[0]==1); CHECK(fabsf(v.nrm[0]*place.forward[0]+v.nrm[1]*place.forward[1]+v.nrm[2]*place.forward[2]-1)<1e-5f);

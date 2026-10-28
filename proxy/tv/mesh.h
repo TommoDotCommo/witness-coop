@@ -4,6 +4,11 @@
 namespace wtv {
 // Original procedural CRT and harness, authored for the bundled adventurer in
 // glTF bind space (+Y up, +Z front). Chest skinning carries all clip animation.
+// Audience props have no avatar palette. The shared shader multiplies every
+// sampled/flat colour by this table, so zero-initialized constants render black.
+template<size_t N> inline void audiencePalette(float (&palette)[N][4]) {
+    for(auto& row:palette) for(float& channel:row) channel=1.f;
+}
 struct Mesh { std::vector<wm::Vertex> body,screen; };
 inline Mesh mesh(unsigned chest,const Motion& motion) {
     Mesh out;
@@ -80,6 +85,14 @@ inline Mesh audienceMesh(const Deployment& deployment) {
     box(-2.085f,0,.035f,.17f,2.54f,.15f,trim); box(2.085f,0,.035f,.17f,2.54f,.15f,trim);
     box(0,1.43f,-.12f,1.1f,.06f,.25f,brass);
     quad({point(-ScreenWidth/2,-ScreenHeight/2,.081f),point(ScreenWidth/2,-ScreenHeight/2,.081f),point(ScreenWidth/2,ScreenHeight/2,.081f),point(-ScreenWidth/2,ScreenHeight/2,.081f)},{255,255,255},true);
+    // Original makeshift wooden audience stools, on the same deployment plane.
+    // Coordinates below are relative to the screen centre (not camera eye).
+    for(unsigned i=0;i<SeatCount;++i) {
+        float x=(float(i)-1)*1.35f, y=p.ground-p.center[2];
+        box(x,y+SeatHeight-.04f,4,.70f,.08f,.65f,{118,83,47});
+        for(float dx:{-.25f,.25f}) for(float dz:{-.22f,.22f})
+            box(x+dx,y+.23f,4+dz,.07f,.46f,.07f,{77,59,37});
+    }
     return out;
 }
 } // namespace wtv

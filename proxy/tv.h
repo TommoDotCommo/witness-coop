@@ -22,3 +22,6 @@ ID3D11ShaderResourceView* TvAudienceTexture(ID3D11Device*,ID3D11DeviceContext*,u
 void TvAudienceDrawn(unsigned owner,unsigned vertices,bool live);
 void TvAudienceVisible(unsigned owner,unsigned pixels);
 void TvDump(); // render thread: metadata only, never image bytes
+// Input queues intent only; all seat movement is applied by TvTick on Present.
+void TvSeatRequest(); void TvSeatExit(); bool TvSeated(); bool TvSeatAvailable();
+bool TvSeatedPose(const float eye[3]); // identify a Sit pose held at an audience stool

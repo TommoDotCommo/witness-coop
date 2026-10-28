@@ -1,15 +1,20 @@
 #include "tv.h"
 #include "tv/tv.h"
+#include "tv/resources.h"
 #include "coop.h"
 #include "config.h"
 #include <cstdio>
 #include <set>
+#include <atomic>
+#include "game.h"
+#include "social.h"
 namespace {
+std::atomic<bool> seatRequest{false},seatExit{false},seated{false},seatAvailable{false};
+struct SeatState { unsigned owner=0,sequence=0,index=0; float entry[3]={},yaw=0,pitch=0; } seat;
 SRWLOCK lock=SRWLOCK_INIT;
 struct Guard { Guard(){ AcquireSRWLockExclusive(&lock); } ~Guard(){ ReleaseSRWLockExclusive(&lock); } };
-struct AudienceStream {
+struct AudienceStream : wtv::StreamResources<ID3D11Texture2D,ID3D11ShaderResourceView> {
     wtv::Receiver receiver; uint64_t requestAt=0,noiseAt=0;
-    ID3D11Texture2D* texture=nullptr; ID3D11ShaderResourceView* srv=nullptr;
     unsigned uploaded=0,uploadedSequence=0,uploadHash=0; bool wasLive=false;
 };
 struct AudienceStats { unsigned draws=0,vertices=0,visiblePixels=0; bool drawnLive=false; };
@@ -46,6 +51,19 @@ unsigned TvDeploymentTarget(){ Guard g; return state().deployments.local().activ
 std::vector<wtv::Deployment> TvAudienceScreens(){
     Guard g; std::vector<wtv::Deployment> out; for(const auto& screen:state().deployments.screens) if(screen.second.active) out.push_back(screen.second); return out;
 }
+bool TvSeatedPose(const float eye[3]) {
+    Guard g;
+    for(const auto& entry:state().deployments.screens) if(entry.second.active) for(unsigned i=0;i<wtv::SeatCount;++i) {
+        auto p=wtv::seatPoint(entry.second,i); p[2]+=wtv::SeatEye;
+        float d=0; for(unsigned j=0;j<3;++j) d+=(eye[j]-p[j])*(eye[j]-p[j]);
+        if(d<.20f*.20f) return true;
+    }
+    return false;
+}
+void TvSeatRequest(){ seatRequest=true; }
+void TvSeatExit(){ seatExit=true; }
+bool TvSeated(){ return seated; }
+bool TvSeatAvailable(){ return seatAvailable; }
 void TvTick(const float camera[3],bool captureAllowed){
     auto remotes=CoopGetRemotes(); std::vector<unsigned> alive; unsigned nearest=0; float distance=12*12;
     for(const auto& r:remotes) if(r.valid && r.ageMs<2000){
@@ -60,6 +78,39 @@ void TvTick(const float camera[3],bool captureAllowed){
     }
     if(nearest && (!s.requestAt || now-s.requestAt>=500)){ send({CoopMyId(),nearest,s.receiver.ticket,1}); s.requestAt=now; }
     s.deployments.tick(now,alive);
+    wtv::pruneStats(s.audienceStats,s.deployments.screens);
+    const float* angles=(const float*)((uintptr_t)GetModuleHandleA(nullptr)+0x6303EC);
+    bool anglesOk=!IsBadReadPtr(angles,8), exit=seatExit.exchange(false), action=seatRequest.exchange(false);
+    if(seated) {
+        auto d=s.deployments.screens.find(seat.owner);
+        if(exit || action || !captureAllowed || d==s.deployments.screens.end() || !d->second.active || d->second.sequence!=seat.sequence) {
+            GameSeatPose(seat.entry,seat.yaw,seat.pitch); seated=false; SocialCommand("emote 0");
+        } else {
+            auto p=wtv::seatPoint(d->second,seat.index); p[2]+=wtv::SeatEye;
+            // A teleport/load away from the held pose cancels rather than pulling the player back.
+            float delta=0; for(unsigned i=0;i<3;++i) delta+=(camera[i]-p[i])*(camera[i]-p[i]);
+            if(delta>4) { seated=false; SocialCommand("emote 0"); }
+            else GameSeatPose(p.data(),anglesOk?angles[0]:seat.yaw,anglesOk?angles[1]:seat.pitch);
+        }
+        action=false; // one press cannot stand and immediately sit again
+    }
+    seatAvailable=false;
+    if(!seated && captureAllowed && anglesOk) for(const auto& entry:s.deployments.screens) {
+        int index=wtv::aimSeat(entry.second,camera,angles[0],angles[1]); if(index<0) continue;
+        seatAvailable=true;
+        if(action && !exit) {
+            auto p=wtv::seatPoint(entry.second,unsigned(index));
+            bool occupied=false;
+            for(const auto& r:remotes) if(r.valid && r.ageMs<2000 && r.emote==14) {
+                float dx=r.pos[0]-p[0],dy=r.pos[1]-p[1]; if(dx*dx+dy*dy<.5f*.5f) occupied=true;
+            }
+            if(occupied) continue;
+            seat={entry.first,entry.second.sequence,unsigned(index),{camera[0],camera[1],camera[2]},angles[0],angles[1]};
+            p[2]+=wtv::SeatEye;
+            if(GameSeatPose(p.data(),entry.second.yaw+3.14159265f,.45f)) { seated=true; SocialCommand("emote 14"); }
+        }
+        break;
+    }
     if(s.deployments.local().sequence && now-s.deploymentBroadcastAt>=500){ sendDeployment(s.deployments.local()); s.deploymentBroadcastAt=now; }
     std::set<unsigned> wanted; for(const auto& screen:s.deployments.screens) if(screen.second.active) wanted.insert(screen.second.target);
     for(auto it=s.audience.begin();it!=s.audience.end();){
@@ -74,7 +125,7 @@ void TvTick(const float camera[3],bool captureAllowed){
 }
 bool TvWanted(){ Guard g; auto& s=state(); s.sender.expire(GetTickCount64()); return s.capture && s.sender.consent && (!s.sender.subs.empty() || s.audience.count(CoopMyId())); }
 void TvCapture(const uint8_t* rgba,unsigned w,unsigned h){
-    Guard g; auto& s=state(); if(!s.capture || !s.sender.due(GetTickCount64()) || !w || !h) return;
+    Guard g; auto& s=state(); if(!s.capture || !s.sender.due(GetTickCount64(),s.audience.count(CoopMyId())!=0) || !w || !h) return;
     LARGE_INTEGER start,end,freq; QueryPerformanceCounter(&start); QueryPerformanceFrequency(&freq);
     wtv::Bytes px(wtv::Pixels,0); // Letterbox to 4:3 rather than stretch the sender's view.
     unsigned oh=wtv::H,ow=wtv::W;
@@ -165,5 +216,5 @@ void TvDump(){
         if(stream!=s.audience.end()) fprintf(f,",\"decoded\":%u,\"upload_hash\":%u,\"uploaded_sequence\":%u",stream->second.receiver.decoded,stream->second.uploadHash,stream->second.uploadedSequence);
         else fprintf(f,",\"decoded\":0,\"upload_hash\":0,\"uploaded_sequence\":0"); fprintf(f,"}"); comma=true;
     }
-    fprintf(f,"]}\n"); fclose(f); MoveFileExW(tmp,path,MOVEFILE_REPLACE_EXISTING);
+    fprintf(f,"],\"seated\":%d,\"seat_owner\":%u,\"audience_streams\":%zu,\"audience_stats\":%zu,\"audience_resources\":%zu}\n",int(seated.load()),seat.owner,s.audience.size(),s.audienceStats.size(),size_t(std::count_if(s.audience.begin(),s.audience.end(),[](const auto& e){return e.second.texture!=nullptr;}))); fclose(f); MoveFileExW(tmp,path,MOVEFILE_REPLACE_EXISTING);
 }

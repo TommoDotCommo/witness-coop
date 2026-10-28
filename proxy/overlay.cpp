@@ -231,7 +231,7 @@ static void DrawMarkers(IDXGISwapChain* sc) {
         wm::Cam wc = {{cam[0], cam[1], cam[2]}, ang[0], ang[1], kVFovDeg, aspect, 0.1f, 2000.0f};
         bool first = true;
         for (const auto& rp : remotes) if (rp.ageMs < 2000) {
-            ModelExtra ex; ex.appearance = rp.appearance; ex.proximitySpeaking = rp.proximitySpeaking; ex.radioEquipped = rp.radioEquipped; ex.radioTx = rp.radioTx; { int e = 0; float t = 0; if (SocialEmoteOf(rp.id, &e, &t)) { ex.emote = e; ex.emoteT = t; } }
+            ModelExtra ex; ex.seated=rp.emote==14 && TvSeatedPose(rp.pos); ex.appearance = rp.appearance; ex.proximitySpeaking = rp.proximitySpeaking; ex.radioEquipped = rp.radioEquipped; ex.radioTx = rp.radioTx; { int e = 0; float t = 0; if (SocialEmoteOf(rp.id, &e, &t)) { ex.emote = e; ex.emoteT = t; } }
             ModelGpuDraw(rtv, td.Width, td.Height, wc, true, rp.seq, rp.pos, rp.ang[0], rp.id, first, &ex); first = false;
         }
         if (first) { float p[3] = {}; ModelGpuDraw(rtv, td.Width, td.Height, wc, false, 0, p, 0); }
@@ -380,6 +380,11 @@ static void DrawNameTags(float W, float H) {
         char b[96]; snprintf(b, sizeof b, watching ? "[V] stop watching %s" : "[V] watch %s's view", aimedName.empty() ? "player" : aimedName.c_str()); (void)aimedPing;
         float tw = UiTextWidth(b, k), th = UiLineHeight(k), x = W / 2 - tw / 2, y = H / 2 + 70 * k;
         UiRect(x - 8 * k, y - 4 * k, tw + 16 * k, th + 8 * k, Rgba(0, 0, 0, 0.6f)); UiText(x, y, b, Rgba(col[0], col[1], col[2], 1), k);
+    }
+    if((TvSeated() || TvSeatAvailable()) && !GamePaused()) {
+        char b[128]; snprintf(b,sizeof b,TvSeated()?"[%s] stand up; movement exits":"[%s] sit and watch",guide::KeyName(GetCfg().keyTvSeat).c_str());
+        float k=std::max(1.f,H/1080.f),tw=UiTextWidth(b,k);
+        UiText(W/2-tw/2,H/2+130*k,b,Rgba(1,.85f,.55f,1),k);
     }
     unsigned deployed=TvDeploymentTarget(),tvTarget=deployed?deployed:g_tvAimed.load();
     if(tvTarget && !g_rosterOpen.load()){

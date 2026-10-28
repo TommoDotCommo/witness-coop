@@ -82,6 +82,7 @@ void CoopDumpStatus(unsigned submittedPlayers, const SocialSnapshot* uiState) {
     bool comma = false;
     for (const auto& r : remotes) {
         fprintf(f, "%s{\"id\":%u,\"seq\":%u,\"age_ms\":%llu", comma ? "," : "", r.id, r.seq, (unsigned long long)r.ageMs);
+        fprintf(f,",\"pos\":[%.5f,%.5f,%.5f]",r.pos[0],r.pos[1],r.pos[2]);
         fprintf(f, ",\"appearance\":["); for (size_t i = 0; i < witness::kAppearanceFeatures; ++i) fprintf(f, "%s%u", i ? "," : "", unsigned(r.appearance.choice[i])); fprintf(f, "],\"emote\":%u,\"proximity_speaking\":%s}", r.emote, r.proximitySpeaking ? "true" : "false"); comma = true;
     }
     fprintf(f, "],\"submitted_models\":%u}\n", submittedPlayers); fclose(f); MoveFileExW(tmp, path, MOVEFILE_REPLACE_EXISTING);

@@ -19,3 +19,5 @@ void GameEnqueueCableOff(unsigned id);                // development command
 void GameHover(float x, float y, float z, float yaw, float pitch, unsigned seconds);   // like GameTeleport, but the player is held there (about every ms) for up to `seconds`: for places with no collision
 void GameHoverOff();
 void GameTeleport(float x, float y, float z, float yaw, float pitch);   // camera position (eye) and angles, held for a few frames like the tp command
+// Render-thread seat hold: uses camera-eye coordinates just like teleport.
+bool GameSeatPose(const float eye[3],float yaw,float pitch);
