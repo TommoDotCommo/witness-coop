@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <cstring>
 #include <map>
+#include <array>
 #include <cmath>
 #include <vector>
 #include "coop.h"
@@ -66,7 +67,7 @@ public:
     bool applyDoorOpen(unsigned id) override { return GameDoorOpenNow(id, 1.0f); }
     // The game keeps a drawn line as an array of segment records at +0x230 (count at +0x228, 13 dwords each: node a, node b, the panel's engine id twice,
     // 1.0, 1.0, the world position of a (3 floats), of b (3 floats), a zero). It stays after the panel is solved. Each node goes out with its place in
-    // millimetres from the panel's own position, so the other game never has to know how the panel's graph sits in the world.
+    // bounded local units from the panel's own position, so the other game never has to know how the panel's graph sits in the world.
     bool scanLines(std::vector<witness::LineOut>& out) override {
         // A drawn line is kept by the game as world positions that are written while it is drawn and never updated, but a panel can move afterwards (the first ones are part of a door that
         // swings open). So the line is sent in the panel's own frame, turned into it with the panel's pose from the moment the trace last changed, and the other game turns it back with
@@ -82,9 +83,10 @@ public:
             if (GetCfg().lineOldAnchor) { memcpy(fr.pos, pp, 12); fr.q[0] = fr.q[1] = fr.q[2] = 0; fr.q[3] = 1; }      // (mutant: the old way, world offsets from where the panel is now)
             wframe::Q q = {fr.q[0], fr.q[1], fr.q[2], fr.q[3]};
             witness::LineOut l; l.panel = id; l.final = PanelSolved(e);
+            std::vector<std::array<float, 3>> locals;
             auto point = [&](uint32_t node, const float* world) {
                 float local[3]; wframe::ToLocal(fr.pos, q, world, local); witness::LinePoint p; p.node = uint16_t(node);
-                for (int k = 0; k < 3; ++k) { float mm = local[k] * 1000.0f; p.d[k] = int16_t(std::lround(mm > 32000 ? 32000 : mm < -32000 ? -32000 : mm)); }
+                locals.push_back({local[0], local[1], local[2]});
                 l.pts.push_back(p);
             };
             bool bad = false;
@@ -96,6 +98,13 @@ public:
                 if (i == 0) point(r[0], a);
                 point(r[1], tip);
             }
+            l.fine = true;
+            for (const auto& p : locals) {
+                for (float v : p) if (!std::isfinite(v)) bad = true;
+                if (!witness::LineFitsFine(p.data())) l.fine = false;
+            }
+            for (size_t i = 0; i < locals.size() && !bad; ++i)
+                for (int k = 0; k < 3; ++k) l.pts[i].d[k] = witness::LineQuantize(locals[i][k], l.fine);
             if (!bad) out.push_back(std::move(l));
         }
         return true;

@@ -13,6 +13,7 @@ constexpr size_t kPingLen = 48, kNameLen = 24;
 constexpr uint32_t kMagicSoc = 0x36585457, kMagicSocAck = 0x364B5457, kMagicPres = 0x36535457;   // "WTX6" a reliable social message, "WTK6" its acknowledgement, "WTS6" presence
 constexpr size_t kPresLen = 36, kSocHeader = 28, kSocMax = 900, kSocAckLen = 24;
 constexpr uint64_t kPresExpiryMs = 4000;
+constexpr uint32_t kMagicLineFine = 0x374C5457; // "WTL7": 1/20 mm; old receivers ignore this magic
 constexpr uint32_t kMagicLine = 0x364C5457;   // "WTL6": a drawn line, best effort, the whole line every time
 constexpr uint32_t kGroupPose = 0x37505457, kGroupEv = 0x37455457, kGroupAck = 0x37415457;
 constexpr size_t kGroupEvLen = 44;
@@ -134,7 +135,7 @@ void SyncCore::tick(uint64_t now) {
 void SyncCore::onPacket(const uint8_t* d, size_t n, uint64_t now) {
     if (n < 8 || (!f_.noChecksum && sum32(d, n - 4) != get32(d + n - 4))) return;   // corrupted or foreign: drop, the sender resends
     uint32_t magic = get32(d);
-    if (magic == kMagicLine) { onLine(d, n, now); return; }
+    if (magic == kMagicLine || magic == kMagicLineFine) { onLine(d, n, now); return; }
     if (magic == kMagicPing) { onPing(d, n, now); return; }
     if (magic == kMagicSoc) { onSocial(d, n, now); return; }
     if (magic == kMagicSocAck) { onSocialAck(d, n); return; }
@@ -232,19 +233,27 @@ void SyncCore::onPing(const uint8_t* d, size_t n, uint64_t now) {
 }
 
 // ------------------------------------------------------------------------------------------------ drawn lines
-// Line packet: magic, from, session, panel, seq, flags (bit 0: finished), n, then n x (node u16, dx dy dz i16), checksum. The whole line travels every
+// WTL6 (millimetres) / WTL7 (1/20 millimetre) packet: magic, from, session, panel, seq, flags (bit 0: finished), n, then n x (node u16, dx dy dz i16), checksum. The whole line travels every
 // time and the highest seq wins, so a lost or reordered packet costs nothing once any later one arrives; every stored line is repeated about once a
 // second (round robin) so a restarted peer, or one that missed everything, catches up.
 void SyncCore::sendLine(unsigned panel, const LineState& s) {
     if (f_.noLineSend) return;
-    Bytes b; put32(b, kMagicLine); put32(b, uint32_t(id_)); put32(b, session_); put32(b, panel); put32(b, s.seq); put32(b, s.final ? 1u : 0u);
-    size_t n = std::min<size_t>(s.pts.size(), kMaxLinePoints); put32(b, uint32_t(n));
-    for (size_t i = 0; i < n; ++i) {
-        const LinePoint& p = s.pts[i];
-        b.push_back(uint8_t(p.node)); b.push_back(uint8_t(p.node >> 8));
-        for (int k = 0; k < 3; ++k) { b.push_back(uint8_t(uint16_t(p.d[k]))); b.push_back(uint8_t(uint16_t(p.d[k]) >> 8)); }
+    // Send the legacy representation too. Old peers ignore WTL7, while new peers
+    // may upgrade the same sequence to fine precision and never downgrade it.
+    for (int pass = 0; pass < (s.fine ? 2 : 1); ++pass) {
+        const bool fine = pass == 1;
+        Bytes b; put32(b, fine ? kMagicLineFine : kMagicLine); put32(b, uint32_t(id_)); put32(b, session_); put32(b, panel); put32(b, s.seq); put32(b, s.final ? 1u : 0u);
+        size_t n = std::min<size_t>(s.pts.size(), kMaxLinePoints); put32(b, uint32_t(n));
+        for (size_t i = 0; i < n; ++i) {
+            const LinePoint& p = s.pts[i];
+            b.push_back(uint8_t(p.node)); b.push_back(uint8_t(p.node >> 8));
+            for (int k = 0; k < 3; ++k) {
+                int16_t v = fine ? p.d[k] : LineLegacy(p.d[k], s.fine);
+                b.push_back(uint8_t(uint16_t(v))); b.push_back(uint8_t(uint16_t(v) >> 8));
+            }
+        }
+        send(finish(std::move(b)));
     }
-    send(finish(std::move(b)));
 }
 
 void SyncCore::scanLines(uint64_t now) {
@@ -261,9 +270,9 @@ void SyncCore::scanLines(uint64_t now) {
         }
         present.insert(l.panel);
         uint64_t h = 1469598103934665603ull; auto mix = [&](uint64_t v) { h ^= v; h *= 1099511628211ull; };
-        mix(l.final ? 1 : 0); for (auto& p : l.pts) { mix(p.node); for (int k = 0; k < 3; ++k) mix(uint16_t(p.d[k])); }
+        mix(l.fine ? 1 : 0); mix(l.final ? 1 : 0); for (auto& p : l.pts) { mix(p.node); for (int k = 0; k < 3; ++k) mix(uint16_t(p.d[k])); }
         LineState& s = lines_[l.panel];
-        if (s.hash != h || s.seq == 0) { s.hash = h; s.final = l.final; s.pts = std::move(l.pts); ++s.seq; s.dirty = true; }
+        if (s.hash != h || s.seq == 0) { s.hash = h; s.fine = l.fine; s.final = l.final; s.pts = std::move(l.pts); ++s.seq; s.dirty = true; }
     }
     for (auto& kv : lines_) if (!present.count(kv.first) && !kv.second.pts.empty()) { kv.second.pts.clear(); kv.second.final = false; kv.second.hash = 0; ++kv.second.seq; kv.second.dirty = true; }   // the panel was reset: tell the peers
     (void)now;
@@ -273,14 +282,25 @@ void SyncCore::onLine(const uint8_t* d, size_t n, uint64_t now) {
     if (n < 32 || sum32(d, n - 4) != get32(d + n - 4)) return;
     uint32_t from = get32(d + 4), session = get32(d + 8), panel = get32(d + 12), seq = get32(d + 16), flags = get32(d + 20), cnt = get32(d + 24);
     if (int(from) == id_ || panel >= kMaxEntityId || cnt > kMaxLinePoints || n != size_t(32 + 8 * cnt)) return;
+    const bool fine = get32(d) == kMagicLineFine;
+    if (flags & ~1u) return;
+    // Validate before touching stored sequence/state, including signed bounds.
+    for (uint32_t i = 0; i < cnt; ++i) {
+        const uint8_t* p = d + 28 + 8*i;
+        if (uint16_t(p[0] | p[1] << 8) > 4000) return;
+        for (int k = 0; k < 3; ++k) {
+            int v = int16_t(uint16_t(p[2+2*k] | p[3+2*k] << 8));
+            if (v < -32000 || v > 32000) return;
+        }
+    }
     Guard g(h_);
     if (!w_->isPanel(panel)) return;
     auto pi = peers_.find(from);
     if (pi == peers_.end()) { if (fixedRoster_ || !peers_.empty()) return; pi = peers_.emplace(from, Peer{}).first; }
     LineIn& l = pi->second.lines[panel];
-    if (!f_.noLineSeqCheck && l.at && (session < l.session || (session == l.session && seq <= l.seq))) return;     // older or the same: already have it
+    if (!f_.noLineSeqCheck && l.at && (session < l.session || (session == l.session && (seq < l.seq || (seq == l.seq && (!fine || l.fine)))))) return;     // older or the same: already have it
     if (pi->second.lines.size() > 256) return;
-    l.seq = seq; l.session = session; l.final = (flags & 1) != 0; l.at = now ? now : 1; l.pts.clear();
+    l.seq = seq; l.session = session; l.fine = fine; l.final = (flags & 1) != 0; l.at = now ? now : 1; l.pts.clear();
     for (uint32_t i = 0; i < cnt; ++i) {
         const uint8_t* p = d + 28 + 8 * i; LinePoint pt; pt.node = uint16_t(p[0] | p[1] << 8);
         for (int k = 0; k < 3; ++k) pt.d[k] = int16_t(uint16_t(p[2 + 2 * k] | p[3 + 2 * k] << 8));
@@ -291,7 +311,7 @@ void SyncCore::onLine(const uint8_t* d, size_t n, uint64_t now) {
 std::vector<RemoteLine> SyncCore::remoteLines(uint64_t now) {
     Guard g(h_); std::vector<RemoteLine> out; if (f_.raceMode) return out;
     for (const auto& p : peers_) for (const auto& kv : p.second.lines) if (!kv.second.pts.empty()) {
-        RemoteLine r; r.from = p.first; r.panel = kv.first; r.seq = kv.second.seq; r.final = kv.second.final; r.pts = kv.second.pts; r.ageMs = now - kv.second.at; out.push_back(std::move(r));
+        RemoteLine r; r.from = p.first; r.panel = kv.first; r.seq = kv.second.seq; r.fine = kv.second.fine; r.final = kv.second.final; r.pts = kv.second.pts; r.ageMs = now - kv.second.at; out.push_back(std::move(r));
     }
     return out;
 }

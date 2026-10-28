@@ -21,15 +21,16 @@ struct LineWorld : World {
     bool pose(float p[3], float a[2]) override { p[0] = p[1] = p[2] = 1; a[0] = a[1] = 0; return true; }
 };
 
+static bool fineLines = false;
 static LineOut makeLine(unsigned panel, unsigned nodes, bool final) {
-    LineOut l; l.panel = panel; l.final = final;
+    LineOut l; l.panel = panel; l.final = final; l.fine = fineLines;
     for (unsigned i = 0; i < nodes; ++i) { LinePoint p; p.node = uint16_t(i * 3 + 1); p.d[0] = int16_t(100 * i - 400); p.d[1] = int16_t(-50 * i); p.d[2] = int16_t(7); l.pts.push_back(p); }
     return l;
 }
 
 struct Pair {
     LineWorld a, b; std::unique_ptr<SyncCore> ca, cb; std::vector<Bytes> toA, toB; uint64_t now = 0; unsigned lossEvery = 0, linePackets = 0, dropNext = 0; std::vector<Bytes> held; bool hold = false;
-    Pair(Flags fa = {}, Flags fb = {}) { Hooks h; h.send = [&](const Bytes& d) { if (isLine(d) && dropNext) { --dropNext; return; } if (isLine(d) && lossEvery && (++linePackets % lossEvery) != 0) return; if (isLine(d) && hold) { held.push_back(d); return; } toB.push_back(d); }; ca = std::make_unique<SyncCore>(1, 1, &a, h, fa); startB(1, fb); }
+    Pair(Flags fa = {}, Flags fb = {}) { Hooks h; h.send = [&](const Bytes& d) { if (fineLines && isLine(d) && d[3] == '6') return; if (isLine(d) && dropNext) { --dropNext; return; } if (isLine(d) && lossEvery && (++linePackets % lossEvery) != 0) return; if (isLine(d) && hold) { held.push_back(d); return; } toB.push_back(d); }; ca = std::make_unique<SyncCore>(1, 1, &a, h, fa); startB(1, fb); }
     static bool isLine(const Bytes& d) { return d.size() > 4 && d[0] == 'W' && d[1] == 'T' && d[2] == 'L'; }
     void startB(unsigned session, Flags f = {}) { b = LineWorld(); Hooks h; h.send = [&](const Bytes& d) { toA.push_back(d); }; cb = std::make_unique<SyncCore>(2, session, &b, h, f); }
     void advance(uint64_t ms) {
@@ -45,7 +46,7 @@ struct Pair {
     const RemoteLine* get(unsigned panel) { static std::vector<RemoteLine> keep; keep = cb->remoteLines(now); for (auto& r : keep) if (r.panel == panel && r.from == 1) return &r; return nullptr; }
 };
 
-static bool same(const RemoteLine* r, const LineOut& l) { return r && r->final == l.final && r->pts == l.pts; }
+static bool same(const RemoteLine* r, const LineOut& l) { return r && r->fine == l.fine && r->final == l.final && r->pts == l.pts; }
 
 // A draws in three steps over a link that loses 2 of every 3 line packets; B ends with the finished line.
 static bool lossy(Flags fa = {}) {

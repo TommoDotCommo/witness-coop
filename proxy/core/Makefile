@@ -8,7 +8,7 @@ BUILD = build
 CXXF = -std=c++17 -O2 -Wall -Wextra
 TESTS = pov ping-names social-sync line-sync group-sync apply-retry power-sync reload-sync cable-sync cable-off race-isolation
 
-$(BUILD)/sync_core.o: sync_core.cpp sync_core.h appearance.h emotes.h pov.h ../radio/radio.h
+$(BUILD)/sync_core.o: sync_core.cpp sync_core.h line_precision.h appearance.h emotes.h pov.h ../radio/radio.h
 	@mkdir -p $(BUILD)
 	g++ $(CXXF) -c -o $@ sync_core.cpp
 
@@ -105,3 +105,22 @@ test: tv-test
 tv-test:
 	python3 ../../tools/test_tv.py
 .PHONY: tv-test
+
+$(BUILD)/line-precision: tests/line_precision.cpp tests/line_sync.cpp line_precision.h ../frame/panelframe.h ../frame/ribbon.h $(BUILD)/sync_core.o
+	g++ $(CXXF) -o $@ tests/line_precision.cpp $(BUILD)/sync_core.o
+$(BUILD)/line-precision-coarse: tests/line_precision.cpp tests/line_sync.cpp line_precision.h ../frame/panelframe.h ../frame/ribbon.h $(BUILD)/sync_core.o
+	g++ $(CXXF) -DWL_MUT_COARSE -o $@ tests/line_precision.cpp $(BUILD)/sync_core.o
+line-precision-test: $(BUILD)/line-precision $(BUILD)/line-precision-coarse
+	$(BUILD)/line-precision
+	@ulimit -c 0; if $(BUILD)/line-precision-coarse >/dev/null 2>&1; then echo 'coarse precision mutant survived'; exit 1; else echo 'coarse precision mutant rejected'; fi
+test: line-precision-test
+.PHONY: line-precision-test
+line-precision-mutants:
+	python3 tests/run_line_precision.py
+test: line-precision-mutants
+.PHONY: line-precision-mutants
+line-capture-test:
+	python3 ../../tools/test_line_precision_capture.py
+	python3 ../../tools/test_line_capture_pixels.py
+test: line-capture-test
+.PHONY: line-capture-test

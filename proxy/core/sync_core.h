@@ -11,6 +11,7 @@
 #include <vector>
 #include "appearance.h"
 #include "emotes.h"
+#include "line_precision.h"
 
 namespace witness {
 
@@ -19,12 +20,12 @@ enum EvKind : uint8_t { EV_PANEL_SOLVED = 1, EV_DOOR_OPENED = 2, EV_PANEL_POWERE
 constexpr unsigned kMaxPlayers = 16;
 constexpr unsigned kMaxEntityId = 0x40000;      // the game's entity table size; ids at or above it are refused
 
-// A drawn line as it travels: the nodes of the panel's graph in order, each with its place on the panel in millimetres from the panel's own position
-// (so the receiving game needs no idea how a panel's graph is laid out in the world).
+// A drawn line as it travels: the nodes of the panel's graph in order, each with its place on the panel in the line's units from the panel's own position
+// (so the receiving game needs no idea how a panel's graph is laid out in the world). fine selects 1/20 mm; otherwise mm.
 constexpr unsigned kMaxLinePoints = 140;      // a datagram stays under ~1.2 KB: header 28 + 8 per point + checksum
 struct LinePoint { uint16_t node = 0; int16_t d[3] = {0, 0, 0}; bool operator==(const LinePoint& o) const { return node == o.node && d[0] == o.d[0] && d[1] == o.d[1] && d[2] == o.d[2]; } };
-struct LineOut { unsigned panel = 0; bool final = false; std::vector<LinePoint> pts; };      // local: a panel whose trace buffer is not empty (final: the panel is solved)
-struct RemoteLine { unsigned from = 0, panel = 0, seq = 0; bool final = false; std::vector<LinePoint> pts; uint64_t ageMs = 0; };
+struct LineOut { unsigned panel = 0; bool final = false; std::vector<LinePoint> pts; bool fine = false; };      // local: a panel whose trace buffer is not empty (final: the panel is solved)
+struct RemoteLine { unsigned from = 0, panel = 0, seq = 0; bool final = false; std::vector<LinePoint> pts; uint64_t ageMs = 0; bool fine = false; };
 
 // What the core needs from the game (or a fake of it).
 class World {
@@ -157,8 +158,8 @@ private:
     void log(const char* m);
     void send(Bytes b);
     void sendTo(unsigned peer, const Bytes& b);
-    struct LineState { uint32_t seq = 0; uint64_t hash = 0; bool final = false, dirty = false; std::vector<LinePoint> pts; uint64_t sentAt = 0; };
-    struct LineIn { uint32_t seq = 0; uint32_t session = 0; bool final = false; std::vector<LinePoint> pts; uint64_t at = 0; };
+    struct LineState { uint32_t seq = 0; uint64_t hash = 0; bool final = false, dirty = false, fine = false; std::vector<LinePoint> pts; uint64_t sentAt = 0; };
+    struct LineIn { uint32_t seq = 0; uint32_t session = 0; bool final = false, fine = false; std::vector<LinePoint> pts; uint64_t at = 0; };
     std::string name_; uint32_t pingNonce_ = 0; uint64_t nextPing_ = 0;
     void onPing(const uint8_t* data, size_t n, uint64_t now);
     std::map<unsigned, LineState> lines_; size_t lineCursor_ = 0; uint64_t nextLineResend_ = 0;

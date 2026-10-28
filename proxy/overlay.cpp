@@ -158,8 +158,16 @@ static bool InitResources(IDXGISwapChain* sc) {
     return g_vs && g_ps && g_cb && g_blend && g_rs && g_ds;
 }
 
-// The other players' lines: each is a list of points in millimetres from its panel's position; drawn as 1.2 cm ribbons in the panel surface, centered on the native trace without endpoint extensions.
+static volatile LONG g_lineCaptureRequested = 0;
+
+// The other players' lines: each is a list of points in bounded local units from its panel's position; drawn as 1.2 cm ribbons in the panel surface, centered on the native trace without endpoint extensions.
 static unsigned BuildLineVerts(const float cam[3], std::vector<LineVert>& out) {
+    FILE* capture = nullptr;
+    if (InterlockedExchange(&g_lineCaptureRequested, 0)) {
+        wchar_t path[MAX_PATH]; GetModuleFileNameW(g_selfModule(), path, MAX_PATH);
+        wchar_t* slash = wcsrchr(path, L'\\'); if (slash) *(slash + 1) = 0;
+        wcscat_s(path, L"witness_line_geometry.jsonl"); capture = _wfopen(path, L"w");
+    }
     unsigned lines = 0;
     for (const auto& r : CoopGetRemoteLines()) {
         uintptr_t e = r.panel < 0x40000 ? GameEntity(r.panel) : 0; if (!e || !Readable((void*)(e + 0x24), 12)) continue;
@@ -167,27 +175,38 @@ static unsigned BuildLineVerts(const float cam[3], std::vector<LineVert>& out) {
         if (!Readable((void*)(e + 0x34), 16)) continue; const float* qp = (const float*)(e + 0x34); wframe::Q pq = {qp[0], qp[1], qp[2], qp[3]};      // this game's panel, where it is now and how it is turned (a door may have swung it): the line is in the panel's frame
         for (size_t i = 0; i + 1 < r.pts.size(); ++i) {
             float a[3], b[3], la[3], lb[3];
-            for (int k = 0; k < 3; ++k) { la[k] = r.pts[i].d[k] * 0.001f; lb[k] = r.pts[i + 1].d[k] * 0.001f; }
+            for (int k = 0; k < 3; ++k) { la[k] = r.pts[i].d[k] * witness::LineUnit(r.fine); lb[k] = r.pts[i + 1].d[k] * witness::LineUnit(r.fine); }
             wframe::ToWorld(pp, pq, la, a); wframe::ToWorld(pp, pq, lb, b);
             float d[3] = {b[0] - a[0], b[1] - a[1], b[2] - a[2]}, len = sqrtf(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
             if (len < 1e-5f || len > 3.0f) continue;
             float q[4][3];
             if (!wframe::Ribbon(a, b, pq, 0.006f, q)) continue;
+            // Capture the exact geometry this render submits, with its source units
+            // and current panel frame; QA compares it with native process records.
+            if (capture) {
+                fprintf(capture, "{\"panel\":%u,\"from\":%u,\"seq\":%u,\"segment\":%zu,\"fine\":%s,\"pose\":[%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g],\"ends\":[", r.panel, r.from, r.seq, i, r.fine ? "true" : "false", pp[0],pp[1],pp[2],qp[0],qp[1],qp[2],qp[3]);
+                for (int j=0;j<2;++j) { const float* p=j?b:a; fprintf(capture,"%s[%.9g,%.9g,%.9g]",j?",":"",p[0],p[1],p[2]); }
+                fprintf(capture, "],\"quad\":[");
+                for (int j=0;j<4;++j) fprintf(capture,"%s[%.9g,%.9g,%.9g]",j?",":"",q[j][0],q[j][1],q[j][2]);
+                fprintf(capture,"]}\n");
+            }
             static const int idx[6] = {0, 1, 2, 1, 3, 2};
             for (int k : idx) { LineVert lv; memcpy(lv.p, q[k], 12); lv.c[0] = col[0]; lv.c[1] = col[1]; lv.c[2] = col[2]; lv.c[3] = 1; out.push_back(lv); }
             any = true;
         }
         if (any) ++lines;
     }
+    if (capture) fclose(capture);
     return lines;
 }
 
 void OverlayLineDump() {      // test command linedump: every line another player has on a panel, as this game holds it, and where that panel is now
+    InterlockedExchange(&g_lineCaptureRequested, 1); // the next rendered frame also writes a geometry bridge dump
     char m[400]; unsigned n = 0;
     for (const auto& r : CoopGetRemoteLines()) {
         uintptr_t e = r.panel < 0x40000 ? GameEntity(r.panel) : 0; const float* pp = e && Readable((void*)(e + 0x24), 12) ? (const float*)(e + 0x24) : nullptr;
         snprintf(m, sizeof m, "linedump: from %u panel %#x final %d points %zu panel_at %.3f %.3f %.3f age_ms %llu", r.from, r.panel, r.final ? 1 : 0, r.pts.size(), pp ? pp[0] : 0, pp ? pp[1] : 0, pp ? pp[2] : 0, (unsigned long long)r.ageMs); Log(m);
-        for (size_t i = 0; i < r.pts.size() && i < 8; ++i) { snprintf(m, sizeof m, "linedump:   point %zu node %u d_mm %d %d %d", i, (unsigned)r.pts[i].node, (int)r.pts[i].d[0], (int)r.pts[i].d[1], (int)r.pts[i].d[2]); Log(m); }
+        for (size_t i = 0; i < r.pts.size() && i < 8; ++i) { snprintf(m, sizeof m, "linedump:   point %zu node %u d_mm %d %d %d", i, (unsigned)r.pts[i].node, (int)witness::LineLegacy(r.pts[i].d[0], r.fine), (int)witness::LineLegacy(r.pts[i].d[1], r.fine), (int)witness::LineLegacy(r.pts[i].d[2], r.fine)); Log(m); }
         ++n;
     }
     snprintf(m, sizeof m, "linedump: %u lines", n); Log(m);
