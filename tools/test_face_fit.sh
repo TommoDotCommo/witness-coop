@@ -18,3 +18,7 @@ if ! grep -q 'eye white is buried in its socket' "$tmp/recessed.log"; then cat "
 if run covered --iris-mutant; then echo 'eye-covering iris mutant unexpectedly passed' >&2; exit 1; fi
 if ! grep -q 'iris covers the eye white' "$tmp/covered.log"; then cat "$tmp/covered.log" >&2; exit 1; fi
 echo 'face fit: clean geometry passed; protruding, back-facing, buried and covering eye mutants rejected'
+
+if run flat --flat-face-mutant; then echo 'flat face mutant unexpectedly passed' >&2; exit 1; fi
+if ! grep -q 'facial anatomy depth relationships failed' "$tmp/flat.log"; then cat "$tmp/flat.log" >&2; exit 1; fi
+echo 'facial anatomy: continuous nose, bridge, philtrum and chin passed; flat face mutant rejected'

@@ -223,22 +223,37 @@ def sculpt_head():
                 t = (z - ctrl[k][0]) / (ctrl[k + 1][0] - ctrl[k][0]); a, b, c, d = ctrl[max(k - 1, 0)], ctrl[k], ctrl[k + 1], ctrl[min(k + 2, len(ctrl) - 1)]
                 return [cr(a[i], b[i], c[i], d[i], t) for i in (1, 2, 3)]
         return list(ctrl[-1][1:])
-    BUMPS = []
-    def bump(c, r, amt, mirror=True): BUMPS.append((c, r, amt, mirror))
-    bump((0.038, -0.102, 1.694), (0.029, 0.030, 0.012), 0.0055); bump((0.039, -0.099, 1.677), (0.025, 0.030, 0.012), -0.0040)
-    bump((0.041, -0.096, 1.665), (0.023, 0.028, 0.007), 0.0018)
-    bump((0.060, -0.088, 1.636), (0.028, 0.036, 0.024), 0.0070); bump((0.061, -0.079, 1.596), (0.026, 0.036, 0.019), -0.0025)
-    bump((0, -0.106, 1.667), (0.010, 0.026, 0.024), 0.0075, False); bump((0, -0.116, 1.644), (0.013, 0.026, 0.012), 0.0105, False)
-    bump((0.012, -0.110, 1.639), (0.008, 0.026, 0.007), 0.0045); bump((0, -0.110, 1.629), (0.013, 0.026, 0.005), -0.0025, False)
-    bump((0, -0.110, 1.603), (0.024, 0.026, 0.003), -0.0020, False); bump((0, -0.109, 1.609), (0.020, 0.026, 0.004), 0.0018, False); bump((0, -0.109, 1.596), (0.018, 0.026, 0.005), 0.0024, False)
-    bump((0, -0.094, 1.568), (0.029, 0.035, 0.018), 0.006, False); bump((0.066, -0.038, 1.585), (0.023, 0.045, 0.019), 0.003); bump((0.089, 0.0, 1.640), (0.015, 0.045, 0.037), -0.002)
+    # Sculpt in facial depth, rather than along a ray from the cranium: the
+    # bridge, muzzle and chin must keep their anatomical height as they project.
     def disp(p):
-        d = p - Vector((0, 0, 1.665)); d.normalize(); tot = 0.0
-        for (c, r, amt, mir) in BUMPS:
-            for sx in ((1, -1) if mir else (1,)):
-                q = p - Vector((c[0] * sx, c[1], c[2])); tot += 1.7 * amt * math.exp(-((q.x / r[0]) ** 2 + (q.y / r[1]) ** 2 + (q.z / r[2]) ** 2))
-        return p + d * tot
-    n = 72; zs = [1.548 + (1.794 - 1.548) * k / 72 for k in range(73)]
+        if p.y > -0.035: return p
+        x, z = p.x, p.z
+        def g(cx, cz, rx, rz):
+            return math.exp(-((x-cx)/rx)**2-((z-cz)/rz)**2)
+        def pair(cx, cz, rx, rz): return g(cx, cz, rx, rz)+g(-cx, cz, rx, rz)
+        depth = 0.0
+        depth += 0.0060*pair(0.039, 1.696, 0.028, 0.010)  # supraorbital ridge
+        depth -= 0.0045*pair(0.039, 1.677, 0.023, 0.011)  # orbital hollow
+        depth += 0.0040*pair(0.055, 1.653, 0.027, 0.016)  # cheekbone plane
+        depth -= 0.0025*pair(0.064, 1.615, 0.024, 0.023)  # cheek hollow
+        depth += 0.013*g(0, 1.669, 0.010, 0.027)          # continuous nasal bridge
+        depth += 0.024*g(0, 1.643, 0.012, 0.012)          # tip
+        depth += 0.009*pair(0.013, 1.637, 0.007, 0.007)   # alar wings
+        depth -= 0.003*pair(0.010, 1.634, 0.0035, 0.0025) # nostril recesses
+        depth -= 0.003*g(0, 1.629, 0.011, 0.004)          # under nose
+        depth += 0.0035*g(0, 1.612, 0.030, 0.019)        # muzzle blends into cheek
+        depth += 0.0020*pair(0.007, 1.620, 0.0045, 0.008) # philtral columns
+        depth -= 0.0020*g(0, 1.620, 0.004, 0.007)
+        depth += 0.0035*g(0, 1.608, 0.020, 0.004)
+        depth += 0.0045*g(0, 1.599, 0.019, 0.004)
+        depth -= 0.0018*g(0, 1.603, 0.023, 0.0015)        # mouth closure
+        depth -= 0.0025*g(0, 1.587, 0.022, 0.004)         # labiomental fold
+        depth += 0.010*g(0, 1.574, 0.029, 0.012)          # chin pad
+        depth += 0.002*pair(0.063, 1.590, 0.024, 0.016)   # jaw angles
+        gate = min(1.0, max(0.0, (-p.y-0.035)/0.040))
+        if '--flat-face-mutant' in args: depth = 0.0
+        return Vector((x, p.y-depth*gate, z))
+    n = 68; zs = [1.548 + (1.794 - 1.548) * k / 68 for k in range(69)]
     bm = bmesh.new(); rows = []
     for z in zs:
         cy, rx, ry = ring(z); rows.append([bm.verts.new(disp(Vector((rx * math.cos(2 * math.pi * k / n), cy + ry * math.sin(2 * math.pi * k / n), z)))) for k in range(n)])
@@ -253,6 +268,18 @@ def face_y(x, z):
     hit, _, _, _ = head_bvh.ray_cast(Vector((x, -0.4, z)), Vector((0, 1, 0)))
     if hit is None: raise ValueError('facial detail misses head at %.4f, %.4f' % (x, z))
     return hit.y
+# Depth relationships sampled from the actual evaluated mesh, in metres.
+# These reject a smooth oval even if it has the same resolution and materials.
+face_depths = dict(
+    nose=face_y(0.025, 1.643)-face_y(0, 1.643),
+    bridge=face_y(0.020, 1.668)-face_y(0, 1.668),
+    philtrum=face_y(0, 1.620)-face_y(0.007, 1.620),
+    chin=face_y(0, 1.587)-face_y(0, 1.574))
+print('REPORT facial depth', face_depths)
+if not (0.017 < face_depths['nose'] < 0.040 and
+        0.008 < face_depths['bridge'] < 0.025 and
+        face_depths['philtrum'] > 0.0001 and face_depths['chin'] > 0.001):
+    raise ValueError('facial anatomy depth relationships failed')
 def face_finish(name, bm, material, smooth=True, subsurf=0, bevel=0.0, solid=0.0):
     return finish(name, bm, material, smooth, subsurf, bevel, solid, front_facing=True)
 def eye_limits(t):
@@ -297,11 +324,11 @@ for s, x in (('L', 1), ('R', -1)):
         if clearance < 0.00005: raise ValueError('eye white is buried in its socket')
         if not -0.002 <= clearance <= 0.0025: raise ValueError('eye white does not fit its socket')
     part(white, ['head'])
-    iris_rz = 0.0051 if '--iris-mutant' in args else 0.0033
+    iris_rz = 0.0051 if '--iris-mutant' in args else 0.0036
     lo, hi = eye_limits((0.039-0.020)/0.037)
     if 2*iris_rz > 0.78*(hi-lo): raise ValueError('iris covers the eye white')
-    eye_disc('iris.'+s, x, 0.0043, iris_rz, 'iris', 0.00110)
-    eye_disc('pupil.'+s, x, 0.00185, 0.00190, 'eye', 0.00150)
+    eye_disc('iris.'+s, x, 0.0052, iris_rz, 'iris', 0.00110)
+    eye_disc('pupil.'+s, x, 0.00180, 0.00185, 'eye', 0.00150)
     part(ellipsoid('eye_glint.'+s, (x*0.0375, eye_surface(x*0.0375, 1.6782, 0.0018), 1.6782), (0.00055, 0.00018, 0.00055), 'white', 8, 6), ['head'])
     for upper in (False, True):
         bm = bmesh.new(); rows = []
@@ -331,12 +358,17 @@ for upper in (False, True):
         seam = 1.603 + 0.0005*math.sin(math.pi*t)
         edge = seam + (0.0045*profile if upper else -0.0036*profile)
         if upper: edge += 0.0007*math.exp(-((abs(xx)-0.007)/0.003)**2)*profile
-        rows.append([bm.verts.new((xx, face_y(xx, z)-0.00030, z)) for z in (seam, edge)])
-    for a, b in zip(rows, rows[1:]): bm.faces.new((a[0], b[0], b[1], a[1]))
+        row = []
+        for j in range(5):
+            v = j/4; z = seam+(edge-seam)*v
+            row.append(bm.verts.new((xx, face_y(xx, z)-0.00012-0.00035*math.sin(math.pi*v)*profile, z)))
+        rows.append(row)
+    for a, b in zip(rows, rows[1:]):
+        for j in range(4): bm.faces.new((a[j], b[j], b[j+1], a[j+1]))
     part(face_finish('lip.'+str(upper), bm, 'lips'), ['head'])
 for sx in (-1, 1):
-    xx, zz = sx*0.009, 1.638
-    part(ellipsoid('nostril.'+str(sx), (xx, face_y(xx, zz)-0.00045, zz), (0.0028, 0.0012, 0.0016), 'skin_dark', 12, 8), ['head'])
+    xx, zz = sx*0.010, 1.634
+    part(ellipsoid('nostril.'+str(sx), (xx, face_y(xx, zz)-0.00045, zz), (0.0024, 0.0004, 0.0011), 'mouth_dark', 12, 8), ['head'])
 def scalp_point(angle, z, offset=0.0035):
     radial = V(math.cos(angle), math.sin(angle), 0)
     hit, _, _, _ = head_bvh.ray_cast(V(0.16*radial.x, 0.008+0.16*radial.y, z), -radial)
@@ -590,8 +622,8 @@ def paint_materials():
             spot((0, -0.121, 1.644), 0.015, (0.65, 0.25, 0.18), 0.20)
             spot((0, -0.111, 1.603), 0.019, (0.38, 0.11, 0.085), 0.48, (1, 0.25, 3.2))
             spot((0, -0.112, 1.6025), 0.019, (0.11, 0.030, 0.024), 0.62, (1, 0.25, 11))
-            spot((0, -0.070, 1.580), 0.073, (0.075, 0.045, 0.028), 0.52, (1.25, 0.65, 0.80))
-            spot((0, -0.109, 1.617), 0.023, (0.065, 0.038, 0.024), 0.60, (1, 0.25, 2.4))
+            spot((0, -0.070, 1.580), 0.073, (0.075, 0.045, 0.028), 0.22, (1.25, 0.65, 0.80))
+            spot((0, -0.109, 1.617), 0.023, (0.065, 0.038, 0.024), 0.20, (1, 0.25, 2.4))
             for sx in (1, -1): spot((0.084*sx, -0.025, 1.630), 0.042, (0.070, 0.042, 0.026), 0.38, (0.75, 1.0, 1.4))
             noise_mul(180, 0.12, (1, 1, 1), 2)
         elif name == 'hair': noise_mul(90, 0.25, (1, 1, 5)); noise_mul(12, 0.15, (1, 1, 1), 1); noise_mul(180, 0.16, (1, 1, 8), 2)
@@ -789,7 +821,7 @@ bpy.ops.export_scene.gltf(filepath=OUT, export_format='GLB', use_selection=True,
                           export_yup=True, export_apply=False, export_attributes=True, export_materials='EXPORT', export_image_format='JPEG' if TEXTURE else 'NONE', export_cameras=False, export_lights=False, export_optimize_animation_size=False, export_force_sampling=True)
 print('REPORT exported', OUT, os.path.getsize(OUT), 'bytes')
 run_made_for = RUN_SPEED
-with open(OUT + '.txt', 'w') as f:      # the loader's keys: the eyes decide the size (the camera is 1.71 m above the feet), the speeds the clips were made for
+with open(OUT + '.txt', 'w', newline='\n') as f:      # the loader's keys: the eyes decide the size (the camera is 1.71 m above the feet), the speeds the clips were made for
     f.write('eye_joint=eye\nspeed=%.2f\nrun_speed=%.2f\n' % (WALK_SPEED, run_made_for))
 print('REPORT wrote', OUT + '.txt', 'run_speed=%.2f' % run_made_for)
 
@@ -803,6 +835,7 @@ if PREVIEW:
     def shoot(name, kind, phi, A, az, dist=5.6, lift=0.0, tz=0.93, lens=70, tx=0.0):
         cam_d.lens = lens; apply(kind, phi, A, lift); a = math.radians(az); cam.location = Vector((tx + math.sin(a) * dist, -math.cos(a) * dist, tz + 0.12)); d = Vector((tx, 0, tz)) - cam.location
         cam.rotation_euler = d.to_track_quat('-Z', 'Y').to_euler(); scene.render.filepath = os.path.join(PREVIEW, name + '.png'); bpy.ops.render.render(write_still=True)
+    shoot('face_front', 'idle', 0.0, 0, 0, 0.78, 0.0, 1.665, 90); shoot('face_threequarter', 'idle', 0.0, 0, 38, 0.78, 0.0, 1.665, 90)
     shoot('face', 'idle', 0.0, 0, 20, 1.5, 0.0, 1.66, 90); shoot('face_side', 'idle', 0.0, 0, 75, 1.5, 0.0, 1.66, 90)
     shoot('hand', 'idle', 0.0, 0, 80, 1.0, 0.0, 0.86, 90, 0.265)
     shoot('front', 'idle', 0.0, 0, 0); shoot('three_quarter', 'idle', 0.0, 0, 38); shoot('back', 'idle', 0.0, 0, 180)
