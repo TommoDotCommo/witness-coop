@@ -1,3 +1,4 @@
+#include "../common/guide.h"
 // In-game dev menu (build 11370412). See devmenu.h. Everything the menu knows comes from the entity table (positions, solved and powered
 // words, each panel's target at +0x2B4); every action calls the same game functions the sync code uses, on the render thread.
 #define WIN32_LEAN_AND_MEAN
@@ -17,6 +18,7 @@
 #include "game.h"
 #include "config.h"
 #include "video.h"
+#include "tv.h"
 #include "savepoints.h"
 #include "progress/progress.h"
 #include "mapgen.h"
@@ -489,12 +491,14 @@ void DevMenuSetPage(int p) { Init(); g_page = p; if (p == 2) SaveListRefresh(); 
 void PanelBoostToggle();      // input.cpp
 void PanelBoostMsg(bool on, float gain) { Msg("panel mouse boost %s (x%.1f, F3 toggles)", on ? "ON" : "off", gain); }
 bool DevMenuKey(unsigned vk, bool down) {
-    Init(); if (PovKey(vk, down)) return true;
-    if (vk == VK_F3 && down) { PanelBoostToggle(); return true; }
-    if (vk == VK_F9 && down && VideoEnabled()) { VideoToggleView(); return true; }
+    Init(); if (down && vk == guide::TvView) { TvEnable(!TvEnabled()); return true; }
+    if (down && vk == guide::TvConsent) { TvAllow(!TvConsent()); return true; }
+    if (PovKey(vk, down)) return true;
+    if (vk == guide::Boost && down) { PanelBoostToggle(); return true; }
+    if (vk == guide::Video && down && VideoEnabled()) { VideoToggleView(); return true; }
     if (!DevMenuEnabled()) return false;
-    if (vk == VK_F8 && down) { DevMenuToggle(); return true; }
-    if (vk == VK_F4 && down) { if (g_open && g_page == 1) DevMenuToggle(); else DevMenuSetPage(1); return true; }
+    if (vk == guide::DevMenu && down) { DevMenuToggle(); return true; }
+    if (vk == guide::Nearby && down) { if (g_open && g_page == 1) DevMenuToggle(); else DevMenuSetPage(1); return true; }
     if (!g_open) return false;
     if (down) { EnterCriticalSection(&g_cs); g_ev.push_back({3, (int)vk, 0}); LeaveCriticalSection(&g_cs); }
     return down;          // key-ups still reach the game, so a key held when the menu opened is released there
@@ -529,7 +533,10 @@ void DevMenuDraw(float W, float H) {
     float tx = x0 + 380 * sc, ty = y0 + 6, th = UiLineHeight(sc) + 10;
     if (Button(tx, ty, 120 * sc, th, "Map", g_page == 0, sc)) g_page = 0; if (Button(tx + 128 * sc, ty, 160 * sc, th, "Nearby puzzles", g_page == 1, sc)) g_page = 1; if (Button(tx + 296 * sc, ty, 120 * sc, th, "Saves", g_page == 2, sc)) { g_page = 2; SaveListRefresh(); }
     { const char* hint = "F8/Esc close   F4 nearby   Tab page"; UiText(x0 + w - UiTextWidth(hint, sc * 0.9f) - 14, y0 + 10, hint, Rgba(0.6f, 0.6f, 0.65f), sc * 0.9f); }
-    float cy0 = y0 + th + 18, ch = h - (cy0 - y0) - UiLineHeight(sc) - 18, lw = 360 * sc, gap = 10;
+    float tvY = y0 + th + 18, tvW = std::min(240.f * sc, (w - 30) / 2);
+    if (Button(x0 + 10, tvY, tvW, th, TvEnabled() ? "Back TV: ON [F10]" : "Back TV: off [F10]", TvEnabled(), sc)) TvEnable(!TvEnabled());
+    if (Button(x0 + 20 + tvW, tvY, tvW, th, TvConsent() ? "Share my POV: ON [F11]" : "Share my POV: off [F11]", TvConsent(), sc)) TvAllow(!TvConsent());
+    float cy0 = tvY + th + 10, ch = h - (cy0 - y0) - UiLineHeight(sc) - 18, lw = 360 * sc, gap = 10;
     if (!g_built) { UiText(x0 + 20, cy0 + 20, "The world is not loaded yet.", Rgba(1, 0.7f, 0.7f), sc); }
     else {
         float rx = x0 + 10 + lw + gap, rw = w - 20 - lw - gap, dh = std::min(ch * 0.46f, 440.f * sc);

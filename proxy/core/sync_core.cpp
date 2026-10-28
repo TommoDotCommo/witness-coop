@@ -6,15 +6,15 @@
 namespace witness {
 namespace {
 
-// Protocol v4 adds cable power-off (v3 added cable lighting, v2 panel power-on). Distinct magics prevent an older peer from ACKing an incomplete vocabulary.
-constexpr uint32_t kMagicPose = 0x34505457, kMagicEv = 0x34455457, kMagicAck = 0x34415457;   // "WTP4" "WTE4" "WTA4"
-constexpr uint32_t kMagicPing = 0x34515457;   // "WTQ4": ping and pong, carry the sender's name
+// Protocol v6 adds a versioned appearance record to presence. Distinct magics prevent an older peer from ACKing an incomplete vocabulary.
+constexpr uint32_t kMagicPose = 0x36505457, kMagicEv = 0x36455457, kMagicAck = 0x36415457;   // "WTP6" "WTE6" "WTA6"
+constexpr uint32_t kMagicPing = 0x36515457;   // "WTQ6": ping and pong, carry the sender's name
 constexpr size_t kPingLen = 48, kNameLen = 24;
-constexpr uint32_t kMagicSoc = 0x34585457, kMagicSocAck = 0x344B5457, kMagicPres = 0x34535457;   // "WTX4" a reliable social message, "WTK4" its acknowledgement, "WTS4" presence
-constexpr size_t kPresLen = 48, kSocHeader = 28, kSocMax = 900, kSocAckLen = 24, kPresName = 24;
+constexpr uint32_t kMagicSoc = 0x36585457, kMagicSocAck = 0x364B5457, kMagicPres = 0x36535457;   // "WTX6" a reliable social message, "WTK6" its acknowledgement, "WTS6" presence
+constexpr size_t kPresLen = 36, kSocHeader = 28, kSocMax = 900, kSocAckLen = 24;
 constexpr uint64_t kPresExpiryMs = 4000;
-constexpr uint32_t kMagicLine = 0x344C5457;   // "WTL4": a drawn line, best effort, the whole line every time
-constexpr uint32_t kGroupPose = 0x35505457, kGroupEv = 0x35455457, kGroupAck = 0x35415457;
+constexpr uint32_t kMagicLine = 0x364C5457;   // "WTL6": a drawn line, best effort, the whole line every time
+constexpr uint32_t kGroupPose = 0x37505457, kGroupEv = 0x37455457, kGroupAck = 0x37415457;
 constexpr size_t kGroupEvLen = 44;
 constexpr size_t kPoseLen = 40, kEvLen = 32, kAckLen = 24;                                    // with the 4-byte checksum
 constexpr uint32_t kSnapBit = 0x100;      // set in an event's kind word when it is part of a full-state snapshot
@@ -571,6 +571,7 @@ void SyncCore::applyRemote(uint64_t now) {
 bool SyncCore::remotePose(RemotePose* out, uint64_t now) {
     Guard g(h_);
     *out = remote_; out->ageMs = remote_.valid ? now - remoteAt_ : 0;
+    auto peer = peers_.find(out->id); if (peer != peers_.end()) out->appearance = peer->second.pres.appearance;
     return out->valid;
 }
 std::vector<RemotePose> SyncCore::remotePoses(uint64_t now) {
@@ -580,7 +581,11 @@ std::vector<RemotePose> SyncCore::remotePoses(uint64_t now) {
         bool fresh = f_.noPingExpiry || (p.second.pongAt && now - p.second.pongAt < 10000);
         pose.pingMs = (p.second.ping >= 0 && fresh) ? int(p.second.ping + 0.5f) : -1; pose.name = p.second.name;
         bool presFresh = f_.noPresenceExpiry || (p.second.presAt && now - p.second.presAt < kPresExpiryMs);
-        pose.character = p.second.pres.character; pose.emote = p.second.pres.emote; pose.emoteSeq = p.second.pres.emoteSeq; pose.typing = presFresh && p.second.pres.typing; pose.speaking = presFresh && p.second.pres.speaking;
+        pose.appearance = p.second.pres.appearance; pose.emote = (!presFresh && ValidEmote(p.second.pres.emote) && kEmotes[p.second.pres.emote].loop) ? 0 : p.second.pres.emote; pose.emoteSeq = p.second.pres.emoteSeq; pose.typing = presFresh && p.second.pres.typing; pose.speaking = presFresh && p.second.pres.speaking; pose.proximitySpeaking = presFresh && p.second.pres.proximitySpeaking; pose.radioTx = presFresh && p.second.pres.radioTx;
+#ifdef WR_MUT_RADIO_EXPIRE
+        pose.radioTx = p.second.pres.radioTx;
+#endif
+        pose.radioEquipped = p.second.pres.radioEquipped; pose.voiceChannel = p.second.pres.voiceChannel;
         poses.push_back(pose);
     }
     return poses;
@@ -594,17 +599,39 @@ size_t SyncCore::queuedRemote() const { Guard g(h_); return recvQ_.size(); }
 
 // ------------------------------------------------------------------------------------------------ social layer
 // A reliable message: magic, from, epoch, seq, type, len, payload, checksum. Each sender numbers its messages (a new epoch starts the numbers again); a receiver takes them in
-// order, once, and answers with the highest number it has taken (WTK4: magic, from, epoch, applied, checksum); the sender resends what a peer has not acknowledged every 250 ms.
-// Presence (WTS4: magic, from, session, seq, emote, emoteSeq, flags, pad, character[24], checksum) is state: the newest wins, and typing / speaking end when it stops arriving.
-void SyncCore::setPresence(const Presence& p) { Guard g(h_); if (!(p == pres_)) { pres_ = p; presDirty_ = true; } }
+// order, once, and answers with the highest number it has taken (WTK6: magic, from, epoch, applied, checksum); the sender resends what a peer has not acknowledged every 250 ms.
+// Presence (WTS6: magic, from, session, seq, emote, emoteSeq, flags, voiceChannel, appearance[12], checksum) is state: the newest wins, and typing / speaking end when it stops arriving.
+void SyncCore::setPresence(const Presence& p) {
+    Guard g(h_);
+    Presence clean = p;
+    clean.appearance = ClampAppearance(p.appearance);
+    if (!ValidEmote(clean.emote)) clean.emote = 0;
+    clean.voiceChannel = std::min<uint8_t>(3, p.voiceChannel);
+    clean.radioTx = p.radioTx && p.radioEquipped && p.speaking && clean.voiceChannel == 1;
+    if (!(clean == pres_)) { pres_ = clean; presDirty_ = true; }
+}
 void SyncCore::sendPresence() {
     Bytes b; put32(b, kMagicPres); put32(b, uint32_t(id_)); put32(b, session_); put32(b, ++presSeq_);
-    b.push_back(pres_.emote); b.push_back(pres_.emoteSeq); b.push_back(uint8_t((pres_.typing ? 1 : 0) | (pres_.speaking ? 2 : 0))); b.push_back(0);
-    for (size_t i = 0; i < kPresName; ++i) b.push_back(i < pres_.character.size() ? uint8_t(pres_.character[i]) : 0);
+#ifdef WR_MUT_RADIO_TX
+    pres_.radioTx=false;
+#endif
+#ifdef WR_MUT_RADIO_CHANNEL
+    pres_.voiceChannel=0;
+#endif
+    b.push_back(pres_.emote); b.push_back(pres_.emoteSeq);
+    b.push_back(uint8_t((pres_.typing ? 1 : 0) | (pres_.speaking ? 2 : 0) | (pres_.radioTx ? 4 : 0) | (pres_.radioEquipped ? 8 : 0) | (pres_.proximitySpeaking ? 4 : 0)));
+    b.push_back(pres_.voiceChannel);
+    auto appearance = EncodeAppearance(pres_.appearance); b.insert(b.end(), appearance.begin(), appearance.end());
     send(finish(std::move(b)));
 }
 void SyncCore::onPresence(const uint8_t* d, size_t n, uint64_t now) {
     if (n != kPresLen) return;
+#ifndef WE_MUT_VALIDATION
+    if (!ValidEmote(d[16]) || (d[18] & ~15) || d[19] > 3) return;
+    if (d[19] != 0 && (d[18] & 4) && (!(d[18] & 8) || !(d[18] & 2) || d[19] != 1)) return;
+    if (d[19] > 1 && (d[18] & 4)) return;
+#endif
+    Appearance appearance; if (!DecodeAppearance(d + 20, kAppearanceBytes, &appearance)) return;
     uint32_t from = get32(d + 4), session = get32(d + 8), seq = get32(d + 12);
     if (int(from) == id_) return;
     Guard g(h_);
@@ -613,9 +640,19 @@ void SyncCore::onPresence(const uint8_t* d, size_t n, uint64_t now) {
     Peer& peer = pi->second;
     bool newer = session > peer.presSession || (session == peer.presSession && seq > peer.presSeq);
     if (!newer && !f_.noPresenceSeq) return;
+    bool sessionChanged = (session != peer.presSession);
+    if (sessionChanged) peer.emoteGate = {};
     peer.presSession = session; peer.presSeq = seq; peer.presAt = now;
-    peer.pres.emote = d[16]; peer.pres.emoteSeq = d[17]; peer.pres.typing = (d[18] & 1) != 0; peer.pres.speaking = (d[18] & 2) != 0;
-    char nm[kPresName + 1] = {}; memcpy(nm, d + 20, kPresName); peer.pres.character = nm;
+    peer.pres.appearance = appearance;
+    if (peer.emoteGate.Accept(now, d[16], sessionChanged || d[17] != peer.pres.emoteSeq || d[16] != peer.pres.emote)) {
+        peer.pres.emote = d[16]; peer.pres.emoteSeq = d[17];
+    }
+    peer.pres.typing = (d[18] & 1) != 0;
+    peer.pres.speaking = (d[18] & 2) != 0;
+    peer.pres.radioTx = (d[19] == 1) && ((d[18] & 4) != 0);
+    peer.pres.radioEquipped = (d[18] & 8) != 0;
+    peer.pres.proximitySpeaking = (d[19] == 0) && ((d[18] & 4) != 0);
+    peer.pres.voiceChannel = d[19];
 }
 bool SyncCore::socialQueue(uint8_t type, Bytes payload) {
     if (payload.size() > kSocMax) return false;

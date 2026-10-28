@@ -81,7 +81,7 @@ private:
 
 struct Machine {
     std::unique_ptr<FakeWorld> world; std::unique_ptr<SyncCore> core;
-    bool up = false; uint64_t nextPoll = 0, nextApply = 0, startedAt = 0; int restarts = 0; uint64_t resyncsBefore = 0;
+    witness::Presence presence; bool up = false; uint64_t nextPoll = 0, nextApply = 0, startedAt = 0; int restarts = 0; uint64_t resyncsBefore = 0;
     std::map<uint64_t, uint32_t> lastAccepted;     // per peer-stream epoch: the last sequence taken in order
 };
 
@@ -107,7 +107,12 @@ public:
                 if (machines_[m].world->localSolve(panel)) { ++counters_["op_solve"]; trace("SOLVE", m, panelId(panel)); } else ++counters_["op_solve_noop"];
                 break;
             }
-            case OpKind::Move: if (machines_[m].up) machines_[m].world->setPose(float(op.a), float(op.b)); break;
+            case OpKind::Move: if (machines_[m].up) {
+                machines_[m].world->setPose(float(op.a), float(op.b));
+                for (auto& c : machines_[m].presence.appearance.choice) c = uint8_t(rng_.range(0, 255));
+                machines_[m].core->setPresence(machines_[m].presence);
+                machines_[m].presence.appearance = witness::ClampAppearance(machines_[m].presence.appearance);
+            } break;
             case OpKind::Leave: if (m == 1 && machines_[m].up && now_ >= machines_[m].startedAt + 45000) { stop(m); ++counters_["op_leave"]; } break;   // a game is not quit within a minute of starting
             case OpKind::Join: if (m == 1 && !machines_[m].up) { start(m); ++counters_["op_join"]; } break;
             case OpKind::SetLink: { LinkParams l = net_.link(); l.minLatencyMs = uint32_t(op.a); l.maxLatencyMs = uint32_t(std::max(op.a, op.b)); l.loss = op.c / 1000.0; l.duplicate = op.d / 1000.0; net_.setLink(l); ++counters_["op_setlink"]; break; }
@@ -171,7 +176,14 @@ public:
         for (auto& e : machines_[m].world->ents()) if (e.present && e.door == (cat == 1) && e.state) { h ^= e.id; h *= 1099511628211ull; }
         return h;
     }
-    std::vector<Violation> nativeViolations() override { return viol_; }
+    std::vector<Violation> nativeViolations() override {
+        if (frozen_) for (int m = 0; m < 2; ++m) if (machines_[m].up && machines_[1-m].up) {
+            auto poses = machines_[m].core->remotePoses(now_);
+            if (poses.size() != 1 || poses[0].appearance != machines_[1-m].presence.appearance)
+                viol("appearance_convergence", "latest appearance did not survive loss/restart/replay");
+        }
+        return viol_;
+    }
 
 private:
     struct Sent { int from, to; Bytes data; };
@@ -213,6 +225,8 @@ private:
         h.onRestartSeen = [this, m] { trace("sees-restart", m); ++counters_["peer_restarts_seen"]; };
         uint32_t session = uint32_t(1 + now_ / 10 + uint64_t(M.restarts) * 1000);      // grows with every start, like the clock in seconds
         M.core = std::make_unique<SyncCore>(m, session, M.world.get(), h, flags_);
+        M.presence = {}; for (auto& c : M.presence.appearance.choice) c = uint8_t(rng_.range(0, 3));
+        M.core->setPresence(M.presence);
         trace("START", m, 0, session); M.lastAccepted.clear(); M.up = true; M.nextPoll = now_; M.nextApply = now_; M.startedAt = now_; ++M.restarts;
         net_.setConnected(m, true);
         if (M.restarts > 1) { ++counters_["restarts"]; logApply(m, 0, -1, 0, 0, m, ApplyKind::Reset, true, 0, "restart"); }

@@ -45,12 +45,12 @@ struct Out { bool panel, door, line; unsigned emitted, unacked; bool pose; bool 
 static Out run(Flags fa, Flags fb) {
     Pair p(fa, fb); p.advance(40000);      // both worlds become stable and settle
     p.a.solved[2] = true; p.a.open[1] = true; p.a.line = true; p.cb->sendChat("hi"); p.ca->sendChat("hello");
-    Presence pr; pr.character = "frog"; pr.emote = 3; pr.emoteSeq = 1; p.ca->setPresence(pr);
+    Presence pr; pr.emote = 3; pr.emoteSeq = 1; p.ca->setPresence(pr);
     p.advance(12000);
     Out o{}; o.panel = p.b.solved[2]; o.door = p.b.open[1]; o.line = !p.cb->remoteLines(p.now).empty(); o.emitted = p.emits; o.unacked = unsigned(p.ca->unacked());
-    auto rps = p.cb->remotePoses(p.now); RemotePose rp; if (!rps.empty()) rp = rps[0]; o.pose = rps.size() == 1 && rp.valid && rp.character == "frog" && rp.emote == 3;
+    auto rps = p.cb->remotePoses(p.now); RemotePose rp; if (!rps.empty()) rp = rps[0]; o.pose = rps.size() == 1 && rp.valid && rp.emote == 3;
     auto ca_ = p.cb->takeChat(), cb_ = p.ca->takeChat(); o.chat = ca_.size() == 1 && cb_.size() == 1;
-    std::printf("    [pose %d (valid %d char '%s' emote %d) chat %zu/%zu emitted %u]\n", o.pose, rp.valid, rp.character.c_str(), rp.emote, ca_.size(), cb_.size(), o.emitted);
+    std::printf("    [pose %d (valid %d emote %d) chat %zu/%zu emitted %u]\n", o.pose, rp.valid, rp.emote, ca_.size(), cb_.size(), o.emitted);
     return o;
 }
 int main() {
@@ -61,7 +61,7 @@ int main() {
     Out r = run(race, race);
     check("race: the other game's panel stays unsolved, its door shut, no line shown", !r.panel && !r.door && !r.line);
     check("race: nothing is even announced (no events made)", r.emitted == 0);
-    check("race: the other player is still seen (pose, character, emote) and chat still works", r.pose && r.chat);
+    check("race: the other player is still seen (pose, emote) and chat still works", r.pose && r.chat);
     Out m = run(co, race);
     check("mixed (a co-op sender, a racer): the racer's world is untouched", !m.panel && !m.door && !m.line);
     check("mixed: the co-op sender is not blocked (everything it sent was acknowledged)", m.unacked == 0);

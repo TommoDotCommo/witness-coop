@@ -64,7 +64,7 @@ def stage(vi):
 
 def lineup(vi, tag, caption):
     """Game `vi` looks at all the others, who stand on an arc around it facing its way (every player at its own angle, alternating between two distances for some depth),
-    each drawn with its own character model. Two straight rows hide players behind each other whatever the spacing; an arc does not."""
+    each drawn as an adventurer. Two straight rows hide players behind each other whatever the spacing; an arc does not."""
     V = games[vi]; (bx, by, ground), th, h_o, others = stage(vi); n = len(others)
     step = 0.2 if n > 4 else 0.26
     for k, g in enumerate(others):
@@ -140,12 +140,11 @@ def social_scene(vi):
     V.send(['chat Looking good from here'], 0.4)
 
 def emote_scene(vi):
-    """Emotes: the others play different ones at the same moment; the wheel; the character list."""
+    """Emotes: the others play different ones at the same moment; the wheel."""
     V = games[vi]; lineup(vi, None, None); others = [g for k, g in enumerate(games) if k != vi]
     for k, g in enumerate(others): g.send(['emote %d' % (k % 8 + 1)])
     time.sleep(0.9); snap(V, 'emotes', 'Emotes at the same moment: a hop, a bow, a spin, a nod, a wave, a shake, a shrug, a dance, each with its name over the head. A model plays its own clip when it has one, otherwise a procedural motion.')
     time.sleep(2.5); V.send(['wheel open'], 0.4); V.send(['mouse 40 -40'], 0.5); snap(V, 'emote_wheel', 'The emote wheel (hold G): eight slots, the one the mouse points to lit. The camera does not turn while it is open.'); V.send(['wheel close'], 0.4)
-    V.key('C', 0.12, 0.8); snap(V, 'character_list', 'The character list (C): the model the others see you as. Up / Down, Enter.'); V.key('ESC', 0.12, 0.6)
 
 def draw_polyline(g, pts, inks=0):
     g.send(['canvas on', 'reticle %.4f %.4f' % pts[0]], 0.2)
@@ -191,6 +190,14 @@ def window_picture(h, name, caption):
     for i in range(3, len(raw), 4): raw[i] = 255
     f.write(bytes(raw)); f.close(); g32.DeleteObject(bmp); g32.DeleteDC(mdc); u.ReleaseDC(h, dc)
     bmp_to_png(path, os.path.join(out, name + '.png'), 1, None); os.remove(path); manifest.append(dict(file=name + '.png', caption=caption, player=0)); print('  picture', name, flush=True)
+
+def hero_scene(vi):
+    """One character close up: it stands 3.4 m in front of the camera facing it, then walks toward it."""
+    V = games[vi]; B = games[0 if vi else 1]; (bx, by, ground), th, h_o, others = stage(vi)
+    for g in others: g.send(['tp %.3f %.3f %.3f %.4f 0' % (bx - math.cos(th) * 30, by - math.sin(th) * 30, ground, h_o)])      # everybody else out of the picture
+    B.send(['tp %.3f %.3f %.3f %.4f 0' % (bx + math.cos(th) * 3.4, by + math.sin(th) * 3.4, ground, h_o)], 3.5); snap(V, 'hero_idle', 'A character close up, standing (its idle clip), seen by another player.')
+    B.send(['tp %.3f %.3f %.3f %.4f 0' % (bx + math.cos(th) * 7.2, by + math.sin(th) * 7.2, ground, h_o)], 2.0)      # (the game walks at about 3.6 m/s: start far enough away that the walker is 3 m in front of the camera when the picture is taken)
+    B.send(['key W down'], 1.0); snap(V, 'hero_walk', 'The same character walking toward the camera (its walk clip, at the speed the clip was made for).'); B.send(['key W up'], 1.0)
 
 def ghost_scene(vi):
     """See-through players: one stands between the camera and the first panel and becomes a ghost, then steps aside and is solid again."""
@@ -317,10 +324,10 @@ def launcher_scene(vi):
         time.sleep(0.5); grab_window(h, 'launcher_newgame', 'New game: tick the parts of the map that are done (or light some lasers, or take a ready-made start); the window says how many panels that is and what else the game needs first. Whatever the game needs before a part is solved with it, in order.')
     p.kill()
 
-SCENES = [('lineup', lambda: (lineup(0, 'lineup_a', 'Eight players in one group, each drawn with a different character model (seen by player 1: players 2 to %d).' % N),
+SCENES = [('lineup', lambda: (lineup(0, 'lineup_a', 'Eight players in one group, each drawn as an adventurer (seen by player 1: players 2 to %d).' % N),
                               lineup(1, 'lineup_b', 'The same group seen by player 2: this time player 1 is in the picture.') if N > 2 else None)),
           ('walk', lambda: walkers(0, 'walk', 'The others walking toward the camera: the walk clip of each model, at the speed the other game measured.')),
-          ('ghost', lambda: ghost_scene(1)), ('lobby', lambda: lobby_scene()), ('race', lambda: race_scene()), ('pov', lambda: pov_scene(0)), ('devmenu', lambda: devmenu_scene(0)), ('pause', lambda: pause_pair(0)), ('social', lambda: social_scene(0)), ('emote', lambda: emote_scene(0)), ('draw', lambda: draw_scene(0)), ('voice', lambda: voice_scene(0)), ('panel', lambda: panel_scene(0)), ('map', lambda: map_scene(0)), ('launcher', lambda: launcher_scene(0))]
+          ('hero', lambda: hero_scene(1)), ('ghost', lambda: ghost_scene(1)), ('lobby', lambda: lobby_scene()), ('race', lambda: race_scene()), ('pov', lambda: pov_scene(0)), ('devmenu', lambda: devmenu_scene(0)), ('pause', lambda: pause_pair(0)), ('social', lambda: social_scene(0)), ('emote', lambda: emote_scene(0)), ('draw', lambda: draw_scene(0)), ('voice', lambda: voice_scene(0)), ('panel', lambda: panel_scene(0)), ('map', lambda: map_scene(0)), ('launcher', lambda: launcher_scene(0))]
 t0 = time.time(); print('showcase: %d games, scenes %s, spot panel 0x%s' % (N, ','.join(want), SPOT), flush=True)
 teleport_all(SPOT)
 for name, fn in SCENES:

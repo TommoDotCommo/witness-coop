@@ -8,6 +8,7 @@
 #include <cstring>
 #include <vector>
 #include "video.h"
+#include "tv.h"
 #include "config.h"
 #include "coop.h"
 #include "core/pov.h"
@@ -74,9 +75,10 @@ DWORD WINAPI EncodeThread(LPVOID) {
     for (;;) {
         WaitForSingleObject(g_outEvent, INFINITE);
         EnterCriticalSection(&g_cs); bool have = g_outFresh; if (have) { px.swap(g_outRgba); g_outFresh = false; } LeaveCriticalSection(&g_cs);
-        if (!have || px.size() != (size_t)kW * kH * 4 || !Encode(wic, px.data(), jpg)) continue;
+        if (!have || px.size() != (size_t)kW * kH * 4) continue;
+        TvCapture(px.data(), kW, kH);
         EnterCriticalSection(&g_cs); std::vector<unsigned> subs = g_subs.live(GetTickCount64()); LeaveCriticalSection(&g_cs);
-        if (subs.empty()) continue;                                       // nobody asked: nothing to send
+        if (subs.empty() || !Encode(wic, px.data(), jpg)) continue;                                       // nobody asked: nothing to send
         size_t count = (jpg.size() + kChunk - 1) / kChunk; ++frameId;
         for (size_t i = 0; i < count; i++) {
             size_t len = std::min(kChunk, jpg.size() - i * kChunk); std::vector<uint8_t> pkt(20 + len + 4);
@@ -128,15 +130,16 @@ static void ViewerTick() {      // render thread, every frame: ask the watched p
 }
 
 void VideoFrame(IDXGISwapChain* sc, ID3D11Device* dev, ID3D11DeviceContext* ctx) {
-    if (!VideoEnabled()) return;
-    Init(); ViewerTick();
+    if (!VideoEnabled() && !TvWanted()) return;
+    Init(); if (VideoEnabled()) ViewerTick();
     if (GetCfg().noPartnerVideo) return;
     EnterCriticalSection(&g_cs); bool wanted = g_subs.wanted(GetTickCount64()); LeaveCriticalSection(&g_cs);
-    if (!wanted) return;                                  // nobody watches this game: no capture and no encoding
+    if (!wanted && !TvWanted()) return;                                  // nobody watches this game: no capture and no encoding
     if (!g_thread) { g_outEvent = CreateEventA(nullptr, FALSE, FALSE, nullptr); g_thread = CreateThread(nullptr, 0, EncodeThread, nullptr, 0, nullptr); }
     LONG frame = InterlockedIncrement(&g_frames);
     ID3D11Texture2D* bb = nullptr; if (FAILED(sc->GetBuffer(0, __uuidof(ID3D11Texture2D), (void**)&bb))) return;
     D3D11_TEXTURE2D_DESC td; bb->GetDesc(&td);
+    if (!wanted && (td.Width > 4096 || td.Height > 2160 || td.Width < 480 || td.Height < 270 || td.SampleDesc.Count != 1)) { bb->Release(); return; }
     if (td.Format != DXGI_FORMAT_R8G8B8A8_UNORM && td.Format != DXGI_FORMAT_R8G8B8A8_UNORM_SRGB && td.Format != DXGI_FORMAT_B8G8R8A8_UNORM) { bb->Release(); return; }
     if (!g_stage || g_sw != td.Width || g_sh != td.Height || g_sfmt != td.Format) {
         if (g_stage) { g_stage->Release(); g_stage = nullptr; } g_state = Idle;

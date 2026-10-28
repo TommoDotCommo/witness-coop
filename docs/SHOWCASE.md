@@ -1,5 +1,8 @@
 # witness-coop showcase
 
+These are historical captures made before the adventurer became the only character. They document the social features, not the current character roster. New runs of `tools/showcase.sh` use adventurers; fresh captures are pending.
+
+
 Co-op for **The Witness**: you and your friends in the same world, seeing each other, talking, drawing, and now also racing. These are real pictures of the game with the
 mod, taken by `tools/showcase.sh` from copies of the game running on one PC (the player names are the test harness's: the models' names). Everything on this page was seen in these
 pictures; what is not in them is not claimed. [Player guide](../README.md) · [All features and how each is tested](../features.md)
@@ -46,7 +49,7 @@ turns into a walkie-talkie far away. The bars beside a name are the players who 
 
 | Radio | Open line | One on one |
 |---|---|---|
-| ![Radio](showcase/voice_radio.jpg) | ![Open line](showcase/voice_global.jpg) | ![Private: Cesium Man](showcase/voice_direct.jpg) |
+| ![Radio](showcase/voice_radio.jpg) | ![Open line](showcase/voice_global.jpg) | ![Private voice](showcase/voice_direct.jpg) |
 
 Radio: everybody hears you at any distance, with the walkie-talkie sound. Open line: everybody hears you as you sound, as loud far away as next to you. One on one: only that
 player hears you (over the radio): the voice is not even sent to anybody else.
@@ -63,15 +66,13 @@ The "[V] watch ... view" line appears while the cross-hair is on a player (see t
 
 Player 2's view of the same group: player 1, drawn as Brainstem, is in this picture. Together the two pictures show all eight models.
 
-`model_by_player=1` in each game's `witness_coop.cfg` does this: player *i* is drawn with the *i*-th model of `witness_models\` (alphabetical), the same
-in every game. Without it every game draws every other player with one model of its own choosing (F6 / F7 switch it).
+Current builds draw every player as the adventurer, identified by their name and player colour.
 
 ## Walking
 
 ![The seven others walking toward the camera](showcase/walk.jpg)
 
-All seven hold the forward key. Each model plays its own walk or run clip at the speed the other game measured; Michelle (whose file has a dance and a T-pose clip, no walk) dances,
-the Fox trots, Cesium Man strides, the Magic Frog walks. A model without a clip for a state stands in its first frame.
+Players hold the forward key. Current builds play the adventurer walk or run clip at the measured speed.
 
 ## Watching another player's screen
 
@@ -129,7 +130,7 @@ Seven players speak at once: each line floats over its player and is in the log 
 with a name and a distance are pings (the sender's colour); the arrow at the bottom is a ping behind the camera. The bars beside some names are the players who are talking
 (here the even players, a test voice instead of a microphone), and the line at the bottom left is this player's own microphone (`hold N to talk`).
 
-## Emotes and characters
+## Emotes
 
 ![Eight emotes at once](showcase/emotes.jpg)
 
@@ -139,9 +140,6 @@ Spin, bow, no, yes, cheer, dance, wave, each with its name over the head: a mode
 
 Hold G and move the mouse toward a slot (the up-right one, Dance, is lit); release plays it. The camera does not turn while the wheel is open.
 
-![The character list](showcase/character_list.jpg)
-
-C opens the list of models; the one you choose is what everyone else sees you as.
 
 ## Drawing
 
@@ -182,23 +180,11 @@ The voice is not in a picture: `proxy/voice/voice_demo.cpp` writes WAV files of 
 
 ## Models
 
-Three open-licence models are bundled (`assets/models/CREDITS.md`). The others in these pictures are not part of the repository:
-
-| Model | Source and licence |
-|---|---|
-| Cesium Man, Fox, Rigged Figure | Khronos glTF sample assets, bundled, credits in `assets/models/CREDITS.md` |
-| Robot (RobotExpressive) | Tomas Laulhe, CC0 1.0, modified by Don McCurdy; `tools/get_showcase_models.sh` downloads it |
-| Xbot, Michelle | Mixamo characters as they come with the three.js examples; Mixamo's terms apply and I have not checked them for redistribution, so they stay out of the repository |
-| Brainstem | (c) Smith Micro, Poser EULA (the Khronos sample asset): not redistributable here |
-| Magic Frog | Sketchfab, by David Glynch ("Free Standard" licence): for your own use; `tools/frog_gait.py` adds walk and run clips |
-
-Put the files you may use in `$WITNESS_EXTRA_MODELS` (default `$ROOT/local/showcase-models`) with a `<name>.glb.txt` (`height=1.8`). With fewer than eight models the
-script reuses them and says so.
+Only the original [adventurer](../assets/models/CREDITS.md) is bundled now. The third-party characters visible in these historical pictures are no longer shipped or selectable. Historical image credits: Cesium Man and Rigged Figure by Cesium (CC BY 4.0); Fox by PixelMannen (mesh, CC0), tomkranis (rig/animation, CC BY 4.0), AsoboStudio and scurest (conversion, CC BY 4.0); RobotExpressive by Tomas Laulhe (CC0), modified by Don McCurdy; Xbot and Michelle from Mixamo; Brainstem by Smith Micro (Poser EULA); Magic Frog by David Glynch (Sketchfab Free Standard licence). These image attributions remain because the old screenshots remain; none of those model files is distributed.
 
 ## Run it
 
 ```
-tools/get_showcase_models.sh      # the one extra model that may be shared
 tools/showcase.sh 8               # all scenes except the race; tools/showcase.sh 5 lineup,walk for some
 SHOWCASE_CFG_EXTRA='game_mode=race\nrace_goal=count:3\nrace_countdown_ms=60000' tools/showcase.sh 2 race
 tools/showcase_publish.sh         # the JPEGs of docs/showcase/ from the PNGs of showcase/

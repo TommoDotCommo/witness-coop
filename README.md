@@ -10,11 +10,13 @@ Built with the [Co-op Anything](https://github.com/cranebeaker/coop-anything) pl
 No game files are in this repo. You need your own copy of The Witness, Steam build 11370412
 (`witness64_d3d11.exe` SHA-256 `8d672d444df6a6df7130f25a517bdab1af92731fe2138dc5b324d519561d55a5`).
 
-[![Seven players in the garden, each drawn as a different character, with name tags and pings](docs/showcase/lineup_a.jpg)](docs/SHOWCASE.md)
+[![Historical group showcase with name tags and pings](docs/showcase/lineup_a.jpg)](docs/SHOWCASE.md)
 
 **[See the showcase](docs/SHOWCASE.md)** for pictures of every feature.
 
 ## What works
+
+The adventurer has [24 procedural emotes and proximity speech gestures](docs/GESTURES.md), with game-free pose checks, sync simulation and a software preview. Hold `G` for the wheel, use `Tab` to change its page, and press `F1` for the binding guide. Live visual quality remains unverified.
 
 Chat, pings, emotes, drawing, voice (with channels: proximity, radio, an open line, one on one), see-through players, a race mode, a lobby in the launcher (invite friends, see and talk to them before and after the game), saves that say who played and a new game that starts with chosen parts of the map done are described in [features.md](features.md); pictures of all of it are in [the showcase](docs/SHOWCASE.md).
 
@@ -22,10 +24,8 @@ Chat, pings, emotes, drawing, voice (with channels: proximity, radio, an open li
   hook on the Direct3D 11 `Present` call. It stands at the other player's feet, faces where they look, plays a walk clip at a rate
   matched to their measured speed (and an idle or run clip when the model has one), and is hidden by walls and doors: the proxy reads
   the game's own depth buffer (4x MSAA, reversed depth stored as `0.0597 / distance`, found by watching which depth view the game
-  binds) and discards the model's pixels that are behind it. Three open-licence models are bundled (`assets/models/`, credits in
-  `CREDITS.md`) and `model=<name or .glb path>` in the cfg picks one; `model=none` brings back the old flat puppet. In game, **F7 / F6** switch to the next / previous model (every `.glb` in
-  `witness_models\`) and a small panel lists them for four seconds; `model <name|next|prev>` does the same from `witness_cmd.txt`. The choice is
-  local: it is what *you* see for the other player.
+  binds) and discards the model's pixels that are behind it. The original adventurer is the only character, with idle, walk and run clips.
+  See [asset credits](assets/models/CREDITS.md) and the [migration details](#character-migration) below.
 - **Shared panels and doors.** A detector watches all 594 `Machine_Panel` and 327 `Door` entities. A solved panel is sent to the
   other game and written there as solved; an opened door is opened there by calling the game's own door function, so the
   door animates and collides as in single-player. Events are numbered, received in sequence and resent until acknowledged.
@@ -39,9 +39,30 @@ Chat, pings, emotes, drawing, voice (with channels: proximity, radio, an open li
 - **Safe start.** Nothing is detected, resent or applied until the world is stable (camera valid and identical panel and door
   counts on three scans three seconds apart); after applying a remote change the entity is suppressed for 5 s so it is not
   sent back.
+- **Optional Back TV ("POV TV").** A small CRT TV strapped to the adventurer's back displaying that player's point of view to nearby players as a 128x96 snapshot stream (5 Hz, RLE compressed) with dynamic harness sway, antenna wobble, and phosphor power-on/off animations. Double opt-in: viewer toggle (`pov_tv=1`, F10) and streamer consent (`pov_tv_consent=1`, F11) default off; on-screen HUD indicator signals broadcasting. See [POV TV design and verification](docs/POV_TV.md).
 
 Not done: power-off switching, plates, lasers, bridges, a real network (localhost only), late join into a game
-with progress (restart catch-up, a first-time late join and a same-process save reload are in the suite), puzzles beyond the first two tutorial doors, the first black/white tutorial panel and one cable-driving maze (`0x293`), announcing a player's own model choice to the peer (the selection is local), crouch/prone poses (the game has none), lighting that matches the game's, models with several textures or materials, and shadows.
+with progress (restart catch-up, a first-time late join and a same-process save reload are in the suite), puzzles beyond the first two tutorial doors, the first black/white tutorial panel and one cable-driving maze (`0x293`), crouch/prone poses (the game has none), lighting that matches the game's, models with several textures or materials, and shadows.
+
+## Quick guide (hold F1)
+
+Hold **F1** in the game or launcher to show a three-column guide; release it to return.
+It covers the current mod bindings, co-op and race features, host/join flow, shared state,
+networking and troubleshooting. The game uses its existing text renderer; both views share
+`common/guide.h` and `common/bindings.def`. Configurable keys come from that binding table,
+including custom keys; the launcher shows its current settings (restart the game to apply).
+F1 works in chat, menus and launcher text fields too, and losing focus dismisses the guide.
+
+This revision had no default F1 action. An existing custom `key_*=F1` assignment moves to
+**F2**, leaving F1 for help. If F2 is occupied, it uses the first free key in F12,
+then 0 through 9. The guide shows the resulting key. The launcher loads this migration into
+its settings fields; Save settings persists it. The DLL also applies it when reading an old cfg.
+The launcher rejects duplicate keys, fixed mod shortcuts and WASD for configurable mod actions.
+
+`make -C common test` runs the game-free guide/binding tests and four mutants: omitted key,
+colliding keys allowed, F1 migration disabled, and toggle instead of hold. It checks custom
+bindings, repeat/release/focus loss and the three-column line budget. Build both views with
+`make -C proxy` and `make -C launcher launcher`.
 
 ## Try it (two copies on one PC)
 
@@ -76,8 +97,8 @@ all remote poses and avatars, player selection on the map, and shared panel, doo
 Group cable mutations carry logical versions so concurrent changes and old snapshots converge consistently.
 Detection follows the requested power level while the cable glow fades; a genuine local reversal is still sent during
 a remote echo-guard window. New commands are detected before restart snapshots are built.
-The original two-player `peer=<port>` configuration still uses protocol v4. Group mode uses v5; every member must
-use the group DLL and list every other member, with distinct player IDs and UDP endpoints.
+The two-player `peer=<port>` configuration uses protocol v6. Group mode uses distinct v7 packet tags; every member must
+use the updated DLL and list every other member, with distinct player IDs and UDP endpoints.
 
 Generate configurations from a JSON roster, for example:
 
@@ -122,7 +143,7 @@ file made the loader fail with "AnselSDK64_real.dll not found"). `DllMain` only 
 
 | Part | File | What it does |
 |---|---|---|
-| Network | `coop.cpp` | Protocol v4 UDP: pose at 30 Hz (`WTP4`, 40 bytes), reliable events (`WTE4`, 32 bytes: epoch, sequence, kind with bit 8 set for snapshot events, entity), cumulative acks (`WTA4`, 24 bytes); lengths include checksums. A peer session change starts a new epoch and full state resend |
+| Network | `coop.cpp` | Protocol v6 UDP: pose at 30 Hz (`WTP6`, 40 bytes), reliable events (`WTE6`, 32 bytes: epoch, sequence, kind with bit 8 set for snapshot events, entity), cumulative acks (`WTA6`, 24 bytes); lengths include checksums. A peer session change starts a new epoch and full state resend |
 | Overlay | `overlay.cpp` | Patches slot 8 (`Present`) of the swap-chain vtable (found through a dummy device), draws the player model (`model_gpu.cpp`, `model/`) or the flat puppet; also runs queued game commands and remote events between frames |
 | Model | `model/model.{h,cpp}`, `model_gpu.cpp`, `depth.cpp` | `model/` is game-free C++ (glTF loading with cgltf and stb_image, skeletal animation, CPU skinning, camera maths, the remote player's walk state) with its own T0 test; `model_gpu.cpp` is the D3D11 skinned-mesh renderer with a GPU occlusion query; `depth.cpp` patches the context vtable (`OMSetRenderTargets`) to find the game's scene depth buffer |
 | State | `state.cpp` | Detector thread (10 Hz) and the applier; echo guard and stable-world gate |
@@ -144,13 +165,22 @@ off by default, so a player's own game is unchanged): `save_dir=instance` (the g
 (see above), `force_active=1` (the game believes its window is always active: full speed, and it accepts injected input, without taking the focus or the mouse; the real cursor is replaced by a virtual one). Test-only switches: `drop_first_event=1`, `no_resend=1`, `no_echo_guard=1`, `no_resync_on_restart=1`, `skip_entity_zero=1`, `no_panel_power=1`, `no_cable_sync=1`, `no_cable_off=1`, `no_off_snapshot=1`, `no_snap_reassert=1`, `no_cable_arbiter=1`, `no_power_link=1`, `no_target_dispatch=1`. The log is `witness_proxy.log` next to the DLL.
 
 Keys added with the lobby and the race (all optional): `game_mode=race` (nothing of the world is shared, see features.md) with `race_goal=panel:<hex>|count:<n>` and `race_countdown_ms=` (default 5000), `voice_channel=proximity|radio|global|direct:<player>` and `key_voice_channel=` (default `H`), `see_through=0|1` and `ghost_alpha=`, and for the launcher `lobby_port=` and `lobby_advertise=`; test switches `race_emits=1`, `race_applies=1`, `no_race_hud=1`, `no_voice_channel=1`, `no_voice_channel_key=1`, `voice_no_self=1`. `racestat`, `ghoststat` (in `modelstat`) and the channel in `voicestat` are the readouts the tests use.
+Optional back TV settings: `pov_tv=0|1` (enable viewing back TV on the nearest player, default 0; hotkey F10), `pov_tv_consent=0|1` (consent to streaming POV snapshots to subscribing viewers, default 0; hotkey F11). Commands `tv 0|1`, `tvconsent 0|1`, and `tvstate` control and inspect TV state.
 
-Player model keys (also optional): `model=<name or path>` (default `cesium-man`; a bundled name is looked up in `witness_models\` next to the DLL, anything else is a `.glb` path; `model=none` draws the flat puppet), `model_height=<m>`, `model_speed=<m/s the walk clip was made for>`, `model_yaw=<degrees>` (each model's own defaults come from its `<file>.glb.txt`), `depth_bias=<fraction>` and `depth_near=<m>` (how the game's depth is compared; `depth_near=0.0597` was measured), and the test mutants `no_model_depth=1`, `no_model_gait=1` and `no_model_select=1`. `tools/install.sh` copies `assets/models/` next to the DLL.
+### Character migration
 
-More model keys: `model_by_player=1` draws every remote player with a different model of `witness_models\` (player 1 the selected one, 2 the next, and so on; every game must have the same models so that all agree), `no_pause_hide=1` and `pause_wrong_flag=1` (test mutants of the pause-menu fix). While the game's pause menu is open the proxy draws nothing of its own over it (puppets, name tags, shared lines). `tools/showcase.sh [N]` starts N real games in one group and takes pictures of every feature: see `showcase.md`.
+The proxy always loads `witness_models/adventurer.glb` beside the DLL. Old `model=` (including `none` and external paths), `character=`, `model_by_player=`, `key_character=` and `no_model_select=` settings are ignored. The launcher preserves these unknown lines when saving, but offers no model selector. F6, F7, C and the old `model` / `character` commands no longer select a model. `tools/install.sh` replaces the disposable copy's model directory with the bundled adventurer.
+
+Existing game saves are unchanged. Campaign `.coop.txt` metadata still reads and preserves historical character strings for compatibility; new player entries record `adventurer`. These strings never select an asset.
+
+Fit overrides remain available for diagnostics: `model_height=<m>`, `model_speed=<m/s>` and `model_yaw=<degrees>`. The bundled sidecar sets eye alignment and walk/run speed. Depth settings are `depth_bias=<fraction>` and `depth_near=<m>` (default `0.0597`); model mutants are `no_model_depth=1`, `no_model_gait=1`, and `no_modelstat_queue=1`. While paused the proxy hides its overlays (`no_pause_hide=1` and `pause_wrong_flag=1` are test mutants).
+
+Protocol v6 adds a fixed 12-byte versioned appearance record to presence (36 bytes total). Pose, event, ACK, ping, social, presence and line packet magics changed so older peers are ignored. Group pose/event/ACK use distinct version-7 tags; all clients must update together. The stable-world gate and reliable event semantics are unchanged. The removed model-name field does not return. See [appearance design and verification](docs/APPEARANCE.md).
+
+`tools/showcase.sh [N]` captures N adventurers in a group; the [showcase page](docs/SHOWCASE.md) labels older pictures separately.
 
 Both peers must use the updated DLL. Protocol v2 added panel power-on and v3 adds cable lighting (event kind 4: a cable is lit when `+0xC4` and `+0xC8` are 1.0; applied through the game's own `exe+0x175EE0`, the call its target dispatcher at `exe+0xC24F0` makes for a cable target); each version uses new packet magics, so older peers are ignored.
-Protocol v4 adds cable power-off (event kind 5, the game's own `exe+0x175E50`, which sets the requested level `+0xC8` to 0 and lets the glow fade). A cable that was lit and goes dark is announced; a snapshot also lists default-lit cables that were switched off, so a fresh peer learns them; a peer's snapshot never relights a cable this player switched off (this player answers with the off state); and when both players switch the same cable at the same moment the lower player id wins, so both worlds end the same.
+Protocol v4 introduced cable power-off (event kind 5, the game's own `exe+0x175E50`, which sets the requested level `+0xC8` to 0 and lets the glow fade). A cable that was lit and goes dark is announced; a snapshot also lists default-lit cables that were switched off, so a fresh peer learns them; a peer's snapshot never relights a cable this player switched off (this player answers with the off state); and when both players switch the same cable at the same moment the lower player id wins, so both worlds end the same.
 Applying a remote panel solve also does what the game's target dispatcher (`exe+0xC24F0`) does for targets that have no event of their own (lasers, pressure plates, gauges and the like), and a panel powered by a remote event gets its source back-link at `+0x2C8` like a native solve.
 
 Without `force_active` the game runs unthrottled only while its window is the active one (otherwise about 10 fps) and ignores keys and
@@ -169,6 +199,7 @@ mouse buttons. It also takes the foreground by itself while loading (`tools/rest
 | `door <hexid>` | open that Door entity with the game's own function |
 | `stats` | log the input counters |
 | `modelstat` | log the model's state: pixels that passed the depth test (GPU occlusion query), animation clip and time, measured speed, pose |
+| `tvstate` | dump POV TV state JSON (`witness_tv.json`): enabled, consent, subscribers, frame hash, sway, visible pixels |
 | `fakepose <x> <y> <z> <yaw>` / `fakepose off` | test hook: draw the peer at this eye position instead of where it is (a player cannot be teleported behind a closed door, but the depth test must be checked there) |
 | `probe` / `depthview on|off` | diagnostics: log the game's depth at a few pixels; draw the depth buffer instead of the model |
 
@@ -204,7 +235,7 @@ Power-on regressions also run in T0: dropped first sends, refused power-on calls
 and restoring power to a restarted receiver after the original events were acknowledged. Disabled power sync, no retry,
 no echo guard and no restart resync each have a twin the regression must catch.
 
-**Model code, no game needed:** `make -C proxy/model test` (also run by `make -C proxy/core test`) loads the bundled models and checks skinning against the bind pose, that the walk loops, quaternion interpolation, that the camera matrix agrees with the projection the puppet always used, the placement of the figure (feet, height, facing, left/right), and the walk state (speed, idle, teleports, clip choice by name); six mutants (matrix order, no loop, no quaternion renormalising, mirrored model, no teleport guard, no run clip) must each fail it.
+**Model code, no game needed:** `make -C proxy/model test` (also run by `make -C proxy/core test`) loads the bundled adventurer and checks skinning against the bind pose, that the walk loops, quaternion interpolation, that the camera matrix agrees with the projection the puppet always used, the placement of the figure (feet, height, facing, left/right), and the walk state (speed, idle, teleports, clip choice by name); 15 mutants cover matrix order, looping, quaternion normalisation, placement, gait, blending, run timing, joint limits, eye fitting, skins, flat colours and emote matching. `proxy/core/tests/run_protocol.py` additionally checks protocol migration with three mutants.
 
 **T2, two real games:**
 
@@ -212,18 +243,7 @@ no echo guard and no restart resync each have a twin the regression must catch.
 first panel, aims, clicks to enter the puzzle, traces the line, clicks to finish), with no window focused and no desktop input, and `tools/state_diff.py` compares the
 solved panels and open doors read from both games' memory. Scenarios marked MUTANT are deliberately broken and must fail.
 
-`tools/qa.sh model` runs the character-model suite (`tools/suite_model.py`, `tools/win/wmodel.py`): the viewer's proxy reports how many pixels of the model passed the depth test, and the check asserts that a player 5 m ahead is visible, a standing one is idle, a walking one has a measured speed of 1.5 to 5 m/s, plays the walk clip and animates, goes idle and still when stopping, is visible in front of the closed first door and has under 2% of those pixels behind it. Mutants: model drawn over walls, model never walks, model off, and a second bundled model selected by name. A selector scenario presses F7 / F6 (injected as the game's own key messages) and `model fox`, and asserts which model `modelstat` reports and that it is drawn; its mutant (`no_model_select=1`) must fail exactly the switching checks.
-
-Last character-model run (2026-10-24, one machine, localhost, build 11370412, `tools/qa.sh model`, about 15 minutes), all five scenarios PASS, and the owner's real save folder was byte-identical after each:
-
-```
-model: visible, animated, hidden by walls        PASS   9 checks: visible 5 m ahead (27571 px), idle at rest, walking at 3.6 m/s plays the walk clip and animates,
-                                                        idle and still after stopping, visible in front of the closed door (138589 px), 0 px behind it
-model: another bundled model selected by name    PASS   fox: walk clip is index 1, idle clip (Survey) animates, hidden behind the door
-MUTANT: model drawn over walls                   PASS   only "hidden behind the door" failed (16193 px visible)
-MUTANT: model never walks                        PASS   only "animates" failed (clip time stayed 0)
-MUTANT: model off (flat puppet)                  PASS   the six checks that need a drawn model failed
-```
+`tools/qa.sh model` runs the adventurer suite (`tools/suite_model.py`, `tools/win/wmodel.py`): visibility, idle/walk/run animation, measured speed, render-thread statistics and occlusion behind the first door. It also checks migration from a removed model name. Mutants disable gait, read statistics on the command thread, and draw through walls. The updated live scenarios require a fresh verifier run; no old model-selector results apply to this version.
 
 Last full run from this repo (2026-10-22, one machine, localhost, build 11370412, about 8 minutes now that the bot teleports instead of
 walking 46 m). Every scenario also checks that the owner's real save folder is byte-identical, that the instance's saves were
@@ -293,3 +313,6 @@ read-only; `wkeys.py`, `wshot.py`, `wplace.py`, `wfocus.py` and `launch.py` driv
 ## License
 
 MIT, see LICENSE.
+
+Handheld radio: hold **R** for session radio, **F1** for configured keys, and use
+the **F5** player list for voice volume/mute. See [radio controls and verification](docs/radio.md).

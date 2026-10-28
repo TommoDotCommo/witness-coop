@@ -8,7 +8,7 @@ BUILD = build
 CXXF = -std=c++17 -O2 -Wall -Wextra
 TESTS = pov ping-names social-sync line-sync group-sync apply-retry power-sync reload-sync cable-sync cable-off race-isolation
 
-$(BUILD)/sync_core.o: sync_core.cpp sync_core.h pov.h
+$(BUILD)/sync_core.o: sync_core.cpp sync_core.h appearance.h emotes.h pov.h ../radio/radio.h
 	@mkdir -p $(BUILD)
 	g++ $(CXXF) -c -o $@ sync_core.cpp
 
@@ -28,7 +28,7 @@ FUZZOBJ = $(patsubst %,$(BUILD)/fuzz/%.o,$(FUZZSRC))
 $(BUILD)/fuzz/%.o: $(FUZZ)/src/%.cpp
 	@mkdir -p $(BUILD)/fuzz
 	g++ $(CXXF) -I$(FUZZ)/include -c -o $@ $<
-$(BUILD)/witness_target.o: tests/witness_target.cpp sync_core.h
+$(BUILD)/witness_target.o: tests/witness_target.cpp sync_core.h appearance.h
 	@mkdir -p $(BUILD)
 	g++ $(CXXF) -I$(FUZZ)/include -c -o $@ tests/witness_target.cpp
 $(BUILD)/coopfuzz-witness: $(FUZZOBJ) $(BUILD)/witness_target.o $(BUILD)/sync_core.o
@@ -52,3 +52,56 @@ $(BUILD)/group-transport.exe: tests/group_transport.cpp ../coop.cpp ../coop.h sy
 transport-test: $(BUILD)/group-transport.exe
 	python3 tests/run_group_transport.py
 .PHONY: transport-test
+
+$(BUILD)/fake-pose: tests/fake_pose.cpp remote_pose.h appearance.h
+	@mkdir -p $(BUILD)
+	g++ $(CXXF) -o $@ tests/fake_pose.cpp
+$(BUILD)/fake-pose-mutant: tests/fake_pose.cpp remote_pose.h appearance.h
+	@mkdir -p $(BUILD)
+	g++ $(CXXF) -DWM_MUT_FAKE_METADATA -o $@ tests/fake_pose.cpp
+fake-pose-test: $(BUILD)/fake-pose $(BUILD)/fake-pose-mutant
+	$(BUILD)/fake-pose
+	@if $(BUILD)/fake-pose-mutant; then echo 'fake metadata mutant survived'; exit 1; else echo 'fake metadata mutant rejected'; fi
+test: fake-pose-test
+.PHONY: fake-pose-test
+
+$(BUILD)/protocol.ok: tests/protocol.cpp tests/run_protocol.py sync_core.cpp sync_core.h appearance.h
+	@mkdir -p $(BUILD)
+	@if python3 tests/run_protocol.py > $(BUILD)/protocol.log 2>&1; then cat $(BUILD)/protocol.log; touch $@; else cat $(BUILD)/protocol.log; exit 1; fi
+test: $(BUILD)/protocol.ok
+
+$(BUILD)/appearance.ok: appearance.h sync_core.cpp sync_core.h tests/appearance.cpp tests/protocol.cpp tests/run_appearance.py
+	@mkdir -p $(BUILD)
+	@if python3 tests/run_appearance.py > $(BUILD)/appearance.log 2>&1; then cat $(BUILD)/appearance.log; touch $@; else cat $(BUILD)/appearance.log; exit 1; fi
+test: $(BUILD)/appearance.ok
+
+test: appearance-palette-test
+appearance-palette-test:
+	python3 ../../tools/test_appearance.py
+.PHONY: appearance-palette-test
+
+test: appearance-label-test
+appearance-label-test:
+	python3 ../../tools/test_appearance_labels.py
+.PHONY: appearance-label-test
+
+test: appearance-asset-validator-test
+appearance-asset-validator-test:
+	python3 ../../tools/test_appearance_asset.py
+.PHONY: appearance-asset-validator-test
+
+test: gesture-test
+gesture-test:
+	python3 ../../tools/test_gestures.py
+.PHONY: gesture-test
+
+test: radio-test
+radio-test:
+	$(MAKE) -C ../radio test
+.PHONY: radio-test
+
+# Optional back TV: wire fuzz, bounded animation/layout and mutation oracles.
+test: tv-test
+tv-test:
+	python3 ../../tools/test_tv.py
+.PHONY: tv-test

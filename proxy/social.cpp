@@ -1,3 +1,5 @@
+#include "radio/radio.h"
+#include "bindings.h"
 // See social.h.
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -32,17 +34,23 @@ struct ChatEntry { unsigned from; std::string name, text; ULONGLONG at; };
 struct Bubble { std::string text; ULONGLONG until = 0; };
 struct Mark { unsigned from; uint8_t kind; float pos[3]; ULONGLONG at; };
 std::deque<ChatEntry> g_log; std::map<unsigned, Bubble> g_bubbles; std::vector<Mark> g_marks;
+witness::Appearance g_appearance; bool g_appearanceLoaded = false;
+witness::Appearance& MyAppearance() {
+    if (!g_appearanceLoaded) { g_appearance = GetCfg().appearance; g_appearanceLoaded = true; }
+    return g_appearance;
+}
 bool g_open = false; std::string g_input;
 bool g_pingReq = false, g_pingAsked = false; ULONGLONG g_pingAt = 0;
 unsigned g_chatSeen = 0, g_marksSeen = 0;
-std::string g_myChar; unsigned g_emoteSeq = 0; int g_emote = 0; ULONGLONG g_emoteAt = 0;          // my announced character; my emote
-bool g_wheel = false; float g_wx = 0, g_wy = 0; bool g_pick = false; int g_pickSel = 0;
+unsigned g_emoteSeq = 0; int g_emote = 0; ULONGLONG g_emoteAt = 0;
+bool g_wheel = false; float g_wx = 0, g_wy = 0;
 struct RemoteEmote { bool seen = false; uint8_t seq = 0; int id = 0; ULONGLONG start = 0; };
 std::map<unsigned, RemoteEmote> g_remoteEmotes;
-const ULONGLONG kEmoteMs = 2600;
-const char* kEmoteNames[8] = {"Wave", "Dance", "Cheer", "Yes", "No", "Bow", "Spin", "Shrug"};
-int WheelSlot() { float m = sqrtf(g_wx * g_wx + g_wy * g_wy); if (m < 30) return -1; float a = atan2f(g_wy, g_wx) + 1.5707963f; if (a < 0) a += 6.2831853f; return int(a / 0.7853982f + 0.5f) % 8; }
-void TriggerEmote(int id, ULONGLONG now) { if (id < 1 || id > 8) return; g_emote = id; g_emoteAt = now; ++g_emoteSeq; }
+int g_emotePage = 0; witness::EmoteGate g_emoteGate;
+bool g_guide = false;
+bool EmoteAlive(int id, ULONGLONG age) { return witness::EmoteActive(id,float(age)/1000.f); }
+int WheelSlot() { return witness::EmoteSlot(g_wx,g_wy,g_emotePage)-1; }
+void TriggerEmote(int id, ULONGLONG now) { if (!g_emoteGate.Accept(now,id,true)) return; g_emote = id; g_emoteAt = now; ++g_emoteSeq; }
 // ---- free drawing: strokes of points in the world, put on the surface under the pen (the scene depth at the pen's pixel), seen by everybody
 struct Stroke { unsigned from; uint32_t id; uint8_t color; std::vector<float> pts; };
 std::deque<Stroke> g_strokes;      // everybody's, mine included
@@ -109,6 +117,13 @@ void AddMark(unsigned from, uint8_t kind, const float pos[3], ULONGLONG now) {
 }
 void SendInput(ULONGLONG now) {
     if (g_input.empty()) return;
+    if (g_input.rfind("/appearance", 0) == 0) {
+        char feature[32] = {}, value[32] = {}, tail = 0;
+        bool ok = sscanf(g_input.c_str(), "/appearance %31s %31s %c", feature, value, &tail) == 2
+            && witness::SetAppearanceChoice(&MyAppearance(), feature, value);
+        AddChat(CoopMyId(), ok ? "Appearance updated for this session." : "Use /appearance skin|hair|eyes|coat|scarf|trousers|boots|gear 0|1|2|3. Launcher choices are saved.", now);
+        g_input.clear(); return;
+    }
     if (auto* core = CoopCore()) core->sendChat(g_input);
     AddChat(CoopMyId(), g_input, now); g_input.clear();
 }
@@ -146,7 +161,6 @@ void Bubbled(float cx, float bottom, const std::vector<std::string>& lines, bool
 }
 }  // namespace
 
-const char* SocialMyCharacter() { static std::string s; Lock l; s = g_myChar.empty() ? GetCfg().character : g_myChar; return s.c_str(); }
 unsigned SocialSpeakDrawn() { return g_speakDrawn; }
 bool SocialMicHudDrawn() { return g_micHudDrawn; }
 unsigned SocialInkVerts(const float cam[3], std::vector<LineVert>& out, size_t maxVerts) {      // every stroke as ribbons in the world, turned to face the camera: the line pipeline draws them hidden by walls
@@ -168,13 +182,14 @@ unsigned SocialInkVerts(const float cam[3], std::vector<LineVert>& out, size_t m
     }
     g_segsDrawn = segs; return segs;
 }
-bool SocialCapturing() { Lock l; return g_open || g_pick; }
-bool SocialMouseCaptured() { Lock l; return g_open || g_pick || g_wheel || g_canvas; }
-void SocialRawMove(int dx, int dy) { Lock l; if (g_canvas && !g_wheel && !g_open && !g_pick) { g_ox += dx * 1.6f; g_oy += dy * 1.6f; return; } if (g_wheel) { g_wx += float(dx); g_wy += float(dy); float m = sqrtf(g_wx * g_wx + g_wy * g_wy); if (m > 140) { g_wx *= 140 / m; g_wy *= 140 / m; } } }
-const char* SocialEmoteName(int e) { return e >= 1 && e <= 8 ? kEmoteNames[e - 1] : ""; }
+SocialSnapshot SocialState() { Lock l; return {g_emote,g_emoteSeq,g_emotePage,g_wheel,g_guide,GamePaused()}; }
+bool SocialCapturing() { Lock l; return g_open; }
+bool SocialMouseCaptured() { Lock l; return g_open || g_wheel || g_canvas; }
+void SocialRawMove(int dx, int dy) { Lock l; if (g_canvas && !g_wheel && !g_open) { g_ox += dx * 1.6f; g_oy += dy * 1.6f; return; } if (g_wheel) { g_wx += float(dx); g_wy += float(dy); float m = sqrtf(g_wx * g_wx + g_wy * g_wy); if (m > 140) { g_wx *= 140 / m; g_wy *= 140 / m; } } }
+const char* SocialEmoteName(int e) { return e >= 1 && witness::ValidEmote(e) ? witness::kEmotes[e].name : ""; }
 bool SocialEmoteOf(unsigned id, int* emote, float* seconds) {
     Lock l; auto it = g_remoteEmotes.find(id); if (it == g_remoteEmotes.end() || !it->second.id) return false;
-    ULONGLONG age = GetTickCount64() - it->second.start; if (age >= kEmoteMs) return false; *emote = it->second.id; *seconds = float(age) / 1000.0f; return true;
+    ULONGLONG age = GetTickCount64() - it->second.start; if (!EmoteAlive(it->second.id,age)) return false; *emote = it->second.id; *seconds = float(age) / 1000.0f; return true;
 }
 static bool SocialKeyImpl(unsigned vk, bool down);
 std::map<unsigned, ULONGLONG> g_swallow;      // keys whose press the mod took: the same press arrives a moment later as raw input, which must not reach the game either (Esc closing the chat box would open the pause menu)
@@ -187,8 +202,10 @@ bool SocialKey(unsigned vk, bool down) {
 bool SocialSwallowRaw(unsigned vk) { Lock l; auto it = g_swallow.find(vk); return it != g_swallow.end() && GetTickCount64() - it->second < 600; }      // (looked at, not used up: the game reads one event more than once)
 static bool SocialKeyImpl(unsigned vk, bool down) {
     const Cfg& c = GetCfg(); Lock l; ULONGLONG now = GetTickCount64();
-    if (vk == c.keyVoiceChannel && !c.noVoiceChannelKey && down && !g_open && !g_pick && !g_wheel && !GamePaused()) return VoiceCycleChannel();
-    if (vk == c.keyVoice) { if (!down) VoiceKey(vk, false); else if (!g_open && !g_pick && !GamePaused()) VoiceKey(vk, true); }
+    if (vk == VK_F1 && down && !g_open && !GamePaused()) { g_guide=!g_guide; return true; }
+    if (vk == c.keyRadio) return VoiceRadioKey(down, g_open || g_wheel || GamePaused());
+    if (vk == c.keyVoiceChannel && !c.noVoiceChannelKey && down && !g_open && !g_wheel && !GamePaused()) return VoiceCycleChannel();
+    if (vk == c.keyVoice) { if (!down) VoiceKey(vk, false); else if (!g_open && !GamePaused()) VoiceKey(vk, true); }
     if (vk == VK_SHIFT || vk == VK_LSHIFT || vk == VK_RSHIFT) { g_shift = down; return false; }
     if (!down && vk == c.keyDraw) { bool was = g_pen; PenUp(now); return was; }
     if (g_open) {
@@ -199,22 +216,13 @@ static bool SocialKeyImpl(unsigned vk, bool down) {
         return true;      // every other key belongs to the box (its characters arrive as WM_CHAR)
     }
     if (g_wheel) {      // the emote wheel: the key's release picks the slot the mouse points to (none: cancel)
+        if (vk == VK_TAB) { if (down) { g_emotePage=(g_emotePage+1)%3; g_wx=g_wy=0; } return true; }
         if (vk == c.keyEmote && !down) { int sl = WheelSlot(); g_wheel = false; if (sl >= 0) TriggerEmote(sl + 1, now); return false; }
         if (vk == VK_ESCAPE && down) { g_wheel = false; return true; }
         return false;
     }
-    if (g_pick) {       // the character list
-        if (!down) return false;
-        int n = ModelGpuCount() + 1;      // (default) and every model
-        if (vk == VK_UP) { g_pickSel = (g_pickSel + n - 1) % n; return true; }
-        if (vk == VK_DOWN) { g_pickSel = (g_pickSel + 1) % n; return true; }
-        if (vk == VK_RETURN) { g_myChar = g_pickSel == 0 ? "" : ModelGpuName(g_pickSel - 1); g_pick = false; return true; }
-        if (vk == VK_ESCAPE || vk == c.keyChar) { g_pick = false; return true; }
-        return true;
-    }
     if (!down || GamePaused()) return false;
     if (vk == c.keyEmote) { g_wheel = true; g_wx = g_wy = 0; return true; }
-    if (vk == c.keyChar) { g_pick = true; g_pickSel = 0; for (int i = 0; i < ModelGpuCount(); ++i) if (!_stricmp(ModelGpuName(i), g_myChar.c_str())) g_pickSel = i + 1; return true; }
     if (vk == c.keyChat && !c.noChatUi) { g_open = true; g_input.clear(); return true; }
     if (vk == c.keyDraw) { if (g_shift) ClearMine(); else PenDown(now); return true; }
     if (vk == c.keyCanvas) { g_canvas = !g_canvas; g_ox = g_oy = 0; if (!g_canvas) PenUp(now); return true; }
@@ -231,13 +239,25 @@ bool SocialChar(unsigned ch) {
 
 void SocialFrame(float W, float H, const float* cam, const float* ang) {
     ULONGLONG now = GetTickCount64(); witness::SyncCore* core = CoopCore(); const Cfg& cfg = GetCfg();
+
     Lock l;
+    if (g_guide && !GamePaused()) {
+        auto guide=wradio::Guide(W,H,unsigned(sizeof(kBindings)/sizeof(kBindings[0])));
+        float scale=guide.scale,x=guide.x,y=guide.y;
+        UiRect(x,y,guide.width,guide.height,Rgba(.04f,.06f,.05f,.94f));
+        UiText(x+12*scale,y+10*scale,"CO-OP KEYS (F1)",Rgba(1,.85f,.5f),scale);
+        int row=0; for (const auto& b : kBindings) { char text[100],key[16]; unsigned vk=cfg.*(b.member);
+            if(vk>=VK_F1 && vk<=VK_F12) snprintf(key,sizeof key,"F%u",vk-VK_F1+1); else snprintf(key,sizeof key,"%c",char(vk));
+            snprintf(text,sizeof text,"%-4s %s",key,b.label); UiText(x+12*scale,guide.Row(row++),text,Rgba(.9f,.94f,.88f),scale);
+        }
+    }
+    if (GamePaused() || g_open || g_wheel) { VoiceRadioKey(false,true); VoiceKey(cfg.keyVoice,false); }
     if (core) {
         for (const auto& m : core->takeChat()) AddChat(m.from, m.text, now);
         for (const auto& m : core->takeMarks()) AddMark(m.from, m.kind, m.pos, now);
         for (const auto& s : core->takeStrokes()) ApplyStroke(s);
-        witness::Presence p; p.typing = g_open && !cfg.noTypingDots; p.speaking = VoiceSpeaking(); p.character = cfg.noCharacterAnnounce ? "" : (g_myChar.empty() ? cfg.character : g_myChar);
-        if (g_emote && now - g_emoteAt >= kEmoteMs) g_emote = 0;
+        witness::Presence p; p.appearance = MyAppearance(); p.typing = g_open && !cfg.noTypingDots; p.speaking = VoiceSpeaking(); p.proximitySpeaking = VoiceProximitySpeaking(); p.radioEquipped = cfg.radioEnabled; p.radioTx = VoiceRadioTx() && p.speaking; p.voiceChannel = (uint8_t)VoiceChannel();
+        if (g_emote && !EmoteAlive(g_emote,now-g_emoteAt)) g_emote = 0;
         if (!cfg.noEmoteSend) { p.emote = uint8_t(g_emote); p.emoteSeq = uint8_t(g_emoteSeq); }
         core->setPresence(p);
     }
@@ -275,10 +295,10 @@ void SocialFrame(float W, float H, const float* cam, const float* ang) {
         }
     }
     std::vector<RemotePose> rem = CoopGetRemotes();
-    for (const auto& rp : rem) {      // a change of a player's emote counter starts that emote now (the first sight only records it)
+    for (const auto& rp : rem) {      // a new counter starts the emote; first sight also supports late join
         RemoteEmote& re = g_remoteEmotes[rp.id];
-        if (!re.seen) { re.seen = true; re.seq = rp.emoteSeq; }
-        else if (rp.emoteSeq != re.seq) { re.seq = rp.emoteSeq; if (rp.emote) { re.id = rp.emote; re.start = now; } }
+        if (!re.seen || rp.emoteSeq != re.seq) { re.seen=true; re.seq=rp.emoteSeq; re.id=rp.emote; re.start=now; }
+        if (!rp.emote || rp.ageMs > 2000) re.id=0;
     }
     // bubbles over the players: three dots while typing, else the last chat line for a few seconds
     for (const auto& rp : rem) {
@@ -297,6 +317,7 @@ void SocialFrame(float W, float H, const float* cam, const float* ang) {
         float col[3]; PlayerColor(rp.id, col); float dist = sqrtf((rp.pos[0] - cam[0]) * (rp.pos[0] - cam[0]) + (rp.pos[1] - cam[1]) * (rp.pos[1] - cam[1]) + (rp.pos[2] - cam[2]) * (rp.pos[2] - cam[2]));
         float kk = k * std::min(1.0f, std::max(0.6f, 10.0f / std::max(dist, 1.0f)));
         for (int b = 0; b < 3; ++b) { float ph = float(now % 500) / 500.0f * 6.2831853f + b * 2.1f, hgt = (7 + 9 * (0.5f + 0.5f * sinf(ph))) * kk; UiRect(sx + (30 + b * 7) * kk, sy - 6 * kk - hgt, 4.5f * kk, hgt, Rgba(col[0], col[1], col[2], 0.95f)); }
+        if (rp.radioTx) UiText(sx + 30 * kk, sy + 4 * kk, "RADIO", Rgba(1,.7f,.3f), kk*.7f);
         ++g_speakDrawn;
     }
     if (cfg.voiceMode != 0) {      // my own microphone: what the key does, and a bar that follows the level while it is open
@@ -309,9 +330,9 @@ void SocialFrame(float W, float H, const float* cam, const float* ang) {
         UiRect(bx + tw + 10 * k, by + 3 * k, 60 * k, 8 * k, Rgba(0.2f, 0.22f, 0.3f, 0.9f)); UiRect(bx + tw + 10 * k, by + 3 * k, 60 * k * std::min(1.0f, lvl / 600.0f), 8 * k, talk ? Rgba(0.4f, 1, 0.5f, 1) : Rgba(0.5f, 0.55f, 0.7f, 1)); g_micHudDrawn = true;
     }
     for (const auto& rp : rem) {      // the name of the emote a player is playing, over their head
-        auto it = g_remoteEmotes.find(rp.id); if (it == g_remoteEmotes.end() || !it->second.id || now - it->second.start >= kEmoteMs || rp.ageMs > 2000) continue;
+        auto it = g_remoteEmotes.find(rp.id); if (it == g_remoteEmotes.end() || !it->second.id || !EmoteAlive(it->second.id,now-it->second.start) || rp.ageMs > 2000) continue;
         float head[3] = {rp.pos[0], rp.pos[1], rp.pos[2] + 0.8f}, sx, sy; if (!ToScreen(cam, ang[0], ang[1], head, W, H, &sx, &sy)) continue;
-        float col[3]; PlayerColor(rp.id, col); char b[40]; snprintf(b, sizeof b, "~ %s ~", kEmoteNames[it->second.id - 1]); float tw = UiTextWidth(b, 1.0f * k);
+        float col[3]; PlayerColor(rp.id, col); char b[40]; snprintf(b, sizeof b, "~ %s ~", SocialEmoteName(it->second.id)); float tw = UiTextWidth(b, 1.0f * k);
         float up = float(now - it->second.start) / 1000.0f * 14 * k; UiText(sx - tw / 2, sy - 26 * k - up, b, Rgba(col[0], col[1], col[2], 1), 1.0f * k);
     }
     // pings: a marker over the point with the sender's name and the distance; off screen, an arrow at the edge of the screen pointing the way
@@ -358,25 +379,16 @@ void SocialFrame(float W, float H, const float* cam, const float* ang) {
         }
     }
     if (g_wheel) {      // the emote wheel: eight slots round the middle of the screen, the one the mouse points to lit
-        float cx = W / 2, cy = H / 2, R = 150 * k; int sel = WheelSlot(); float col[3]; PlayerColor(CoopMyId(), col);
+        float cx = W / 2, cy = H / 2, R = 150 * k; int sel = WheelSlot() % 8; float col[3]; PlayerColor(CoopMyId(), col);
         UiRect(cx - R - 70 * k, cy - R - 40 * k, 2 * R + 140 * k, 2 * R + 80 * k, Rgba(0, 0, 0, 0.35f));
         for (int i = 0; i < 8; ++i) {
             float a = -1.5707963f + i * 0.7853982f, px = cx + cosf(a) * R, py = cy + sinf(a) * R; bool on = i == sel;
             float bw = 112 * k, bh = 34 * k; UiRect(px - bw / 2 - 2, py - bh / 2 - 2, bw + 4, bh + 4, on ? Rgba(col[0], col[1], col[2], 1) : Rgba(0.4f, 0.45f, 0.55f, 0.8f));
             UiRect(px - bw / 2, py - bh / 2, bw, bh, on ? Rgba(0.2f, 0.24f, 0.4f, 0.97f) : Rgba(0.06f, 0.07f, 0.1f, 0.9f));
-            float tw = UiTextWidth(kEmoteNames[i], 1.0f * k); UiText(px - tw / 2, py - UiLineHeight(1.0f * k) / 2, kEmoteNames[i], on ? Rgba(1, 1, 1, 1) : Rgba(0.8f, 0.85f, 0.95f, 1), 1.0f * k);
+            float tw = UiTextWidth(SocialEmoteName(g_emotePage*8+i+1), 1.0f * k); UiText(px - tw / 2, py - UiLineHeight(1.0f * k) / 2, SocialEmoteName(g_emotePage*8+i+1), on ? Rgba(1, 1, 1, 1) : Rgba(0.8f, 0.85f, 0.95f, 1), 1.0f * k);
         }
         UiLine(cx, cy, cx + g_wx * R / 140.0f, cy + g_wy * R / 140.0f, Rgba(col[0], col[1], col[2], 1), 3 * k); UiRect(cx - 5 * k, cy - 5 * k, 10 * k, 10 * k, Rgba(col[0], col[1], col[2], 1));
-        const char* hint = "move the mouse toward an emote, release to play it"; float hw = UiTextWidth(hint, 0.8f * k); UiText(cx - hw / 2, cy + R + 40 * k, hint, Rgba(0.8f, 0.85f, 0.95f, 1), 0.8f * k);
-    }
-    if (g_pick) {       // the character list: the model the others see you as
-        int n = ModelGpuCount() + 1; float lh = UiLineHeight(1.0f * k) + 8 * k, x = W / 2 - 220 * k, y = H / 2 - lh * (n + 1) / 2, w = 440 * k;
-        UiRect(x, y, w, lh * (n + 2) + 10 * k, Rgba(0.05f, 0.06f, 0.09f, 0.92f)); UiText(x + 12 * k, y + 8 * k, "Your character: Up/Down, Enter to choose, Esc to close", Rgba(0.75f, 0.8f, 0.95f, 1), 0.85f * k);
-        for (int i = 0; i < n; ++i) {
-            float ry = y + 10 * k + lh * (i + 1.3f); bool on = i == g_pickSel; const char* nm = i == 0 ? "(the default)" : ModelGpuName(i - 1); bool mine = (i == 0 && g_myChar.empty()) || (i > 0 && !_stricmp(nm, g_myChar.c_str()));
-            if (on) UiRect(x + 6 * k, ry - 3 * k, w - 12 * k, lh - 2 * k, Rgba(0.25f, 0.28f, 0.45f, 0.95f));
-            char b[100]; snprintf(b, sizeof b, "%s%s", nm, mine ? "   (you are this)" : ""); UiText(x + 20 * k, ry, b, mine ? Rgba(0.6f, 1, 0.7f, 1) : Rgba(0.92f, 0.92f, 0.95f, 1), 1.0f * k);
-        }
+        const char* hint = "point and release to play | Tab: next page | centre: cancel selection"; float hw = UiTextWidth(hint, 0.8f * k); UiText(cx - hw / 2, cy + R + 40 * k, hint, Rgba(0.8f, 0.85f, 0.95f, 1), 0.8f * k);
     }
     // the chat log (bottom left) and the box
     float lh = UiLineHeight(0.95f * k) + 4 * k, x = 24 * k, base = H - (g_open ? 150 : 120) * k; int shown = 0;
@@ -407,7 +419,6 @@ void SocialCommand(const char* line) {
     else if (!strncmp(line, "ping", 4) && (line[4] == 0 || line[4] == '\r' || line[4] == '\n')) { Lock l; g_pingReq = true; g_pingAsked = false; g_pingAt = now; }
     else if (!strncmp(line, "pingat ", 7)) { float p[3]; unsigned kind = 0; if (sscanf(line, "pingat %f %f %f %u", &p[0], &p[1], &p[2], &kind) >= 3) { Lock l; AddMark(CoopMyId(), (uint8_t)kind, p, now); if (auto* c = CoopCore()) c->sendMark((uint8_t)kind, p); } }
     else if (!strncmp(line, "emote ", 6)) { int id = atoi(line + 6); Lock l; TriggerEmote(id, now); }
-    else if (!strncmp(line, "character ", 10)) { char nm[64] = {}; sscanf(line + 10, "%63s", nm); Lock l; g_myChar = strcmp(nm, "none") ? nm : ""; }
     else if (!strncmp(line, "wheel ", 6)) { Lock l; g_wheel = !strncmp(line + 6, "open", 4); g_wx = g_wy = 0; }
     else if (!strncmp(line, "canvas ", 7)) { Lock l; g_canvas = !strncmp(line + 7, "on", 2); g_ox = g_oy = 0; if (!g_canvas) PenUp(now); }
     else if (!strncmp(line, "reticle ", 8)) { float fx = 0.5f, fy = 0.5f; if (sscanf(line + 8, "%f %f", &fx, &fy) == 2) { Lock l; g_ox = (fx - 0.5f) * g_scrW; g_oy = (fy - 0.5f) * g_scrH; } }
@@ -425,8 +436,8 @@ void SocialCommand(const char* line) {
         Lock l; char m[300]; snprintf(m, sizeof m, "socialstat: open %d input_len %zu log %zu chat_seen %u marks %zu marks_seen %u bubbles %zu drawn dots %u bubbles %u marks %u arrows %u", g_open ? 1 : 0, g_input.size(), g_log.size(), g_chatSeen, g_marks.size(), g_marksSeen, g_bubbles.size(), g_dotsDrawn, g_bubblesDrawn, g_marksDrawn, g_arrowsDrawn); Log(m);
         for (const auto& e : g_log) { snprintf(m, sizeof m, "socialstat: chat from %u name %s text %s", e.from, e.name.c_str(), e.text.c_str()); Log(m); }
         for (const auto& mk : g_marks) { snprintf(m, sizeof m, "socialstat: mark from %u kind %u pos %.2f %.2f %.2f", mk.from, mk.kind, mk.pos[0], mk.pos[1], mk.pos[2]); Log(m); }
-        snprintf(m, sizeof m, "socialstat: me character %s emote %d seq %u wheel %d picker %d paused %d", g_myChar.c_str(), g_emote, g_emoteSeq, g_wheel ? 1 : 0, g_pick ? 1 : 0, GamePaused() ? 1 : 0); Log(m);
-        for (const auto& r : CoopGetRemotes()) { int e = 0; float t = 0; auto it = g_remoteEmotes.find(r.id); bool act = it != g_remoteEmotes.end() && it->second.id && now - it->second.start < kEmoteMs; if (act) { e = it->second.id; t = float(now - it->second.start) / 1000.0f; }
-            snprintf(m, sizeof m, "socialstat: remote %u typing %d speaking %d emote %u character %s playing %d t %.2f", r.id, r.typing ? 1 : 0, r.speaking ? 1 : 0, r.emote, r.character, e, t); Log(m); }
+        snprintf(m, sizeof m, "socialstat: me emote %d seq %u wheel %d paused %d", g_emote, g_emoteSeq, g_wheel ? 1 : 0, GamePaused() ? 1 : 0); Log(m);
+        for (const auto& r : CoopGetRemotes()) { int e = 0; float t = 0; auto it = g_remoteEmotes.find(r.id); bool act = it != g_remoteEmotes.end() && it->second.id && EmoteAlive(it->second.id,now-it->second.start); if (act) { e = it->second.id; t = float(now - it->second.start) / 1000.0f; }
+            snprintf(m, sizeof m, "socialstat: remote %u typing %d speaking %d emote %u playing %d t %.2f", r.id, r.typing ? 1 : 0, r.speaking ? 1 : 0, r.emote, e, t); Log(m); }
     }
 }

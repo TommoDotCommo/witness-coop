@@ -1,13 +1,13 @@
 # Game-free (T0) tests of the character model code. `make test` builds the clean test and one mutant per protection; every mutant must FAIL.
 MODELS = ../../assets/models
-GLB = $(MODELS)/cesium-man.glb $(MODELS)/fox.glb $(MODELS)/rigged-figure.glb
+GLB = $(MODELS)/adventurer.glb
 BUILD = build
 SRC = model.cpp tests/model_test.cpp
 MUTANTS = IBM_ORDER NO_LOOP NO_NORMALIZE MIRROR NO_TELEPORT_GUARD NO_RUN MAX_JOINTS NO_BLEND NO_RUNREF EYE_IBM EYE_BIND EYE_NEG ONE_SKIN NO_FLAT_COLOR EMOTE_SUBSTRING
-$(BUILD)/model-test: $(SRC) model.h ../third_party/cgltf.h
+$(BUILD)/model-test: $(SRC) model.h gestures.h ../core/emotes.h ../third_party/cgltf.h
 	mkdir -p $(BUILD)
 	g++ -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter -o $@ $(SRC)
-$(BUILD)/mutant-%: $(SRC) model.h
+$(BUILD)/mutant-%: $(SRC) model.h gestures.h ../core/emotes.h
 	mkdir -p $(BUILD)
 	g++ -std=c++17 -O2 -Wno-unused-parameter -DWM_MUT_$* -o $@ $(SRC)
 test: $(BUILD)/model-test $(addprefix $(BUILD)/mutant-,$(MUTANTS))

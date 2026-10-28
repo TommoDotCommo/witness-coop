@@ -53,7 +53,7 @@ static bool followsDelay() { Pair p; p.delay = 400; p.advance(10000); RemotePose
 static bool forged() {
     Pair p; p.advance(6000); int before = p.seenByB().pingMs;
     Bytes b; auto put = [&](uint32_t v) { for (int i = 0; i < 4; ++i) b.push_back(uint8_t(v >> (8 * i))); };
-    put(0x34515457); put(1); put(2); put(0x7777); put(uint32_t(p.now - 1)); for (int i = 0; i < 24; ++i) b.push_back(0);
+    put(0x36515457); put(1); put(2); put(0x7777); put(uint32_t(p.now - 1)); for (int i = 0; i < 24; ++i) b.push_back(0);
     uint32_t h = 2166136261u; for (uint8_t c : b) { h ^= c; h *= 16777619u; } put(h);
     p.cb->onPacket(b.data(), b.size(), p.now);
     return before >= 170 && p.seenByB().pingMs == before;

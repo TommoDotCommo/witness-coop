@@ -20,12 +20,12 @@ clean:
 launcher: $(BUILD)/witness_launcher.exe
 LMUTANTS = NO_VIDEO_WRITE NO_SAVE_WRITE CFG_DROP LOBBY_NO_CFG LOBBY_NO_RESULT LOBBY_NO_RESTORE LOBBY_NO_VOICE WIDE_COMBOS TAB_REPAINT_ALWAYS LONG_LABELS
 launcher-mutants: $(addsuffix .exe,$(addprefix $(BUILD)/witness_launcher_,$(LMUTANTS)))
-$(BUILD)/witness_launcher_%.exe: main.cpp core.cpp core.h theme.cpp theme.h lobby.cpp lobby.h lobby_win.cpp lobby_win.h ../proxy/voice/voice.cpp $(BUILD)/launcher_res.o ../proxy/progress/progress.cpp ../proxy/progress/progress_data.cpp ../proxy/progress/savemeta.cpp
+$(BUILD)/witness_launcher_%.exe: ../common/guide.h ../common/bindings.def ../proxy/config.h main.cpp core.cpp core.h ../proxy/core/appearance.h theme.cpp theme.h lobby.cpp lobby.h lobby_win.cpp lobby_win.h ../proxy/voice/voice.cpp $(BUILD)/launcher_res.o ../proxy/progress/progress.cpp ../proxy/progress/progress_data.cpp ../proxy/progress/savemeta.cpp
 	$(CXX) -std=c++17 -O2 -D_WIN32_WINNT=0x0601 -mwindows -municode -static -DWL_MUT_$* -o $@ main.cpp core.cpp theme.cpp lobby.cpp lobby_win.cpp ../proxy/voice/voice.cpp ../proxy/progress/progress.cpp ../proxy/progress/progress_data.cpp ../proxy/progress/savemeta.cpp $(BUILD)/launcher_res.o -lcomctl32 -lshell32 -lole32 -luuid -luxtheme -lws2_32 -lwinmm -lgdi32 -lmsimg32
 $(BUILD)/launcher_res.o: launcher.rc launcher.manifest
 	mkdir -p $(BUILD)
 	x86_64-w64-mingw32-windres launcher.rc -o $@
-$(BUILD)/witness_launcher.exe: main.cpp core.cpp core.h theme.cpp theme.h lobby.cpp lobby.h lobby_win.cpp lobby_win.h ../proxy/voice/voice.cpp $(BUILD)/launcher_res.o ../proxy/progress/progress.cpp ../proxy/progress/progress_data.cpp ../proxy/progress/savemeta.cpp
+$(BUILD)/witness_launcher.exe: ../common/guide.h ../common/bindings.def ../proxy/config.h main.cpp core.cpp core.h ../proxy/core/appearance.h theme.cpp theme.h lobby.cpp lobby.h lobby_win.cpp lobby_win.h ../proxy/voice/voice.cpp $(BUILD)/launcher_res.o ../proxy/progress/progress.cpp ../proxy/progress/progress_data.cpp ../proxy/progress/savemeta.cpp
 	$(CXX) -std=c++17 -O2 -Wall -D_WIN32_WINNT=0x0601 -mwindows -municode -static -o $@ main.cpp core.cpp theme.cpp lobby.cpp lobby_win.cpp ../proxy/voice/voice.cpp ../proxy/progress/progress.cpp ../proxy/progress/progress_data.cpp ../proxy/progress/savemeta.cpp $(BUILD)/launcher_res.o -lcomctl32 -lshell32 -lole32 -luuid -luxtheme -lws2_32 -lwinmm -lgdi32 -lmsimg32
 .PHONY: launcher
 

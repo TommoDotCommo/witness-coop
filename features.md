@@ -3,6 +3,10 @@
 Everything here is in the proxy DLL (`witness_coop.cfg` settings in brackets) and the launcher (`launcher/`). Each feature has an automated check; the scenario that
 proves it is named in the last column of the table at the end. Keys can be changed in the cfg or in the launcher.
 
+Hold **F1** in either the game or launcher for the shared quick guide; release to hide it.
+It lists your current configured keys, fixed shortcuts, features and troubleshooting on one screen.
+F1 is reserved; an old custom F1 action moves to F2 (or the next free fallback listed in the README).
+
 ## In the game
 
 | What | How |
@@ -10,8 +14,8 @@ proves it is named in the last column of the table at the end. Keys can be chang
 | **Chat** | `T` opens the box, Enter sends, Esc cancels. The log shows bottom left; a player's last line also floats over their head for a few seconds. |
 | **Typing dots** | While someone has the chat box open, three animated dots show over their head for everyone. |
 | **Ping** | `P` marks the point under the cross-hair (the distance comes from the game's own depth buffer). Everyone sees a pole with the sender's name and the distance; off screen, an arrow at the edge of the screen points the way. |
-| **Emote wheel** | Hold `G`, move the mouse toward one of eight emotes (Wave, Dance, Cheer, Yes, No, Bow, Spin, Shrug), release to play it. The camera does not turn. Others see the motion on your figure (a model's own clip when it has one, else a procedural motion) and its name over your head. |
-| **Character switcher** | `C` lists the models in `witness_models\`; Up / Down, Enter. Others draw you with it. `character=<name>` in the cfg sets the default. |
+| **Emote wheel** | Hold `G`, point at a slot and release to play. `Tab` while held cycles three pages of eight emotes; `Esc` cancels the selection. The camera stays still. Others see skeletal animation and the emote name. `F1` shows controls generated from the same binding table as input dispatch. See [adventurer gestures](docs/GESTURES.md) for the catalog, interruption rules and verification. |
+| **Adventurer** | Everyone is drawn as the original adventurer with idle, walk and run clips. Old selections migrate automatically; see [README](README.md#character-migration). Use the launcher’s Appearance page to customize skin, hair, eyes, coat, scarf, trousers, boots and gear; choices sync to the other players. See [appearance controls](docs/APPEARANCE.md). |
 | **Free drawing** | Hold `X`: ink goes onto the surface the cross-hair is on (the game's scene depth at that pixel), in your colour, and everyone sees it, in puzzles too. `Z` toggles the canvas: the mouse then moves a pen over the screen (the camera stays), so a puzzle panel can be drawn on precisely. `B` changes ink colour, Backspace in the canvas undoes the last stroke, Shift+`X` clears yours. |
 | **Voice chat** | Hold `N` to talk (`voice_mode=ptt`, the default), or `voice_mode=open` for an open microphone with a voice-activity gate. Players near you are heard in the world: louder when close, duller when farther, from the side they are on. Beyond `voice_range` (25 m) the voice turns into a walkie-talkie (band-limited, a little distorted, noise, squelch at the start and end) coming from the middle, fading over from the proximity voice; `voice_radio_range` limits even that, `voice_radio=0` turns it off. A speaking player shows moving bars beside their head; your own microphone state shows bottom left. |
 | **Voice channels** | Who hears you, and how, is the channel (`voice_channel=`, and `H` steps through them, the mic indicator names it): **proximity** (as above), **radio** (everybody, at any distance, with the walkie-talkie sound), **open line** (`global`: everybody, as you sound, as loud far away as next to you), and **one on one** with each player in turn (only that player hears you, over the radio). A player that is not the addressee is never even sent your voice. |
@@ -32,7 +36,7 @@ Factory, because the game's door to the island is opened by a panel that needs t
 nothing else changes nothing. A spec reads `area:Desert;area:Symmetry Island;lasers:3;panel:0x293;preset:seven-lasers`. Doors the solved panels open are opened too (a few tutorial
 doors are opened by the game's script, not by a panel's target, and are opened by hand). The list is kept next to the saves (`coop_progress.txt`), because the game's own save has no
 solution line for a panel solved this way, and is put back when a later session loads a campaign. A save made while the mod runs gets `<save>.coop.txt` beside it: when it was made, the
-players who were in the game with their characters and times (earlier sessions of the campaign add up), panels solved in all and per area, lasers lit, doors open.
+players who were in the game with their names and times (historical character labels remain readable) (earlier sessions of the campaign add up), panels solved in all and per area, lasers lit, doors open.
 
 ## The launcher (`launcher/witness_launcher.exe`, next to the game's exe)
 
@@ -43,7 +47,7 @@ players who were in the game with their characters and times (earlier sessions o
 * **Sound and voice**: game volume, game sound off, voice mode, push-to-talk key, voice and microphone volume, proximity and radio ranges.
 * **Controls**: the mod's keys.
 * **Game options**: the options that live inside each save (mouse speed, invert, smoothing, brightness, field of view, reticle, vignetting, look magnetism), patched in place; a copy of the save as it was is kept once (`.before-launcher`).
-* **Co-op**: player number, name, port, the other players, character, models, dev menu. Lines of the cfg the launcher does not know are kept.
+* **Co-op**: player number, name, port, the other players, dev menu. Lines of the cfg the launcher does not know are kept.
 * **Saves**: each save with who was in the game and how far it got; copy or move saves to a backup folder.
 
 ## Checks
@@ -51,17 +55,19 @@ players who were in the game with their characters and times (earlier sessions o
 | Feature | Game-free (T0) | Two real games (T2, `tools/qa.sh <scenario>`) |
 |---|---|---|
 | Chat, typing dots, bubbles, pings | `make -C proxy/core test` (social layer: loss, jitter, restart, corruption; 8 twins) | `social` |
-| Emotes, characters | `make -C proxy/model test` (emote clips) | `emote` |
+| Emotes | `python3 tools/test_gestures.py` (poses, activity, wire simulator and mutants) | `emote` |
 | Free drawing | core stroke messages | `ink` |
 | Progression and new game | `make -C proxy/progress test` (closure, order, lasers, text, sidecar; 6 mutants) | `progress` (solved panels and open doors read from both games' memory; the save's sidecar) |
 | Launcher | `make -C launcher test` (cfg, video file, options in a save, saves; 5 mutants) | `launcher` (the window driven with window messages, the files on disk, the game it starts: its own log and the save it writes) |
-| Voice | `make -C proxy/voice test` (codec, packets, mix, radio filter, jitter, channels; 12 mutants) | `voice` (proximity gain, pan, fade and radio read from the listener's mixer with real positions; push to talk; speaking flag; game volume read back from the system; `voice channels`: every channel at 80 m and 5 m, one on one with a player that is not there, the `H` key; mutants) |
+| Voice / Walkie-talkie | `make -C proxy/voice test` (codec, packets, mix, radio filter, jitter, channels; 12 mutants) and `make -C proxy/radio test` (18 mutants) | `voice` (proximity gain, pan, fade and radio read from the listener's mixer with real positions; push to talk; speaking flag; game volume read back from the system; `voice channels`: every channel at 80 m and 5 m, one on one with a player that is not there, the `H` key; mutants) |
 | See through players | `make -C proxy/ghost test` (the line from the camera to each panel against the body, near fade, smoothing; 6 mutants) | `ghost` (B reads the alpha it draws A with: in the way a ghost, out of the line solid, in B's face faded; mutant) |
 | Race | `make -C proxy/race test` (waiting, one GO, baseline, winner and grace, loss, different goals; 6 mutants) and `make -C proxy/core test` (`race-isolation`: nothing shared, a co-op sender not blocked; 2 twins) | `race` (both games count down together, a panel solved in the countdown does not count, A's panels are unsolved in B's memory, the standings and the finish time agree; mutants) |
 | Shared lines in the panel's own frame | `make -C proxy/frame test` (round trip, a panel that turns 70 degrees and moves, the tip of a line part drawn; 2 mutants) | `linemove` (a half-drawn line is half way in B, the solved line the whole edge, after B's door has swung 1.0 m the line is unchanged in the panel's frame; 2 mutants) |
 | Window not active | - | `unfocus` (real focus on A: B at 60 fps with `run_unfocused=1`, 9.6 without; holds the resource provider's input lock) |
 | Launcher looks | - | `looks` (the real pointer along a tab: 3 repaints against 72; no dropdown covers a text on any page; 2 mutants) |
-| POV | game-free core tests | `pov` (also started the way the lobby does, and `V` on nobody; 4 mutants) |
+| Quick guide (hold F1) | `make -C common test` (bindings, migration, layout budget, hold vs toggle; 4 mutants) | No dedicated live scenario |
+| POV screen | game-free core tests | `pov` (also started the way the lobby does, and `V` on nobody; 4 mutants) |
+| Back TV | `python3 tools/test_tv.py` and `make -C proxy/core test` (wire, consent, geometry and mutants) | `tv` (live frame hashes, visible screen pixels, camera updates, viewer off, consent revocation; missing-feed mutant) |
 | Lobby | `make -C launcher lobby-test` (join with an invite, ready, start, roster, chat exactly once in order on a link losing 30% and damaging packets, voice relay, leaving, a host that restarts; 9 twins and a mutant) | `lobby` (two real launchers and two real games: host, join, chat, voice, the host's choices, ready and start, the cfgs written, the games race, back in the lobby with the result; 4 mutants) |
 | Map picture | - | `map` (seams of neighbouring tiles agree, content, nothing of the mod drawn, the player returns) |
 

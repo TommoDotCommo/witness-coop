@@ -32,8 +32,8 @@ void SaveMetaTick() {
     static ULONGLONG start = GetTickCount64(), last = start, lastWrite = 0; static std::wstring lastFile; static unsigned long long lastWhen; static bool loadedEarlier; static wprog::SaveMeta earlier; static bool hadEarlier;
     const Cfg& cfg = GetCfg(); if (cfg.noSaveMeta) return;
     ULONGLONG now = GetTickCount64(); double dt = (now - last) / 1000.0; last = now; if (dt > 5) dt = 5;
-    { Seen& me = g_roster[CoopMyId()]; me.id = CoopMyId(); me.name = CoopMyName(); me.character = SocialMyCharacter(); me.seconds += dt; }
-    for (const auto& r : CoopGetRemotes()) if (r.name[0] && r.ageMs < 3000) { Seen& s = g_roster[r.id]; s.id = r.id; s.name = r.name; s.character = r.character; s.seconds += dt; }
+    { Seen& me = g_roster[CoopMyId()]; me.id = CoopMyId(); me.name = CoopMyName(); me.character = "adventurer"; me.seconds += dt; }
+    for (const auto& r : CoopGetRemotes()) if (r.name[0] && r.ageMs < 3000) { Seen& s = g_roster[r.id]; s.id = r.id; s.name = r.name; s.character = "adventurer"; s.seconds += dt; }
     if (now - lastWrite < 3000) return;
     std::wstring dir = SaveFolder(), file; unsigned long long when = 0; if (dir.empty() || !Newest(dir, L"*.witness_campaign", &file, &when)) return;
     if (!loadedEarlier) {      // the sidecar of the newest save written before this session: its players and time are the earlier sessions of this campaign

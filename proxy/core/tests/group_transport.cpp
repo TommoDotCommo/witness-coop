@@ -41,6 +41,13 @@ struct FakeWorld : witness::World {
 HMODULE g_selfModule(){return GetModuleHandleW(nullptr);}
 witness::World* GameWorldInstance(){return &world;}
 void VideoOnPacket(const uint8_t*,size_t){}
+void VideoOnRequest(const uint8_t*,size_t){}
+void TvOnPacket(const uint8_t*,size_t){}
+void VoiceOnPacket(const uint8_t*,size_t){}
+void VoiceStart(){}
+void RaceStart(unsigned,const std::vector<unsigned>&,const std::function<void(const std::vector<uint8_t>&)>&){}
+void RaceTick(uint64_t,bool,const std::set<unsigned>&){}
+void RaceOnPacket(const uint8_t*,size_t,uint64_t){}
 void Log(const char* text){std::puts(text);std::fflush(stdout);}
 int main(int argc,char** argv){
     if(argc!=2&&argc!=3)return 2;

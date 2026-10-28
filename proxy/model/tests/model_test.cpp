@@ -1,5 +1,5 @@
 // T0 test of the character model code (no game, no GPU): loading, skinning, animation, camera maths, placement, walk state.
-// usage: model_test <cesium-man.glb> <fox.glb> <rigged-figure.glb>.  Exit 0 = all checks passed.  Built with -DWM_MUT_xxx it must fail (see Makefile).
+// usage: model_test <adventurer.glb>.  Exit 0 = all checks passed.  Built with -DWM_MUT_xxx it must fail (see Makefile).
 #include "../model.h"
 #include <cmath>
 #include <cstdio>
@@ -51,11 +51,11 @@ int main(int argc, char** argv) {
     CHECK(wm::LoadGlb(file.data(), file.size(), &m, &err), "load: %s", err.c_str());
     if (g_fail) return 1;
     CHECK(m.verts.size() > 1000 && m.idx.size() % 3 == 0, "verts %zu idx %zu", m.verts.size(), m.idx.size());
-    CHECK(m.joints.size() == 19 && m.jointCount() == 20, "joints %zu", m.joints.size());
-    CHECK(m.clips.size() == 1 && m.clips[0].duration > 0.5f && m.clips[0].duration < 10, "clips %zu", m.clips.size());
+    CHECK(m.joints.size() == 20 && m.jointCount() == 21, "joints %zu", m.joints.size());
+    CHECK(m.clips.size() == 3 && m.clips[0].duration > 0.5f && m.clips[0].duration < 10, "clips %zu", m.clips.size());
     CHECK(m.texW > 0 && m.rgba.size() == (size_t)m.texW * m.texH * 4, "texture %dx%d", m.texW, m.texH);
     float h = m.bmax[1] - m.bmin[1];
-    CHECK(h > 1.3f && h < 1.8f, "bind-pose height %.3f (the bundled figure is 1.5 high)", h);
+    CHECK(h > 1.7f && h < 2.1f, "adventurer bind-pose height %.3f", h);
     CHECK(fabsf(m.bmin[1]) < 0.05f && fabsf((m.bmin[0] + m.bmax[0]) * 0.5f) < 0.2f && m.bmax[2] - m.bmin[2] < 0.6f, "bind pose is not standing at the origin: (%.2f %.2f %.2f)..(%.2f %.2f %.2f)", m.bmin[0], m.bmin[1], m.bmin[2], m.bmax[0], m.bmax[1], m.bmax[2]);
     for (uint32_t i : m.idx) if (i >= m.verts.size()) { CHECK(false, "index out of range"); break; }
     float wsum = 0; for (auto& v : m.verts) { float s = v.weights[0] + v.weights[1] + v.weights[2] + v.weights[3]; wsum = fmaxf(wsum, fabsf(s - 1)); }
@@ -69,9 +69,9 @@ int main(int argc, char** argv) {
     // skinning: in the bind pose the joint matrices must give back the mesh; walking must keep the body together and move it
     std::vector<float> jm0(wm::kMaxJoints * 16), jmt(wm::kMaxJoints * 16);
     wm::JointMatrices(m, -1, 0, jm0.data());
-    float dur = m.clips[0].duration, maxMove = 0, lowest = 1e9f, highest = -1e9f; bool inside = true;
+    float dur = m.clips[1].duration, maxMove = 0, lowest = 1e9f, highest = -1e9f; bool inside = true;
     for (int step = 0; step < 16; step++) {
-        wm::JointMatrices(m, 0, dur * step / 16.0f, jmt.data());
+        wm::JointMatrices(m, 1, dur * step / 16.0f, jmt.data());
         for (size_t i = 0; i < m.verts.size(); i += 7) {
             float a[3], b[3]; wm::SkinPosition(m, jm0.data(), m.verts[i], a); wm::SkinPosition(m, jmt.data(), m.verts[i], b);
             for (int k = 0; k < 3; k++) { maxMove = fmaxf(maxMove, fabsf(a[k] - b[k])); if (b[k] < m.bmin[k] - h * 0.6f || b[k] > m.bmax[k] + h * 0.6f) inside = false; }
@@ -83,7 +83,7 @@ int main(int argc, char** argv) {
     CHECK(lowest > m.bmin[1] - 0.25f * h && highest < m.bmax[1] + 0.25f * h, "height range while walking %.2f..%.2f vs %.2f..%.2f", lowest, highest, m.bmin[1], m.bmax[1]);
     // the clip loops
     std::vector<float> ja(wm::kMaxJoints * 16), jb(wm::kMaxJoints * 16);
-    wm::JointMatrices(m, 0, dur * 0.5f, ja.data()); wm::JointMatrices(m, 0, dur * 1.5f, jb.data());
+    wm::JointMatrices(m, 1, dur * 0.5f, ja.data()); wm::JointMatrices(m, 1, dur * 1.5f, jb.data());
     float dl = 0; for (int i = 0; i < m.jointCount() * 16; i++) dl = fmaxf(dl, fabsf(ja[i] - jb[i]));
     CHECK(dl < 1e-3f, "clip does not loop (diff %g)", dl);
 
@@ -131,39 +131,33 @@ int main(int argc, char** argv) {
         for (int fr = 0; fr < 120; fr++, t += 17) { if (fr % 2 == 0) { seq++; p[0] += 3.0f / 30; } a.Update(t, true, seq, p, 0.3f); }
         wm::ClipPick pk = a.Pick(m);
         CHECK(Near(a.speed(), 3.0f, 0.5f), "walking speed measured %.2f", a.speed());
-        CHECK(pk.clip == 0 && pk.time > 1.0f, "walking pick clip %d time %.2f", pk.clip, pk.time);
+        CHECK(pk.clip == 1 && pk.time > 1.0f, "walking pick clip %d time %.2f", pk.clip, pk.time);
         CHECK(Near(a.pos()[0], p[0], 0.4f), "displayed x %.2f vs %.2f", a.pos()[0], p[0]);
         for (int fr = 0; fr < 90; fr++, t += 17) a.Update(t, true, seq, p, 0.3f);
         CHECK(a.speed() < 0.25f, "still walking after the packets stopped (%.2f)", a.speed());
-        CHECK(a.Pick(m).clip == 0 && a.Pick(m).time == 0, "idle must hold the first frame (clip %d time %.2f)", a.Pick(m).clip, a.Pick(m).time);
+        CHECK(a.Pick(m).clip == 0 && a.Pick(m).time > 0, "idle must animate (clip %d time %.2f)", a.Pick(m).clip, a.Pick(m).time);
         CHECK(Near(a.pos()[0], p[0], 0.05f), "settled at x %.2f vs %.2f", a.pos()[0], p[0]);
         float far[3] = {500, 300, 5}; seq++; a.Update(t, true, seq, far, 0); t += 17; seq++; a.Update(t + 33, true, seq, far, 0);
         CHECK(a.speed() < 1.0f && Near(a.pos()[0], 500, 1.0f), "teleport: speed %.1f pos %.1f", a.speed(), a.pos()[0]);
     }
-    // the other bundled models: the clip is chosen by name, an unnamed single clip is the walk, a model without a texture still loads
-    auto load = [&](const char* path, wm::Model* out) { std::ifstream g(path, std::ios::binary); std::vector<uint8_t> b((std::istreambuf_iterator<char>(g)), {}); std::string e; bool ok = wm::LoadGlb(b.data(), b.size(), out, &e); CHECK(ok, "%s: %s", path, e.c_str()); return ok; };
     auto walkAt = [&](const wm::Model& mm, float mps, int frames, wm::Avatar& a) { uint64_t t = 5000; unsigned seq = 1; float p[3] = {0, 0, 5};
         for (int fr = 0; fr < frames; fr++, t += 17) { if (fr % 2 == 0) { seq++; p[0] += mps / 30; } a.Update(t, true, seq, p, 0); } (void)mm; };
-    wm::Model fox, fig;
-    if (argc > 2 && load(argv[2], &fox)) {
-        CHECK(fox.clips.size() == 3 && fox.joints.size() == 24, "fox: %zu clips %zu joints", fox.clips.size(), fox.joints.size());
-        auto nameOf = [&](wm::ClipPick pk) { return pk.clip >= 0 ? fox.clips[pk.clip].name : std::string("none"); };
-        wm::Avatar still, walk, run; walkAt(fox, 0, 120, still); walkAt(fox, 3.0f, 120, walk); walkAt(fox, 6.5f, 120, run);
-        CHECK(nameOf(still.Pick(fox)) == "Survey" && still.Pick(fox).time > 1.0f, "standing fox plays '%s' at %.2f", nameOf(still.Pick(fox)).c_str(), still.Pick(fox).time);
-        CHECK(nameOf(walk.Pick(fox)) == "Walk", "walking fox plays '%s'", nameOf(walk.Pick(fox)).c_str());
-        CHECK(nameOf(run.Pick(fox)) == "Run", "running fox plays '%s'", nameOf(run.Pick(fox)).c_str());
-        wm::Fit ff = wm::FitToHeight(fox, 0.7f); CHECK(fox.bmax[1] - fox.bmin[1] > 0 && Near((fox.bmax[1] - fox.bmin[1]) * ff.scale, 0.7f, 1e-3f), "fox fit scale %g", ff.scale);
-        std::vector<float> j(wm::kMaxJoints * 16); wm::JointMatrices(fox, 2, 0.3f, j.data()); float a[3], bb[3]; wm::JointMatrices(fox, -1, 0, jm0.data()); wm::SkinPosition(fox, j.data(), fox.verts[100], a); wm::SkinPosition(fox, jm0.data(), fox.verts[100], bb);
-        CHECK(fabsf(a[0] - bb[0]) + fabsf(a[1] - bb[1]) + fabsf(a[2] - bb[2]) > 1e-3f, "fox run clip does not move the mesh");
-    }
-    if (argc > 3 && load(argv[3], &fig)) {
-        CHECK(fig.texW == 0 && fig.rgba.empty() && fig.joints.size() == 19 && fig.clips.size() == 1, "rigged figure: texture %d, %zu joints, %zu clips", fig.texW, fig.joints.size(), fig.clips.size());
-        wm::Avatar w, s0; walkAt(fig, 3.0f, 120, w); walkAt(fig, 0, 120, s0);
-        CHECK(w.Pick(fig).clip == 0 && w.Pick(fig).time > 1.0f, "unnamed clip is the walk (clip %d time %.2f)", w.Pick(fig).clip, w.Pick(fig).time);
-        CHECK(s0.Pick(fig).clip == 0 && s0.Pick(fig).time == 0, "unnamed clip, standing: first frame (time %.2f)", s0.Pick(fig).time);
+    {
+        wm::Avatar still, walk, run; walkAt(m, 0, 120, still); walkAt(m, 3.0f, 120, walk); walkAt(m, 6.5f, 120, run);
+        CHECK(m.clips[still.Pick(m).clip].name == "idle" && still.Pick(m).time > 1.0f, "standing plays idle");
+        CHECK(m.clips[walk.Pick(m).clip].name == "walk", "walking plays walk");
+        CHECK(m.clips[run.Pick(m).clip].name == "run", "running plays run");
     }
 
-    // a character with many joints (the Magic Frog has 151): up to kMaxJoints - 1 = 255 must load and skin correctly, one more must be refused
+    // Preserve unnamed single-clip coverage without distributing a sample character.
+    {
+        wm::Model single = m; single.clips = {m.clips[1]}; single.clips[0].name.clear();
+        wm::Avatar moving, still; walkAt(single, 3, 120, moving); walkAt(single, 0, 120, still);
+        CHECK(moving.Pick(single).clip == 0 && moving.Pick(single).time > 1, "unnamed single clip is the walk");
+        CHECK(still.Pick(single).clip == 0 && still.Pick(single).time == 0, "unnamed single clip holds at rest");
+    }
+
+    // a character with many joints (synthetic skeleton): up to kMaxJoints - 1 = 255 must load and skin correctly, one more must be refused
     for (int n : {150, 255}) {
         std::vector<uint8_t> g = ChainGlb(n); wm::Model cm; std::string ce;
         bool ok = wm::LoadGlb(g.data(), g.size(), &cm, &ce); CHECK(ok, "%d joints: %s", n, ce.c_str());
@@ -175,34 +169,34 @@ int main(int argc, char** argv) {
     { std::vector<uint8_t> g = ChainGlb(256); wm::Model cm; std::string ce; CHECK(!wm::LoadGlb(g.data(), g.size(), &cm, &ce), "256 joints accepted (the limit is 255)"); }
 
     // cross-fade: after the player stops, the pose fades from the walk to the idle over fadeMs instead of jumping; a new state starts from what was playing
-    if (fox.clips.size() == 3) {
-        auto clipName = [&](int c) { return c >= 0 ? fox.clips[c].name : std::string("none"); };
-        wm::Avatar a; walkAt(fox, 3.0f, 120, a); wm::ClipPick p0 = a.Pick(fox);
-        CHECK(clipName(p0.clip) == "Walk" && p0.from < 0 && p0.blend == 1, "walking: clip %s from %d blend %.2f", clipName(p0.clip).c_str(), p0.from, p0.blend);
+    if (m.clips.size() == 3) {
+        auto clipName = [&](int c) { return c >= 0 ? m.clips[c].name : std::string("none"); };
+        wm::Avatar a; walkAt(m, 3.0f, 120, a); wm::ClipPick p0 = a.Pick(m);
+        CHECK(clipName(p0.clip) == "walk" && p0.from < 0 && p0.blend == 1, "walking: clip %s from %d blend %.2f", clipName(p0.clip).c_str(), p0.from, p0.blend);
         uint64_t t = 5000 + 120 * 17; unsigned seq = 1000; float p[3] = {0, 0, 5}; p[0] = 3.0f * 60 / 30 * 2;
         float firstBlend = -1, lastBlend = -1; int fadeFrames = 0; std::string fromName;
         for (int fr = 0; fr < 200; fr++, t += 17) {
-            a.Update(t, true, seq, p, 0); wm::ClipPick q = a.Pick(fox);
-            if (clipName(q.clip) == "Survey" && q.from >= 0 && q.blend < 1) { if (firstBlend < 0) firstBlend = q.blend; lastBlend = q.blend; fadeFrames++; fromName = clipName(q.from); }
+            a.Update(t, true, seq, p, 0); wm::ClipPick q = a.Pick(m);
+            if (clipName(q.clip) == "idle" && q.from >= 0 && q.blend < 1) { if (firstBlend < 0) firstBlend = q.blend; lastBlend = q.blend; fadeFrames++; fromName = clipName(q.from); }
         }
-        CHECK(fadeFrames >= 5 && firstBlend >= 0 && firstBlend < 0.3f && lastBlend > firstBlend && fromName == "Walk", "stopping: %d frames of fade (blend %.2f .. %.2f) from '%s'", fadeFrames, firstBlend, lastBlend, fromName.c_str());
-        wm::ClipPick done = a.Pick(fox); CHECK(clipName(done.clip) == "Survey" && done.blend == 1, "fade finished: clip %s blend %.2f", clipName(done.clip).c_str(), done.blend);
+        CHECK(fadeFrames >= 5 && firstBlend >= 0 && firstBlend < 0.3f && lastBlend > firstBlend && fromName == "walk", "stopping: %d frames of fade (blend %.2f .. %.2f) from '%s'", fadeFrames, firstBlend, lastBlend, fromName.c_str());
+        wm::ClipPick done = a.Pick(m); CHECK(clipName(done.clip) == "idle" && done.blend == 1, "fade finished: clip %s blend %.2f", clipName(done.clip).c_str(), done.blend);
         // the blended pose: w = 0 is the old clip, w = 1 the new one, in between it is neither
-        std::vector<float> ja(wm::kMaxJoints * 16), jb(wm::kMaxJoints * 16), jh(wm::kMaxJoints * 16), jn(wm::kMaxJoints * 16); float pa[3], pb[3], ph[3], pn[3]; const wm::Vertex& vx = fox.verts[100];
-        wm::JointMatrices(fox, 1, 0.3f, ja.data()); wm::JointMatrices(fox, 0, 0.9f, jb.data()); wm::SkinPosition(fox, ja.data(), vx, pa); wm::SkinPosition(fox, jb.data(), vx, pb);
-        wm::JointMatricesBlend(fox, 1, 0.3f, 0, 0.9f, 0.0f, jn.data()); wm::SkinPosition(fox, jn.data(), vx, pn);
+        std::vector<float> ja(wm::kMaxJoints * 16), jb(wm::kMaxJoints * 16), jh(wm::kMaxJoints * 16), jn(wm::kMaxJoints * 16); float pa[3], pb[3], ph[3], pn[3]; const wm::Vertex& vx = m.verts[100];
+        wm::JointMatrices(m, 1, 0.3f, ja.data()); wm::JointMatrices(m, 0, 0.9f, jb.data()); wm::SkinPosition(m, ja.data(), vx, pa); wm::SkinPosition(m, jb.data(), vx, pb);
+        wm::JointMatricesBlend(m, 1, 0.3f, 0, 0.9f, 0.0f, jn.data()); wm::SkinPosition(m, jn.data(), vx, pn);
         CHECK(Near(pn[0], pa[0], 1e-4f) && Near(pn[1], pa[1], 1e-4f) && Near(pn[2], pa[2], 1e-4f), "blend 0 is not the old clip");
-        wm::JointMatricesBlend(fox, 1, 0.3f, 0, 0.9f, 1.0f, jn.data()); wm::SkinPosition(fox, jn.data(), vx, pn);
+        wm::JointMatricesBlend(m, 1, 0.3f, 0, 0.9f, 1.0f, jn.data()); wm::SkinPosition(m, jn.data(), vx, pn);
         CHECK(Near(pn[0], pb[0], 1e-4f) && Near(pn[1], pb[1], 1e-4f) && Near(pn[2], pb[2], 1e-4f), "blend 1 is not the new clip");
-        wm::JointMatricesBlend(fox, 1, 0.3f, 0, 0.9f, 0.5f, jh.data()); wm::SkinPosition(fox, jh.data(), vx, ph);
+        wm::JointMatricesBlend(m, 1, 0.3f, 0, 0.9f, 0.5f, jh.data()); wm::SkinPosition(m, jh.data(), vx, ph);
         float dA = fabsf(ph[0] - pa[0]) + fabsf(ph[1] - pa[1]) + fabsf(ph[2] - pa[2]), dB = fabsf(ph[0] - pb[0]) + fabsf(ph[1] - pb[1]) + fabsf(ph[2] - pb[2]), dAB = fabsf(pa[0] - pb[0]) + fabsf(pa[1] - pb[1]) + fabsf(pa[2] - pb[2]);
         CHECK(dA > 1e-3f && dB > 1e-3f && dA < dAB * 1.5f && dB < dAB * 1.5f, "half blend: %.3f from old, %.3f from new, clips differ by %.3f", dA, dB, dAB);
         // the run clip is timed by its own reference speed (GaitCfg::runRef), not by the walk's
-        wm::GaitCfg g1, g2; g2.runRef = 4.5f; wm::Avatar r1(g1), r2(g2); walkAt(fox, 6.5f, 120, r1); walkAt(fox, 6.5f, 120, r2);
-        float t1 = r1.Pick(fox).time, t2 = r2.Pick(fox).time;
-        CHECK(clipName(r1.Pick(fox).clip) == "Run" && clipName(r2.Pick(fox).clip) == "Run" && t1 > 0 && Near(t1 / t2, 4.5f / 1.6f, 0.05f), "run clip time %.2f (walk reference) vs %.2f (run reference 4.5): ratio %.2f, wanted %.2f", t1, t2, t1 / t2, 4.5f / 1.6f);
+        wm::GaitCfg g1, g2; g2.runRef = 4.5f; wm::Avatar r1(g1), r2(g2); walkAt(m, 6.5f, 120, r1); walkAt(m, 6.5f, 120, r2);
+        float t1 = r1.Pick(m).time, t2 = r2.Pick(m).time;
+        CHECK(clipName(r1.Pick(m).clip) == "run" && clipName(r2.Pick(m).clip) == "run" && t1 > 0 && Near(t1 / t2, 4.5f / 1.6f, 0.05f), "run clip time %.2f (walk reference) vs %.2f (run reference 4.5): ratio %.2f, wanted %.2f", t1, t2, t1 / t2, 4.5f / 1.6f);
     }
-    // eye height: the eyes are found by joint name, in the space the bounds are measured in. Like the Magic Frog, the nodes above the skeleton scale it by 0.01 while the
+    // eye height: the eyes are found by joint name, in the space the bounds are measured in. The nodes above the skeleton scale it by 0.01 while the
     // inverse bind matrices are in the unscaled space; the fit must put the eyes at the camera's eye height above the feet all the same
     {
         wm::Model em; em.nodes.resize(4); const char* nm[4] = {"armature", "c_eye.l_050", "c_eye.r_063", "c_eyelid_top.l_053"};
@@ -247,13 +241,14 @@ int main(int argc, char** argv) {
     // which clip of a model an emote plays: the model's own named clips, "No" only as a whole name
     {
         auto mk = [](std::initializer_list<const char*> names) { wm::Model mm; for (const char* n : names) { wm::Clip c; c.name = n; c.duration = 1; mm.clips.push_back(c); } return mm; };
+        auto clipName = [](const wm::Model& model, int emote) { int c = wm::EmoteClip(model, emote); return c >= 0 && size_t(c) < model.clips.size() ? model.clips[c].name : std::string(); };
         wm::Model robot = mk({"Dance", "Death", "Idle", "Jump", "No", "Punch", "Running", "Sitting", "Standing", "ThumbsUp", "Walking", "WalkJump", "Wave", "Yes"});
-        CHECK(robot.clips[wm::EmoteClip(robot, 1)].name == "Wave" && robot.clips[wm::EmoteClip(robot, 2)].name == "Dance" && robot.clips[wm::EmoteClip(robot, 3)].name == "ThumbsUp" && robot.clips[wm::EmoteClip(robot, 4)].name == "Yes" && robot.clips[wm::EmoteClip(robot, 5)].name == "No", "the robot's own emote clips");
+        CHECK(clipName(robot, 1) == "Wave" && clipName(robot, 2) == "Dance" && clipName(robot, 3) == "ThumbsUp" && clipName(robot, 4) == "Yes" && clipName(robot, 5) == "No", "the robot's own emote clips");
         wm::Model xbot = mk({"agree", "headShake", "idle", "run", "sad_pose", "sneak_pose", "walk"});
-        CHECK(xbot.clips[wm::EmoteClip(xbot, 4)].name == "agree" && xbot.clips[wm::EmoteClip(xbot, 5)].name == "headShake" && wm::EmoteClip(xbot, 1) < 0 && wm::EmoteClip(xbot, 2) < 0, "xbot: agree and headShake, nothing for wave and dance");
-        wm::Model snow = mk({"Idle", "Snow", "Annotate", "Walk"});
+        CHECK(clipName(xbot, 4) == "agree" && clipName(xbot, 5) == "headShake" && wm::EmoteClip(xbot, 1) < 0 && wm::EmoteClip(xbot, 2) < 0, "xbot: agree and headShake, nothing for wave and dance");
+        wm::Model snow = mk({"Idle", "Snow", "Annotate", "walk"});
         CHECK(wm::EmoteClip(snow, 5) < 0 && wm::EmoteClip(snow, 6) < 0 && wm::EmoteClip(snow, 7) < 0, "a clip with 'no' inside its name is not the No emote");
-        wm::Model samba = mk({"SambaDance", "TPose"}); CHECK(samba.clips[wm::EmoteClip(samba, 2)].name == "SambaDance", "SambaDance is a dance");
+        wm::Model samba = mk({"SambaDance", "TPose"}); CHECK(clipName(samba, 2) == "SambaDance", "SambaDance is a dance");
     }
     printf("%s: %d checks, %d failed\n", g_fail ? "FAILED" : "ok", g_n, g_fail);
     return g_fail ? 1 : 0;

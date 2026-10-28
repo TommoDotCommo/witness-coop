@@ -1,6 +1,6 @@
 #pragma once
 // The launcher's logic, game-free (T0 test: core_test.cpp): reading and writing the three places the game's options live in, listing saves, and building the launch.
-//   witness_coop.cfg      the mod's own settings (name, keys, connection, models, ...): text lines key=value, written back with every line it does not know left as it is
+//   witness_coop.cfg      the mod's own settings (name, keys, connection, appearance, ...): text lines key=value, written back with every line it does not know left as it is
 //   Launcher.variables    the game's video options (in its save folder): render profile, fullscreen, vsync, resolution, multisampling, qualities
 //   <save>.witness_campaign   the game's save: it carries the game's own options (mouse speed, invert, brightness, field of view, ...) as named values, patched in place
 #include <cstdint>

@@ -1,3 +1,4 @@
+#include "../common/guide.h"
 // The Witness co-op launcher: every option outside the game. Video (the game's Launcher.variables), the mod's settings (witness_coop.cfg: name, keys, connection, sound and voice),
 // the game's own options inside a save (mouse speed, brightness, field of view, ...), the save files with who was in the game and how far it got, and a new game that starts with
 // chosen parts of the map completed (the order the game itself needs: progress/progress.h). The logic is in core.cpp (tested without a window); this file is the window.
@@ -18,6 +19,7 @@
 #include <vector>
 #include <uxtheme.h>
 #include "core.h"
+#include "../proxy/core/appearance.h"
 #include "theme.h"
 #include "lobby.h"
 #include "lobby_win.h"
@@ -34,10 +36,12 @@ bool Exists(const std::wstring& p) { return GetFileAttributesW(p.c_str()) != INV
 enum { ID_TAB = 100, ID_APPLY, ID_LAUNCH, ID_NEWGAME, ID_BROWSE, ID_GAMEDIR, ID_STATUS, ID_REFRESH, ID_OPENSAVES, ID_BACKUP, ID_TRASH, ID_SAVELIST, ID_SAVEINFO, ID_SAVEPICK, ID_NG_OK = 300, ID_NG_LASERS, ID_NG_PRESET, ID_NG_INFO, ID_NG_AREAS = 400, ID_FIELD = 1000 };
 enum Kind { kCheck, kCombo, kEdit, kMulti };
 struct Field { int id; int page; std::string label, key; Kind kind; std::vector<std::string> choices; std::string def, hint; HWND h = nullptr; };
+guide::Hold g_guideHold;
+HWND g_guide;
 std::vector<Field> g_fields; HWND g_main, g_tab, g_pages[9], g_status; int g_npages;
 std::wstring g_dir;                       // the game folder
 bool g_noActivate;                        // --no-activate (tests): the game's window is shown without taking the focus
-const wchar_t* kPageNames[] = {L"Lobby", L"Play", L"Video", L"Sound and voice", L"Controls", L"Game options", L"Co-op", L"Saves"};
+const wchar_t* kPageNames[] = {L"Lobby", L"Play", L"Video", L"Sound and voice", L"Controls", L"Game options", L"Co-op", L"Saves", L"Appearance"};
 
 std::wstring CfgPath() { return g_dir + L"\\witness_coop.cfg"; }
 std::wstring SaveFolder(const wl::CfgFile& c) {      // where the game keeps its saves, as the mod redirects them (save_dir=instance|<path>)
@@ -49,7 +53,6 @@ std::wstring SaveFolder(const wl::CfgFile& c) {      // where the game keeps its
 wl::CfgFile LoadCfg() { return wl::CfgFile::Parse(ReadFile8(CfgPath())); }
 void Status(const std::wstring& s) { SetWindowTextW(g_status, s.c_str()); }
 void LobbyCfgSave(wl::CfgFile* c); void LobbyCfgLoad(const wl::CfgFile& c); void LobbyPartsChosen(const std::string& spec);
-std::vector<std::string> Models() { std::vector<std::string> r; WIN32_FIND_DATAW fd; HANDLE h = FindFirstFileW((g_dir + L"\\witness_models\\*.glb").c_str(), &fd); if (h == INVALID_HANDLE_VALUE) return r; do { std::string n = U(fd.cFileName); r.push_back(n.substr(0, n.size() - 4)); } while (FindNextFileW(h, &fd)); FindClose(h); std::sort(r.begin(), r.end()); return r; }
 
 void AddFields() {
     int id = ID_FIELD; auto add = [&](int page, const char* label, const char* key, Kind k, std::vector<std::string> ch = {}, const char* def = "", const char* hint = "") { g_fields.push_back({id++, page, label, key, k, ch, def, hint}); };
@@ -58,33 +61,48 @@ void AddFields() {
     add(2, "Resolution", "vid:resolution", kCombo, res); add(2, "Custom width", "vid:customW", kEdit, {}, "1920"); add(2, "Custom height", "vid:customH", kEdit, {}, "1080"); add(2, "Anti-aliasing", "vid:multisampling", kCombo, msaa);
     add(2, "Shading quality", "vid:shading", kCombo, q); add(2, "Reflection quality", "vid:reflection", kCombo, q); add(2, "Texture quality", "vid:texture", kCombo, q); add(2, "Texture detail", "vid:textureDetail", kCombo, q); add(2, "Geometry detail", "vid:geometry", kCombo, q);
     add(2, "Frame rate limit (0: none)", "cfg:cap_fps", kEdit, {}, "0");
-    
+
 #ifdef WL_MUT_LONG_LABELS
     add(3, "Game sound off (starts the game with -no_sound)",
 #else
     add(3, "Game sound off (-no_sound)",
 #endif
  "cfg:launcher_no_sound", kCheck); add(3, "Game volume, percent", "cfg:game_volume", kEdit, {}, "100", "its entry in the Windows volume mixer");
-    add(3, "Voice chat", "cfg:voice_mode", kCombo, {"off", "open", "ptt"}, "ptt", "off, open (voice gate) or ptt (push to talk)"); add(3, "Push-to-talk key", "cfg:key_voice", kEdit, {}, "N", "a letter or F1 to F12"); add(3, "Who hears you (voice channel)", "cfg:voice_channel", kCombo, {"proximity", "radio", "global"}, "proximity", "proximity, radio or global (open line)"); 
+    add(3, "Voice chat", "cfg:voice_mode", kCombo, {"off", "open", "ptt"}, "ptt", "off, open (voice gate) or ptt (push to talk)"); add(3, "Push-to-talk key", "cfg:key_voice", kEdit, {}, guide::KeyName(Cfg().keyVoice).c_str(), "unique letter, digit or function key; F1 is help"); add(3, "Who hears you (voice channel)", "cfg:voice_channel", kCombo, {"proximity", "radio", "global"}, "proximity", "proximity, radio or global (open line)");
     add(3, "Voice volume, percent", "cfg:voice_volume", kEdit, {}, "100"); add(3, "Microphone volume, percent", "cfg:mic_volume", kEdit, {}, "100"); add(3, "Hear players within (metres)", "cfg:voice_range", kEdit, {}, "25", "beyond it the voice turns into radio");
     add(3, "Radio range (metres, 0: unlimited)", "cfg:voice_radio_range", kEdit, {}, "0"); add(3, "Radio sound when far away", "cfg:voice_radio", kCheck, {}, "1");
-    add(4, "Chat", "cfg:key_chat", kEdit, {}, "T", "a letter or F1 to F12"); add(4, "Ping a place", "cfg:key_ping", kEdit, {}, "P"); add(4, "Emote wheel (hold)", "cfg:key_emote", kEdit, {}, "G"); add(4, "Draw (hold)", "cfg:key_draw", kEdit, {}, "X");
-    add(4, "Drawing canvas", "cfg:key_canvas", kEdit, {}, "Z"); add(4, "Ink colour", "cfg:key_color", kEdit, {}, "B"); add(4, "Character list", "cfg:key_character", kEdit, {}, "C"); add(4, "Next voice channel", "cfg:key_voice_channel", kEdit, {}, "H", "steps proximity, radio, open line, one on one");
+    add(3, "Handheld radio", "cfg:radio_enabled", kCheck, {}, "1", "hold the radio key to transmit");
+    for (const auto& b : guide::bindings) {
+        if (std::string(b.config) == "key_voice") continue; // voice tab already has this control
+        add(4, b.label, (std::string("cfg:") + b.config).c_str(), kEdit, {}, guide::KeyName(b.initial).c_str(), "unique letter, digit or function key; F1 is help");
+    }
     for (const auto& d : wl::SaveOptionDefs()) add(5, d.label, (std::string("opt:") + d.name).c_str(), d.kind == wl::OptKind::Bool ? kCheck : kEdit);
+    const std::vector<std::vector<std::string>> palettes = {
+        {"Original", "Tan", "Deep", "Light"}, {"Original", "Black", "Auburn", "Silver"},
+        {"Original", "Blue", "Green", "Amber"}, {"Original", "Rust", "Blue", "Olive"},
+        {"Original", "Blue", "Red", "Green"}, {"Original", "Charcoal", "Blue", "Olive"},
+        {"Original", "Black", "Tan", "Olive"}, {"Original", "Charcoal", "Tan", "Olive"}
+    };
+    for (size_t i = 0; i < witness::kAppearanceFeatures; ++i) {
+        const auto* feature = witness::kAppearanceNames[i];
+        std::string label = std::string(feature) + " palette";
+        std::string key = std::string("cfg:appearance_") + feature;
+        add(8, label.c_str(), key.c_str(), kCombo, palettes[i], "0");
+    }
     add(6, "Player number (1, 2, ...)", "cfg:id", kEdit, {}, "1"); add(6, "Name shown to the others", "cfg:name", kEdit); add(6, "UDP port to listen on", "cfg:listen", kEdit, {}, "47001");
-    add(6, "Other players: number,address,port", "cfgmulti:peer", kMulti); add(6, "Your character", "cfg:character", kCombo, {}, ""); add(6, "Show other players as different models", "cfg:model_by_player", kCheck);
+    add(6, "Other players: number,address,port", "cfgmulti:peer", kMulti);
     add(6, "Developer menu (F8)", "cfg:dev_menu", kCheck); add(6, "See through players in the way of a puzzle", "cfg:see_through", kCheck, {}, "1"); add(6, "Keep running when this window is not active", "cfg:run_unfocused", kCheck, {}, "0", "two windows on one PC: stays smooth");
 }
 Field* ByKey(const std::string& k) { for (auto& f : g_fields) if (f.key == k) return &f; return nullptr; }
 std::string GetVal(Field& f) {
     wchar_t b[2000] = {};
     if (f.kind == kCheck) return SendMessageW(f.h, BM_GETCHECK, 0, 0) == BST_CHECKED ? "1" : "0";
-    if (f.kind == kCombo) { int i = (int)SendMessageW(f.h, CB_GETCURSEL, 0, 0); return i < 0 ? "" : (f.key.rfind("vid:", 0) == 0 ? std::to_string(i) : f.choices[i]); }
+    if (f.kind == kCombo) { int i = (int)SendMessageW(f.h, CB_GETCURSEL, 0, 0); return i < 0 ? "" : ((f.key.rfind("vid:", 0) == 0 || f.key.rfind("cfg:appearance_", 0) == 0) ? std::to_string(i) : f.choices[i]); }
     GetWindowTextW(f.h, b, 2000); return U(b);
 }
 void SetVal(Field& f, const std::string& v) {
     if (f.kind == kCheck) SendMessageW(f.h, BM_SETCHECK, (v == "1" || v == "true") ? BST_CHECKED : BST_UNCHECKED, 0);
-    else if (f.kind == kCombo) { int i = -1; if (f.key.rfind("vid:", 0) == 0) i = atoi(v.c_str()); else for (size_t k = 0; k < f.choices.size(); ++k) if (f.choices[k] == v) i = (int)k; if (i < 0 && !f.choices.empty()) i = 0; SendMessageW(f.h, CB_SETCURSEL, i, 0); }
+    else if (f.kind == kCombo) { int i = -1; if (f.key.rfind("cfg:appearance_", 0) == 0) i = v.size() == 1 && v[0] >= '0' && v[0] <= '3' ? v[0] - '0' : 0; else if (f.key.rfind("vid:", 0) == 0) i = atoi(v.c_str()); else for (size_t k = 0; k < f.choices.size(); ++k) if (f.choices[k] == v) i = (int)k; if ((i < 0 || size_t(i) >= f.choices.size()) && !f.choices.empty()) i = 0; SendMessageW(f.h, CB_SETCURSEL, i, 0); }
     else SetWindowTextW(f.h, W(v).c_str());
 }
 void FillPeers(Field& f, const wl::CfgFile& c) { std::string t; for (const auto& p : c.GetAll("peer")) t += p + "\r\n"; SetWindowTextW(f.h, W(t).c_str()); }
@@ -126,6 +144,20 @@ bool BackupSave(const wl::SaveInfo& s, bool move, const std::wstring& stampDir) 
 }
 
 // ---- load and apply
+Cfg GuideSettings(bool migrate) {
+    Cfg keys;
+    for (const auto& b : guide::bindings) {
+        auto* f = ByKey(std::string("cfg:") + b.config);
+        if (f) keys.*b.member = guide::ParseKey(GetVal(*f).empty() ? guide::KeyName(b.initial) : GetVal(*f));
+    }
+    if (migrate) guide::MigrateF1(keys);
+    return keys;
+}
+void MigrateGuideKeys() {
+    Cfg keys = GuideSettings(true);
+    for (const auto& b : guide::bindings) if (auto* f = ByKey(std::string("cfg:") + b.config))
+        if (guide::ParseKey(GetVal(*f)) == guide::Help) SetVal(*f, guide::KeyName(keys.*b.member));
+}
 void LoadAll() {
     wl::CfgFile c = LoadCfg(); wl::Video v; std::wstring sf = SaveFolder(c);
     if (!wl::ParseVideo(ReadFile8(sf + L"\\Launcher.variables"), &v)) v = wl::Video();
@@ -136,6 +168,7 @@ void LoadAll() {
         else if (f.key.rfind("cfg:", 0) == 0) SetVal(f, c.Get(f.key.substr(4), f.def));
         else if (f.key == "cfgmulti:peer") FillPeers(f, c);
     }
+    MigrateGuideKeys();
     LobbyCfgLoad(c); RefreshSaves();
     // the game's options come from the save chosen in the box (the newest first)
     std::vector<uint8_t> data; if (!g_saves.empty()) { std::string t = ReadFile8(g_saves[0].path); data.assign(t.begin(), t.end()); }
@@ -144,6 +177,8 @@ void LoadAll() {
     ShowSaveInfo(g_saves.empty() ? -1 : 0);
 }
 bool ApplyAll(std::wstring* msg) {
+    std::string keyError = guide::Validate(GuideSettings(false));
+    if (!keyError.empty()) { *msg = W(keyError); return false; }
     wl::CfgFile c = LoadCfg(); wl::Video v; std::wstring sf = SaveFolder(c); wl::ParseVideo(ReadFile8(sf + L"\\Launcher.variables"), &v);
     for (auto& f : g_fields) {
         std::string val = GetVal(f);
@@ -152,7 +187,7 @@ bool ApplyAll(std::wstring* msg) {
             else if (k == "multisampling") v.multisampling = n; else if (k == "shading") v.shading = n; else if (k == "reflection") v.reflection = n; else if (k == "texture") v.texture = n; else if (k == "textureDetail") v.textureDetail = n; else v.geometry = n; }
         else if (f.key.rfind("cfg:", 0) == 0) {
             std::string k = f.key.substr(4); if (f.kind == kCombo && (val == "(default)" || val.empty())) val = "";
-            if (k.rfind("key_", 0) == 0 && !val.empty()) { for (auto& ch : val) ch = (char)toupper((unsigned char)ch); bool ok = (val.size() == 1 && isalnum((unsigned char)val[0])) || (val[0] == 'F' && atoi(val.c_str() + 1) >= 1 && atoi(val.c_str() + 1) <= 12); if (!ok) { *msg = W(f.label + ": a letter, a digit or F1 to F12"); return false; } }
+            if (k.rfind("key_", 0) == 0 && !val.empty()) val = guide::KeyName(guide::ParseKey(val));
             if (f.kind == kEdit && (k == "cap_fps" || k == "game_volume" || k == "voice_volume" || k == "mic_volume" || k == "voice_range" || k == "voice_radio_range" || k == "id" || k == "listen")) { char* e; long n = strtol(val.c_str(), &e, 10); if (val.empty() || *e || n < 0 || n > 65535) { *msg = W(f.label + ": a whole number from 0 to 65535"); return false; } if ((k == "game_volume" || k == "voice_volume" || k == "mic_volume") && n > 100) { *msg = W(f.label + ": 0 to 100"); return false; } }
             if (val.empty()) c.Unset(k); else if (val == f.def && !c.Has(k) && k != "id" && k != "listen" && k != "name") {} else c.Set(k, val);      // a value that is the default is not written unless the line was already there
         } else if (f.key == "cfgmulti:peer") {
@@ -266,7 +301,7 @@ LRESULT CALLBACK PageProc(HWND h, UINT m, WPARAM w, LPARAM l) {
 void BuildLobbyPage();
 void BuildPages(HWND parent) {
     WNDCLASSW wc = {}; wc.lpfnWndProc = PageProc; wc.hInstance = GetModuleHandleW(nullptr); wc.lpszClassName = L"WitnessLauncherPage"; wc.hbrBackground = th::BgBrush(); wc.hCursor = LoadCursorW(nullptr, IDC_ARROW); RegisterClassW(&wc);
-    g_npages = 8; static TCITEMW items[9];
+    g_npages = 9; static TCITEMW items[9];
     for (int i = 0; i < g_npages; ++i) { items[i] = {}; items[i].mask = TCIF_TEXT; items[i].pszText = (LPWSTR)kPageNames[i]; TabCtrl_InsertItem(g_tab, i, &items[i]); }
     th::StyleTab(g_tab);
     RECT r; GetClientRect(g_tab, &r); TabCtrl_AdjustRect(g_tab, FALSE, &r);      // the pages go under the row of tabs (measured once the tabs exist)
@@ -276,20 +311,19 @@ void BuildPages(HWND parent) {
     y += 50; Make(g_pages[1], L"BUTTON", L"Continue (start the game)", BS_DEFPUSHBUTTON, 16, y, 240, 40, ID_LAUNCH); Make(g_pages[1], L"BUTTON", L"New game...", BS_PUSHBUTTON, 270, y, 160, 40, ID_NEWGAME);
     Make(g_pages[1], L"STATIC", L"Continue starts the game with the settings of every page, on your latest save. New game asks what is already completed and starts a fresh world; your saves stay where they are.", SS_LEFT, 16, y + 56, 620, 40, 0);
     // fields
-    std::vector<std::string> models = Models();
     for (auto& f : g_fields) {
         HWND pg = g_pages[f.page]; static int rowY[9]; if (!rowY[f.page]) rowY[f.page] = 12; int ry = rowY[f.page]; int lw = 300;
         if (f.kind == kMulti) { Make(pg, L"STATIC", W(f.label).c_str(), SS_LEFT, 16, ry + 3, lw, 20, 0); f.h = Make(pg, L"EDIT", L"", WS_BORDER | ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN | WS_VSCROLL, 330, ry, 320, 90, f.id); rowY[f.page] += 98; continue; }
         Make(pg, L"STATIC", W(f.label).c_str(), SS_LEFT, 16, ry + 3, lw, 20, 0);
         if (f.kind == kCheck) f.h = Make(pg, L"BUTTON", L"", BS_AUTOCHECKBOX, 330, ry, 24, 22, f.id);
         else if (f.kind == kEdit) f.h = Make(pg, L"EDIT", L"", WS_BORDER | ES_AUTOHSCROLL, 330, ry, 120, 22, f.id);
-        else { 
+        else {
 #ifdef WL_MUT_WIDE_COMBOS
         f.h = Make(pg, L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_VSCROLL, 330, ry, 220, 200, f.id);
 #else
         f.h = Make(pg, L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_VSCROLL, 330, ry, 190, 200, f.id);
 #endif
-        if (f.key == "cfg:character") { f.choices = {"(default)"}; for (auto& m : models) f.choices.push_back(m); } for (auto& c : f.choices) SendMessageW(f.h, CB_ADDSTRING, 0, (LPARAM)W(c).c_str()); }
+        for (auto& c : f.choices) SendMessageW(f.h, CB_ADDSTRING, 0, (LPARAM)W(c).c_str()); }
         if (!f.hint.empty()) th::MarkMuted(Make(pg, L"STATIC", W(f.hint).c_str(), SS_LEFT, 540, ry + 3, 300, 20, 0));
         rowY[f.page] += 28;
     }
@@ -313,9 +347,13 @@ HWND LB(int id) { return GetDlgItem(g_pages[0], id); }
 std::string EditText(HWND h) { wchar_t b[1000] = {}; GetWindowTextW(h, b, 1000); return U(b); }
 void LobbyStatus(const std::wstring& s) { SetWindowTextW(LB(ID_LB_STATUS), s.c_str()); }
 std::string CfgGet(const char* k, const char* d = "") { return LoadCfg().Get(k, d); }
-unsigned KeyFromName(const std::string& n) { if (n.size() == 1) return (unsigned)toupper((unsigned char)n[0]); if (n.size() >= 2 && (n[0] == 'F' || n[0] == 'f')) { int k = atoi(n.c_str() + 1); if (k >= 1 && k <= 12) return VK_F1 + k - 1; } return 'N'; }
 lw::VoiceCfg VoiceCfgNow() {
-    wl::CfgFile c = LoadCfg(); lw::VoiceCfg v; std::string m = c.Get("voice_mode", "ptt"); v.mode = m == "off" ? 0 : m == "open" ? 1 : 2; v.key = KeyFromName(c.Get("key_voice", "N"));
+    wl::CfgFile c = LoadCfg(); lw::VoiceCfg v; std::string m = c.Get("voice_mode", "ptt"); v.mode = m == "off" ? 0 : m == "open" ? 1 : 2; Cfg keys;
+    for (const auto& b : guide::bindings) {
+        unsigned k = guide::ParseKey(c.Get(b.config, guide::KeyName(b.initial)));
+        if (k) keys.*b.member = k;
+    }
+    guide::MigrateF1(keys); v.key = keys.keyVoice;
     v.micVolume = atoi(c.Get("mic_volume", "100").c_str()); v.outVolume = atoi(c.Get("voice_volume", "100").c_str()); v.testTone = c.Get("voice_test_tone", ""); v.muteOutput = c.Get("voice_mute_output", "0") == "1"; return v;
 }
 void StartVoice() {
@@ -485,6 +523,7 @@ void WriteStat() {      // tests: what the lobby is, as text lines, rewritten ev
     if (g_statFile.empty() || GetTickCount64() - g_statAt < 250) return; g_statAt = GetTickCount64(); char b[600]; std::string o;
     wlobby::State st = g_sess.Active() ? g_sess.State() : wlobby::State(); lw::VoiceStats v = g_voice.Stats();
     snprintf(b, sizeof b, "tabpaints %u\nlobby active %d host %d joined %d id %u phase %d start_in %d refused %d\n", th::TabPaintCount(), g_sess.Active() ? 1 : 0, g_sess.IsHost() ? 1 : 0, g_sess.Joined() ? 1 : 0, g_sess.MyId(), (int)st.phase, st.startInMs, (int)g_sess.Refused()); o += b;
+    o += std::string("guide ") + (g_guideHold.Open() ? "1\n" : "0\n");
     snprintf(b, sizeof b, "invite %s\n", g_sess.Invite().c_str()); o += b;
     for (const auto& m : st.members) { snprintf(b, sizeof b, "member %u name %s host %d ready %d ingame %d speaking %d playing %d port %u ip %s\n", m.id, m.name.c_str(), m.host, m.ready, m.inGame, m.speaking, m.playing, m.gamePort, wlobby::IpText(m.ip).c_str()); o += b; }
     snprintf(b, sizeof b, "settings mode %d goal %s newgame %d progress %s\n", (int)st.settings.mode, st.settings.raceGoal.c_str(), st.settings.newGame ? 1 : 0, st.settings.progress.c_str()); o += b;
@@ -495,10 +534,59 @@ void WriteStat() {      // tests: what the lobby is, as text lines, rewritten ev
     std::wstring tmp = g_statFile + L".tmp"; if (WriteFile8(tmp, o)) MoveFileExW(tmp.c_str(), g_statFile.c_str(), MOVEFILE_REPLACE_EXISTING);
 }
 
+
+LRESULT CALLBACK GuideProc(HWND h, UINT m, WPARAM w, LPARAM l) {
+    if (m == WM_ERASEBKGND) return 1;
+    if (m != WM_PAINT) return DefWindowProcW(h, m, w, l);
+    PAINTSTRUCT ps; HDC dc = BeginPaint(h, &ps); RECT rc; GetClientRect(h, &rc);
+    FillRect(dc, &rc, th::BgBrush()); SetBkMode(dc, TRANSPARENT);
+    auto cols = guide::Wrap(guide::Content(GuideSettings(true)));
+    auto layout = guide::Fit(float(rc.right), float(rc.bottom), cols);
+    int cw = int(layout.columnWidth), fh = std::max(1, int(layout.rowHeight));
+    HFONT font = CreateFontW(-std::max(1, int(20 * layout.scale) - 2), std::max(1, int(10 * layout.scale)), 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, FIXED_PITCH, L"Consolas");
+    HGDIOBJ old = SelectObject(dc, th::Bold()); SetTextColor(dc, th::kWarm);
+    const wchar_t* title = L"THE WITNESS CO-OP - QUICK GUIDE";
+    TextOutW(dc, 16, 12, title, (int)wcslen(title));
+    SelectObject(dc, th::Small()); SetTextColor(dc, th::kAccent);
+    const wchar_t* hint = L"Hold F1 to read / release to return. Keys reflect current launcher settings.";
+    TextOutW(dc, 16, 40, hint, (int)wcslen(hint)); SelectObject(dc, font);
+    for (int c = 0; c < 3; ++c) {
+        int y = 70;
+        for (const auto& line : cols[c]) {
+            bool heading = !line.empty() && line.find_first_of("abcdefghijklmnopqrstuvwxyz") == std::string::npos;
+            SetTextColor(dc, heading ? th::kWarm : th::kText);
+            std::wstring text = W(line); TextOutW(dc, 16 + c * cw, y, text.c_str(), (int)text.size()); y += fh;
+        }
+    }
+    SelectObject(dc, old); DeleteObject(font); EndPaint(h, &ps); return 0;
+}
+void ShowGuide(bool open) {
+    if (!open) { ShowWindow(g_guide, SW_HIDE); return; }
+    if (!g_guide) {
+        WNDCLASSW cls = {}; cls.hInstance = GetModuleHandleW(nullptr); cls.lpszClassName = L"WitnessQuickGuide"; cls.lpfnWndProc = GuideProc;
+        RegisterClassW(&cls);
+        g_guide = CreateWindowExW(WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW, cls.lpszClassName, L"Quick Guide", WS_POPUP,
+            0, 0, 0, 0, g_main, nullptr, cls.hInstance, nullptr);
+    }
+    // Give the dense guide a wider canvas than the settings form, bounded by
+    // this window's monitor. It never activates or takes focus from the form.
+    MONITORINFO mi = {}; mi.cbSize = sizeof mi;
+    GetMonitorInfoW(MonitorFromWindow(g_main, MONITOR_DEFAULTTONEAREST), &mi);
+    RECT parent; GetWindowRect(g_main, &parent);
+    int width = std::min(1280, int(mi.rcWork.right - mi.rcWork.left));
+    int height = std::min(800, int(mi.rcWork.bottom - mi.rcWork.top));
+    int x = std::max(int(mi.rcWork.left), std::min(int(mi.rcWork.right) - width, int(parent.left + parent.right - width) / 2));
+    int y = std::max(int(mi.rcWork.top), std::min(int(mi.rcWork.bottom) - height, int(parent.top + parent.bottom - height) / 2));
+    SetWindowPos(g_guide, HWND_TOP, x, y, width, height, SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    InvalidateRect(g_guide, nullptr, FALSE);
+}
+
 LRESULT CALLBACK MainProc(HWND h, UINT m, WPARAM w, LPARAM l) {
     switch (m) {
+    case WM_ACTIVATEAPP: if (!w) { g_guideHold.Reset(); ShowGuide(false); } break;
     case WM_ERASEBKGND: { RECT rc; GetClientRect(h, &rc); FillRect((HDC)w, &rc, th::BgBrush()); return 1; }
-    case WM_PAINT: { PAINTSTRUCT ps; HDC dc = BeginPaint(h, &ps); RECT rc; GetClientRect(h, &rc); th::PaintHeader(dc, rc, 84, L"co-op launcher: lobby, race, voice, saves"); EndPaint(h, &ps); return 0; }
+    case WM_PAINT: { PAINTSTRUCT ps; HDC dc = BeginPaint(h, &ps); RECT rc; GetClientRect(h, &rc); th::PaintHeader(dc, rc, 84, L"Hold F1: quick guide   |   lobby, race, voice, saves"); EndPaint(h, &ps); return 0; }
     case WM_CTLCOLORSTATIC: case WM_CTLCOLOREDIT: case WM_CTLCOLORLISTBOX: case WM_CTLCOLORBTN: return th::CtlColor(m, (HDC)w, (HWND)l);
     case WM_DRAWITEM: { DRAWITEMSTRUCT* d = (DRAWITEMSTRUCT*)l; if (d->CtlID == ID_LB_MEMBERS) DrawMember(d); else if (d->CtlID == ID_LB_LEVEL) DrawLevel(d); return TRUE; }
     case WM_TIMER: if (w == 1) { PollCommands(); LobbyTick(); WriteStat(); } return 0;
@@ -555,6 +643,12 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, LPWSTR cmdline, int show) {
         const std::pair<int, const char*> lb[] = {{ID_LB_HOST, "lobby:host"}, {ID_LB_JOIN, "lobby:join"}, {ID_LB_INVITE, "lobby:invite"}, {ID_LB_COPY, "lobby:copy"}, {ID_LB_LEAVE, "lobby:leave"}, {ID_LB_READY, "lobby:ready"}, {ID_LB_START, "lobby:start"}, {ID_LB_MEMBERS, "lobby:members"}, {ID_LB_LOG, "lobby:log"}, {ID_LB_CHAT, "lobby:chat"}, {ID_LB_SEND, "lobby:send"}, {ID_LB_MODE, "lobby:mode"}, {ID_LB_GOAL, "lobby:goal"}, {ID_LB_NEWGAME, "lobby:newgame"}, {ID_LB_PARTS, "lobby:parts"}, {ID_LB_STATUS, "lobby:status"}, {ID_LB_PORT, "lobby:port"}, {ID_LB_ADVERTISE, "lobby:advertise"}, {ID_LB_MUTE, "lobby:mute"}, {ID_LB_DEAF, "lobby:deaf"}, {ID_LB_RESULT, "lobby:result"}};
         for (const auto& k : lb) t += std::to_string(k.first) + " " + k.second + "\n";
         WriteFile8(dumpTo, t); }
-    MSG msg; while (GetMessageW(&msg, nullptr, 0, 0) > 0) { if (!IsDialogMessageW(g_ng ? g_ng : g_main, &msg)) { TranslateMessage(&msg); DispatchMessageW(&msg); } }
+    MSG msg; while (GetMessageW(&msg, nullptr, 0, 0) > 0) {
+        if ((msg.message == WM_KEYDOWN || msg.message == WM_SYSKEYDOWN || msg.message == WM_KEYUP || msg.message == WM_SYSKEYUP) &&
+            g_guideHold.Key((unsigned)msg.wParam, msg.message == WM_KEYDOWN || msg.message == WM_SYSKEYDOWN)) {
+            ShowGuide(g_guideHold.Open()); continue;
+        }
+        if (!IsDialogMessageW(g_ng ? g_ng : g_main, &msg)) { TranslateMessage(&msg); DispatchMessageW(&msg); }
+    }
     return 0;
 }

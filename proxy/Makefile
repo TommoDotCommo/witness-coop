@@ -3,7 +3,7 @@
 MAKEFLAGS += -j8
 CXX = x86_64-w64-mingw32-g++
 OUT = AnselSDK64.dll
-SRC = race_game.cpp race/race.cpp voice_audio.cpp voice/voice.cpp ansel_proxy.cpp overlay.cpp model_gpu.cpp depth.cpp model/model.cpp coop.cpp game.cpp state.cpp hooks.cpp config.cpp input.cpp ui.cpp devmenu.cpp social.cpp video.cpp savepoints.cpp core/sync_core.cpp mapgen.cpp savemeta_game.cpp progress/progress.cpp progress/savemeta.cpp progress/progress_data.cpp
+SRC = guide_ui.cpp tv.cpp radio/radio_game.cpp race_game.cpp race/race.cpp voice_audio.cpp voice/voice.cpp ansel_proxy.cpp overlay.cpp model_gpu.cpp depth.cpp model/model.cpp coop.cpp game.cpp state.cpp hooks.cpp config.cpp input.cpp ui.cpp devmenu.cpp social.cpp video.cpp savepoints.cpp core/sync_core.cpp mapgen.cpp savemeta_game.cpp progress/progress.cpp progress/savemeta.cpp progress/progress_data.cpp
 OBJ = $(patsubst %.cpp,build/%.o,$(SRC))
 CXXFLAGS = -O2 -std=c++17 -D_WIN32_WINNT=0x0601 -MMD -MP
 LIBS = -ld3d11 -ldxgi -luuid -lws2_32 -lgdi32 -lshell32 -lwindowscodecs -lole32 -loleaut32 -lwinmm

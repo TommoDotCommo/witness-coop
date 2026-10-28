@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""Showcase driver, run by tools/showcase.sh (which owns the resource provider lease): N real games in one full-mesh group, each player with its own character model (model_by_player=1:
-player i is drawn with the i-th model of the list, in alphabetical order, by every other game), then the scenes of tools/win/wshowcase.py take the pictures.
+"""Showcase driver: N adventurers in one full-mesh group, then capture the requested scenes.
 usage: showcase.py <N> <scenes: all | comma list>"""
 import os, shutil, subprocess, sys, time
 from pathlib import Path
@@ -9,21 +8,9 @@ import group_suite as gs
 from group_config import configs
 from witness import ROOT, TOOLS, win, real_saves
 
-PREFERRED = ['cesium-man', 'fox', 'rigged-figure', 'magic-frog', 'michelle', 'xbot', 'robot-expressive', 'brainstem']
-NAMES = {'cesium-man': 'Cesium Man', 'fox': 'Fox', 'rigged-figure': 'Rigged Figure', 'magic-frog': 'Magic Frog', 'michelle': 'Michelle', 'xbot': 'Xbot', 'robot-expressive': 'Robot', 'brainstem': 'Brainstem'}
 SPOT = os.environ.get('SHOWCASE_SPOT', 'c335')       # the panel the players are teleported to: the stone pillar in the garden
 
-def model_files(n):
-    avail = {}
-    for folder in (Path(ROOT) / 'assets/models', Path(os.environ.get('WITNESS_EXTRA_MODELS', ''))):
-        if folder.is_dir():
-            for f in sorted(folder.glob('*.glb')): avail.setdefault(f.stem, f)
-    chosen = [m for m in PREFERRED if m in avail] + sorted(m for m in avail if m not in PREFERRED)
-    chosen = chosen[:max(n, 1)]
-    if len(chosen) < n: print('WARNING: only %d models found for %d players: models repeat (tools/get_showcase_models.sh adds one; put more .glb files into $WITNESS_EXTRA_MODELS)' % (len(chosen), n), flush=True)
-    return sorted(chosen, key=str.lower), avail
-
-def prepare(c, config, names, avail):
+def prepare(c, config):
     d = c.directory
     assert gs.digest(d / 'witness64_d3d11.exe') == gs.EXE_HASH, 'unsupported game build'
     if not (d / 'AnselSDK64_real.dll').exists():
@@ -33,11 +20,9 @@ def prepare(c, config, names, avail):
     if (Path(ROOT) / 'launcher/build/witness_launcher.exe').exists(): gs.replace_copy(Path(ROOT) / 'launcher/build/witness_launcher.exe', d / 'witness_launcher.exe')
     models = d / 'witness_models'; models.mkdir(exist_ok=True)
     for f in models.iterdir(): f.unlink()
-    for m in names:
-        gs.replace_copy(avail[m], models / (m + '.glb'))
-        if Path(str(avail[m]) + '.txt').exists(): gs.replace_copy(str(avail[m]) + '.txt', models / (m + '.glb.txt'))
-    mine = names[(c.id - 1) % len(names)]
-    config += 'name=%s\nmodel=%s\nmodel_by_player=1\nforce_active=1\ncap_fps=30\ndev_menu=1\nvoice_mute_output=1\n' % (NAMES.get(mine, mine), names[0])
+    for name in ('adventurer.glb', 'adventurer.glb.txt'):
+        gs.replace_copy(Path(ROOT) / 'assets/models' / name, models / name)
+    config += 'name=Adventurer %d\nforce_active=1\ncap_fps=30\ndev_menu=1\nvoice_mute_output=1\n' % c.id
     config += 'voice_mode=open\nvoice_test_tone=300,900,1700\n' if c.id % 2 == 0 else 'voice_mode=ptt\n'      # the even players are talking (a test voice: no microphone is needed)
     config += os.environ.get('SHOWCASE_CFG_EXTRA', '').replace('\\n', '\n') + '\n'      # e.g. the race: SHOWCASE_CFG_EXTRA='game_mode=race\\nrace_goal=count:3\\nrace_countdown_ms=60000' tools/showcase.sh 2 race
     cfg = d / 'witness_coop.cfg'; cfg.unlink(missing_ok=True); cfg.write_text(config)
@@ -60,14 +45,12 @@ def main():
     count = int(sys.argv[1]); scenes = sys.argv[2] if len(sys.argv) > 2 else 'all'
     out = Path(os.environ.get('SHOWCASE_OUT', Path(ROOT) / 'showcase')); out.mkdir(parents=True, exist_ok=True)
     gs.foreground = gs.probe('wfocus.py', 'save'); gs.slots = os.environ['WITNESS_SLOTS'].split(',')
-    names, avail = model_files(count)
-    print('models (player i is drawn with model i, in this order): %s' % ', '.join(names), flush=True)
     clients = [gs.Client(i) for i in range(1, count + 1)]
     generated = configs([dict(id=c.id, host='127.0.0.1', port=c.port) for c in clients])
     before = real_saves()
     try:
         for c in clients:
-            prepare(c, generated[c.id], names, avail); c.start()
+            prepare(c, generated[c.id]); c.start()
         gs.wait(lambda: all(c.net()['ready'] for c in clients), 'all clients reached the stable-world gate', 300)
         time.sleep(10)
         gs.wait(lambda: all(c.net()['submitted_models'] == count - 1 for c in clients), 'every client draws every other player', 120)

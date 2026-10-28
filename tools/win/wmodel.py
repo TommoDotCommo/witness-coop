@@ -5,7 +5,7 @@ import os, sys, time, math, struct, re
 exec(compile(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'wlib.py')).read(), 'wlib.py', 'exec'))
 pa, da, pb, db = int(sys.argv[1]), sys.argv[2], int(sys.argv[3]), sys.argv[4]
 A, B = attach(pa), attach(pb)
-PX = float(sys.argv[5]) if len(sys.argv) > 5 else 1.0; WALK = int(sys.argv[6]) if len(sys.argv) > 6 else 0; IDLE_ANIMATES = len(sys.argv) > 7 and sys.argv[7] == '1'
+PX = float(sys.argv[5]) if len(sys.argv) > 5 else 1.0; WALK = int(sys.argv[6]) if len(sys.argv) > 6 else 0; IDLE_ANIMATES = len(sys.argv) > 7 and sys.argv[7] == '1'; CHECK_RUN = len(sys.argv) > 8 and sys.argv[8] == 'run'; RUN_ONLY = len(sys.argv) > 9 and sys.argv[9] == 'run-only'
 def send(d, lines, settle=0.0):
     cmd = os.path.join(d, 'witness_cmd.txt'); t = time.time()
     while os.path.exists(cmd) and time.time() - t < 8: time.sleep(0.05)
@@ -25,7 +25,18 @@ def stat():
         time.sleep(0.2)
     return None
 def settle_stat(wait):      # the occlusion query needs a couple of frames after the pose changes
-    time.sleep(wait); stat(); time.sleep(0.5); return stat()
+    time.sleep(wait); stat(); time.sleep(0.5); r = stat()
+    for _ in range(3):      # the game sometimes answers a command late (seen after a teleport next to a panel): ask again, and say so, rather than call that a failure of the model
+        if r is not None: break
+        print('  (no modelstat within 6 s: asking again)', flush=True); time.sleep(1.0); r = stat()
+    if r is None:
+        try: print('  log tail:', *[l.strip()[:150] for l in list(open(os.path.join(da, 'witness_proxy.log'), errors='ignore'))[-6:]], sep='\n    ', flush=True)
+        except OSError: pass
+        import subprocess; print('  not responding:', subprocess.run(['tasklist.exe', '/FI', 'STATUS eq NOT RESPONDING', '/FO', 'CSV', '/NH'], capture_output=True, text=True).stdout.strip()[:300], flush=True)
+        for pid_, nm in ((pa, 'A'), (pb, 'B')):
+            try: print('  cpu time of %s: %s' % (nm, subprocess.run(['powershell.exe', '-NoProfile', '-Command', '(Get-Process -Id %d).TotalProcessorTime.TotalSeconds' % pid_], capture_output=True, text=True).stdout.strip()), flush=True)
+            except Exception as e: print('  ', e)
+    return r
 res = {}; ok = True
 def check(name, cond, detail):
     global ok; ok = ok and bool(cond); print('  %-62s %s  (%s)' % (name, 'ok' if cond else 'FAILED', detail), flush=True)
@@ -40,6 +51,10 @@ send(db, ['tp %.4f %.4f %.4f %.5f %.5f' % (bx, by, cz - 1.69, th, 0.0)], 2.5)
 s_still = settle_stat(0.5)
 check('B standing 5 m ahead is drawn and visible', s_still and s_still['drawn'] and s_still['vis'] > 3000 * PX, s_still)
 check('a standing player is idle (speed < 0.3)', s_still and s_still['speed'] < 0.3, s_still)
+if CHECK_RUN:
+    thread_lines = [l for l in open(os.path.join(da, 'witness_proxy.log'), errors='ignore') if l.startswith('modelthread:')]
+    m = re.search(r'render (\d+) caller (\d+)', thread_lines[-1]) if thread_lines else None
+    check('model statistics execute on the render thread', m and int(m[1]) != 0 and m[1] == m[2], m.group(0) if m else 'no thread diagnostic')
 send(db, ['key W down'], 1.2)
 s1 = stat(); time.sleep(0.4); s2 = stat()
 check('a walking player has a measured speed of 1.5..5 m/s', s1 and s2 and 1.5 < s2['speed'] < 5.0, (s1, s2))
@@ -50,6 +65,19 @@ send(db, ['key W up'], 2.0)
 s3 = stat(); time.sleep(0.5); s4 = stat()
 if IDLE_ANIMATES: check('after stopping the figure plays its idle clip', s3 and s4 and s4['speed'] < 0.3 and s4['clip'] != WALK and abs(s4['anim'] - s3['anim']) > 0.02, (s3, s4))
 else: check('after stopping the figure is idle and still', s3 and s4 and s4['speed'] < 0.3 and abs(s4['anim'] - s3['anim']) < 1e-3, (s3, s4))
+# A clock-timed synthetic pose stream exercises the run clip at a known speed.
+# The regular W input above checks walk; it does not reach the run threshold.
+if CHECK_RUN:
+    samples = []; started = time.time(); speed = 5.0
+    while time.time() - started < 2.5:
+        t = time.time() - started; lateral = speed * (t - 1.25)
+        send(da, ['fakepose %.4f %.4f %.4f %.5f' % (cx + fx * 4 - fy * lateral, cy + fy * 4 + fx * lateral, cz, th + math.pi / 2)])
+        sample = stat()
+        if sample: samples.append(sample)
+    running = [s for s in samples if s['speed'] >= 4.5]
+    check('a player moving at 5 m/s plays and advances the run clip', len(running) >= 2 and all(s['clip'] == 2 for s in running[-2:]) and abs(running[-1]['anim'] - running[-2]['anim']) > 0.02, running[-4:])
+    send(da, ['fakepose off'], 0.5)
+    if RUN_ONLY: sys.exit(0 if ok else 1)
 # phase 2: the closed door at the end of the tunnel hides a player who stands behind it. B's own game would not let it stand
 # there (collision), so A is told to draw the peer at a chosen place (`fakepose`, a test hook)
 sx, sy = px - 0.15, py + 3.34

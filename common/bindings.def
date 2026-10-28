@@ -1,0 +1,10 @@
+// Config name, Cfg member, default key, guide description, launcher label.
+BIND("key_chat", keyChat, 'T', "Chat; Enter sends, Esc cancels", "Chat")
+BIND("key_ping", keyPing, 'P', "Ping the point under the crosshair", "Ping a place")
+BIND("key_emote", keyEmote, 'G', "Hold: emote wheel; move mouse, release", "Emote wheel (hold)")
+BIND("key_draw", keyDraw, 'X', "Hold: draw; Shift + key clears your ink", "Draw (hold)")
+BIND("key_canvas", keyCanvas, 'Z', "Toggle drawing canvas; Backspace undoes", "Drawing canvas")
+BIND("key_color", keyColor, 'B', "Next ink colour while drawing", "Ink colour")
+BIND("key_voice", keyVoice, 'N', "Hold: push to talk (when PTT enabled)", "Push to talk")
+BIND("key_voice_channel", keyVoiceChannel, 'H', "Next voice channel / direct recipient", "Next voice channel")
+BIND("key_radio", keyRadio, 'R', "Hold: radio channel (walkie-talkie)", "Radio (hold)")

@@ -18,3 +18,7 @@ proxy/progress/build/
 launcher/build/
 proxy/voice/build/
 tools/win/build/
+models/preview/
+
+proxy/radio/build/
+common/build/

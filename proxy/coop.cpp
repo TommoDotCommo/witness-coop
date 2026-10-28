@@ -11,7 +11,9 @@
 #include <map>
 #include <atomic>
 #include "coop.h"
+#include "tv.h"
 #include "race_game.h"
+#include "social.h"
 
 void Log(const char* msg);
 extern HMODULE g_selfModule();
@@ -47,26 +49,26 @@ void CoopSetFakeRemote(bool on, const float* pos, float yaw) {
 }
 std::vector<witness::RemoteLine> CoopGetRemoteLines() { if (auto* c = CoopCore()) return c->remoteLines(GetTickCount64()); return {}; }
 std::vector<RemotePose> CoopGetRemotes() {
-    if (g_fakeOn) { RemotePose p; CoopGetRemote(&p); return {p}; }
+    if (g_fakeOn) { RemotePose p{}; if (CoopGetRemote(&p)) return {p}; return {}; }
     std::vector<RemotePose> out;
     if (auto* c = CoopCore()) for (const auto& r : c->remotePoses(GetTickCount64())) {
-        RemotePose p; memset(&p, 0, sizeof p); p.pingMs = r.pingMs; strncpy(p.name, r.name.c_str(), sizeof p.name - 1); p.valid = r.valid; memcpy(p.pos, r.pos, sizeof p.pos); memcpy(p.ang, r.ang, sizeof p.ang);
+        RemotePose p{}; p.pingMs = r.pingMs; strncpy(p.name, r.name.c_str(), sizeof p.name - 1); p.valid = r.valid; memcpy(p.pos, r.pos, sizeof p.pos); memcpy(p.ang, r.ang, sizeof p.ang);
         p.ageMs = (DWORD)r.ageMs; p.seq = r.seq; p.id = r.id;
-        strncpy(p.character, r.character.c_str(), sizeof p.character - 1); p.emote = r.emote; p.emoteSeq = r.emoteSeq; p.typing = r.typing; p.speaking = r.speaking; out.push_back(p);
+        p.appearance = r.appearance; p.emote = r.emote; p.emoteSeq = r.emoteSeq; p.typing = r.typing; p.speaking = r.speaking; p.proximitySpeaking = r.proximitySpeaking; p.radioEquipped = r.radioEquipped; p.radioTx = r.radioTx; p.voiceChannel = r.voiceChannel; out.push_back(p);
     }
     return out;
 }
 bool CoopGetRemote(RemotePose* out, unsigned id) {
-    if (g_fakeOn) { out->valid = true; memcpy(out->pos, g_fake, 12); out->ang[0] = g_fake[3]; out->ang[1] = 0; out->ageMs = 0; out->seq = (unsigned)g_fakeSeq; out->id = 99; return true; }
+    if (g_fakeOn) { FillFakeRemote(*out, g_fake, g_fake[3], (unsigned)g_fakeSeq); return true; }
     witness::SyncCore* c = CoopCore(); if (!c) return false;
     witness::RemotePose r; bool ok = false;
     for (auto pose : c->remotePoses(GetTickCount64())) if (!id || pose.id == id) { r = pose; ok = true; break; }
     out->valid = r.valid; memcpy(out->pos, r.pos, sizeof out->pos); memcpy(out->ang, r.ang, sizeof out->ang);
-    out->ageMs = (DWORD)r.ageMs; out->seq = r.seq; out->id = r.id;
+    out->emote = r.emote; out->emoteSeq = r.emoteSeq; out->speaking = r.speaking; out->proximitySpeaking = r.proximitySpeaking; out->typing = r.typing; out->radioEquipped = r.radioEquipped; out->radioTx = r.radioTx; out->voiceChannel = r.voiceChannel; out->appearance = r.appearance; out->ageMs = (DWORD)r.ageMs; out->seq = r.seq; out->id = r.id;
     return ok;
 }
 
-void CoopDumpStatus(unsigned submittedPlayers) {
+void CoopDumpStatus(unsigned submittedPlayers, const SocialSnapshot* uiState) {
     auto* c = CoopCore(); if (!c) return;
     auto remotes = c->remotePoses(GetTickCount64());
     wchar_t path[MAX_PATH]; GetModuleFileNameW(g_selfModule(), path, MAX_PATH);
@@ -74,10 +76,13 @@ void CoopDumpStatus(unsigned submittedPlayers) {
     wcscat_s(path, L"witness_net.json");
     wchar_t tmp[MAX_PATH]; wcscpy_s(tmp, path); wcscat_s(tmp, L".tmp");
     FILE* f = _wfopen(tmp, L"w"); if (!f) return;
-    fprintf(f, "{\"ready\":%s,\"unacked\":%zu,\"queued\":%zu,\"remotes\":[", c->ready() ? "true" : "false", c->unacked(), c->queuedRemote());
+    auto ui=uiState ? *uiState : SocialSnapshot{};
+    fprintf(f,"{\"emote\":%d,\"emote_seq\":%u,\"wheel\":%s,\"emote_page\":%d,\"guide\":%s,\"paused\":%s,",ui.emote,ui.sequence,ui.wheel?"true":"false",ui.page,ui.guide?"true":"false",ui.paused?"true":"false");
+    fprintf(f, "\"ready\":%s,\"unacked\":%zu,\"queued\":%zu,\"remotes\":[", c->ready() ? "true" : "false", c->unacked(), c->queuedRemote());
     bool comma = false;
     for (const auto& r : remotes) {
-        fprintf(f, "%s{\"id\":%u,\"seq\":%u,\"age_ms\":%llu}", comma ? "," : "", r.id, r.seq, (unsigned long long)r.ageMs); comma = true;
+        fprintf(f, "%s{\"id\":%u,\"seq\":%u,\"age_ms\":%llu", comma ? "," : "", r.id, r.seq, (unsigned long long)r.ageMs);
+        fprintf(f, ",\"appearance\":["); for (size_t i = 0; i < witness::kAppearanceFeatures; ++i) fprintf(f, "%s%u", i ? "," : "", unsigned(r.appearance.choice[i])); fprintf(f, "],\"emote\":%u,\"proximity_speaking\":%s}", r.emote, r.proximitySpeaking ? "true" : "false"); comma = true;
     }
     fprintf(f, "],\"submitted_models\":%u}\n", submittedPlayers); fclose(f); MoveFileExW(tmp, path, MOVEFILE_REPLACE_EXISTING);
 }
@@ -181,7 +186,8 @@ static DWORD WINAPI NetThread(LPVOID) {
                 auto it = endpoints.find(from); if (it == endpoints.end()) continue; expected = &it->second;      // every datagram, pictures included, names its sender
             }
             if (source.sin_port != expected->sin_port || source.sin_addr.s_addr != expected->sin_addr.s_addr) continue;
-            if (n >= 4 && !memcmp(buf, "WTV4", 4)) VideoOnPacket(buf, (size_t)n);            // a chunk of a POV picture
+            if (n >= 4 && (!memcmp(buf, "WTT1", 4) || !memcmp(buf, "WTU1", 4))) TvOnPacket(buf, (size_t)n);
+            else if (n >= 4 && !memcmp(buf, "WTV4", 4)) VideoOnPacket(buf, (size_t)n);            // a chunk of a POV picture
             else if (n >= 4 && !memcmp(buf, "WTO5", 4)) VoiceOnPacket(buf, (size_t)n);         // 20 ms of a player's voice
             else if (n >= 4 && !memcmp(buf, "WTR1", 4)) RaceOnPacket(buf, (size_t)n, now);         // a race report: phase, progress, finish time
             else if (n >= 4 && !memcmp(buf, "WTR4", 4)) VideoOnRequest(buf, (size_t)n);       // a request for this game's POV pictures

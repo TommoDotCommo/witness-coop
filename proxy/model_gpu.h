@@ -4,21 +4,20 @@
 #include <windows.h>
 #include <d3d11.h>
 #include "model/model.h"
+#include "core/appearance.h"
 
 struct ModelDrawStats { unsigned visiblePixels; unsigned frames; unsigned submittedPlayers; int clip; float speed; float animTime; int from; float blend; float eye; float yaw; int emote; float lift, lean, roll, dyaw; bool drawn; float pos[3], cam[3]; };
 bool ModelGpuInit(ID3D11Device* dev, ID3D11DeviceContext* ctx);      // loads the configured model; false: use the flat puppet instead
 bool ModelGpuReady();
 // Draws the player at `pos` (eye position), heading `yaw`. `valid` false: the peer is gone, nothing is drawn.
 // sceneDepth: a shader resource view of a copy of the game's depth buffer, or null (nothing hides the model).
-// What the social layer says about a player: the character it announced (a model name; empty or unknown: the viewer's own choice), and the emote it is playing (1..8, 0 none) for emoteT seconds.
-struct ModelExtra { const char* character = nullptr; int emote = 0; float emoteT = 0; };
+// What the social layer says about a player: the emote it is playing (1..24, 0 none) for emoteT seconds.
+struct ModelExtra { witness::Appearance appearance; int emote = 0; float emoteT = 0; bool proximitySpeaking = false; bool radioEquipped = false, radioTx = false; };
 bool ModelGpuDraw(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Cam& cam, bool valid, unsigned seq, const float pos[3], float yaw, unsigned playerId = 0, bool first = true, const ModelExtra* extra = nullptr);
-int ModelGpuCount();                      // the models on offer (every .glb of witness_models\)
-const char* ModelGpuName(int i);
 // Coloured ribbons in world space (the other players' drawn lines), depth-tested against the game's scene. Triangle list; each vertex: position, rgba.
 struct LineVert { float p[3]; float c[4]; };
 struct LineDrawStats { unsigned lines, verts, visiblePixels, frames; };
-bool ModelGpuDrawLines(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Cam& cam, const LineVert* verts, size_t count, unsigned lineCount);
+bool ModelGpuDrawLines(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Cam& cam, const LineVert* verts, size_t count, unsigned lineCount, bool prop = false, bool viewModel = false);
 LineDrawStats ModelGpuLineStats();
 void ModelGpuLogLineStats();          // witness_cmd.txt: linestat -> one log line
 ModelDrawStats ModelGpuStats();
@@ -29,5 +28,3 @@ bool ModelGpuTakeCenterDepth(float* dist);   // true once the answer is there: t
 void ModelGpuRequestProbe();      // the next frame logs the scene depth at a few pixels (witness_cmd.txt: probe)
 void ModelGpuLogStats();               // witness_cmd.txt: modelstat -> one log line: pixels of the model that survived the depth test (GPU occlusion query), clip, speed
 void ModelGpuDepthView(bool on);          // witness_cmd.txt: depthview on|off (diagnostic: draw the game's depth buffer instead of the model)
-void ModelGpuSelect(int delta);        // F6 (-1) / F7 (+1): next model; takes effect at the next frame
-void ModelGpuSelectName(const char* name);   // witness_cmd.txt: model <name>

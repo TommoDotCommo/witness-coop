@@ -43,7 +43,12 @@ struct Settings {
 struct Mix { float prox = 0, radio = 0, pan = 0, cutoff = 8000; };      // prox, radio: gains of the two voices; pan -1 left .. 1 right; cutoff: low-pass of the proximity voice in Hz
 Mix ComputeMix(float distance, float bearing, const Settings& s, Channel ch = kProximity);       // bearing: radians clockwise from straight ahead of the listener
 
-struct Speaker { unsigned id = 0; float distance = 0, bearing = 0; };
+struct Biquad { float b0 = 1, b1 = 0, b2 = 0, a1 = 0, a2 = 0, z1 = 0, z2 = 0; float step(float x) { float y = b0 * x + z1; z1 = b1 * x - a1 * y + z2; z2 = b2 * x - a2 * y; return y; } };
+// Pure streaming DSP: explicit state, one input/output sample, no buffering or I/O.
+struct RadioDsp { Biquad hp[2], lp[2]; uint32_t noise = 1; };
+struct RadioSample { float voice, noise, squelch; };
+RadioSample ProcessRadio(RadioDsp* state, float input, int squelchRemaining = 0, float gain = 1);
+struct Speaker { unsigned id = 0; float distance = 0, bearing = 0; float volume = 1; bool muted = false; };
 struct SpeakerStat { unsigned id = 0; uint8_t channel = 0; bool talking = false; float prox = 0, radio = 0, pan = 0, rms = 0; unsigned packets = 0, concealed = 0, dropped = 0; float tone[3] = {}; };
 class Mixer {
 public:
@@ -53,10 +58,9 @@ public:
     std::vector<SpeakerStat> Stats() const;
     static constexpr float kToneHz[3] = {120.0f, 1000.0f, 5500.0f};      // what SpeakerStat::tone measures in the speaker's mixed voice
 private:
-    struct Biquad { float b0 = 1, b1 = 0, b2 = 0, a1 = 0, a2 = 0, z1 = 0, z2 = 0; float step(float x) { float y = b0 * x + z1; z1 = b1 * x - a1 * y + z2; z2 = b2 * x - a2 * y; return y; } };
     struct Voice {
         std::map<unsigned, Packet> queue; Channel channel = kProximity; unsigned next = 0; bool started = false; int fill = 0; int16_t last[kFrame] = {}; int silentFrames = 0; bool talking = false;
-        float lp = 0; Biquad hp[2], lpf[2]; unsigned noise = 1; int squelch = 0; bool squelchStart = false; float prevProx = 0, prevRadio = 0, prevPan = 0;
+        float lp = 0; RadioDsp dsp; int squelch = 0; bool squelchStart = false; float prevProx = 0, prevRadio = 0, prevPan = 0;
         SpeakerStat stat;
     };
     Settings s_; std::map<unsigned, Voice> v_;

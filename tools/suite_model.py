@@ -8,13 +8,11 @@ from witness import ROOT, TOOLS, DIR1, DIR2, PYW, RUN, pid, win, real_saves
 
 OCC = 'a player behind the closed door is hidden (< 2% of the pixels in front)'
 SCENARIOS = [   # name, cfg for A (the viewer), the set of checks that must FAIL (empty: all must pass), pixel scale, walk clip index, whether the idle clip animates (1) or holds a frame (0), regex the proxy log must match
-  ('model: visible, animated, hidden by walls', '', set(), 1.0, 0, 0, r'model: loaded 3273 vertices.*1 clips'),
-  ('model: another bundled model selected by name', 'model=fox', set(), 0.1, 1, 1, r'model: loaded .* 3 clips'),
-  ('model selector: F6 / F7 and the model command', '', set(), 1.0, 0, 0, None),
-  ('MUTANT: model selector does nothing', 'no_model_select=1', {'F7 selects the next model, and it is drawn', 'F7 again: the third model, drawn', 'F6 goes back (wraps to the last)', 'the model command selects by name'}, 1.0, 0, 0, None),
-  ('MUTANT: model drawn over walls', 'no_model_depth=1', {OCC}, 1.0, 0, 0, None),
-  ('MUTANT: model never walks', 'no_model_gait=1', {'a walking player animates (clip time advances)'}, 1.0, 0, 0, None),
-  ('MUTANT: model off (flat puppet)', 'model=none', {'B standing 5 m ahead is drawn and visible', 'a walking player has a measured speed of 1.5..5 m/s', 'a walking player animates (clip time advances)', 'the walking figure is visible', 'a player in front of the door is visible', OCC}, 1.0, 0, 0, None),
+  ('model: the adventurer and legacy migration', 'model=removed-legacy-name\ncharacter=fox\nmodel_by_player=1\nsee_through=0', set(), 1.0, 1, 1, r'model: loaded .* 3 clips'),
+  ('model: adventurer ignores legacy none', 'model=none\ncharacter=removed-name\nsee_through=0', set(), 1.0, 1, 1, r'model: loaded .* 3 clips'),
+  ('MUTANT: adventurer gait disabled', 'see_through=0\nno_model_gait=1', {'a walking player plays the walk clip', 'a player moving at 5 m/s plays and advances the run clip'}, 1.0, 1, 1, r'model: loaded .* 3 clips'),
+  ('MUTANT: adventurer modelstat on command thread', 'see_through=0\nno_modelstat_queue=1', {'model statistics execute on the render thread'}, 1.0, 1, 1, r'model: loaded .* 3 clips'),
+  ('MUTANT: model drawn over walls', 'no_model_depth=1\nsee_through=0', {OCC}, 1.0, 1, 1, r'model: loaded .* 3 clips'),
 ]
 only = sys.argv[1:]; results = []; saves0 = real_saves()
 for name, ca, must_fail, px, walk, idle_anim, logre in SCENARIOS:
@@ -23,12 +21,13 @@ for name, ca, must_fail, px, walk, idle_anim, logre in SCENARIOS:
     subprocess.run([os.path.join(TOOLS, 'restart.sh')], env={**os.environ, 'CFG_A': ca, 'CFG_B': ''}, capture_output=True, text=True, timeout=600, check=True)
     time.sleep(40)      # the worlds must be loaded and the sync gate passed
     open(os.path.join(RUN, 'guard.stop'), 'w').write('bot starting')
-    selector = 'selector' in name
-    out = subprocess.run([PYW, '-I', win(os.path.join(TOOLS, 'win', 'wselect.py' if selector else 'wmodel.py')), pid('A'), win(DIR1), pid('B'), win(DIR2)] + ([] if selector else [str(px), str(walk), str(idle_anim)]), capture_output=True, text=True, timeout=300).stdout
+    run_check = 'adventurer' in name
+    run_only = 'adventurer gait disabled' in name
+    out = subprocess.run([PYW, '-I', win(os.path.join(TOOLS, 'win', 'wmodel.py')), pid('A'), win(DIR1), pid('B'), win(DIR2)] + ([str(px), str(walk), str(idle_anim)] + (['run'] if run_check else []) + (['run-only'] if run_only else [])), capture_output=True, text=True, timeout=300).stdout
     print(out.strip(), flush=True)
     seen = {m[1]: m[2] == 'ok' for m in (re.match(r'^  (.+?)\s+(ok|FAILED)\s+\(', l) for l in out.splitlines()) if m}
     failed = {k for k, v in seen.items() if not v}
-    expected_checks = 6 if selector else 9
+    expected_checks = 9 if run_only else (11 if run_check else 9)
     ok = len(seen) == expected_checks and failed == must_fail
     why = 'every check passed' if not must_fail else 'exactly the checks this protection is for failed'
     if len(seen) != expected_checks: why = 'the check script did not finish (%d of %d checks reported)' % (len(seen), expected_checks)

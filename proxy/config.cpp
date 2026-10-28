@@ -1,3 +1,4 @@
+#include "bindings.h"
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <cctype>
@@ -5,13 +6,9 @@
 #include <cstdlib>
 #include <cstring>
 #include "config.h"
+#include "../common/guide.h"
 
 extern HMODULE g_selfModule();
-
-static unsigned KeyFromName(const char* n) {      // 'T' -> 0x54; F1..F12 -> VK_F1..; 0: not a key
-    if (!n || !*n) return 0; if (!n[1] && isalnum((unsigned char)n[0])) return (unsigned)toupper((unsigned char)n[0]);
-    if ((n[0] == 'F' || n[0] == 'f') && atoi(n + 1) >= 1 && atoi(n + 1) <= 12) return 0x6F + (unsigned)atoi(n + 1); return 0;
-}
 
 static std::wstring DllDir() {
     wchar_t p[MAX_PATH]; GetModuleFileNameW(g_selfModule(), p, MAX_PATH);
@@ -23,7 +20,9 @@ const Cfg& GetCfg() {
         Cfg r; FILE* f = _wfopen((DllDir() + L"witness_coop.cfg").c_str(), L"r"); if (!f) return r;
         char line[400];
         while (fgets(line, sizeof line, f)) {
-            int v; float fv; char s[300], kn[16];
+            if (SetBindingLine(&r,line)) continue;
+            int v; float fv; char s[300];
+            if (!strncmp(line, "appearance_", 11)) { witness::SetAppearanceConfigLine(&r.appearance, line); continue; }
             if (sscanf(line, "cap_fps=%d", &v) == 1) r.capFps = v;
             else if (sscanf(line, "share_zip=%d", &v) == 1) r.shareZip = v != 0;
             else if (sscanf(line, "debug_depth=%d", &v) == 1) r.debugDepth = v != 0;
@@ -32,6 +31,8 @@ const Cfg& GetCfg() {
             else if (sscanf(line, "force_active=%d", &v) == 1) r.forceActive = v != 0;
             else if (sscanf(line, "skip_entity_zero=%d", &v) == 1) r.skipEntityZero = v != 0;
             else if (sscanf(line, "dev_menu=%d", &v) == 1) r.devMenu = v != 0;
+            else if (sscanf(line, "pov_tv=%d", &v) == 1) r.povTv = v != 0;
+            else if (sscanf(line, "pov_tv_consent=%d", &v) == 1) r.povTvConsent = v != 0;
             else if (sscanf(line, "partner_view=%d", &v) == 1) { r.partnerView = v != 0; r.noPartnerView = v == 0; }
             else if (sscanf(line, "no_partner_video=%d", &v) == 1) r.noPartnerVideo = v != 0;
             else if (sscanf(line, "no_restore_copy=%d", &v) == 1) r.noRestoreCopy = v != 0;
@@ -51,22 +52,18 @@ const Cfg& GetCfg() {
             else if (sscanf(line, "model_height=%f", &fv) == 1) r.modelHeight = fv;
             else if (sscanf(line, "model_yaw=%f", &fv) == 1) r.modelYaw = fv;
             else if (sscanf(line, "model_speed=%f", &fv) == 1) r.modelStride = fv;
-            else if (sscanf(line, "model_by_player=%d", &v) == 1) r.modelByPlayer = v != 0;
             else if (sscanf(line, "no_model_depth=%d", &v) == 1) r.noModelDepth = v != 0;
             else if (sscanf(line, "no_pause_hide=%d", &v) == 1) r.noPauseHide = v != 0;
             else if (sscanf(line, "no_chat_ui=%d", &v) == 1) r.noChatUi = v != 0;
             else if (sscanf(line, "no_emote_anim=%d", &v) == 1) r.noEmoteAnim = v != 0;
             else if (sscanf(line, "no_emote_clips=%d", &v) == 1) r.noEmoteClips = v != 0;
-            else if (sscanf(line, "no_character_announce=%d", &v) == 1) r.noCharacterAnnounce = v != 0;
             else if (sscanf(line, "no_emote_send=%d", &v) == 1) r.noEmoteSend = v != 0;
-            else if (sscanf(line, "character=%63s", s) == 1) r.character = s;
             else if (sscanf(line, "no_typing_dots=%d", &v) == 1) r.noTypingDots = v != 0;
             else if (sscanf(line, "no_ping_marks=%d", &v) == 1) r.noPingMarks = v != 0;
-            else if (sscanf(line, "key_chat=%15s", kn) == 1 && KeyFromName(kn)) r.keyChat = KeyFromName(kn);
-            else if (sscanf(line, "key_ping=%15s", kn) == 1 && KeyFromName(kn)) r.keyPing = KeyFromName(kn);
-            else if (sscanf(line, "key_emote=%15s", kn) == 1 && KeyFromName(kn)) r.keyEmote = KeyFromName(kn);
-            else if (sscanf(line, "key_draw=%15s", kn) == 1 && KeyFromName(kn)) r.keyDraw = KeyFromName(kn);
             else if (!strncmp(line, "start_progress=", 15)) { std::string t = line + 15; while (!t.empty() && (t.back() == '\r' || t.back() == '\n')) t.pop_back(); r.startProgress = t; }
+            else if (sscanf(line, "no_radio_view=%d", &v) == 1) r.noRadioView = v != 0;
+            else if (sscanf(line, "no_radio_pose=%d", &v) == 1) r.noRadioPose = v != 0;
+            else if (sscanf(line, "radio_enabled=%d", &v) == 1) r.radioEnabled = v != 0;
             else if (sscanf(line, "voice_mode=%15s", s) == 1) r.voiceMode = !strcmp(s, "off") ? 0 : (!strcmp(s, "open") ? 1 : 2);
             else if (sscanf(line, "voice_volume=%d", &v) == 1) r.voiceVolume = std::max(0, std::min(100, v));
             else if (sscanf(line, "mic_volume=%d", &v) == 1) r.micVolume = std::max(0, std::min(100, v));
@@ -87,11 +84,9 @@ const Cfg& GetCfg() {
             else if (sscanf(line, "see_through=%d", &v) == 1) r.noSeeThrough = v == 0;
             else if (sscanf(line, "ghost_alpha=%f", &fv) == 1) r.ghostAlpha = std::max(0.02f, std::min(1.0f, fv));
             else if (sscanf(line, "voice_channel=%31s", s) == 1) r.voiceChannel = s;
-            else if (sscanf(line, "key_voice_channel=%15s", kn) == 1 && KeyFromName(kn)) r.keyVoiceChannel = KeyFromName(kn);
             else if (sscanf(line, "no_voice_channel=%d", &v) == 1) r.noVoiceChannel = v != 0;
             else if (sscanf(line, "voice_no_self=%d", &v) == 1) r.voiceNoSelf = v != 0;
             else if (sscanf(line, "no_voice_channel_key=%d", &v) == 1) r.noVoiceChannelKey = v != 0;
-            else if (sscanf(line, "key_voice=%15s", kn) == 1 && KeyFromName(kn)) r.keyVoice = KeyFromName(kn);
             else if (sscanf(line, "voice_test_tone=%299s", s) == 1) r.voiceTestTone = s;
             else if (sscanf(line, "voice_mute_output=%d", &v) == 1) r.voiceMuteOutput = v != 0;
             else if (sscanf(line, "no_voice_send=%d", &v) == 1) r.noVoiceSend = v != 0;
@@ -110,26 +105,19 @@ const Cfg& GetCfg() {
             else if (sscanf(line, "no_save_meta=%d", &v) == 1) r.noSaveMeta = v != 0;
             else if (sscanf(line, "no_start_progress=%d", &v) == 1) r.noStartProgress = v != 0;
             else if (sscanf(line, "progress_no_prereq=%d", &v) == 1) r.progressNoPrereq = v != 0;
-            else if (sscanf(line, "key_canvas=%15s", kn) == 1 && KeyFromName(kn)) r.keyCanvas = KeyFromName(kn);
-            else if (sscanf(line, "key_color=%15s", kn) == 1 && KeyFromName(kn)) r.keyColor = KeyFromName(kn);
             else if (sscanf(line, "no_draw_send=%d", &v) == 1) r.noDrawSend = v != 0;
             else if (sscanf(line, "no_draw_draw=%d", &v) == 1) r.noDrawDraw = v != 0;
             else if (sscanf(line, "no_draw_depth=%d", &v) == 1) r.noDrawDepth = v != 0;
-            else if (sscanf(line, "key_character=%15s", kn) == 1 && KeyFromName(kn)) r.keyChar = KeyFromName(kn);
             else if (sscanf(line, "pause_wrong_flag=%d", &v) == 1) r.pauseWrongFlag = v != 0;
-            else if (sscanf(line, "no_model_select=%d", &v) == 1) r.noModelSelect = v != 0;
             else if (sscanf(line, "no_group_avatar_state=%d", &v) == 1) r.noGroupAvatarState = v != 0;
+            else if (sscanf(line, "no_modelstat_queue=%d", &v) == 1) r.noModelStatQueue = v != 0;
             else if (sscanf(line, "no_model_gait=%d", &v) == 1) r.noModelGait = v != 0;
-            else if (sscanf(line, "model=%299[^\r\n]", s) == 1) {
-                if (!strcmp(s, "none")) r.modelPath.clear();
-                else { wchar_t w[300]; MultiByteToWideChar(CP_UTF8, 0, s, -1, w, 300); r.modelPath = w; }
-            }
             else if (sscanf(line, "save_dir=%299[^\r\n]", s) == 1) {
                 if (!strcmp(s, "instance")) r.saveDir = DllDir() + L"appdata";
                 else { wchar_t w[300]; MultiByteToWideChar(CP_UTF8, 0, s, -1, w, 300); r.saveDir = w; }
             }
         }
-        fclose(f); return r;
+        fclose(f); guide::MigrateF1(r); return r;
     }();
     return c;
 }

@@ -1,8 +1,11 @@
 #pragma once
 #include <string>
+#include "core/appearance.h"
 // Settings from witness_coop.cfg (next to the DLL), read once on first use, so it is safe to call from a hook that runs
 // before any thread of ours has started.
 struct Cfg {
+    bool povTv = false, povTvConsent = false; // pov_tv=1: show the nearest back TV; pov_tv_consent=1: allow sending snapshots
+    witness::Appearance appearance;
     std::wstring saveDir;   // save_dir=instance -> <dll folder>\appdata ; save_dir=<path> ; empty: the game's real save folder
     int capFps = 0;         // cap_fps=N: limit the game to N frames per second (0 = unlimited, the game's own behaviour)
     bool forceActive = false; // force_active=1: keep the game's own 'window is active' byte set, so it does not throttle to ~10 fps or ignore input in the background
@@ -10,22 +13,21 @@ struct Cfg {
     bool debugDepth = false;  // debug_depth=1: log which depth buffers the game binds and clears in one frame (diagnostic)
     bool debugSleep = false;  // debug_sleep=1: log every distinct Sleep(arg) call and its caller (diagnostic)
     bool shareZip = false;  // share_zip=1: open data-pc.zip with FILE_SHARE_READ so hard-linked copies can run side by side
-    std::wstring modelPath = L"cesium-man"; // model=<name or file>: the other player's character: a bundled name (witness_models\<name>.glb) or a .glb path (next to the DLL or absolute); model=none: the flat puppet
-    float modelHeight = 0;       // model_height=<metres>: the figure is scaled to this height (0: the model's own <file>.glb.txt, else 1.8)
-    float modelYaw = 0;          // model_yaw=<degrees>: turn a model that faces another way than +Z (added to the model's own yaw=)
-    float modelStride = 0;       // model_speed=<m/s>: the walking speed the clip was made for; the clip plays faster or slower to match the player's speed (0: the model's own speed=, else 1.6)
+    float modelHeight = 0;       // model_height=<metres>: adventurer height override (0: the model's own adventurer.glb.txt)
+    float modelYaw = 0;          // model_yaw=<degrees>: extra facing adjustment
+    float modelStride = 0;       // model_speed=<m/s>: walking-clip reference speed override
     float depthBias = 0.02f;     // depth_bias=<fraction>: how much nearer than a wall the model may be before the wall hides it (2%)
     float depthNear = 0.0597f;   // depth_near=<m>: the game stores depth as near / distance (reversed, no far plane); 0.0597 was measured, see NOTES
     bool depthView = false;      // depth_view=1: draw the game's depth buffer instead of the model (diagnostic)
-    bool noModelSelect = false;  // test mutant: F6 / F7 and the model command do nothing
     bool noGroupAvatarState = false; // mutant: share one gait state across all remote players
+    bool noModelStatQueue = false; // test mutant: read render-owned model statistics on the command thread
     bool noModelGait = false;    // test mutant: the figure never walks, whatever the player does
-    bool modelByPlayer = false;  // every remote player is drawn with a different model of witness_models\ (player 1 the selected one, 2 the next, ...)
     bool noModelDepth = false;   // test mutant: draw the model over walls
     bool pauseWrongFlag = false; // test mutant: the first, wrong pause flag (it flips with F6 / F7 and with entering a puzzle)
-    unsigned keyChat = 'T', keyPing = 'P', keyEmote = 'G', keyDraw = 'X', keyChar = 'C', keyCanvas = 'Z', keyColor = 'B';   // key_chat= ... : a letter or F1..F12
-    std::string character;       // character=<model name>: the model this player announces as its own (others draw this player with it); empty: none announced
-    bool noEmoteAnim = false, noEmoteClips = false, noCharacterAnnounce = false, noEmoteSend = false;   // test mutants: emotes shown but not animated / never play a model's own clip / characters not announced or not honoured / emotes not sent
+#define BIND(name, member, key, text, label) unsigned member = key;
+#include "../common/bindings.def"
+#undef BIND
+    bool noEmoteAnim = false, noEmoteClips = false, noEmoteSend = false;   // test mutants: emotes shown but not animated / never play a model's own clip / emotes not sent
     bool noChatUi = false, noTypingDots = false, noPingMarks = false;      // test mutants: T does nothing; typing is not announced; pings are not drawn
     std::string startProgress;   // start_progress=<spec>: the next new game starts with these parts of the map completed (the launcher arms it; progress/progress.h says how a spec reads); disarmed once applied
     bool noSaveMeta = false;     // test mutant: no <save>.coop.txt is written
@@ -41,9 +43,9 @@ struct Cfg {
     bool runUnfocusedOldByte = false;      // test mutant run_unfocused_old_byte=1: run_unfocused sets the game's 'window is active' byte (it then grabs the real mouse in every window: the way it was first done)
     bool runUnfocused = false;      // run_unfocused=1: the game keeps running at full speed (not the ~10 fps of a background window) when its window is not active; the keyboard and mouse still only reach the window that has the focus
     bool noSeeThrough = false; float ghostAlpha = 0.22f;      // see_through=0: players stay solid when they are in the way of a puzzle; ghost_alpha=: how see-through they become (ghost/ghost.h)
-    unsigned keyVoice = 'N';     // key_voice=: push to talk
+    bool radioEnabled = true; // radio_enabled=0: hide and disable the handheld radio
+    bool noRadioView = false, noRadioPose = false; // test mutants: omit the view model / right-arm overlay
     std::string voiceChannel = "proximity";      // voice_channel=proximity|radio|global|direct:<player id>: who hears this player and how (voice/voice.h)
-    unsigned keyVoiceChannel = 'H';        // key_voice_channel=: next channel (proximity, radio, global, then one on one with each player in turn)
     std::string voiceTestTone;   // voice_test_tone=120,1000,5500: the transmitted voice is a sum of these tones instead of the microphone (tests)
     bool voiceMuteOutput = false;// voice_mute_output=1: the mixer runs but nothing is played (tests)
     bool noVoiceChannel = false, voiceNoSelf = false, noVoiceChannelKey = false;      // test mutants: the chosen channel is not sent / this listener does not know its own id (hears what was said to others) / the channel key does nothing
@@ -51,7 +53,7 @@ struct Cfg {
     float mapgenHeight = 70.0f, mapgenRes = 0.5f; int mapgenSettleMs = 1500;      // mapgen_height= metres above the ground, mapgen_res= metres per pixel, mapgen_settle_ms= wait per tile
     bool mapgenBadScale = false, mapgenMirror = false, mapgenShowOverlay = false;      // test mutants: the projection has the wrong field of view / is mirrored / the mod keeps drawing during the capture
     bool noUnderlay = false;     // test mutant: the map has no picture under it
-    bool noKeySwallow = false;   // test mutant: a key the mod took (Esc closing the chat box or the character list) still reaches the game as raw input
+    bool noKeySwallow = false;   // test mutant: a key the mod took (Esc closing the chat box) still reaches the game as raw input
     bool noDrawSend = false, noDrawDraw = false, noDrawDepth = false;      // test mutants: strokes are not sent / not drawn / put at a fixed distance instead of on the surface under the pen
     bool noPauseHide = false;    // test mutant: draw puppets, lines and name tags over the pause menu
     bool skipEntityZero = false; // test mutant: restore the old census that lost the second tutorial door

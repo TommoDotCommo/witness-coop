@@ -1,3 +1,5 @@
+#include "radio/radio_game.h"
+#include "radio/radio.h"
 // D3D11 overlay for The Witness (build 11370412). Hooks IDXGISwapChain::Present by patching the shared
 // swap-chain vtable, then draws the remote player as a puppet at its world position using the camera read from game memory.
 #define WIN32_LEAN_AND_MEAN
@@ -26,10 +28,13 @@ static const float kVFovDeg = 60.0f;                 // calibrated: horizontal ~
 #include "config.h"
 #include "input.h"
 #include "ui.h"
+#include "guide_ui.h"
+#include "../common/guide.h"
 #include "race_game.h"
 #include "frame/panelframe.h"
 #include "devmenu.h"
 #include "video.h"
+#include "tv.h"
 #include "model_gpu.h"
 #include "depth.h"
 #include "playercolor.h"
@@ -148,7 +153,7 @@ static bool InitResources(IDXGISwapChain* sc) {
     char m[200]; snprintf(m, sizeof m, "overlay: resources ready, backbuffer %ux%u fmt %d", sd.BufferDesc.Width, sd.BufferDesc.Height, (int)sd.BufferDesc.Format);
     Log(m);
     g_videoDev = g_dev; g_videoCtx = g_ctx;
-    if (DevMenuEnabled() || VideoEnabled() || !GetCfg().noNameTags) g_uiReady = UiInit(g_dev, g_ctx);
+    g_uiReady = UiInit(g_dev, g_ctx); // F1 help remains available when other UI features are disabled
     return g_vs && g_ps && g_cb && g_blend && g_rs && g_ds;
 }
 
@@ -210,13 +215,23 @@ static void DrawMarkers(IDXGISwapChain* sc) {
         wm::Cam wc = {{cam[0], cam[1], cam[2]}, ang[0], ang[1], kVFovDeg, aspect, 0.1f, 2000.0f};
         bool first = true;
         for (const auto& rp : remotes) if (rp.ageMs < 2000) {
-            ModelExtra ex; ex.character = rp.character; { int e = 0; float t = 0; if (SocialEmoteOf(rp.id, &e, &t)) { ex.emote = e; ex.emoteT = t; } }
+            ModelExtra ex; ex.appearance = rp.appearance; ex.proximitySpeaking = rp.proximitySpeaking; ex.radioEquipped = rp.radioEquipped; ex.radioTx = rp.radioTx; { int e = 0; float t = 0; if (SocialEmoteOf(rp.id, &e, &t)) { ex.emote = e; ex.emoteT = t; } }
             ModelGpuDraw(rtv, td.Width, td.Height, wc, true, rp.seq, rp.pos, rp.ang[0], rp.id, first, &ex); first = false;
         }
         if (first) { float p[3] = {}; ModelGpuDraw(rtv, td.Width, td.Height, wc, false, 0, p, 0); }
         std::vector<LineVert> lv; unsigned nl = 0; if (!GetCfg().noLineDraw) nl = BuildLineVerts(wc.pos, lv);
         nl += SocialInkVerts(wc.pos, lv, 60000);
         ModelGpuDrawLines(rtv, td.Width, td.Height, wc, lv.data(), lv.size(), nl);
+        if (GetCfg().radioEnabled && !GetCfg().noRadioView) {
+            static wradio::Raise raise; static uint64_t last; uint64_t now=GetTickCount64();
+            raise.Step(VoiceRadioTx(), last ? (now-last)/1000.0f : 0); last=now;
+            std::vector<LineVert> radio; float tv=std::tan(wc.vfovDeg*.00872664626f);
+            for (const auto& v : wradio::Mesh(VoiceRadioTx() && (now/180)%2==0)) {
+                float p[3]; wradio::FirstPerson(aspect,tv,raise.value,v.p,p); LineVert q;
+                wradio::CameraToWorld(cam,wc.theta,wc.phi,p,q.p); memcpy(q.c,v.c,16); radio.push_back(q);
+            }
+            if (ModelGpuDrawLines(rtv,td.Width,td.Height,wc,radio.data(),radio.size(),1,true,true)) RadioRecord(0,raise.value,(unsigned)radio.size());
+        }
         rtv->Release(); bb->Release(); return;
     }
     for (const auto& rp : remotes) if (rp.ageMs < 2000) {
@@ -256,8 +271,10 @@ static void DrawMarkers(IDXGISwapChain* sc) {
 static WNDPROC g_origWndProc; static bool g_wndUnicode;
 static LRESULT CALLBACK DevWndProc(HWND w, UINT m, WPARAM wp, LPARAM lp) {
     switch (m) {
-    case WM_KEYDOWN: case WM_SYSKEYDOWN: if (DevMenuKey((unsigned)wp, true)) return 0; break;
-    case WM_KEYUP: case WM_SYSKEYUP: DevMenuKey((unsigned)wp, false); break;
+    case WM_KILLFOCUS: GuideReset(); break;
+    case WM_ACTIVATEAPP: if (!wp) GuideReset(); break;
+    case WM_KEYDOWN: case WM_SYSKEYDOWN: if (GuideKey((unsigned)wp, true)) return 0; if (DevMenuKey((unsigned)wp, true)) return 0; break;
+    case WM_KEYUP: case WM_SYSKEYUP: if (GuideKey((unsigned)wp, false)) return 0; DevMenuKey((unsigned)wp, false); break;
     case WM_CHAR: if (DevMenuOpen()) return 0; break;
     case WM_LBUTTONDOWN: if (DevMenuMouseButton(0, true)) return 0; break;
     case WM_RBUTTONDOWN: if (DevMenuMouseButton(1, true)) return 0; break;
@@ -291,18 +308,22 @@ bool PovKey(unsigned vk, bool down) {       // V: watch the player you look at (
         if (vk == VK_UP && n) g_rosterSel = (sel + n - 1) % n;
         else if (vk == VK_DOWN && n) g_rosterSel = (sel + 1) % n;
         else if (vk == VK_RETURN) { if (n) VideoWatch(ids[std::min(sel, n - 1)]); g_rosterOpen = false; }
+        else if (n && (vk == VK_LEFT || vk == VK_RIGHT || vk == 'M')) {
+            unsigned id=ids[std::min(sel,n-1)]; float v=VoiceGetPlayerVolume(id);
+            VoicePlayerVolume(id,vk=='M' ? (v>0 ? 0 : 1) : v+(vk==VK_RIGHT ? .1f : -.1f));
+        }
         else if (vk == VK_BACK || vk == VK_DELETE) VideoClear();
-        else if (vk == VK_ESCAPE || vk == VK_F5) g_rosterOpen = false;
+        else if (vk == VK_ESCAPE || vk == guide::Roster) g_rosterOpen = false;
         return true;
     }
     if (!down) return false;
-    if (vk == VK_F5) { g_rosterOpen = true; g_rosterSel = 0; return true; }
-    if (vk == 'V') {      // the player the crosshair is on; failing that, the only other player, or the list when there are several (so the key never does nothing while somebody is there)
+    if (vk == guide::Roster) { g_rosterOpen = true; g_rosterSel = 0; return true; }
+    if (vk == guide::Watch) {      // the player the crosshair is on; failing that, the only other player, or the list when there are several (so the key never does nothing while somebody is there)
         unsigned a = g_aimed.load(); if (a) { VideoToggleWatch(a); return true; } if (VideoWatching()) { VideoClear(); return true; }
         if (GetCfg().povNeedsAim) return false;
         std::vector<unsigned> ids = PlayerIds(); if (ids.size() == 1) { VideoWatch(ids[0]); return true; } if (ids.size() > 1) { g_rosterOpen = true; g_rosterSel = 0; return true; } return false; }
-    if (vk == VK_OEM_6) { VideoNext(PlayerIds()); return true; }
-    if (vk == VK_OEM_4) { VideoPrev(PlayerIds()); return true; }
+    if (vk == guide::NextView) { VideoNext(PlayerIds()); return true; }
+    if (vk == guide::PrevView) { VideoPrev(PlayerIds()); return true; }
     return false;
 }
 struct TagInfo { unsigned id; char name[25]; int ping; bool onScreen; float dist; };
@@ -328,7 +349,7 @@ static void DrawNameTags(float W, float H) {
         now.push_back(t);
     }
     // the player the crosshair is on: close to the screen centre and not too far; the nearest such player gets the "press V" prompt
-    unsigned aimed = 0; float best = 1e9f; const char* aimedName = nullptr; int aimedPing = -1;
+    unsigned aimed = 0; float best = 1e9f; std::string aimedName; int aimedPing = -1;
     if (TagsWanted() && !GamePaused() && !IsBadReadPtr(cam, 12) && !IsBadReadPtr(ang, 8)) for (const auto& rp : CoopGetRemotes()) if (rp.ageMs < 2000) {
         float body[3] = {rp.pos[0], rp.pos[1], rp.pos[2] - 0.55f}, nx, ny, d[3] = {rp.pos[0] - cam[0], rp.pos[1] - cam[1], rp.pos[2] - cam[2]};
         float dist = sqrtf(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
@@ -338,30 +359,33 @@ static void DrawNameTags(float W, float H) {
     VideoUpdatePlayers(PlayerIds());
     if (aimed && !g_rosterOpen.load()) {
         float col[3]; PlayerColor(aimed, col); bool watching = VideoWatching() == aimed; float k = std::max(1.0f, H / 1080.0f);
-        char b[96]; snprintf(b, sizeof b, watching ? "[V] stop watching %s" : "[V] watch %s's view", aimedName && aimedName[0] ? aimedName : "player"); (void)aimedPing;
+        char b[96]; snprintf(b, sizeof b, watching ? "[V] stop watching %s" : "[V] watch %s's view", aimedName.empty() ? "player" : aimedName.c_str()); (void)aimedPing;
         float tw = UiTextWidth(b, k), th = UiLineHeight(k), x = W / 2 - tw / 2, y = H / 2 + 70 * k;
         UiRect(x - 8 * k, y - 4 * k, tw + 16 * k, th + 8 * k, Rgba(0, 0, 0, 0.6f)); UiText(x, y, b, Rgba(col[0], col[1], col[2], 1), k);
     }
     if (!aimed && !g_rosterOpen.load() && !VideoWatching() && !GamePaused()) {      // a quiet reminder that the other players' screens can be watched
         std::vector<unsigned> ids = PlayerIds(); if (!ids.empty()) {
-            float k = std::max(1.0f, H / 1080.0f); char b[96]; const char* nm = nullptr; if (ids.size() == 1) for (const auto& r : CoopGetRemotes()) if (r.id == ids[0] && r.name[0]) nm = r.name;
-            if (nm) snprintf(b, sizeof b, "V  watch %s's view", nm); else snprintf(b, sizeof b, "V  watch a player's view   F5  list");
+            float k = std::max(1.0f, H / 1080.0f); char b[96]; std::string nm; if (ids.size() == 1) for (const auto& r : CoopGetRemotes()) if (r.id == ids[0] && r.name[0]) nm = r.name;
+            if (!nm.empty()) snprintf(b, sizeof b, "V  watch %s's view", nm.c_str()); else snprintf(b, sizeof b, "V  watch a player's view   F5  list");
             float tw = UiTextWidth(b, 0.8f * k), x = W - tw - 24 * k, y = H - 50 * k; UiRect(x - 6 * k, y - 4 * k, tw + 12 * k, UiLineHeight(0.8f * k) + 8 * k, Rgba(0, 0, 0, 0.4f)); UiText(x, y, b, Rgba(0.7f, 0.75f, 0.85f, 1), 0.8f * k);
         }
     }
     if (g_rosterOpen.load()) {          // the player list: Up/Down, Enter watches, Backspace clears, F5 / Esc closes
-        std::vector<unsigned> ids = PlayerIds(); float k = std::max(1.0f, H / 1080.0f), lh = UiLineHeight(k) + 6 * k, x = 24 * k, y = 90 * k, w = 520 * k;
+        std::vector<unsigned> ids = PlayerIds(); auto layout=wradio::Roster(W,H,(unsigned)ids.size(),UiLineHeight(1));
+        float k=layout.scale,lh=layout.rowStep,x=layout.x,y=layout.y,w=layout.width;
         int rows = (int)ids.size(); int sel = std::min(g_rosterSel.load(), std::max(0, rows - 1)); g_rosterSel = sel;
-        UiRect(x, y, w, lh * (rows + 2) + 14 * k, Rgba(0.05f, 0.06f, 0.09f, 0.88f));
+        UiRect(x, y, w, layout.height, Rgba(0.05f, 0.06f, 0.09f, 0.88f));
         UiText(x + 12 * k, y + 8 * k, "Players   Up/Down  Enter: watch  Backspace: clear  F5: close", Rgba(0.75f, 0.8f, 0.95f, 1), 0.8f * k);
+        UiText(x+12*k,y+lh*(rows+2)+6*k,wradio::kRosterHint,Rgba(.8f,.85f,.9f),.8f*k);
         std::vector<RemotePose> rem = CoopGetRemotes();
         for (int i = 0; i < rows; ++i) {
             const RemotePose* p = nullptr; for (const auto& r : rem) if (r.id == ids[i]) p = &r;
             float col[3]; PlayerColor(ids[i], col); float ry = y + 10 * k + lh * (i + 1.4f);
             if (i == sel) UiRect(x + 6 * k, ry - 3 * k, w - 12 * k, lh, Rgba(0.25f, 0.28f, 0.45f, 0.9f));
             UiRect(x + 14 * k, ry + 2 * k, 10 * k, 10 * k, Rgba(col[0], col[1], col[2], 1));
-            char b[96]; snprintf(b, sizeof b, "%-18s %s%d ms %s", p && p->name[0] ? p->name : "?", p && p->pingMs >= 0 ? "" : "- ", p && p->pingMs >= 0 ? p->pingMs : 0, VideoWatching() == ids[i] ? "  [watching]" : "");
-            if (p && p->pingMs < 0) snprintf(b, sizeof b, "%-18s -- ms %s", p->name[0] ? p->name : "?", VideoWatching() == ids[i] ? "  [watching]" : "");
+            char b[96]; snprintf(b, sizeof b, "%-18.18s %s%d ms %s", p && p->name[0] ? p->name : "?", p && p->pingMs >= 0 ? "" : "- ", p && p->pingMs >= 0 ? p->pingMs : 0, VideoWatching() == ids[i] ? "  [watching]" : "");
+            if (p && p->pingMs < 0) snprintf(b, sizeof b, "%-18.18s -- ms %s", p->name[0] ? p->name : "?", VideoWatching() == ids[i] ? "  [watching]" : "");
+            { size_t len=strlen(b); snprintf(b+len,sizeof b-len,"  %d%%",int(VoiceGetPlayerVolume(ids[i])*100+.5f)); }
             UiText(x + 32 * k, ry, b, Rgba(col[0], col[1], col[2], 1), k);
         }
         if (!rows) UiText(x + 14 * k, y + 10 * k + lh * 1.4f, "nobody else is here yet", Rgba(0.8f, 0.8f, 0.8f, 1), k);
@@ -382,10 +406,11 @@ unsigned OverlayFrames() { return (unsigned)g_frames; }
 static void DrawDevMenu(IDXGISwapChain* sc) {
     if (!g_uiReady) return;
     DevMenuTick(); SaveMetaTick();
-    if (!DevMenuOpen() && !DevMenuToastWanted() && !VideoViewMode() && !TagsWanted() && !RaceActive() && !g_rosterOpen.load()) return;
+    if (!GuideOpen() && !DevMenuOpen() && !DevMenuToastWanted() && !VideoViewMode() && !TagsWanted() && !RaceActive() && !g_rosterOpen.load() && !TvConsent() && !TvEnabled()) return;
     ID3D11Texture2D* bb = nullptr; if (FAILED(sc->GetBuffer(0, __uuidof(ID3D11Texture2D), (void**)&bb))) return;
     D3D11_TEXTURE2D_DESC td; bb->GetDesc(&td); ID3D11RenderTargetView* rtv = nullptr;
     if (SUCCEEDED(g_dev->CreateRenderTargetView(bb, nullptr, &rtv))) { UiBegin((float)td.Width, (float)td.Height); DrawNameTags((float)td.Width, (float)td.Height); { uintptr_t b0 = (uintptr_t)GetModuleHandleA(nullptr); const float* c0 = (const float*)(b0 + kCamPos); const float* a0 = (const float*)(b0 + kCamAng); if (!IsBadReadPtr(c0, 12) && !IsBadReadPtr(a0, 8)) SocialFrame((float)td.Width, (float)td.Height, c0, a0); } RaceDraw((float)td.Width, (float)td.Height); if (DevMenuOpen()) DevMenuDraw((float)td.Width, (float)td.Height); else DevMenuToast((float)td.Width, (float)td.Height);
+        if (TvConsent() || TvEnabled()) UiText(14, 14, TvConsent() ? "SHARING MY TV POV [F11 STOP]  [F10 back TV]" : "BACK TV ON [F10 OFF]  [F11 share my POV]", Rgba(1, 0.55f, 0.2f), 0.9f);
         if (VideoViewMode()) {      // the partner's screen, in a corner (F9: small, large, off)
             int vw = 0, vh = 0; unsigned long age = 0; ID3D11ShaderResourceView* srv = VideoRemoteSrv(&vw, &vh, &age); InterlockedIncrement(&g_povBox); if (srv) InterlockedIncrement(&g_povPic);
             float k = (VideoViewMode() == 2 ? 2.0f : 1.0f) * std::max(1.f, td.Height / 1080.f), iw = (vw ? vw : 480) * k, ih = (vh ? vh : 270) * k, x = td.Width - iw - 14, y = 14;
@@ -394,6 +419,7 @@ static void DrawDevMenu(IDXGISwapChain* sc) {
             { const char* nm = "player"; unsigned wid = VideoWatching(); float pc[3] = {1, 0.6f, 0.2f}; PlayerColor(wid, pc); std::vector<RemotePose> rem = CoopGetRemotes(); for (const auto& r : rem) if (r.id == wid && r.name[0]) nm = r.name;
               char b[96]; snprintf(b, sizeof b, "%s's view%s    [ ] cycle   V clear   F5 list", nm, srv ? (age > 2000 ? "  (stale)" : "") : "  (waiting)"); UiText(x + 2, y + ih + 2, b, Rgba(pc[0], pc[1], pc[2]), 0.85f); }
         }
+        GuideDraw((float)td.Width, (float)td.Height);
         UiEnd(rtv); rtv->Release(); }
     bb->Release();
 }
@@ -406,8 +432,13 @@ static HRESULT STDMETHODCALLTYPE HookPresent(IDXGISwapChain* sc, UINT sync, UINT
     if (!g_ready && !g_failed) { g_ready = InitResources(sc); g_failed = !g_ready; }
     DepthDiagFrame((unsigned)f);
     bool mapgen = MapGenActive() && !GetCfg().mapgenShowOverlay; if (MapGenActive() && !mapgen) MapGenCountOverlayFrame();      // the map picture is made of the game's frames alone
+    if (g_ready) { const float* camera = (const float*)((uintptr_t)GetModuleHandleA(nullptr) + kCamPos);
+        if (Readable(camera, 12)) TvTick(camera, !mapgen && !GamePaused() && CoopCore() && CoopCore()->ready());
+        if (!mapgen) VideoFrame(sc, g_dev, g_ctx);
+    }
     if (g_ready && !mapgen) DrawMarkers(sc);
-    if (g_ready && g_uiReady && !mapgen) { VideoFrame(sc, g_dev, g_ctx); DrawDevMenu(sc); }
+    if (g_ready && g_uiReady && !mapgen) { DrawDevMenu(sc); }
+    RadioDumpFrame();
     if (g_ready) MapGenTick(sc);      // the picture for the partner is taken before the menu and the inset are drawn
     if (GetCfg().forceActive) {   // build 11370412: the game's focus state is byte +0x21 of the object at exe+0x469A5B0; its loop does
         // Sleep(100) (about 10 fps) when this and the byte at exe+0x62D394 are both 0, and it ignores WM_INPUT while it is 0
@@ -424,7 +455,7 @@ static HRESULT STDMETHODCALLTYPE HookPresent(IDXGISwapChain* sc, UINT sync, UINT
         if (GetCfg().runUnfocusedOldByte) { uintptr_t p = IsBadReadPtr((void*)(base + 0x469A5B0), 8) ? 0 : *(uintptr_t*)(base + 0x469A5B0); if (p && !IsBadWritePtr((void*)(p + 0x21), 1)) *(volatile unsigned char*)(p + 0x21) = 1; }
         else if (!IsBadWritePtr((void*)(base + 0x62D394), 1)) *(volatile unsigned char*)(base + 0x62D394) = 1;
     }
-    { DXGI_SWAP_CHAIN_DESC d; if (SUCCEEDED(sc->GetDesc(&d))) { g_gameWnd = d.OutputWindow; if (DevMenuEnabled() || VideoEnabled()) InstallDevWndProc(d.OutputWindow); InputPump(d.OutputWindow); } }
+    { DXGI_SWAP_CHAIN_DESC d; if (SUCCEEDED(sc->GetDesc(&d))) { g_gameWnd = d.OutputWindow; InstallDevWndProc(d.OutputWindow); InputPump(d.OutputWindow); } }
     if (g_shotName[0] && g_ready) { char n[64]; strcpy(n, g_shotName); g_shotName[0] = 0; TakeShot(sc, n); }
     HRESULT hr = g_origPresent(sc, sync, flags);
     if (int cap = GetCfg().capFps; cap > 0) {   // frame cap: sleep out the rest of the frame (Sleep(1) until close, then spin)

@@ -1,4 +1,4 @@
-// The social layer: reliable, ordered chat / location pings / drawing strokes, and presence (character, emote, typing, speaking), between two players on a lossy,
+// The social layer: reliable, ordered chat / location pings / drawing strokes, and presence (emote, typing, speaking), between two players on a lossy,
 // delaying, reordering link and in a group of four. Every protection has a twin (a Flags switch) that this test must fail.
 #include "../sync_core.h"
 #include <cstdio>
@@ -82,16 +82,16 @@ static bool restart(Flags f = {}) {
 }
 static bool presence(Flags f = {}) {
     Net net(2, f); net.advance(1000);
-    Presence p; p.character = "Magic Frog"; p.emote = 4; p.emoteSeq = 9; p.typing = true; p.speaking = true; net.cores[0]->setPresence(p); net.advance(1500);
+    Presence p; p.emote = 4; p.emoteSeq = 9; p.typing = true; p.speaking = true; net.cores[0]->setPresence(p); net.advance(1500);
     auto v = net.cores[1]->remotePoses(net.now); if (v.empty()) return false;
-    return v[0].character == "Magic Frog" && v[0].emote == 4 && v[0].emoteSeq == 9 && v[0].typing && v[0].speaking;
+    return v[0].emote == 4 && v[0].emoteSeq == 9 && v[0].typing && v[0].speaking;
 }
-static bool presenceExpires(Flags f = {}) {      // typing and speaking end when presence stops arriving; the character stays
+static bool presenceExpires(Flags f = {}) {      // typing and speaking end when presence stops arriving; the emote stays
     Net net(2, f); net.advance(1000);
-    Presence p; p.character = "Fox"; p.typing = true; net.cores[0]->setPresence(p); net.advance(2000);
+    Presence p; p.emote = 3; p.typing = true; net.cores[0]->setPresence(p); net.advance(2000);
     if (!net.cores[1]->remotePoses(net.now)[0].typing) return false;
     net.alive[0] = false; net.advance(8000);
-    auto v = net.cores[1]->remotePoses(net.now); return !v.empty() && !v[0].typing && v[0].character == "Fox";
+    auto v = net.cores[1]->remotePoses(net.now); return !v.empty() && !v[0].typing && v[0].emote == 3;
 }
 static bool presenceChangesAreFast(Flags f = {}) {      // a change goes out at once, not at the next heartbeat
     Net net(2, f); net.advance(3000);
@@ -100,12 +100,13 @@ static bool presenceChangesAreFast(Flags f = {}) {      // a change goes out at 
 }
 static bool olderPresenceLoses(Flags f = {}) {      // a delayed older presence packet does not overwrite a newer one
     Net net(2, f); net.advance(1000);
-    Presence p; p.character = "New"; net.cores[0]->setPresence(p); net.advance(2000);
+    Presence p; p.emote = 8; net.cores[0]->setPresence(p); net.advance(2000);
     Bytes b; auto put = [&](uint32_t v) { for (int i = 0; i < 4; ++i) b.push_back(uint8_t(v >> (8 * i))); };
-    put(0x34535457); put(1); put(1); put(1); b.push_back(0); b.push_back(0); b.push_back(0); b.push_back(0); const char* nm = "Old"; for (int i = 0; i < 24; ++i) b.push_back(i < 3 ? uint8_t(nm[i]) : 0);
+    put(0x36535457); put(1); put(1); put(1); b.push_back(1); b.push_back(0); b.push_back(0); b.push_back(0);
+    auto appearance = EncodeAppearance({}); b.insert(b.end(), appearance.begin(), appearance.end());
     uint32_t h = 2166136261u; for (uint8_t c : b) { h ^= c; h *= 16777619u; } put(h);
     net.cores[1]->onPacket(b.data(), b.size(), net.now);
-    auto v = net.cores[1]->remotePoses(net.now); return !v.empty() && v[0].character == "New";
+    auto v = net.cores[1]->remotePoses(net.now); return !v.empty() && v[0].emote == 8;
 }
 // A packet from the real peer (player 1, a later session so its numbers are accepted) with one flipped bit is dropped; the same packet unchanged is taken (the control: the
 // test can fail). Without the checksum check (Flags::noChecksum) the corrupted one gets through.
@@ -145,9 +146,9 @@ int main() {
     show(chatArrives(30, 150), "social: loss and a 150 ms jitter (packets overtake each other)");
     show(marksAndStrokes(), "social: a location ping and a stroke in three chunks, then a clear, arrive intact over a lossy link");
     show(restart(), "social: a restarted sender's new messages are taken");
-    show(presence(), "presence: character, emote, typing and speaking arrive");
+    show(presence(), "presence: emote, typing and speaking arrive");
     show(presenceChangesAreFast(), "presence: a change arrives within 250 ms");
-    show(presenceExpires(), "presence: typing and speaking end when the peer goes quiet, the character stays");
+    show(presenceExpires(), "presence: typing and speaking end when the peer goes quiet, the emote stays");
     show(olderPresenceLoses(), "presence: a delayed older packet does not overwrite a newer one");
     show(corruptIgnored(), "social: a corrupted packet is dropped");
     show(group(), "social: four players, 25% loss: both senders reach the others once each, in order");

@@ -2,6 +2,8 @@
 #include <windows.h>
 #include <cstring>
 #include "input.h"
+#include "guide_ui.h"
+#include "../common/guide.h"
 #include "config.h"
 #include "devmenu.h"
 #include "video.h"
@@ -71,7 +73,7 @@ static UINT WINAPI HookGetRawInputData(HRAWINPUT h, UINT cmd, LPVOID data, PUINT
             if (ri->header.dwType == RIM_TYPEMOUSE) { if (!(ri->data.mouse.usFlags & MOUSE_MOVE_ABSOLUTE)) { if (DevMenuOpen()) DevMenuRawMove(ri->data.mouse.lLastX, ri->data.mouse.lLastY); else if (SocialMouseCaptured()) SocialRawMove(ri->data.mouse.lLastX, ri->data.mouse.lLastY); } ri->data.mouse.lLastX = ri->data.mouse.lLastY = 0; ri->data.mouse.usButtonFlags = 0; ri->data.mouse.usButtonData = 0; }
             else if (ri->header.dwType == RIM_TYPEKEYBOARD && !(ri->data.keyboard.Flags & RI_KEY_BREAK) && (DevMenuOpen() || PovRosterOpen() || SocialCapturing())) { ri->data.keyboard.VKey = 0; ri->data.keyboard.MakeCode = 0; ri->data.keyboard.Flags |= RI_KEY_BREAK; }
         }
-        if (data && r != (UINT)-1 && cmd == RID_INPUT && r >= sizeof(RAWINPUTHEADER) && ((RAWINPUT*)data)->header.dwType == RIM_TYPEKEYBOARD && !(((RAWINPUT*)data)->data.keyboard.Flags & RI_KEY_BREAK) && SocialSwallowRaw(((RAWINPUT*)data)->data.keyboard.VKey)) { RAWINPUT* ri = (RAWINPUT*)data; ri->data.keyboard.VKey = 0; ri->data.keyboard.MakeCode = 0; ri->data.keyboard.Flags |= RI_KEY_BREAK; }      // a key the mod took (it closed the chat box): the game must not see its raw press either
+        if (data && r != (UINT)-1 && cmd == RID_INPUT && r >= sizeof(RAWINPUTHEADER) && ((RAWINPUT*)data)->header.dwType == RIM_TYPEKEYBOARD && !(((RAWINPUT*)data)->data.keyboard.Flags & RI_KEY_BREAK) && (SocialSwallowRaw(((RAWINPUT*)data)->data.keyboard.VKey) || ((RAWINPUT*)data)->data.keyboard.VKey == guide::Help)) { RAWINPUT* ri = (RAWINPUT*)data; ri->data.keyboard.VKey = 0; ri->data.keyboard.MakeCode = 0; ri->data.keyboard.Flags |= RI_KEY_BREAK; }      // a key the mod took (it closed the chat box): the game must not see its raw press either
         if (GetCfg().debugMsgs && data && r != (UINT)-1 && r >= sizeof(RAWINPUTHEADER) && cmd == RID_INPUT) {    // diagnostic (debug_msgs=1): what a REAL event looks like (first few, and every button event)
             const RAWINPUT* ri = (const RAWINPUT*)data; static LONG n;
             bool btn = ri->header.dwType == RIM_TYPEMOUSE && ri->data.mouse.usButtonFlags;
@@ -96,11 +98,11 @@ static UINT WINAPI HookGetRawInputData(HRAWINPUT h, UINT cmd, LPVOID data, PUINT
         if (!e.key) { DevMenuRawMove(e.dx, e.dy); ri.data.mouse.lLastX = ri.data.mouse.lLastY = 0; ri.data.mouse.usButtonFlags = 0; }
         else if (e.down) { ri.data.keyboard.VKey = 0; ri.data.keyboard.MakeCode = 0; ri.data.keyboard.Flags = RI_KEY_BREAK; }
     }
-    else if (SocialMouseCaptured()) {      // ... and to the emote wheel / chat box / character list
+    else if (SocialMouseCaptured()) {      // ... and to the emote wheel / chat box
         if (!e.key) { SocialRawMove(e.dx, e.dy); ri.data.mouse.lLastX = ri.data.mouse.lLastY = 0; ri.data.mouse.usButtonFlags = 0; }
         else if (e.down && SocialCapturing()) { ri.data.keyboard.VKey = 0; ri.data.keyboard.MakeCode = 0; ri.data.keyboard.Flags = RI_KEY_BREAK; }
     }
-    if (e.key && e.down && ri.data.keyboard.VKey && SocialSwallowRaw(e.vk)) { ri.data.keyboard.VKey = 0; ri.data.keyboard.MakeCode = 0; ri.data.keyboard.Flags = RI_KEY_BREAK; }      // (as above, for the bot's own keys)
+    if (e.key && e.down && ri.data.keyboard.VKey && (SocialSwallowRaw(e.vk) || e.vk == guide::Help)) { ri.data.keyboard.VKey = 0; ri.data.keyboard.MakeCode = 0; ri.data.keyboard.Flags = RI_KEY_BREAK; }      // (as above, for the bot's own keys)
     UINT total = ri.header.dwSize;
     if (cmd == RID_HEADER) { if (!data) { *size = sizeof(RAWINPUTHEADER); return 0; } if (*size < sizeof(RAWINPUTHEADER)) return (UINT)-1; memcpy(data, &ri.header, sizeof(RAWINPUTHEADER)); return sizeof(RAWINPUTHEADER); }
     if (!data) { *size = total; return 0; }
@@ -116,7 +118,11 @@ typedef BOOL(WINAPI* PeekMessageAFn)(LPMSG, HWND, UINT, UINT, UINT);
 static PeekMessageAFn g_origPeekA;
 static BOOL WINAPI HookPeekMessageA(LPMSG m, HWND w, UINT lo, UINT hi, UINT rm) {
     BOOL r = g_origPeekA(m, w, lo, hi, rm);
-    if (!r || !m || !(rm & PM_REMOVE) || !(DevMenuEnabled() || VideoEnabled())) return r;
+    if (!r || !m || !(rm & PM_REMOVE)) return r;
+    if (m->message == WM_KILLFOCUS || (m->message == WM_ACTIVATEAPP && !m->wParam)) GuideReset();
+    if ((m->message == WM_KEYDOWN || m->message == WM_SYSKEYDOWN || m->message == WM_KEYUP || m->message == WM_SYSKEYUP) &&
+        GuideKey((unsigned)m->wParam, m->message == WM_KEYDOWN || m->message == WM_SYSKEYDOWN)) { m->message = WM_NULL; return r; }
+    if (!(DevMenuEnabled() || VideoEnabled())) return r;
     bool take = false;
     switch (m->message) {
     case WM_KEYDOWN: case WM_SYSKEYDOWN: take = DevMenuKey((unsigned)m->wParam, true) || SocialKey((unsigned)m->wParam, true); break;

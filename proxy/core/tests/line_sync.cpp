@@ -93,7 +93,7 @@ static bool hostile() {
     p.cb = nullptr; p.startB(1); p.advance(100);
     // craft: panel 9 (not a panel), n = 2 but length for 1 point, flipped checksum
     auto craft = [](uint32_t panel, uint32_t cnt, size_t points, bool badSum) { Bytes b; auto put = [&](uint32_t v) { for (int i = 0; i < 4; ++i) b.push_back(uint8_t(v >> (8 * i))); };
-        put(0x344C5457); put(1); put(1); put(panel); put(1); put(1); put(cnt); for (size_t i = 0; i < points * 8; ++i) b.push_back(1);
+        put(0x364C5457); put(1); put(1); put(panel); put(1); put(1); put(cnt); for (size_t i = 0; i < points * 8; ++i) b.push_back(1);
         uint32_t h = 2166136261u; for (uint8_t c : b) { h ^= c; h *= 16777619u; } if (badSum) h ^= 1; put(h); return b; };
     for (auto& d : {craft(9, 1, 1, false), craft(5, 2, 1, false), craft(5, 1, 1, true), craft(5, 5000, 1, false)}) p.cb->onPacket(d.data(), d.size(), p.now);
     return p.cb->remoteLines(p.now).empty();

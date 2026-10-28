@@ -106,6 +106,33 @@ static void Butter(float fc, bool high, float* b0, float* b1, float* b2, float* 
     if (high) { *b0 = n; *b1 = -2 * n; *b2 = n; } else { *b0 = w * w * n; *b1 = 2 * w * w * n; *b2 = w * w * n; }
     *a1 = 2 * (w * w - 1) * n; *a2 = (1 - w / q + w * w) * n;
 }
+RadioSample ProcessRadio(RadioDsp* state, float x, int squelchRemaining, float gain) {
+    float hb[5], lb[5]; Butter(350, true, hb, hb+1, hb+2, hb+3, hb+4); Butter(3000, false, lb, lb+1, lb+2, lb+3, lb+4);
+    float rad = x;
+    for (int k=0;k<2;++k) { auto& h=state->hp[k]; h.b0=hb[0]; h.b1=hb[1]; h.b2=hb[2]; h.a1=hb[3]; h.a2=hb[4]; rad=h.step(rad); }
+    for (int k=0;k<2;++k) { auto& l=state->lp[k]; l.b0=lb[0]; l.b1=lb[1]; l.b2=lb[2]; l.a1=lb[3]; l.a2=lb[4]; rad=l.step(rad); }
+#ifdef WV_MUT_NO_RADIO_FILTER
+    rad=x;
+#endif
+#ifndef WV_MUT_DSP_CLIP
+    rad=std::tanh(rad*2.2f)*.6f;
+#endif
+    state->noise=state->noise*1664525u+1013904223u;
+    float noise = float(state->noise>>8)/8388608.0f-1.0f;
+#ifdef WV_MUT_DSP_RANDOM
+    static unsigned shared=1; noise=float(++shared%100)/50.0f-1;
+#endif
+    float squelch = noise*.08f*std::max(0.0f,std::min(1.0f,squelchRemaining/1280.0f));
+#ifdef WV_MUT_NO_SQUELCH
+    squelch=0;
+#endif
+    float hiss = gain>.01f ? noise*.012f*std::min(1.0f,gain*2) : 0;
+#ifdef WV_MUT_NO_HISS
+    hiss=0;
+#endif
+    squelch *= std::min(1.0f,gain*3);
+    return {(rad+hiss)*gain+squelch,noise,squelch};
+}
 void Mixer::Push(const Packet& p) {
 #ifndef WV_MUT_CH_DIRECT_ALL
     if (p.channel == kDirect && s_.self && p.to != s_.self) return;      // said to somebody else
@@ -146,24 +173,21 @@ void Mixer::Render(const std::vector<Speaker>& where, float* stereo) {
         bool active = v.talking || v.squelch > 0; v.stat.talking = v.talking;
         if (!active) { v.stat.rms = 0; v.stat.prox = v.stat.radio = 0; continue; }
         Mix m = sp ? ComputeMix(sp->distance, sp->bearing, s_, v.channel) : (v.channel == kProximity ? Mix() : ComputeMix(1000.0f, 0, s_, v.channel));
-        // the radio filter: band 350..3000 Hz, a little drive, noise; set up once
-        static float hb[5], lb[5]; static bool init; if (!init) { Butter(350, true, &hb[0], &hb[1], &hb[2], &hb[3], &hb[4]); Butter(3000, false, &lb[0], &lb[1], &lb[2], &lb[3], &lb[4]); init = true; }
+        float playerGain = sp ? (sp->muted ? 0.0f : std::max(0.0f, std::min(1.0f, sp->volume))) : 1.0f;
+#ifdef WV_MUT_PLAYER_GAIN
+        (void)playerGain;
+#else
+        m.prox *= playerGain; m.radio *= playerGain;
+#endif
         float a = 1.0f - std::exp(-6.2831853f * m.cutoff / kRate);
         float mono[kFrame]; double e = 0;
         for (int i = 0; i < kFrame; ++i) {
             float x = pcm[i] / 32768.0f, t = float(i) / kFrame;
             v.lp += a * (x - v.lp); float prox = v.lp;
-            float rad = x; for (int k = 0; k < 2; ++k) { Biquad& h = v.hp[k]; h.b0 = hb[0]; h.b1 = hb[1]; h.b2 = hb[2]; h.a1 = hb[3]; h.a2 = hb[4]; rad = h.step(rad); }
-            for (int k = 0; k < 2; ++k) { Biquad& l = v.lpf[k]; l.b0 = lb[0]; l.b1 = lb[1]; l.b2 = lb[2]; l.a1 = lb[3]; l.a2 = lb[4]; rad = l.step(rad); }
-#ifdef WV_MUT_NO_RADIO_FILTER
-            rad = x;
-#endif
-            rad = std::tanh(rad * 2.2f) * 0.6f;
-            v.noise = v.noise * 1664525u + 1013904223u; float nz = (float(v.noise >> 8) / 8388608.0f - 1.0f);
             float radioGain = v.prevRadio + (m.radio - v.prevRadio) * t, proxGain = v.prevProx + (m.prox - v.prevProx) * t;      // gains move smoothly across the frame: no clicks
-            float hiss = radioGain > 0.01f ? nz * 0.012f * std::min(1.0f, radioGain * 2) : 0;
-            float sq = 0; if (v.squelch > 0) { float env = float(v.squelch) / 1280.0f; sq = nz * 0.08f * std::min(1.0f, env) * std::min(1.0f, radioGain * 3); --v.squelch; }
-            mono[i] = prox * proxGain + (rad + hiss) * radioGain + sq; e += mono[i] * mono[i];
+            RadioSample processed = ProcessRadio(&v.dsp, x, v.squelch, radioGain);
+            if (v.squelch > 0) --v.squelch;
+            mono[i] = prox * proxGain + processed.voice; e += mono[i] * mono[i];
         }
         v.prevProx = m.prox; v.prevRadio = m.radio;
         v.stat.prox = m.prox; v.stat.radio = m.radio; v.stat.pan = m.pan; v.stat.channel = v.channel; v.stat.rms = float(std::sqrt(e / kFrame));

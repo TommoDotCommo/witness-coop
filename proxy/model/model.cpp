@@ -1,5 +1,6 @@
 // See model.h. Mutants (-DWM_MUT_...) each break one thing on purpose; the T0 test must fail for every one of them.
 #include "model.h"
+#include "gestures.h"
 #include <algorithm>
 #include <cctype>
 #include <cmath>
@@ -109,9 +110,10 @@ bool LoadGlb(const uint8_t* data, size_t n, Model* out, std::string* err) {
         for (size_t pi = 0; pi < nd->mesh->primitives_count; pi++) {
             const cgltf_primitive* p = &nd->mesh->primitives[pi];
             if (p->type != cgltf_primitive_type_triangles) continue;
-            const cgltf_accessor *pos = nullptr, *nrm = nullptr, *uv = nullptr, *jt = nullptr, *wt = nullptr;
+            const cgltf_accessor *pos = nullptr, *nrm = nullptr, *uv = nullptr, *jt = nullptr, *wt = nullptr, *appearance = nullptr;
             for (size_t a = 0; a < p->attributes_count; a++) {
                 const cgltf_attribute& at = p->attributes[a];
+                if (at.name && !strcmp(at.name, "_APPEARANCE")) appearance = at.data;
                 if (at.index != 0) continue;
                 if (at.type == cgltf_attribute_type_position) pos = at.data; else if (at.type == cgltf_attribute_type_normal) nrm = at.data;
                 else if (at.type == cgltf_attribute_type_texcoord) uv = at.data; else if (at.type == cgltf_attribute_type_joints) jt = at.data;
@@ -129,6 +131,14 @@ bool LoadGlb(const uint8_t* data, size_t n, Model* out, std::string* err) {
             uint32_t base = (uint32_t)m.verts.size(); bool useSkin = skinned && jt && wt;
             for (size_t i = 0; i < pos->count; i++) {
                 Vertex v = {}; cgltf_accessor_read_float(pos, i, v.pos, 3);
+                if (appearance && appearance->type == cgltf_type_scalar && appearance->count == pos->count) {
+                    float group = 0; cgltf_accessor_read_float(appearance, i, &group, 1);
+#ifndef WM_MUT_APPEARANCE_GROUP
+                    if (std::isfinite(group) && group >= 0 && group <= 8 && std::floor(group) == group) v.appearanceGroup = group;
+#else
+                    v.appearanceGroup = group;
+#endif
+                }
                 for (int k = 0; k < 3; k++) v.col[k] = (uint8_t)(std::min(1.0f, std::max(0.0f, colf[k])) * 255.0f + 0.5f);
                 v.col[3] = samples ? 255 : 0;
                 if (nrm) cgltf_accessor_read_float(nrm, i, v.nrm, 3); else v.nrm[1] = 1;
@@ -175,6 +185,19 @@ bool LoadGlb(const uint8_t* data, size_t n, Model* out, std::string* err) {
         }
         if (c.duration > 0) m.clips.push_back(std::move(c));
     }
+    const size_t nn=m.nodes.size();
+    std::vector<float> bind(nn*16);
+    for (size_t i=0;i<nn;++i) {
+        std::vector<int> chain; for(int n=int(i);n>=0;n=m.nodes[n].parent) chain.push_back(n);
+        float g[16]; Identity(g);
+        for(auto n=chain.rbegin();n!=chain.rend();++n) { float l[16]; const auto& b=m.nodes[*n]; FromTRS(b.t,b.r,b.s,l); Mul(g,l,g); }
+        memcpy(bind.data()+i*16,g,64);
+    }
+    m.gestureBone.assign(nn,-1); m.gestureForward.assign(nn,1);
+    for(size_t i=0;i<nn;++i) {
+        for(int b=0;b<GestureBones;++b) if(m.nodes[i].name==kGestureBones[b]) m.gestureBone[i]=b;
+        m.gestureForward[i]=bind[i*16+10]>=0 ? 1.f : -1.f;
+    }
     // bind-pose bounds
     std::vector<float> jm(kMaxJoints * 16); JointMatrices(m, -1, 0, jm.data());
     for (int k = 0; k < 3; k++) { m.bmin[k] = 1e30f; m.bmax[k] = -1e30f; }
@@ -207,7 +230,7 @@ static void PoseTRS(const Model& m, int clip, float t, float* T, float* R, float
     }
 }
 
-void JointMatricesBlend(const Model& m, int from, float tFrom, int to, float tTo, float w, float* out) {
+void JointMatricesBlend(const Model& m, int from, float tFrom, int to, float tTo, float w, float* out, const GestureState* gesture, float radioRaise, float* radioHand) {
     size_t nn = m.nodes.size();
     std::vector<float> T(nn * 3), R(nn * 4), S(nn * 3);
     PoseTRS(m, to, tTo, T.data(), R.data(), S.data());
@@ -217,6 +240,47 @@ void JointMatricesBlend(const Model& m, int from, float tFrom, int to, float tTo
         for (size_t i = 0; i < nn * 3; i++) { T[i] = T0[i] + (T[i] - T0[i]) * w; S[i] = S0[i] + (S[i] - S0[i]) * w; }
         for (size_t i = 0; i < nn; i++) { float q[4]; Slerp(&R0[i * 4], &R[i * 4], w, q); memcpy(&R[i * 4], q, 16); }
     }
+    if (gesture) {
+        // Bind global rotations resolve forward-positive angles on both mirrored
+        // limbs. The generator uses the same bind-axis probe for its gait.
+        auto qmul=[](const float* a,const float* b,float* o) {
+            float r[4]={a[3]*b[0]+a[0]*b[3]+a[1]*b[2]-a[2]*b[1],a[3]*b[1]-a[0]*b[2]+a[1]*b[3]+a[2]*b[0],a[3]*b[2]+a[0]*b[1]-a[1]*b[0]+a[2]*b[3],a[3]*b[3]-a[0]*b[0]-a[1]*b[1]-a[2]*b[2]}; memcpy(o,r,16);
+        };
+        for(size_t i=0;i<nn;++i) if (i<m.gestureBone.size() && m.gestureBone[i]>=0) {
+            int b=m.gestureBone[i];
+            const auto& j=gesture->pose[b]; if(j.weight <= .00001f) continue;
+            float q[4]={0,0,0,1};
+            float fwd=m.gestureForward[i];
+            // Blender's XYZ Euler convention: qz * qy * qx.
+            for(int a=2;a>=0;--a) { float r[4]={0,0,0,1}; float ang=j.a[a]*.00872664626f*(a==0?fwd:1.f); r[a]=sinf(ang); r[3]=cosf(ang); qmul(q,r,q); }
+            qmul(m.nodes[i].r,q,q); float result[4]; Slerp(R.data()+i*4,q,j.weight,result); memcpy(R.data()+i*4,result,16);
+        }
+        for(size_t i=0;i<nn;++i) if(m.nodes[i].name=="root") {
+            float q[4]={0,sinf(gesture->turn*.5f),0,cosf(gesture->turn*.5f)};
+            qmul(R.data()+i*4,q,R.data()+i*4);
+        }
+        // Seated pelvis height follows the leg chain rather than a fixed drop.
+        // The knee folds while the hip lowers; soles stay above the floor.
+        float hip=gesture->pose[ThighL].a[0]*gesture->pose[ThighL].weight*.01745329252f;
+        float knee=gesture->pose[ShinL].a[0]*gesture->pose[ShinL].weight*.01745329252f;
+        float drop=.43f*(1-cosf(hip))+.41f*(1-cosf(hip+knee));
+        for(size_t i=0;i<nn;++i) if(m.nodes[i].name=="pelvis") T[i*3+1]-=drop;
+    }
+    // Independent right-arm overlay. The other arm and all lower-body animation
+    // retain their sampled pose; a proximity talking overlay can share this slot.
+    if (radioRaise > 0) for (size_t i=0;i<nn;++i) {
+        float angle = m.nodes[i].name == "upper_arm.R" ? -1.25f : m.nodes[i].name == "forearm.R" ? -2.25f : 0;
+        if (!angle) continue;
+        float q[4] = {std::sin(angle*.5f),0,0,std::cos(angle*.5f)}, target[4];
+        const float* b=m.nodes[i].r;
+        target[0]=b[3]*q[0]+b[0]*q[3]; target[1]=b[1]*q[3]+b[2]*q[0];
+        target[2]=b[2]*q[3]-b[1]*q[0]; target[3]=b[3]*q[3]-b[0]*q[0];
+#ifdef WR_MUT_POSE
+        (void)target;
+#else
+        float blended[4]; Slerp(&R[i*4],target,std::min(1.0f,radioRaise),blended); memcpy(&R[i*4],blended,16);
+#endif
+    }
     std::vector<float> G(nn * 16); std::vector<char> done(nn, 0);
     struct Rec { static void Go(const Model& m, size_t i, const float* T, const float* R, const float* S, float* G, char* done) {
         if (done[i]) return;
@@ -224,6 +288,7 @@ void JointMatricesBlend(const Model& m, int from, float tFrom, int to, float tTo
         if (m.nodes[i].parent >= 0) { Go(m, m.nodes[i].parent, T, R, S, G, done); Mul(&G[m.nodes[i].parent * 16], l, &G[i * 16]); } else memcpy(&G[i * 16], l, 64);
         done[i] = 1; } };
     for (size_t i = 0; i < nn; i++) Rec::Go(m, i, T.data(), R.data(), S.data(), G.data(), done.data());
+    if (radioHand) { Identity(radioHand); for (size_t i=0;i<nn;++i) if (m.nodes[i].name == "hand.R") memcpy(radioHand,&G[i*16],64); }
     for (size_t j = 0; j < m.joints.size(); j++) {
 #ifdef WM_MUT_IBM_ORDER
         Mul(&m.ibm[j * 16], &G[m.joints[j] * 16], out + j * 16);
@@ -267,7 +332,7 @@ static bool InverseOrigin(const float* M, float o[3]) {
 }
 float EyeHeightPosed(const Model& m, const float* jm, const char* nameContains) {
     // Where the eye joints are in the space bmin/bmax are measured in: the joint's own origin (translation of the inverse of its inverse bind matrix), put through
-    // the skin matrix of the pose. (The two spaces differ by whatever scale the nodes above the skeleton carry: the Magic Frog's are 100 times apart.)
+    // the skin matrix of the pose. (The two spaces differ by whatever scale the nodes above the skeleton carry: a parent node can scale them 100 times apart.)
     if (!nameContains || !*nameContains) return kNoEye;
 #ifdef WM_MUT_EYE_BIND
     std::vector<float> bind(kMaxJoints * 16); JointMatrices(m, -1, 0, bind.data()); jm = bind.data();      // always the bind pose: the eyes never move with the animation
@@ -395,7 +460,9 @@ Avatar::Sel Avatar::Choose(const Model& m) const {
     if (walk < 0) walk = idle >= 0 && m.clips.size() > 1 ? (idle == 0 ? 1 : 0) : 0;      // an unnamed clip is the walk cycle
     if (speed_ < g_.idleBelow) return idle >= 0 ? Sel{idle, 0} : Sel{walk, 3};
 #ifndef WM_MUT_NO_RUN
-    if (run >= 0 && speed_ >= g_.runSpeed) return {run, 2};
+    // Retain running through small packet-timing fluctuations at the boundary.
+    // Repeatedly restarting a walk/run fade produces a visible upper-body pop.
+    if (run >= 0 && speed_ >= g_.runSpeed * (last_.kind == 2 ? .9f : 1.f)) return {run, 2};
 #endif
     return {walk, 1};
 }

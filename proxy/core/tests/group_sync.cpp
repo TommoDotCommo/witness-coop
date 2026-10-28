@@ -149,8 +149,9 @@ bool rosterAndProtocol() {
         for(int i=0;i<4;++i)p[p.size()-4+i]=uint8_t(sum>>(8*i));
         receiver.onPacket(p.data(),p.size(),110);
     };
-    patch(17,0x35505457); // valid checksum, foreign sender
-    patch(3,0x34505457);  // configured sender, incompatible legacy protocol
+    patch(17,0x37505457); // valid group checksum and magic, foreign sender
+    patch(3,0x34505457);  // configured sender, incompatible legacy single-link protocol
+    patch(3,0x36505457);  // configured sender, incompatible legacy group protocol
     return receiver.remotePoses(120).size()==1;
 }
 int main(){bool rapid=recentCableChange(false), fade=recentCableChange(true), resync=recentCableChange(false,false,true);

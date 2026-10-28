@@ -8,13 +8,15 @@
 
 namespace wm {
 
+struct GestureState;
+
 #ifdef WM_MUT_MAX_JOINTS
 constexpr int kMaxJoints = 128;      // the old limit: a 151-joint character is refused
 #else
 constexpr int kMaxJoints = 256;      // including the extra identity joint that unskinned geometry is bound to (joint indices are bytes; the shader's bones[] array has the same size)
 #endif
 
-struct Vertex { float pos[3], nrm[3], uv[2]; uint8_t joints[4]; float weights[4]; uint8_t col[4]; };      // col: the material's base colour factor; col[3] = 255 when the vertex samples the model's texture, 0 when it is flat colour
+struct Vertex { float pos[3], nrm[3], uv[2]; uint8_t joints[4]; float weights[4]; uint8_t col[4]; float appearanceGroup = 0; };      // col: the material's base colour factor; col[3] = 255 when the vertex samples the model's texture, 0 when it is flat colour
 
 struct Node { int parent = -1; float t[3] = {0, 0, 0}, r[4] = {0, 0, 0, 1}, s[3] = {1, 1, 1}; std::string name; };
 
@@ -24,6 +26,7 @@ struct Clip { std::string name; float duration = 0; std::vector<Channel> channel
 struct Model {
     std::vector<Vertex> verts; std::vector<uint32_t> idx;
     std::vector<Node> nodes;
+    std::vector<int> gestureBone; std::vector<float> gestureForward;
     std::vector<int> joints;          // node index of each joint of the first skin
     std::vector<float> ibm;           // inverse bind matrices, 16 floats per joint
     std::vector<Clip> clips;
@@ -38,7 +41,10 @@ bool LoadGlb(const uint8_t* data, size_t n, Model* out, std::string* err);
 // Joint matrices (jointCount() * 16 floats) for clip `clip` at `t` seconds (looped). clip < 0: the bind pose.
 void JointMatrices(const Model& m, int clip, float t, float* out);
 // The same with a cross-fade: pose = (1 - w) * (clip `from` at tFrom) + w * (clip `to` at tTo). from < 0 or w >= 1: just `to`.
-void JointMatricesBlend(const Model& m, int from, float tFrom, int to, float tTo, float w, float* out);
+void JointMatricesBlend(const Model& m, int from, float tFrom, int to, float tTo, float w, float* out, const GestureState* gesture = nullptr, float radioRaise = 0, float* radioHand = nullptr);
+inline void JointMatricesBlend(const Model& m, int from, float tFrom, int to, float tTo, float w, float* out, float radioRaise, float* radioHand = nullptr) {
+    JointMatricesBlend(m, from, tFrom, to, tTo, w, out, nullptr, radioRaise, radioHand);
+}
 void SkinPosition(const Model& m, const float* jointMats, const Vertex& v, float out[3]);
 
 // Index of the clip whose name contains `word` (case-insensitive), or -1.
