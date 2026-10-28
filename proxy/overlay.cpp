@@ -374,21 +374,26 @@ static void DrawNameTags(float W, float H) {
         std::vector<unsigned> ids = PlayerIds(); auto layout=wradio::Roster(W,H,(unsigned)ids.size(),UiLineHeight(1));
         float k=layout.scale,lh=layout.rowStep,x=layout.x,y=layout.y,w=layout.width;
         int rows = (int)ids.size(); int sel = std::min(g_rosterSel.load(), std::max(0, rows - 1)); g_rosterSel = sel;
-        UiRect(x, y, w, layout.height, Rgba(0.05f, 0.06f, 0.09f, 0.88f));
-        UiText(x + 12 * k, y + 8 * k, "Players   Up/Down  Enter: watch  Backspace: clear  F5: close", Rgba(0.75f, 0.8f, 0.95f, 1), 0.8f * k);
-        UiText(x+12*k,y+lh*(rows+2)+6*k,wradio::kRosterHint,Rgba(.8f,.85f,.9f),.8f*k);
+        UiRect(x, y, w, layout.height, uitheme::Surface);
+        UiFrame(x, y, w, layout.height, uitheme::Border);
+        UiRect(x, y, 4 * k, layout.height, uitheme::Accent);
+        UiText(x + 14 * k, y + 8 * k, "Players   Up/Down  Enter: watch  Backspace: clear  F5: close", uitheme::Accent, 0.8f * k);
+        UiText(x+14*k,y+lh*(rows+2)+6*k,wradio::kRosterHint,uitheme::Muted,.8f*k);
         std::vector<RemotePose> rem = CoopGetRemotes();
         for (int i = 0; i < rows; ++i) {
             const RemotePose* p = nullptr; for (const auto& r : rem) if (r.id == ids[i]) p = &r;
             float col[3]; PlayerColor(ids[i], col); float ry = y + 10 * k + lh * (i + 1.4f);
-            if (i == sel) UiRect(x + 6 * k, ry - 3 * k, w - 12 * k, lh, Rgba(0.25f, 0.28f, 0.45f, 0.9f));
+            if (i == sel) {
+                UiRect(x + 6 * k, ry - 3 * k, w - 12 * k, lh, uitheme::Selected);
+                UiRect(x + 6 * k, ry - 3 * k, 3 * k, lh, uitheme::Accent);
+            }
             UiRect(x + 14 * k, ry + 2 * k, 10 * k, 10 * k, Rgba(col[0], col[1], col[2], 1));
             char b[96]; snprintf(b, sizeof b, "%-18.18s %s%d ms %s", p && p->name[0] ? p->name : "?", p && p->pingMs >= 0 ? "" : "- ", p && p->pingMs >= 0 ? p->pingMs : 0, VideoWatching() == ids[i] ? "  [watching]" : "");
             if (p && p->pingMs < 0) snprintf(b, sizeof b, "%-18.18s -- ms %s", p->name[0] ? p->name : "?", VideoWatching() == ids[i] ? "  [watching]" : "");
             { size_t len=strlen(b); snprintf(b+len,sizeof b-len,"  %d%%",int(VoiceGetPlayerVolume(ids[i])*100+.5f)); }
-            UiText(x + 32 * k, ry, b, Rgba(col[0], col[1], col[2], 1), k);
+            UiText(x + 32 * k, ry, b, i == sel ? uitheme::Text : uitheme::Muted, k);
         }
-        if (!rows) UiText(x + 14 * k, y + 10 * k + lh * 1.4f, "nobody else is here yet", Rgba(0.8f, 0.8f, 0.8f, 1), k);
+        if (!rows) UiText(x + 14 * k, y + 10 * k + lh * 1.4f, "nobody else is here yet", uitheme::Muted, k);
     }
     EnterCriticalSection(&g_tagLock); g_tags = std::move(now); LeaveCriticalSection(&g_tagLock);
 }

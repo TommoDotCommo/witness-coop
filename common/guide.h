@@ -108,7 +108,7 @@ inline Columns Content(const Cfg& c) {
         "PLAY TOGETHER",
         "Explore independently. See animated teammates, names, typing dots, pings and emotes.",
         "Co-op shares solved panels, traced puzzle lines, opened doors, panel power and cable lighting. Late arrivals recover shared progress.",
-        "Players fade when blocking a puzzle. Watch a partner's view to compare clues. Draw on surfaces or use the precise screen canvas.",
+        "Players fade during close body overlap. Watch a partner's view to compare clues. Draw on surfaces or use the precise screen canvas.",
         "Voice: proximity is spatial nearby, radio farther away. Channels: proximity, radio, open line (global), or one on one. The mic indicator names yours.",
         "Race mode keeps worlds and puzzle lines separate. Players, chat and voice remain. Wait for all worlds, countdown, GO; first to the chosen goal wins.",
         "HOST / JOIN - in the launcher",

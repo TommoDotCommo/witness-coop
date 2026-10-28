@@ -154,10 +154,12 @@ void Bubbled(float cx, float bottom, const std::vector<std::string>& lines, bool
     float lh = UiLineHeight(0.9f * k), pad = 7 * k; float w = 0;
     if (dots) w = 46 * k; else for (const auto& l : lines) w = std::max(w, UiTextWidth(l.c_str(), 0.9f * k));
     float h = dots ? 22 * k : lh * lines.size(); float x = cx - w / 2 - pad, y = bottom - h - 2 * pad;
-    UiRect(x - 1, y - 1, w + 2 * pad + 2, h + 2 * pad + 2, Rgba(col[0], col[1], col[2], 0.9f)); UiRect(x, y, w + 2 * pad, h + 2 * pad, Rgba(0.06f, 0.07f, 0.1f, 0.88f));
+    UiRect(x - 1, y - 1, w + 2 * pad + 2, h + 2 * pad + 2, Rgba(col[0], col[1], col[2], 0.9f));
+    UiRect(x, y, w + 2 * pad, h + 2 * pad, uitheme::Surface);
+    UiFrame(x, y, w + 2 * pad, h + 2 * pad, uitheme::Border);
     UiTri(cx, bottom, 7 * k, 1.5707963f, Rgba(col[0], col[1], col[2], 0.9f));
     if (dots) { for (int i = 0; i < 3; ++i) { float ph = float(now % 1200) / 1200.0f * 6.2831853f - i * 0.9f; float bob = std::max(0.0f, sinf(ph)) * 6 * k; UiRect(cx - 14 * k + i * 14 * k - 3 * k, y + pad + 8 * k - bob, 6 * k, 6 * k, Rgba(col[0], col[1], col[2], 1)); } }
-    else for (size_t i = 0; i < lines.size(); ++i) UiText(x + pad, y + pad + lh * i, lines[i].c_str(), Rgba(0.95f, 0.95f, 0.95f, 1), 0.9f * k);
+    else for (size_t i = 0; i < lines.size(); ++i) UiText(x + pad, y + pad + lh * i, lines[i].c_str(), uitheme::Text, 0.9f * k);
 }
 }  // namespace
 
@@ -244,11 +246,13 @@ void SocialFrame(float W, float H, const float* cam, const float* ang) {
     if (g_guide && !GamePaused()) {
         auto guide=wradio::Guide(W,H,unsigned(sizeof(kBindings)/sizeof(kBindings[0])));
         float scale=guide.scale,x=guide.x,y=guide.y;
-        UiRect(x,y,guide.width,guide.height,Rgba(.04f,.06f,.05f,.94f));
-        UiText(x+12*scale,y+10*scale,"CO-OP KEYS (F1)",Rgba(1,.85f,.5f),scale);
+        UiRect(x,y,guide.width,guide.height,uitheme::Surface);
+        UiFrame(x,y,guide.width,guide.height,uitheme::Border);
+        UiRect(x,y,4*scale,guide.height,uitheme::Accent);
+        UiText(x+14*scale,y+10*scale,"CO-OP KEYS (F1)",uitheme::Accent,scale);
         int row=0; for (const auto& b : kBindings) { char text[100],key[16]; unsigned vk=cfg.*(b.member);
             if(vk>=VK_F1 && vk<=VK_F12) snprintf(key,sizeof key,"F%u",vk-VK_F1+1); else snprintf(key,sizeof key,"%c",char(vk));
-            snprintf(text,sizeof text,"%-4s %s",key,b.label); UiText(x+12*scale,guide.Row(row++),text,Rgba(.9f,.94f,.88f),scale);
+            snprintf(text,sizeof text,"%-4s %s",key,b.label); UiText(x+14*scale,guide.Row(row++),text,uitheme::Text,scale);
         }
     }
     if (GamePaused() || g_open || g_wheel) { VoiceRadioKey(false,true); VoiceKey(cfg.keyVoice,false); }
@@ -398,15 +402,19 @@ void SocialFrame(float W, float H, const float* cam, const float* ang) {
         const ChatEntry& e = *vis[i]; float col[3]; PlayerColor(e.from, col); float y = base - lh * i;
         float fade = g_open ? 1.0f : std::min(1.0f, float(kChatShowMs - (now - e.at)) / 2000.0f); std::string who = e.name + ": ";
         float ww = UiTextWidth(who.c_str(), 0.95f * k), tw = UiTextWidth(e.text.c_str(), 0.95f * k);
-        UiRect(x - 6 * k, y - 2 * k, ww + tw + 12 * k, lh, Rgba(0, 0, 0, 0.45f * fade));
-        UiText(x, y, who.c_str(), Rgba(col[0], col[1], col[2], fade), 0.95f * k); UiText(x + ww, y, e.text.c_str(), Rgba(0.95f, 0.95f, 0.95f, fade), 0.95f * k); ++shown;
+        UiColor bg = uitheme::Surface; bg.a *= fade; UiRect(x - 6 * k, y - 2 * k, ww + tw + 12 * k, lh, bg);
+        UiColor bd = uitheme::Border; bd.a *= fade; UiFrame(x - 6 * k, y - 2 * k, ww + tw + 12 * k, lh, bd);
+        UiText(x, y, who.c_str(), Rgba(col[0], col[1], col[2], fade), 0.95f * k);
+        UiColor tc = uitheme::Text; tc.a *= fade; UiText(x + ww, y, e.text.c_str(), tc, 0.95f * k); ++shown;
     }
     if (g_open) {
         float col[3]; PlayerColor(CoopMyId(), col); float bw = std::min(W - 48 * k, 760 * k), by = H - 112 * k, bh = UiLineHeight(1.0f * k) + 16 * k;
-        UiRect(x - 2, by - 2, bw + 4, bh + 4, Rgba(col[0], col[1], col[2], 0.95f)); UiRect(x, by, bw, bh, Rgba(0.05f, 0.06f, 0.09f, 0.94f));
+        UiRect(x - 2, by - 2, bw + 4, bh + 4, uitheme::Accent);
+        UiRect(x, by, bw, bh, uitheme::Surface);
+        UiFrame(x, by, bw, bh, uitheme::Border);
         std::string shownText = g_input; if ((now / 450) % 2 == 0) shownText += "_";
-        UiText(x + 10 * k, by + 8 * k, shownText.c_str(), Rgba(1, 1, 1, 1), 1.0f * k);
-        UiText(x, by + bh + 6 * k, "Enter: send   Esc: cancel", Rgba(0.7f, 0.75f, 0.9f, 1), 0.75f * k);
+        UiText(x + 10 * k, by + 8 * k, shownText.c_str(), uitheme::Text, 1.0f * k);
+        UiText(x, by + bh + 6 * k, "Enter: send   Esc: cancel", uitheme::Muted, 0.75f * k);
     }
     (void)shown;
 }

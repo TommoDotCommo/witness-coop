@@ -67,10 +67,10 @@ bool UiInit(ID3D11Device* dev, ID3D11DeviceContext* ctx) {
     int penX = 1, penY = 1; float minAdv = 1000, maxAdv = 0;
     for (int ch = kFirst; ch <= kLast; ch++) {
         char s[2] = {(char)ch, 0}; SIZE size = {}; GetTextExtentPoint32A(dc, s, 1, &size);
-        int cw = std::max(1, size.cx) + 4;
+        int cw = std::max(1, (int)size.cx) + 4;
         if (penX + cw + 1 > kAtlasW - 4) { penX = 1; penY += Pitch(); }
         if (penY + Pitch() >= kAtlasH - 4) { Log("ui: glyph atlas overflow"); DeleteObject(font); DeleteObject(bmp); DeleteDC(dc); return false; }
-        Glyph& g = g_glyph[ch - kFirst]; g = {(float)std::max(1, size.cx), (float)penX, (float)penY, (float)cw, (float)(Pitch() - 2)};
+        Glyph& g = g_glyph[ch - kFirst]; g = Glyph{(float)std::max(1, (int)size.cx), (float)penX, (float)penY, (float)cw, (float)(Pitch() - 2)};
         minAdv = std::min(minAdv, g.advance); maxAdv = std::max(maxAdv, g.advance);
         if (ch != ' ') {
             HRGN clip = g_tight ? nullptr : CreateRectRgn(penX, penY, penX + cw, penY + Pitch()); if (clip) SelectClipRgn(dc, clip);

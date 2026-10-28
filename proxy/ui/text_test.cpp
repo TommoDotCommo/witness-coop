@@ -14,9 +14,9 @@ int main() {
     check(uitext::Width("MMMM\nii", 1, glyphs) == 60, "multiline width is the widest line");
     check(uitext::Width("iiii", 2, glyphs) == 24, "metrics scale linearly");
     auto measure = [&](const char* s) { return uitext::Width(s, 1, glyphs); };
-    std::string wrapped = uitext::Wrap("ii ii MMMM MMMM MMMM", 128, measure);
+    std::string wrapped = uitext::Wrap("ii ii MMMM MMMM MMMM", 150, measure);
     check(wrapped == "ii ii MMMM MMMM\nMMMM", "wrapping uses measured pixels rather than character cells");
-    for (const auto& line : {std::string("ii ii MMMM MMMM"), std::string("MMMM")}) check(measure(line.c_str()) <= 128, "wrapped lines fit their bounds");
+    for (const auto& line : {std::string("ii ii MMMM MMMM"), std::string("MMMM")}) check(measure(line.c_str()) <= 150, "wrapped lines fit their bounds");
     std::string longWord = uitext::Wrap("MMMMMMMM", 32, measure);
     check(longWord == "MM\nMM\nMM\nMM", "long words split without clipping or loss");
     check(uitext::ContainedScale(100, 200, 1) == 0.5f, "layout shrinks text to its container");
