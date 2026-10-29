@@ -206,6 +206,10 @@ class Playthrough:
         env['WDRAW_START_BUDGET'] = '75' if self.planner.tries.get(h, 0) == 0 else '230'; env['WSLENV'] += ':WDRAW_START_BUDGET:WDRAW_FLIP_SIDE'
         # The start was not found from the front last time: this time stand on the other side (a panel seen from behind or through a cage).
         if 'did not start' in self.last_why.get(h, '') and self.planner.tries.get(h, 0) % 2 == 1: env['WDRAW_FLIP_SIDE'] = '1'
+        # The in-game tracer (proxy/tracer.cpp) draws the edges after the first at one frame a step, about twice as fast; a panel whose last
+        # attempt failed in the tracer is drawn the old way.
+        env['WSLENV'] += ':WDRAW_TRACER'
+        if not self.last_why.get(h, '').startswith(('tracer', 'the in-game tracer')): env['WDRAW_TRACER'] = '1'
         err = ''
         try:
             out, err = pyw(script, bot.pid, win(str(bot.dir)), '%x' % h, ','.join(map(str, path)), timeout=420, env=env, both=True)

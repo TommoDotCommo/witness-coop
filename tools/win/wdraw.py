@@ -43,6 +43,14 @@ def done(solved, why, traced=0, dist=0.0):
 
 def is_solved(): return p.u32(e + 0x294) == 0x3f800000 and p.u32(e + 0x298) == 1
 def traced(): return p.u32(e + 0x228)
+def edge_progress():
+    """(progress t, end node) of the edge the line is on: the last traced-edge record (count - 1), 0x34 bytes each (index_a, index_b, id_a, id_b
+    as ints, then t). None when there is no such record."""
+    n_ = traced(); ptr = p.u64(e + 0x230)
+    if not ptr or n_ < 1 or n_ > 500: return None
+    raw = p.rd(ptr + (n_ - 1) * 0x34, 0x14)
+    if not raw: return None
+    return struct.unpack('<f', raw[16:20])[0], struct.unpack('<2I', raw[:8])[1]
 def first_t():      # how far the line has got along its first edge (traced-edge records at [+0x230], 0x34 bytes each, t at +0x10): 1.0 on a finished line, near 0 on a new one
     ptr = p.u64(e + 0x230)
     return struct.unpack('<f', p.rd(ptr + 0x10, 4))[0] if ptr else 1.0
@@ -266,7 +274,28 @@ def heading(i):
         x1_, y1_ = node_px(path[j])
         if math.hypot(x1_ - x0_, y1_ - y0_) >= 6: return x1_ - x0_, y1_ - y0_
     x1_, y1_ = node_px(path[i]); return x1_ - x0_, y1_ - y0_
+TRACER = bool(os.environ.get('WDRAW_TRACER'))      # hand the edges after the first to the game's own tracer (proxy/tracer.cpp): one frame per step, no round trips
+def run_tracer(i0):
+    """Draw path[i0:] with the in-game tracer: per edge its screen direction, the planned push (90 % of what the gain learned on the first
+    edge says), the traced count it must reach, and a hair past the node where the line turns; the end stub by dead reckoning."""
+    items = []
+    for j in range(i0, len(path)):
+        (xa, ya), (xb, yb) = node_px(path[j - 1]), node_px(path[j]); nrm = math.hypot(xb - xa, yb - ya) or 1.0
+        ux_, uy_ = heading(j); un = math.hypot(ux_, uy_) or 1.0; vx_, vy_ = ux_ / un, uy_ / un
+        g_ = gain.get('h' if abs(vx_) >= abs(vy_) else 'v') or per_px or 2.9
+        if j == len(path) - 1: items.append((vx_, vy_, g_ * nrm + float(os.environ.get('WDRAW_STUB_EXTRA') or 40), 0, 0))
+        else: items.append((vx_, vy_, 0.9 * g_ * nrm if nrm > 4 else 0, j + 1, 0 if straight_on(path[j], vx_, vy_) else 2))
+    res = os.path.join(gdir, 'witness_trace.json')
+    if os.path.exists(res): os.remove(res)
+    c.send(['trace %x %d %s' % (eid, len(items), ' '.join('%.4f %.4f %.1f %d %.1f' % it for it in items))], 0.05)
+    t_ = time.time()
+    while time.time() - t_ < 60 and not os.path.exists(res): time.sleep(0.05)
+    try: r_ = json.load(open(res))
+    except (OSError, ValueError): done(False, 'the in-game tracer gave no result', traced(), dist)
+    stamp('tracer: %d of %d edges' % (r_['done'], len(items)))
+    if not r_['ok']: done(False, 'tracer: %s (edge %d)' % (r_['why'], i0 + r_['done']), traced(), dist)
 for i in range(1, len(path)):
+    if TRACER and i >= 2 and (gain or per_px): run_tracer(i); break
     (x0, y0), (x1, y1) = node_px(path[i - 1]), node_px(path[i])
     norm = math.hypot(x1 - x0, y1 - y0) or 1.0; ux, uy = heading(i); vx, vy = ux / (math.hypot(ux, uy) or 1.0), uy / (math.hypot(ux, uy) or 1.0)
     last = i == len(path) - 1
@@ -283,7 +312,13 @@ for i in range(1, len(path)):
         first = float(os.environ.get("WDRAW_FIRST") or 0.9) * gain[axis_] * norm; mouse(vx, vy, first); used += first
     for _ in range(250):
         if traced() >= i + 1: break
-        mouse(vx, vy, 2); used += 2
+        # WDRAW_PROGRESS_STEPS: on a long edge, the line's own progress along it says how much is left: push most of that (capped), then small
+        # steps. (Experimental: on short edges the estimate is noise; an uncapped version overshot the tutorial gate's first segment.)
+        step = 2
+        if os.environ.get('WDRAW_PROGRESS_STEPS') and norm > 40 and used > 0:
+            ep = edge_progress()
+            if ep and ep[1] == path[i] and 0.1 < ep[0] < 0.9: step = min(40.0, max(2.0, 0.7 * (1 - ep[0]) * used / ep[0]))
+        mouse(vx, vy, step); used += step
     else: done(False, 'stuck before node %d (path index %d)' % (path[i], i), traced(), dist)
     if traced() > i + 1: done(False, 'overshot node %d: the line ran past it (traced %d, wanted %d)' % (path[i], traced(), i + 1), traced(), dist)
     if not straight_on(path[i], vx, vy): mouse(vx, vy, 2)      # the count flips as the tip reaches the node: a hair further so a turn is taken at the node, not before it
