@@ -3,7 +3,8 @@
 the test chooses video options, a name, a key, other players and options inside the save, presses Save settings, and compares the files on disk (Launcher.variables in the game's
 own format, the cfg with every unknown line still there, the save changed only in the edited values). Then it presses Continue: the game it starts must say in its own log that it
 applies those video settings, and the next save it writes must carry the edited mouse speed and field of view (the game read them).
-Mutants (each a build of the launcher): the video file is not written, the save is not patched, the cfg loses the lines the launcher does not know.
+The game's window must open on the monitor the launcher is on (the launcher is moved off the primary one first).
+Mutants (each a build of the launcher): the game is not told the launcher's monitor, the video file is not written, the save is not patched, the cfg loses the lines the launcher does not know.
 usage: qa_launcher.py (called by tools/qa.sh launcher)"""
 import os, re, shutil, struct, subprocess, sys, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -82,6 +83,10 @@ def main():
         print('  %-90s %s  %s' % ("the game read the launcher's options: the save it writes from memory has mouse speed 12.5, FOV 70, inverted", 'ok' if good else 'FAILED', (os.path.getmtime(newest()) > m0, sp, fov, inv)), flush=True); ok = ok and good
     else: print('  the launcher did not start a game  FAILED', flush=True); ok = False
     kill_game(); results.append(('clean', ok)); print('clean: %s' % ('PASS' if ok else 'FAIL'), flush=True)
+    print('=== launcher: MUTANT the game is not told the launcher\'s monitor', flush=True); reset()
+    mok, gp = run_window('witness_launcher_NO_MONITOR.exe', 'launch')
+    if gp: subprocess.run([os.environ['WITNESS_RESOURCES'], 'register-pid', gp], capture_output=True); open(os.path.join(RUN, 'pidA.txt'), 'w').write(gp); kill_game()
+    results.append(('game not told the monitor', not mok)); print('mutant: %s' % ('caught' if not mok else 'NOT CAUGHT'), flush=True)
     for name, exe in (('video file not written', 'witness_launcher_NO_VIDEO_WRITE.exe'), ('save not patched', 'witness_launcher_NO_SAVE_WRITE.exe'), ('cfg loses the lines it does not know', 'witness_launcher_CFG_DROP.exe')):
         print('=== launcher: MUTANT %s' % name, flush=True); reset()
         if os.path.exists(os.path.join(saves, 'Launcher.variables')): os.remove(os.path.join(saves, 'Launcher.variables'))

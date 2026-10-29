@@ -1,5 +1,6 @@
 # T2 check of the launcher window, run with Windows Python: starts witness_launcher.exe on a game folder, sets controls with window messages (what a click and a typed value do),
-# presses Save settings, and prints what the files on disk hold; with `launch` also presses Continue and prints the pid of the game it started.
+# presses Save settings, and prints what the files on disk hold; with `launch` also moves the launcher to a monitor other than the primary one, presses Continue, prints the pid of
+# the game it started and checks that the game's window opens on the launcher's monitor (with one monitor that check is printed as SKIP).
 # usage: wlauncher.py <launcher exe> <game dir> <dump file> <files|launch>      (prints lines: CHECK <ok|FAILED> <name> | <detail>, GAMEPID <n>)
 import ctypes, ctypes.wintypes as wt, os, re, struct, subprocess, sys, time, json
 exe, gdir, dump, mode = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
@@ -94,7 +95,28 @@ check(struct.unpack('<f', opt(newsave, 'mouse_speed_3d'))[0] == 12.5 and struct.
 diff = [i for i in range(len(save0)) if save0[i] != newsave[i]]
 check(len(newsave) == len(save0) and 0 < len(diff) <= 12, 'nothing else in the save changed (same size, only the edited values)', len(diff))
 check(os.path.exists(newest_save() + '.before-launcher') and open(newest_save() + '.before-launcher', 'rb').read() == save0, 'a copy of the save as it was is kept')
+class MI(ctypes.Structure): _fields_ = [('cb', wt.DWORD), ('mon', wt.RECT), ('work', wt.RECT), ('flags', wt.DWORD)]
+u.MonitorFromWindow.restype = ctypes.c_void_p; u.MonitorFromWindow.argtypes = [wt.HWND, wt.DWORD]; u.GetMonitorInfoW.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+def monitor_of(h):
+    mi = MI(); mi.cb = ctypes.sizeof(MI); u.GetMonitorInfoW(u.MonitorFromWindow(h, 2), ctypes.byref(mi)); r = mi.mon; return (r.left, r.top, r.right, r.bottom), mi.flags & 1
+def monitors():
+    out = []
+    MonProc = ctypes.WINFUNCTYPE(wt.BOOL, ctypes.c_void_p, ctypes.c_void_p, ctypes.POINTER(wt.RECT), wt.LPARAM)
+    @MonProc
+    def cb(m, dc, r, l): mi = MI(); mi.cb = ctypes.sizeof(MI); u.GetMonitorInfoW(m, ctypes.byref(mi)); out.append(((mi.mon.left, mi.mon.top, mi.mon.right, mi.mon.bottom), (mi.work.left, mi.work.top), mi.flags & 1)); return True
+    u.EnumDisplayMonitors(None, None, cb, 0); return out
+def game_window(pid):
+    found = []
+    @WinEnum
+    def cb(h, l):
+        p = wt.DWORD(); u.GetWindowThreadProcessId(h, ctypes.byref(p)); r = wt.RECT(); u.GetWindowRect(h, ctypes.byref(r))
+        if p.value == pid and u.IsWindowVisible(h) and r.right - r.left > 200: found.append(h)
+        return True
+    u.EnumWindows(cb, 0); return found[0] if found else None
 if mode == 'launch':
+    other = [m for m in monitors() if not m[2]]
+    if other: u.SetWindowPos(main, None, other[0][1][0] + 40, other[0][1][1] + 40, 0, 0, 0x0001 | 0x0004 | 0x0010)      # SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE
+    time.sleep(0.3); lmon = monitor_of(main)[0]
     press('launch'); t0 = time.time(); gp = None
     while time.time() - t0 < 30 and not gp:
         k32 = ctypes.WinDLL('kernel32', use_last_error=True)
@@ -109,6 +131,12 @@ if mode == 'launch':
             ok = k32.Process32NextW(snap, ctypes.byref(pe))
         k32.CloseHandle(snap); time.sleep(0.5)
     print('GAMEPID %s' % gp, flush=True)
+    gw = None; t0 = time.time()
+    while gp and time.time() - t0 < 120 and not gw: gw = game_window(gp); time.sleep(0.5)
+    if not other: print('SKIP the game window opens on the launcher\'s monitor | only one monitor', flush=True)
+    else:
+        time.sleep(3); gmon = monitor_of(gw)[0] if gw else None
+        check(gmon == lmon, "the game window opens on the launcher's monitor (not the primary one)", 'launcher %s game %s' % (lmon, gmon))
 time.sleep(0.5); u.SendMessageW(main, 0x10, 0, 0)      # WM_CLOSE
 try: proc.wait(timeout=5)
 except Exception: proc.kill()

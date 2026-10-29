@@ -276,10 +276,19 @@ void OpenNewGame(bool forLobby = false) {
     NgUpdate();
 }
 
+// The game opens on the launcher's monitor: the mod (proxy/hooks.cpp) centres the game's window in the work area passed in WITNESS_MONITOR, which the game inherits.
+void PassMonitor() {
+    MONITORINFO mi = {sizeof mi}; if (!GetMonitorInfoW(MonitorFromWindow(g_main, MONITOR_DEFAULTTONEAREST), &mi)) return;
+    wchar_t v[64]; swprintf(v, 64, L"%ld %ld %ld %ld", mi.rcWork.left, mi.rcWork.top, mi.rcWork.right, mi.rcWork.bottom);
+#ifndef WL_MUT_NO_MONITOR
+    SetEnvironmentVariableW(L"WITNESS_MONITOR", v);
+#endif
+}
 void LaunchGame(bool newGame) {
     std::wstring exe = g_dir + L"\\witness64_d3d11.exe"; if (!Exists(exe)) exe = g_dir + L"\\witness_d3d11.exe";
     if (!Exists(exe)) { Status(L"The game was not found in " + g_dir); return; }
     std::wstring ApplyMsg; if (!ApplyAll(&ApplyMsg)) { Status(ApplyMsg); return; }
+    PassMonitor();
     std::wstring cmd = L"\"" + exe + L"\" " + W(wl::LaunchArgs(LoadCfg(), newGame));
     STARTUPINFOW si = {sizeof si}; PROCESS_INFORMATION pi = {}; if (g_noActivate) { si.dwFlags = STARTF_USESHOWWINDOW; si.wShowWindow = SW_SHOWNOACTIVATE; }
     if (CreateProcessW(nullptr, &cmd[0], nullptr, nullptr, FALSE, 0, nullptr, g_dir.c_str(), &si, &pi)) { CloseHandle(pi.hThread); CloseHandle(pi.hProcess); Status(L"The game is starting."); } else Status(L"Could not start the game.");
@@ -405,6 +414,7 @@ void LaunchFromLobby(const wlobby::Launch& l) {
     g_lastLaunchCfg = cfg;
     wl::CfgFile c = LoadCfg(); std::wstring sf = SaveFolder(c); if (l.state.settings.newGame) DeleteFileW((sf + L"\\coop_progress.txt").c_str());
     DeleteFileW((g_dir + L"\\witness_race_result.txt").c_str()); g_gameWasRace = l.state.settings.mode == wlobby::kRace;
+    PassMonitor();
     std::wstring cmd = L"\"" + exe + L"\" " + W(wl::LaunchArgs(c, l.state.settings.newGame)); STARTUPINFOW si = {sizeof si}; PROCESS_INFORMATION pi = {}; if (g_noActivate) { si.dwFlags = STARTF_USESHOWWINDOW; si.wShowWindow = SW_SHOWNOACTIVATE; }
     if (CreateProcessW(nullptr, &cmd[0], nullptr, nullptr, FALSE, 0, nullptr, g_dir.c_str(), &si, &pi)) {
         CloseHandle(pi.hThread); g_game = pi.hProcess; g_gamePid = pi.dwProcessId; g_launchedAt = GetTickCount64(); ++g_launches; g_voice.Stop(); g_sess.SetInGame(true); LobbyStatus(L"The game is running. The lobby stays here: you are back in it when the game ends.");

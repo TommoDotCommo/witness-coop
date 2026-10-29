@@ -76,6 +76,10 @@ colliding keys allowed, F1 migration disabled, and toggle instead of hold. It ch
 bindings, repeat/release/focus loss and the three-column line budget. Build both views with
 `make -C proxy` and `make -C launcher launcher`.
 
+The game opens on the monitor the launcher is on (windowed: centred there; full screen: that monitor). The launcher
+passes the work area of its monitor in `WITNESS_MONITOR`, and the mod places the game's window when the game creates it.
+`tools/qa.sh launcher` checks it with the launcher moved off the primary monitor, and a mutant launcher that does not pass it must fail.
+
 ## Try it (two copies on one PC)
 
 Requirements: Windows with the Steam build above; WSL2 with `make` and MinGW-w64 (`x86_64-w64-mingw32-g++`); Windows Python 3

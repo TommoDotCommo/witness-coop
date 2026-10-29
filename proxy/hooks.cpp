@@ -135,6 +135,20 @@ static ATOM WINAPI HookRegisterClassExA(const WNDCLASSEXA* c) {
     return g_origRC(c);
 }
 
+// ---- the monitor the game opens on. The launcher puts the work area of its own monitor in WITNESS_MONITOR ("left top right bottom");
+// the game's main window is created centred in it, so it opens (and goes full screen: the game asks MonitorFromWindow) where the launcher is.
+typedef HWND(WINAPI* CreateWindowExAFn)(DWORD, LPCSTR, LPCSTR, DWORD, int, int, int, int, HWND, HMENU, HINSTANCE, LPVOID);
+static CreateWindowExAFn g_origCWA;
+static HWND WINAPI HookCreateWindowExA(DWORD ex, LPCSTR cls, LPCSTR title, DWORD st, int x, int y, int w, int h, HWND parent, HMENU menu, HINSTANCE hi, LPVOID p) {
+    char v[64]; RECT m;
+    if (!parent && !(st & WS_CHILD) && GetEnvironmentVariableA("WITNESS_MONITOR", v, sizeof v) && sscanf(v, "%ld %ld %ld %ld", &m.left, &m.top, &m.right, &m.bottom) == 4 && m.right > m.left && m.bottom > m.top) {
+        int ox = x, oy = y; bool sized = w != CW_USEDEFAULT && w > 0 && h > 0;
+        x = m.left + (sized && w < m.right - m.left ? (m.right - m.left - w) / 2 : 0); y = m.top + (sized && h < m.bottom - m.top ? (m.bottom - m.top - h) / 2 : 0);
+        char msg[160]; snprintf(msg, sizeof msg, "hooks: CreateWindowExA %dx%d at %d,%d moved to %d,%d (WITNESS_MONITOR %s)", w, h, ox, oy, x, y, v); Log(msg);
+    }
+    return g_origCWA(ex, cls, title, st, x, y, w, h, parent, menu, hi, p);
+}
+
 // ---- virtual cursor (force_active=1). The game thinks it is active, so it would lock the REAL mouse cursor into its window
 // (SetCursorPos to the centre, ClipCursor to a 2x2 box): the owner could not use the mouse. Instead it gets a virtual cursor:
 // those calls do nothing and GetCursorPos answers with the centre of the game window, which is where the game puts it in play.
@@ -166,6 +180,7 @@ void InstallHooks() {   // called from DllMain: memory patching only
     HookImport("USER32.dll", "ReleaseCapture", (void*)HookReleaseCapture, (void**)&g_oRelCap);
     HookImport("USER32.dll", "ShowCursor", (void*)HookShowCursor, (void**)&g_oShow);
     HookImport("USER32.dll", "RegisterClassExA", (void*)HookRegisterClassExA, (void**)&g_origRC);
+    HookImport("USER32.dll", "CreateWindowExA", (void*)HookCreateWindowExA, (void**)&g_origCWA);
     HookImport("KERNEL32.dll", "GetProcAddress", (void*)HookGetProcAddress, (void**)&g_origGPA);
     HookImport("USER32.dll", "SetWindowsHookExA", (void*)HookSetWindowsHookExA, (void**)&g_origSWH);
     HookImport("USER32.dll", "PeekMessageA", (void*)HookPeekMessageA, (void**)&g_origPeek);
