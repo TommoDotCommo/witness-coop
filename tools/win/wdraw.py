@@ -99,7 +99,17 @@ def menu_teleport():
     done(False, 'teleport refused and the player could not be held there: camera at %.1f %.1f %.1f (panel at %.1f %.1f %.1f)' % (*pos, px_, py_, pz_))
 
 stamp('start')
-pos = menu_teleport()
+FLAT = abs(NORMAL[2]) > 0.7      # a panel lying flat (the Desert laser redirect control on the town's roof faces the sky): stand beside it, look down
+def stand_beside_flat():
+    for ax_ in ((0.0, 1.0, 0.0), (0.0, -1.0, 0.0), (0.0, 0.0, 1.0), (0.0, 0.0, -1.0)):      # the panel's own sides, made horizontal
+        sx_, sy_, _ = quat_rot(ax_); sn_ = math.hypot(sx_, sy_)
+        if sn_ < 0.3: continue
+        hx_, hy_ = px_ + 1.6 * sx_ / sn_, py_ + 1.6 * sy_ / sn_
+        c.send(['hover %.4f %.4f %.4f %.5f -0.8' % (hx_, hy_, pz_ + 1.65, math.atan2(py_ - hy_, px_ - hx_))], 2.4)
+        aim(); r_ = depth_ratio(); stamp('flat panel: beside it at (%.1f, %.1f), depth ratio %.2f' % (hx_, hy_, r_))
+        if 0.7 < r_ < 1.45: return p.camera()[0]
+    return p.camera()[0]
+pos = p.camera()[0] if FLAT else menu_teleport()      # (a flat panel: stood beside it below, once aim and the depth check exist)
 STAND = os.environ.get('WDRAW_STAND')      # "sideways,distance" in metres: stand there instead (part of the panel was hidden from the menu's spot: the
 if STAND and not FLIP:                     # cursor only reaches what the camera sees, so a line stops at the edge of a wall in front of the panel)
     lat_, dd_ = (float(v) for v in STAND.split(',')); nx_, ny_ = NORMAL[0], NORMAL[1]; nn_ = math.hypot(nx_, ny_) or 1.0; nx_, ny_ = nx_ / nn_, ny_ / nn_
@@ -139,6 +149,7 @@ def other_standing_points():
     nx, ny = NORMAL[0], NORMAL[1]; nn = math.hypot(nx, ny) or 1.0; nx, ny = nx / nn, ny / nn
     return [(px_ + d_ * nx, py_ + d_ * ny) for d_ in (2.0, 4.0, 1.6, 5.0, 2.5, 3.5)]
 
+if FLAT: pos = stand_beside_flat(); dist = math.dist(pos, (px_, py_, pz_)); stamp('stood beside the flat panel')
 r_ = depth_ratio(); stamp('view check: depth ratio %.2f' % r_)
 if not 0.7 < r_ < 1.45:
     ok_view = False
@@ -269,6 +280,8 @@ def straight_on(node, vx, vy):      # does an edge leave this node in (about) th
         if (wx * vx + wy * vy) / wn > 0.9: return True
     return False
 
+axflip = {}        # axes found running the other way on this panel ('h', 'v': -1)
+path_nodes_all = range(10 ** 6)
 per_px = None      # (kept for the end stub) mouse counts per screen pixel on the last edge walked
 gain = {}          # counts per pixel, learned per direction (h / v): when the panel's width and height are scaled differently from what the projection assumed (the swamp panels), one number overshoots the other direction
 def heading(i):
@@ -304,6 +317,7 @@ for i in range(1, len(path)):
     if TRACER and i >= 2 and (gain or per_px): run_tracer(i); break
     (x0, y0), (x1, y1) = node_px(path[i - 1]), node_px(path[i])
     norm = math.hypot(x1 - x0, y1 - y0) or 1.0; ux, uy = heading(i); vx, vy = ux / (math.hypot(ux, uy) or 1.0), uy / (math.hypot(ux, uy) or 1.0)
+    vx *= axflip.get('h', 1); vy *= axflip.get('v', 1)      # an axis found reversed on an earlier edge stays reversed
     last = i == len(path) - 1
     if last:      # the end stub: its length by dead reckoning and a little more (a cursor pushed past the panel's edge cancels the line)
         stub_gain = gain.get('h' if abs(vx) >= abs(vy) else 'v') or per_px or 2.9      # the gain of the stub's own axis (swamp panels: 2.4 sideways, 5.5 up)
@@ -316,8 +330,17 @@ for i in range(1, len(path)):
     used = 0.0; axis_ = 'h' if abs(vx) >= abs(vy) else 'v'
     if gain.get(axis_) and norm > 4:
         first = float(os.environ.get("WDRAW_FIRST") or 0.9) * gain[axis_] * norm; mouse(vx, vy, first); used += first
+    stalled_at = traced(); since = 0
     for _ in range(250):
         if traced() >= i + 1: break
+        # No progress for a while: the axis may run the other way on this panel (a vertical flip the start search did not catch; Jungle Second
+        # Row 1 went nowhere going up). Push the main axis the other way, and keep that flip for the edges after if it works.
+        if traced() == stalled_at: since += 1
+        else: stalled_at = traced(); since = 0
+        if since == 60 and not os.environ.get('WDRAW_NO_FLIP_RETRY'):
+            if abs(vy) >= abs(vx): vy = -vy; axflip['v'] = -axflip.get('v', 1)
+            else: vx = -vx; axflip['h'] = -axflip.get('h', 1)
+            dbg('no progress on segment', path[i - 1], '->', path[i], ': main axis reversed')
         # WDRAW_PROGRESS_STEPS: on a long edge, the line's own progress along it says how much is left: push most of that (capped), then small
         # steps. (Experimental: on short edges the estimate is noise; an uncapped version overshot the tutorial gate's first segment.)
         step = 2
@@ -327,6 +350,8 @@ for i in range(1, len(path)):
         mouse(vx, vy, step); used += step
     else: done(False, 'stuck before node %d (path index %d)' % (path[i], i), traced(), dist)
     if traced() > i + 1: done(False, 'overshot node %d: the line ran past it (traced %d, wanted %d)' % (path[i], traced(), i + 1), traced(), dist)
+    ep_ = edge_progress()
+    if ep_ and ep_[1] != path[i] and ep_[1] < len(path_nodes_all) and axflip: done(False, 'took the wrong branch after reversing an axis: reached node %d, wanted %d' % (ep_[1], path[i]), traced(), dist)
     if not straight_on(path[i], vx, vy): mouse(vx, vy, 2)      # the count flips as the tip reaches the node: a hair further so a turn is taken at the node, not before it
     if gain.get(axis_) is None and norm > 14: gain[axis_] = used / norm
     if norm > 14: per_px = used / norm

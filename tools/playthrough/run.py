@@ -115,7 +115,7 @@ class Recorder:
     def __call__(self, kind, **data):
         rec = dict(t=round(time.time() - self.t0, 2), kind=kind, **data)
         with self.lock: self.f.write(json.dumps(rec) + '\n'); self.f.flush()
-        if kind in ('solved', 'failed', 'blocked', 'divergence', 'goal', 'no solver', 'resolve another way', 'unpowered', 'crash', 'reroute', 'candidate lines'): print(json.dumps(rec), flush=True)
+        if kind in ('solved', 'failed', 'blocked', 'divergence', 'goal', 'no solver', 'resolve another way', 'unpowered', 'crash', 'reroute', 'candidate lines', 'second round', 'checkpoint'): print(json.dumps(rec), flush=True)
         return rec
 
 
@@ -213,7 +213,9 @@ class Playthrough:
         if 'did not start' in self.last_why.get(h, '') and self.planner.tries.get(h, 0) % 2 == 1: env['WDRAW_FLIP_SIDE'] = '1'
         # The in-game tracer (proxy/tracer.cpp) draws the edges after the first at one frame a step, about twice as fast; a panel whose last
         # attempt failed in the tracer is drawn the old way.
-        env['WSLENV'] += ':WDRAW_TRACER:WDRAW_STAND'
+        env['WSLENV'] += ':WDRAW_TRACER:WDRAW_STAND:WDRAW_STUB_EXTRA'
+        # The line was finished short of the end (state 0: a long end stub, as on the redirect control's radial lines): push the stub further.
+        if '(state 0)' in self.last_why.get(h, ''): env['WDRAW_STUB_EXTRA'] = '200'
         # A line that got stuck may have run into something hiding part of the panel (the cursor only reaches what the camera sees): the next
         # attempts stand elsewhere, 1.2 m to one side then the other, nearer or further.
         if self.last_why.get(h, '').startswith('stuck'):
@@ -441,7 +443,7 @@ class Playthrough:
         by_area = {}
         for e in solves: by_area.setdefault(e['area'], 0); by_area[e['area']] += 1
         done, _ = self.logic.derive(self.solved)
-        s = dict(start=self.start or 'new game', goal=self.goal_name, reached=self.planner.done(self.solved), bots=self.n, minutes=round((time.time() - self.rec.t0) / 60, 1),
+        s = dict(start=self.start or ('resumed from %s' % self.resume if self.resume else 'new game'), goal=self.goal_name, reached=self.planner.done(self.solved), bots=self.n, minutes=round((time.time() - self.rec.t0) / 60, 1),
                  solved_in_world=len(self.solved & set(self.logic.panels)), route=len(self.planner.targets), solves=len(solves), failures=len(fails),
                  lasers=sum(1 for l in self.logic.lasers if l in done), per_bot={b.id: sum(1 for e in solves if e['bot'] == b.id) for b in self.bots},
                  by_area=by_area, median_solve_s=statistics.median([e['seconds'] for e in solves]) if solves else None,
