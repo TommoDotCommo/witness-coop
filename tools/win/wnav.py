@@ -30,6 +30,7 @@ BAND = (0.75, 1.9)             # what must be empty above a floor for the player
 UP, DOWN = 0.6, 1.2            # the most a step between neighbouring cells may climb / drop (m)
 RANGE = 30.0                   # depth points further than this are not used (m)
 SEA = -50.0                    # (no sea level: the sea has no depth, and the beaches go below 0 by the water)
+HW = 1.5                       # A* heuristic weight: a little longer ways, many fewer cells searched (a plan of 100 m took 5 s at 1.0)
 SOFT = 25.0                    # cost factor of a cell whose band is filled at a step's height (foliage, or a wall: see walkable); a wall a cell thick costs a 12 m detour
 WALKED, BUMPED = 1, 2          # cell flags
 REC = struct.Struct('<hhfQB')  # cell x, cell y, floor z, height mask, flags
@@ -123,12 +124,17 @@ class Map:
         if -DOWN <= r[0] - fu <= UP and r[0] > SEA: return [(r[0], SOFT)]
         return []
 
-    def plan(self, a, b, limit=250000, margin=40.0, avoid=frozenset()):
+    def plan(self, a, b, limit=120000, margin=40.0, avoid=frozenset()):
         """Cells from a's to b's along walkable ground (A* over cell and level), else to the reachable cell nearest b, or None.
         a, b: (x, y, z of the eye). `avoid`: cells not to enter (bumped on this walk)."""
         sa, sb = cell_of(a[0], a[1]), cell_of(b[0], b[1]); fb = b[2] - EYE
         lo = (min(sa[0], sb[0]) - margin / CELL, min(sa[1], sb[1]) - margin / CELL); hi = (max(sa[0], sb[0]) + margin / CELL, max(sa[1], sb[1]) + margin / CELL)
         def key(c, z): return (c[0], c[1], int(round(z / BIN)))
+        memo = {}
+        def steps(c, fu):      # (the same cell is asked about from many neighbours: its surfaces are worked out once a plan)
+            k = (c, round(fu, 3))
+            if k not in memo: memo[k] = self.steps(c, fu)
+            return memo[k]
         s0 = key(sa, a[2] - EYE); floor = {s0: a[2] - EYE}
         g = {s0: 0.0}; prev = {}; heap = [(0.0, s0)]; n = 0; best, best_h = s0, math.hypot(sa[0] - sb[0], sa[1] - sb[1])
         def back(u):
@@ -151,8 +157,8 @@ class Map:
                     v = (u[0] + dx, u[1] + dy)
                     if not (lo[0] <= v[0] <= hi[0] and lo[1] <= v[1] <= hi[1]) or v in avoid: continue
                     if dx and dy:      # no corner cutting past a cell that cannot be stepped onto
-                        if any(st == [] for st in (self.steps((u[0] + dx, u[1]), fu), self.steps((u[0], u[1] + dy), fu))): continue
-                    st = self.steps(v, fu); step = 1.4142 if dx and dy else 1.0
+                        if any(st == [] for st in (steps((u[0] + dx, u[1]), fu), steps((u[0], u[1] + dy), fu))): continue
+                    st = steps(v, fu); step = 1.4142 if dx and dy else 1.0
                     if st is None: opts = [(fu, 3.0)]      # never seen: walkable, dearer
                     else:
                         r = self.cells[v]
@@ -161,7 +167,7 @@ class Map:
                         kv = key(v, fv); nd = g[u] + step * cost
                         if nd < g.get(kv, 1e18):
                             g[kv] = nd; prev[kv] = u; floor[kv] = fv
-                            heapq.heappush(heap, (nd + math.hypot(v[0] - sb[0], v[1] - sb[1]), kv))
+                            heapq.heappush(heap, (nd + HW * math.hypot(v[0] - sb[0], v[1] - sb[1]), kv))
         # no way to the target itself (it stands inside something, or the map does not reach it yet): the way to the reachable cell nearest
         # to it, when that is nearer than here by a metre or more (from there the next look may show more)
         self.reached = False

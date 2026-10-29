@@ -43,6 +43,12 @@ def one(folder, L, R):
     if s: print('  solves: %d, median %.1f s, p90 %.1f s' % (len(s), statistics.median(s), sorted(s)[int(0.9 * (len(s) - 1))]))
     fails = collections.Counter(reason(e.get('why', '')) for e in ev if e['kind'] == 'failed')
     if fails: print('  failures:', dict(fails))
+    mv = [m for e in ev if e['kind'] in ('solved', 'failed') for m in e.get('moves', [])]
+    if mv:      # how the bots got to their panels: walking, or the teleport as a last resort (with why the walk did not get there)
+        walks = [m for m in mv if m['how'] == 'walk']; tps = [m for m in mv if m['how'] == 'teleport']
+        print('  movement: %d walks (%d got there, %.0f m), %d teleports' % (len(walks), sum(1 for m in walks if m.get('ok')), sum(m.get('walked', 0) for m in walks), len(tps)))
+        why = collections.Counter(reason(m.get('why', '')) for m in walks if not m.get('ok'))
+        if why: print('  walks that did not get there:', dict(why.most_common(6)))
     p = sorted(e['exact_s'] if e.get('exact_s') is not None else e['seconds'] for e in ev if e['kind'] == 'propagated')      # exact (event logs) where the games wrote them
     if p: print('  propagation: %d, p50 %.2f s, p95 %.2f s, max %.2f s' % (len(p), p[len(p) // 2], p[int(0.95 * (len(p) - 1))], p[-1]))
     slow = [dict(e, seconds=e['exact_s'] if e.get('exact_s') is not None else e['seconds']) for e in ev if e['kind'] == 'propagated' and (e.get('exact_s') if e.get('exact_s') is not None else e['seconds']) > 5]
