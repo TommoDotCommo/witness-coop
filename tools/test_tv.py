@@ -39,6 +39,15 @@ mutations = {
     'deploy-cap': ('#ifndef TV_MUT_DEPLOY_CAP', '#if 0'),
     'deploy-disconnect': ('#ifndef TV_MUT_DISCONNECT', '#if 0'),
     'deploy-placement': ('#ifdef TV_MUT_PLACEMENT', '#if 1'),
+    'flat-ground': ('#ifdef TV_MUT_FLAT', '#if 1'),
+    'screen-clearance': ('#elif defined(TV_MUT_SCREEN_CLEARANCE)', '#elif 1'),
+    'relief-bound': ('std::clamp(float(d.relief[i])/100.f,-MaxRelief,MaxRelief)', 'float(d.relief[i])/100.f'),
+    'relief-checksum': ('put(b,48,d.measured); seal(b)', 'put(b,48,d.measured); put(b,b.size()-4,0)'),
+    'probe-roof': ('fabsf(rel)>MaxRelief', 'false'),
+    'probe-spawn-return': ('dx*dx+dy*dy>ProbeSlack*ProbeSlack', 'false'),
+    'probe-calibration': ('trusted_=fabsf(camera[2]-CameraEye-wearer_)<=CalibrationTolerance', 'trusted_=true'),
+    'probe-retry': ('pass_<ProbePasses','false'),
+    'probe-return-home': ('c.teleport=true; for(unsigned i=0;i<3;++i) c.to[i]=home_[i]; return c;', 'return c;'),
 }
 mesh_mutations = {
     'audience-neutral-palette': ('channel=1.f;', 'channel=0.f;'),

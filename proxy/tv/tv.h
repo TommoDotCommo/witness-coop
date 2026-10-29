@@ -120,35 +120,48 @@ private:
     std::array<Bytes,MaxChunks> chunks_; unsigned cur_=0,done_=0,have_=0,count_=0,mode_=0,budget_=0;
     uint64_t start_=0,window_=0,lastComplete_=0; bool completed_=false;
 };
+// Ground relief measured by the deployer, in centimetres above the wearer's ground: entries 0..2 under the stools, 3..5 under the left end,
+// middle and right end of the screen. Bit i of `measured` says entry i is a real measurement; an unmeasured entry means flat ground.
+constexpr unsigned ReliefCount=6;
+constexpr float MaxRelief=1.5f;
+struct Ground { int16_t relief[ReliefCount]={}; uint32_t measured=0; };
 struct Deployment {
     unsigned from=0,target=0,sequence=0; float eye[3]={},yaw=0; bool active=false; uint64_t at=0;
+    int16_t relief[ReliefCount]={}; uint32_t measured=0;
 };
 inline bool validDeployment(const Deployment& d) {
     if(!d.from || !d.sequence) return false;
     if(!d.active) return d.target==0;
     if(!d.target || d.target==d.from || !std::isfinite(d.yaw)) return false;
     for(float v:d.eye) if(!std::isfinite(v) || fabsf(v)>100000) return false;
+    if(d.measured>=(1u<<ReliefCount)) return false;
+    for(int16_t r:d.relief) if(abs(int(r))>int(MaxRelief*100)) return false;
     return true;
 }
 inline Bytes deploymentPacket(const Deployment& d) {
-    Bytes b(40); memcpy(b.data(),"WTD1",4); put(b,4,d.from); put(b,8,d.target); put(b,12,d.sequence);
+    Bytes b(56); memcpy(b.data(),"WTD2",4); put(b,4,d.from); put(b,8,d.target); put(b,12,d.sequence);
     for(unsigned i=0;i<3;++i) { uint32_t v; memcpy(&v,&d.eye[i],4); put(b,16+4*i,v); }
-    uint32_t yaw; memcpy(&yaw,&d.yaw,4); put(b,28,yaw); put(b,32,d.active); seal(b); return b;
+    uint32_t yaw; memcpy(&yaw,&d.yaw,4); put(b,28,yaw); put(b,32,d.active);
+    for(unsigned i=0;i<ReliefCount;++i) { uint16_t v=uint16_t(d.relief[i]); b[36+2*i]=uint8_t(v); b[37+2*i]=uint8_t(v>>8); }
+    put(b,48,d.measured); seal(b); return b;
 }
 inline bool parseDeployment(const uint8_t* p,size_t n,Deployment& d) {
-    if(n!=40 || memcmp(p,"WTD1",4) || !checked(p,n)) return false;
+    if(n!=56 || memcmp(p,"WTD2",4) || !checked(p,n)) return false;
     d={}; d.from=get(p+4); d.target=get(p+8); d.sequence=get(p+12);
     for(unsigned i=0;i<3;++i) { uint32_t v=get(p+16+4*i); memcpy(&d.eye[i],&v,4); }
     uint32_t yaw=get(p+28); memcpy(&d.yaw,&yaw,4); d.active=get(p+32)!=0;
+    for(unsigned i=0;i<ReliefCount;++i) d.relief[i]=int16_t(uint16_t(p[36+2*i])|uint16_t(p[37+2*i])<<8);
+    d.measured=get(p+48);
     return get(p+32)<=1 && validDeployment(d);
 }
 class Deployments {
 public:
     unsigned me=0;
     std::map<unsigned,Deployment> screens;
-    bool deploy(unsigned target,const float eye[3],float yaw,uint64_t now) {
+    bool deploy(unsigned target,const float eye[3],float yaw,uint64_t now,const Ground* ground=nullptr) {
         Deployment d; d.from=me; d.target=target; d.sequence=local_.sequence+1; if(!d.sequence) ++d.sequence;
         for(unsigned i=0;i<3;++i) d.eye[i]=eye[i];
+        if(ground) { memcpy(d.relief,ground->relief,sizeof d.relief); d.measured=ground->measured; }
         d.yaw=yaw; d.active=true; d.at=now;
         if(!me || !validDeployment(d)) return false;
         local_=d; screens[me]=d; missing_[me]=0; return true;
@@ -200,14 +213,28 @@ private:
     Deployment local_; std::map<unsigned,uint64_t> missing_;
 };
 constexpr float ScreenWidth=4.0f,ScreenHeight=2.5f,ScreenBottom=2.0f,ScreenBehind=3.0f,CameraEye=1.71f;
-struct Placement { float center[3],right[3],forward[3],ground,bottom; };
+struct Placement { float center[3],right[3],forward[3],ground,bottom,stool[3]; };
+// Height of the ground under entry i (stool 0..2, screen left/middle/right 3..5) above the wearer's ground: measured, bounded, else flat.
+inline float reliefAt(const Deployment& d,unsigned i) {
+#ifdef TV_MUT_FLAT
+    (void)d; (void)i; return 0.f;
+#else
+    if(i>=ReliefCount || !(d.measured&(1u<<i))) return 0.f;
+    return std::clamp(float(d.relief[i])/100.f,-MaxRelief,MaxRelief);
+#endif
+}
 inline Placement placement(const Deployment& d) {
     Placement p={}; p.forward[0]=cosf(d.yaw); p.forward[1]=sinf(d.yaw); p.right[0]=p.forward[1]; p.right[1]=-p.forward[0];
     p.ground=d.eye[2]-CameraEye;
+    // Each stool stands on the ground under it; the screen's bottom edge clears the highest ground under its width.
+    for(unsigned i=0;i<3;++i) p.stool[i]=p.ground+reliefAt(d,i);
+    float rise=0; for(unsigned i=3;i<ReliefCount;++i) rise=std::max(rise,reliefAt(d,i));
 #ifdef TV_MUT_PLACEMENT
     p.bottom=p.ground;
-#else
+#elif defined(TV_MUT_SCREEN_CLEARANCE)
     p.bottom=p.ground+ScreenBottom;
+#else
+    p.bottom=p.ground+rise+ScreenBottom;
 #endif
     for(unsigned i=0;i<2;++i) p.center[i]=d.eye[i]-p.forward[i]*ScreenBehind;
     p.center[2]=p.bottom+ScreenHeight*.5f; return p;
@@ -224,9 +251,10 @@ template<class Controller> inline void seatedGesture(Controller& c,float t,bool 
 }
 inline float seatModelGround(float eyeZ) { return eyeZ-SeatEye; }
 inline std::array<float,3> seatPoint(const Deployment& d,unsigned index) {
+    if(index>=SeatCount) index=SeatCount-1;
     auto p=placement(d); float side=(float(index)-1.f)*1.35f;
     return {p.center[0]+p.forward[0]*4+p.right[0]*side,
-            p.center[1]+p.forward[1]*4+p.right[1]*side,p.ground};
+            p.center[1]+p.forward[1]*4+p.right[1]*side,p.stool[index]};
 }
 inline int aimSeat(const Deployment& d,const float eye[3],float yaw,float pitch) {
     if(!d.active) return -1;
@@ -239,6 +267,94 @@ inline int aimSeat(const Deployment& d,const float eye[3],float yaw,float pitch)
     }
     return -1;
 }
+// Ground measurement. The game offers no ground query to the mod, so the deployer lets its own player drop onto each point the layout
+// needs (the game's physics lands it on the ground there) and reads where the camera settles. A drop starts ProbeDrop above the wearer's
+// standing camera, below roofs and branches; a landing more than MaxRelief from the wearer's ground (a rock top, a roof, a cliff below)
+// is not accepted, and neither is a probe that never settled or that the game put somewhere else. Those points stay flat, and say so.
+// Where the game has no collision loaded it parks a dropped player at one fixed level, which looks like ground. So every pass first drops
+// the player at the wearer's own position: if that does not land at the wearer's known ground, nothing measured in the pass is believed.
+constexpr unsigned ProbePasses=3;
+constexpr unsigned CalibrationPoint=ReliefCount;      // an extra drop at the wearer's own position, whose ground is known
+constexpr float ProbeDrop=2.2f,ProbeSlack=1.0f,ProbeStable=.005f,CalibrationTolerance=.25f;
+constexpr uint64_t ProbeIgnore=300,ProbeStill=200,ProbeLimit=2500;
+inline std::array<float,2> probeXY(const Deployment& d,unsigned i) {
+    auto p=placement(d);
+    if(i==CalibrationPoint) return {d.eye[0],d.eye[1]};
+    if(i<3) { auto q=seatPoint(d,i); return {q[0],q[1]}; }
+    float side=(float(i)-4.f)*ScreenWidth*.5f;
+    return {p.center[0]+p.right[0]*side,p.center[1]+p.right[1]*side};
+}
+// Relief in centimetres of a landing, or false when the landing cannot be the ground at that point.
+inline bool acceptLanding(float wearerGround,float landedCamera,int16_t* out) {
+    float rel=landedCamera-CameraEye-wearerGround;
+    if(!std::isfinite(rel) || fabsf(rel)>MaxRelief) return false;
+    *out=int16_t(lroundf(rel*100.f)); return true;
+}
+class GroundProber {
+public:
+    struct Command { bool teleport=false; float to[3]={}; };
+    bool active() const { return active_; }
+    bool done() const { return done_; }
+    const Ground& result() const { return ground_; }
+    // Per point: 0 not tried, 1 accepted, 2 the game put the player elsewhere, 3 never settled, 4 landing outside the accepted range,
+    // 5 landed fine in a pass whose calibration drop at the wearer failed; and the camera height last seen.
+    uint8_t outcome[ReliefCount+1]={}; float landed[ReliefCount+1]={};
+    unsigned point() const { return queue_.empty()?0:queue_[at_]; }
+    unsigned attempts() const { return pass_; }
+    struct Sample { unsigned pass,point; uint8_t outcome; float camera; }; std::vector<Sample> history;
+    void begin(const Deployment& base,const float camera[3],uint64_t now) {
+        base_=base; ground_={}; history.clear(); for(unsigned i=0;i<=ReliefCount;++i) { outcome[i]=0; landed[i]=0; }
+        queue_.clear(); queue_.push_back(CalibrationPoint); for(unsigned i=0;i<ReliefCount;++i) queue_.push_back(i); trusted_=false; at_=0; pass_=1; active_=true; done_=false; for(unsigned i=0;i<3;++i) home_[i]=camera[i]; wearer_=base.eye[2]-CameraEye; launch_=false; (void)now;
+    }
+    void cancel() { active_=false; done_=false; }
+    // Called once per rendered frame while active; the returned command is the teleport to issue now. After the last point the
+    // command returns the player to where it started and done() turns true.
+    Command update(const float camera[3],uint64_t now) {
+        Command c; if(!active_) return c;
+        if(!launch_) return start(now,c);
+        unsigned point_=queue_[at_]; auto xy=probeXY(base_,point_); float dx=camera[0]-xy[0],dy=camera[1]-xy[1];
+        uint64_t age=now-t0_; bool reject=false,accept=false;
+        landed[point_]=camera[2];
+        if(age>=ProbeIgnore && dx*dx+dy*dy>ProbeSlack*ProbeSlack) { reject=true; outcome[point_]=2; }   // the game put the player back at its spawn point
+        else if(age>ProbeLimit) { reject=true; outcome[point_]=3; }
+        else if(age>=ProbeIgnore) {
+            if(camera[2]<startZ_-.05f) fell_=true;
+            if(!fell_ || fabsf(camera[2]-lastZ_)>ProbeStable) still_=0; else if(!still_) still_=now; // roof overhead: never fell
+            lastZ_=camera[2];
+            if(fell_ && still_ && now-still_>=ProbeStill) accept=true;
+        } else lastZ_=camera[2];
+        if(accept) {
+            int16_t cm=0;
+            if(point_==CalibrationPoint) { trusted_=fabsf(camera[2]-CameraEye-wearer_)<=CalibrationTolerance; outcome[point_]=trusted_?1:5; }
+            else if(!trusted_) outcome[point_]=5;
+            else if(acceptLanding(wearer_,camera[2],&cm)) { ground_.relief[point_]=cm; ground_.measured|=1u<<point_; outcome[point_]=1; } else outcome[point_]=4;
+            history.push_back({pass_,point_,outcome[point_],camera[2]}); return next(now,c);
+        }
+        if(reject) { history.push_back({pass_,point_,outcome[point_],camera[2]}); return next(now,c); }
+        return c;
+    }
+private:
+    Command start(uint64_t now,Command c) {
+        auto xy=probeXY(base_,queue_[at_]); startZ_=wearer_+CameraEye+ProbeDrop; t0_=now; fell_=false; still_=0; lastZ_=startZ_; launch_=true;
+        c.teleport=true; c.to[0]=xy[0]; c.to[1]=xy[1]; c.to[2]=startZ_; return c;
+    }
+    Command next(uint64_t now,Command c) {
+        if(++at_>=queue_.size()) {
+            // A point the game could not place the player at (no collision loaded there yet, a slope too steep to stand on) is tried again
+            // after the others: standing near it for a while loads the ground. Every point gets ProbePasses tries at most.
+            // The ground a probe finds depends on what the game has loaded by then, so every point is measured twice and the later landing
+            // counts (a point the second pass could not place keeps the first landing).
+            std::vector<unsigned> again;
+            if(pass_==1) for(unsigned i=0;i<ReliefCount;++i) again.push_back(i);
+            else if(pass_<ProbePasses) for(unsigned i:queue_) if(i!=CalibrationPoint && !(ground_.measured&(1u<<i))) again.push_back(i);
+            if(!again.empty()) { queue_.assign(1,CalibrationPoint); queue_.insert(queue_.end(),again.begin(),again.end()); at_=0; ++pass_; trusted_=false; return start(now,c); }
+            active_=false; done_=true; c.teleport=true; for(unsigned i=0;i<3;++i) c.to[i]=home_[i]; return c;
+        }
+        return start(now,c);
+    }
+    Deployment base_; Ground ground_; bool active_=false,done_=false,launch_=false,fell_=false; std::vector<unsigned> queue_; unsigned at_=0,pass_=0; bool trusted_=false;
+    float home_[3]={},wearer_=0,startZ_=0,lastZ_=0; uint64_t t0_=0,still_=0;
+};
 struct Motion {
     float sway=0,velocity=0,antenna=0,power=0;
     void step(float dt,float speed,bool on) {

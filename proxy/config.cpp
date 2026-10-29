@@ -59,6 +59,7 @@ const Cfg& GetCfg() {
             else if (sscanf(line, "no_emote_anim=%d", &v) == 1) r.noEmoteAnim = v != 0;
             else if (sscanf(line, "no_seat_tiebreak=%d", &v) == 1) r.noSeatTiebreak = v != 0;
             else if (sscanf(line, "no_detail_fit=%d", &v) == 1) r.noDetailFit = v != 0;
+            else if (sscanf(line, "no_terrain_probe=%d", &v) == 1) r.noTerrainProbe = v != 0;
             else if (sscanf(line, "no_emote_clips=%d", &v) == 1) r.noEmoteClips = v != 0;
             else if (sscanf(line, "no_emote_send=%d", &v) == 1) r.noEmoteSend = v != 0;
             else if (sscanf(line, "no_typing_dots=%d", &v) == 1) r.noTypingDots = v != 0;

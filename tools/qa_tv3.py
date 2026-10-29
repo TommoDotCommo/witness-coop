@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""3-client live TV audience POV screen test.
+"""3-client live TV audience POV screen test (`tools/qa.sh tv3 [race|race_mutant]`: only the double-seat scenario, observed by a third client).
 Tests deployment by peer B of wearer A's backpack TV, observed simultaneously by B and C,
 including independent audience subscriptions, static on no consent, live stream on consent,
 stationary in-world placement while wearer moves, revocation wiping to static, and retraction.
@@ -101,6 +101,31 @@ def wait(predicate, description, timeout=180):
         time.sleep(1)
     raise RuntimeError('FAIL ' + description)
 
+def race3(c1, c2, c3, stool, entry, face, pitch, trials, mutant):
+    """B and C take the same stool in the same instant; A (the wearer, a third client) must see at most one of them seated there.
+    With the tie-break switched off (mutant) both stay seated, and A must see both."""
+    both = 0
+    for trial in range(trials):
+        for c in (c2, c3): c.send(f'hover {entry[0]} {entry[1]} {entry[2]} {face} {pitch}')
+        wait(lambda: all(math.hypot(c.camera()[0][0] - entry[0], c.camera()[0][1] - entry[1]) < .15 for c in (c2, c3)), f'trial {trial}: B and C at the same stool entry', 30)
+        for c in (c2, c3): c.send('hover off')
+        for c in (c2, c3): c.send('key K down\nkey K up')       # two files written back to back: both games take them within a frame or two
+        time.sleep(4)
+        s2, s3 = c2.tv()['seated'], c3.tv()['seated']
+        near = [p['id'] for p in c1.net()['remotes'] if p['id'] in (2, 3) and p['emote'] == 14 and math.hypot(p['pos'][0] - stool[0], p['pos'][1] - stool[1]) < .5]
+        print(f'trial {trial}: seated B={s2} C={s3}; the wearer sees {near} on the stool', flush=True)
+        if s2 and s3: both += 1
+        if not mutant:
+            assert s2 + s3 == 1, f'exactly one of the two must hold the stool: B={s2} C={s3}'
+            assert len(near) == 1, f'the third client sees {near} on one stool'
+        for c in (c2, c3):
+            if c.tv()['seated']: c.send('key K down\nkey K up')
+        wait(lambda: not c2.tv()['seated'] and not c3.tv()['seated'], f'trial {trial}: both stand again', 20)
+    if mutant:
+        assert both > 0, 'the mutant never produced a double seating: the trial cannot fail'
+        print(f'PASS (mutant) double seating seen in {both} of {trials} trials, also by the third client', flush=True)
+    else: print(f'PASS no double seating in {trials} simultaneous trials, observed by a third client', flush=True)
+
 def prepare(c, config):
     d = c.directory
     assert digest(d / 'witness64_d3d11.exe') == EXE_HASH, 'unsupported game build'
@@ -111,7 +136,7 @@ def prepare(c, config):
     models = d / 'witness_models'; models.mkdir(exist_ok=True)
     for asset in (ROOT / 'assets/models').iterdir():
         if asset.suffix in ('.glb', '.txt'): replace_copy(asset, models / asset.name)
-    extra = '\nforce_active=1\ncap_fps=30\ndev_menu=1\nvoice_mode=off\nvoice_mute_output=1\npov_tv=1\npov_tv_consent=0\n'
+    extra = os.environ.get('TV3_EXTRA', '').replace(';', '\n') + '\nforce_active=1\ncap_fps=30\ndev_menu=1\nvoice_mode=off\nvoice_mute_output=1\npov_tv=1\npov_tv_consent=0\n'
     cfg = d / 'witness_coop.cfg'; cfg.unlink(missing_ok=True); cfg.write_text(config + extra)
     for name in ('witness_cmd.txt', 'witness_proxy.log', 'witness_net.json', 'witness_tv.json'):
         (d / name).unlink(missing_ok=True)
@@ -121,6 +146,8 @@ def prepare(c, config):
             if file.suffix in ('.witness_campaign', '.png'): file.unlink()
 
 def main():
+    modes = sys.argv[1:]
+    if 'race_mutant' in modes: os.environ['TV3_EXTRA'] = '\nno_seat_tiebreak=1'
     assert WITNESS_RESOURCES, 'WITNESS_RESOURCES not configured'
     count = 3
     EVIDENCE.mkdir(parents=True, exist_ok=True)
@@ -170,14 +197,22 @@ def main():
                 tv2 = c2.tv(); tv3 = c3.tv()
                 return (tv2.get('deploy_target') == 1 and len(tv2.get('audience', [])) >= 1
                         and len(tv3.get('audience', [])) >= 1)
-            wait(screen_deployed, 'client 2 deployment received by both audience clients (B and C)', 20)
+            wait(screen_deployed, 'client 2 deployment received by both audience clients (B and C)', 60)
+            wait(lambda: not c2.tv()['probing'], 'client 2 finished measuring the ground', 30)
 
             tv2 = c2.tv(); tv3 = c3.tv()
             scr2 = tv2['audience'][0]; scr3 = tv3['audience'][0]
             assert scr2['owner'] == 2 and scr2['source'] == 1
             assert scr3['owner'] == 2 and scr3['source'] == 1
+            if modes:
+                f = (math.cos(yaw), math.sin(yaw)); ground = scr2['stools'][1]
+                stool = [scr2['center'][0] + f[0] * 4, scr2['center'][1] + f[1] * 4, ground]
+                entry = [stool[0] + f[0], stool[1] + f[1], ground + 1.71]
+                race3(c1, c2, c3, stool, entry, yaw + math.pi, math.atan2(.5 - 1.71, 1), int(os.environ.get('TV3_TRIALS', '5')), 'race_mutant' in modes)
+                print('ALL OK: 3-client double-seat scenario', flush=True); return
             assert abs(scr2['width'] - 4.0) < 1e-3 and abs(scr2['height'] - 2.5) < 1e-3
-            assert abs(scr2['bottom'] - (scr2['ground'] + 2.0)) < 1e-3
+            assert scr2['bottom'] >= scr2['ground'] + 2.0 - 1e-3, 'screen bottom edge below the wearer ground + 2 m'
+            assert scr2['stools'] == scr3['stools'] and scr2['measured'] == scr3['measured'] and abs(scr2['bottom'] - scr3['bottom']) < 1e-4, 'clients disagree about the measured ground'
             behind = (scr2['center'][0] - ax) * math.cos(yaw) + (scr2['center'][1] - ay) * math.sin(yaw)
             assert abs(behind + 3.0) < 0.35, f'placement behind={behind}'
             print('PASS audience screen size 4.0x2.5, bottom +2.0m, behind +3.0m verified across clients', flush=True)
@@ -283,7 +318,7 @@ def main():
 
             # Aim at the middle stool, use the real input binding, and inspect the
             # synchronized Sit emote and eye position from the other process.
-            center=c2.tv()['audience'][0]['center']; ground=c2.tv()['audience'][0]['ground']
+            center=c2.tv()['audience'][0]['center']; ground=c2.tv()['audience'][0]['stools'][1]
             stool=[center[0]+math.cos(yaw)*4,center[1]+math.sin(yaw)*4,ground]
             entry=[stool[0]+math.cos(yaw),stool[1]+math.sin(yaw),ground+1.71]
             face=yaw+math.pi; pitch=math.atan2(.5-1.71,1)
@@ -310,6 +345,8 @@ def main():
             c3.send('key W down\nkey W up')
             wait(lambda:not c3.tv()['seated'],'movement exits the stool',15)
             assert abs(c3.camera()[0][2]-entry[2])<.25,'stand restores standing camera eye'
+
+            race3(c1, c2, c3, stool, entry, face, pitch, 3, False)
 
             # Sit again, then remove the supporting screen: this must stand the
             # viewer safely at the entry pose rather than leave a held camera.

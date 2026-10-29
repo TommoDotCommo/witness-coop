@@ -8,6 +8,7 @@
 #include <atomic>
 #include "game.h"
 #include "social.h"
+void Log(const char* msg);
 namespace {
 std::atomic<bool> seatRequest{false},seatExit{false},seated{false},seatAvailable{false};
 struct SeatState { unsigned owner=0,sequence=0,index=0; float entry[3]={},yaw=0,pitch=0; } seat;
@@ -25,6 +26,8 @@ struct State {
     std::vector<std::pair<unsigned,unsigned>> hashes;
     wtv::Deployments deployments; std::map<unsigned,AudienceStream> audience; std::map<unsigned,AudienceStats> audienceStats;
     unsigned nextTicket=1; uint64_t deploymentBroadcastAt=0;
+    bool restore=false,wantProbe=false;
+    wtv::GroundProber prober; unsigned probeTarget=0; float probeEye[3]={},probeYaw=0,probeHome[5]={}; unsigned lastMeasured=0; bool probing=false;
     State(){ sender.allow(GetCfg().povTvConsent); receiver.ticket=GetTickCount()|1u; nextTicket=receiver.ticket+1; }
 };
 State& state(){ static State s; return s; }
@@ -39,11 +42,12 @@ void TvAllow(bool on){ Guard g; auto& s=state(); if(!on) for(auto p:s.sender.sub
 unsigned TvTarget(){ Guard g; auto& s=state(); return s.enabled?s.receiver.target:(GetTickCount64()-s.disabledAt<350?s.displayTarget:0); }
 bool TvDeployAction(unsigned target){
     Guard g; auto& s=state(); uint64_t now=GetTickCount64(); s.deployments.me=CoopMyId();
+    if(s.probing){ s.prober.cancel(); s.probing=false; s.probeTarget=0; s.restore=true; return true; }      // a second press while measuring cancels
     if(s.deployments.local().active){ bool ok=s.deployments.retract(now); if(ok) sendDeployment(s.deployments.local()); return ok; }
-    if(!target || target==CoopMyId()) return false;
+    if(!target || target==CoopMyId() || seated) return false;
     for(const auto& r:CoopGetRemotes()) if(r.id==target && r.valid && r.ageMs<1000){
-        if(!s.deployments.deploy(target,r.pos,r.ang[0],now)) return false;
-        sendDeployment(s.deployments.local()); return true;
+        for(unsigned i=0;i<3;++i) s.probeEye[i]=r.pos[i];
+        s.probeYaw=r.ang[0]; s.probeTarget=target; s.wantProbe=true; return true;     // TvTick measures the ground, then deploys
     }
     return false;
 }
@@ -81,6 +85,29 @@ void TvTick(const float camera[3],bool captureAllowed){
     wtv::pruneStats(s.audienceStats,s.deployments.screens);
     const float* angles=(const float*)((uintptr_t)GetModuleHandleA(nullptr)+0x6303EC);
     bool anglesOk=!IsBadReadPtr(angles,8), exit=seatExit.exchange(false), action=seatRequest.exchange(false);
+    // Deploy: first measure the ground under the stools and the screen (the player drops onto each point and is put back), then announce.
+    if(s.wantProbe){
+        s.wantProbe=false; wtv::Deployment base; base.from=CoopMyId(); base.target=s.probeTarget; base.sequence=1; base.active=true; base.yaw=s.probeYaw;
+        for(unsigned i=0;i<3;++i) base.eye[i]=s.probeEye[i];
+        if(GetCfg().noTerrainProbe || !anglesOk) { if(s.deployments.deploy(s.probeTarget,s.probeEye,s.probeYaw,now)) sendDeployment(s.deployments.local()); s.probeTarget=0; }
+        else {
+            for(unsigned i=0;i<3;++i) s.probeHome[i]=camera[i];
+            s.probeHome[3]=angles[0]; s.probeHome[4]=angles[1]; GameHoverOff(); s.prober.begin(base,camera,now); s.probing=true;
+        }
+    }
+    if(s.probing){
+        action=false; exit=false;
+        auto c=s.prober.update(camera,now);
+        if(c.teleport) GameTeleport(c.to[0],c.to[1],c.to[2],s.probeHome[3],s.probeHome[4]);
+        if(s.prober.done()){
+            s.probing=false; s.lastMeasured=s.prober.result().measured;
+            for(const auto& h:s.prober.history){ char m[160]; snprintf(m,sizeof m,"tv: ground probe pass %u point %u outcome %u camera %.2f",h.pass,h.point,h.outcome,h.camera); Log(m); }
+            { char m[160]; snprintf(m,sizeof m,"tv: ground measured %#x relief %d %d %d %d %d %d cm",s.lastMeasured,s.prober.result().relief[0],s.prober.result().relief[1],s.prober.result().relief[2],s.prober.result().relief[3],s.prober.result().relief[4],s.prober.result().relief[5]); Log(m); }
+            if(s.deployments.deploy(s.probeTarget,s.probeEye,s.probeYaw,now,&s.prober.result())) sendDeployment(s.deployments.local());
+            s.probeTarget=0;
+        }
+    }
+    if(s.restore){ s.restore=false; GameTeleport(s.probeHome[0],s.probeHome[1],s.probeHome[2],s.probeHome[3],s.probeHome[4]); }
     if(seated) {
         auto d=s.deployments.screens.find(seat.owner);
         // Two players can press at the same instant: neither sees the other's pose yet, so both sit. The one with the higher id gets up.
@@ -151,7 +178,7 @@ void TvCapture(const uint8_t* rgba,unsigned w,unsigned h){
 }
 void TvOnPacket(const uint8_t* p,size_t n){
     Guard g; auto& s=state(); uint64_t now=GetTickCount64(); s.deployments.me=CoopMyId();
-    if(n>=4 && !memcmp(p,"WTD1",4)){ s.deployments.packet(p,n,now); return; }
+    if(n>=4 && !memcmp(p,"WTD2",4)){ s.deployments.packet(p,n,now); return; }
     wtv::Control c;
     if(wtv::parseControl(p,n,c)){
         if(c.to!=CoopMyId()) return;
@@ -220,9 +247,9 @@ void TvDump(){
     fprintf(f,"],\"audience\":[");
     bool comma=false; for(const auto& entry:s.deployments.screens){ const auto& d=entry.second; if(!d.active) continue; auto p=wtv::placement(d); const auto& stats=s.audienceStats[d.from];
         auto stream=s.audience.find(d.target); bool fresh=stream!=s.audience.end() && stream->second.receiver.fresh(now);
-        fprintf(f,"%s{\"owner\":%u,\"source\":%u,\"sequence\":%u,\"center\":[%.5f,%.5f,%.5f],\"ground\":%.5f,\"bottom\":%.5f,\"width\":%.2f,\"height\":%.2f,\"draws\":%u,\"vertices\":%u,\"drawn_live\":%d,\"fresh\":%d,\"visible_pixels\":%u",comma?",":"",d.from,d.target,d.sequence,p.center[0],p.center[1],p.center[2],p.ground,p.bottom,wtv::ScreenWidth,wtv::ScreenHeight,stats.draws,stats.vertices,stats.drawnLive,fresh,stats.visiblePixels);
+        fprintf(f,"%s{\"owner\":%u,\"source\":%u,\"sequence\":%u,\"center\":[%.5f,%.5f,%.5f],\"ground\":%.5f,\"stools\":[%.5f,%.5f,%.5f],\"measured\":%u,\"bottom\":%.5f,\"width\":%.2f,\"height\":%.2f,\"draws\":%u,\"vertices\":%u,\"drawn_live\":%d,\"fresh\":%d,\"visible_pixels\":%u",comma?",":"",d.from,d.target,d.sequence,p.center[0],p.center[1],p.center[2],p.ground,p.stool[0],p.stool[1],p.stool[2],d.measured,p.bottom,wtv::ScreenWidth,wtv::ScreenHeight,stats.draws,stats.vertices,stats.drawnLive,fresh,stats.visiblePixels);
         if(stream!=s.audience.end()) fprintf(f,",\"decoded\":%u,\"upload_hash\":%u,\"uploaded_sequence\":%u",stream->second.receiver.decoded,stream->second.uploadHash,stream->second.uploadedSequence);
         else fprintf(f,",\"decoded\":0,\"upload_hash\":0,\"uploaded_sequence\":0"); fprintf(f,"}"); comma=true;
     }
-    fprintf(f,"],\"seated\":%d,\"seat_owner\":%u,\"audience_streams\":%zu,\"audience_stats\":%zu,\"audience_resources\":%zu}\n",int(seated.load()),seat.owner,s.audience.size(),s.audienceStats.size(),size_t(std::count_if(s.audience.begin(),s.audience.end(),[](const auto& e){return e.second.texture!=nullptr;}))); fclose(f); MoveFileExW(tmp,path,MOVEFILE_REPLACE_EXISTING);
+    fprintf(f,"],\"probing\":%d,\"seated\":%d,\"seat_owner\":%u,\"audience_streams\":%zu,\"audience_stats\":%zu,\"audience_resources\":%zu}\n",int(s.probing),int(seated.load()),seat.owner,s.audience.size(),s.audienceStats.size(),size_t(std::count_if(s.audience.begin(),s.audience.end(),[](const auto& e){return e.second.texture!=nullptr;}))); fclose(f); MoveFileExW(tmp,path,MOVEFILE_REPLACE_EXISTING);
 }

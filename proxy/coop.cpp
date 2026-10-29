@@ -187,7 +187,7 @@ static DWORD WINAPI NetThread(LPVOID) {
                 auto it = endpoints.find(from); if (it == endpoints.end()) continue; expected = &it->second;      // every datagram, pictures included, names its sender
             }
             if (source.sin_port != expected->sin_port || source.sin_addr.s_addr != expected->sin_addr.s_addr) continue;
-            if (n >= 4 && (!memcmp(buf, "WTT1", 4) || !memcmp(buf, "WTU1", 4) || !memcmp(buf, "WTD1", 4))) TvOnPacket(buf, (size_t)n);
+            if (n >= 4 && (!memcmp(buf, "WTT1", 4) || !memcmp(buf, "WTU1", 4) || !memcmp(buf, "WTD2", 4))) TvOnPacket(buf, (size_t)n);
             else if (n >= 4 && !memcmp(buf, "WTV4", 4)) VideoOnPacket(buf, (size_t)n);            // a chunk of a POV picture
             else if (n >= 4 && !memcmp(buf, "WTO5", 4)) VoiceOnPacket(buf, (size_t)n);         // 20 ms of a player's voice
             else if (n >= 4 && !memcmp(buf, "WTR1", 4)) RaceOnPacket(buf, (size_t)n, now);         // a race report: phase, progress, finish time

@@ -88,7 +88,7 @@ inline Mesh audienceMesh(const Deployment& deployment) {
     // Original makeshift wooden audience stools, on the same deployment plane.
     // Coordinates below are relative to the screen centre (not camera eye).
     for(unsigned i=0;i<SeatCount;++i) {
-        float x=(float(i)-1)*1.35f, y=p.ground-p.center[2];
+        float x=(float(i)-1)*1.35f, y=p.stool[i]-p.center[2];
         box(x,y+SeatHeight-.04f,4,.70f,.08f,.65f,{118,83,47});
         for(float dx:{-.25f,.25f}) for(float dz:{-.22f,.22f})
             box(x+dx,y+.23f,4+dz,.07f,.46f,.07f,{77,59,37});

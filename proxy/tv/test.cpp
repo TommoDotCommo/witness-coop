@@ -94,7 +94,7 @@ int main(){
     Deployments viewer; viewer.me=3; CHECK(viewer.packet(wire.data(),wire.size(),110)); CHECK(viewer.packet(wire.data(),wire.size(),120));
     Deployment spoof=deployed; spoof.from=viewer.me; auto spoofWire=deploymentPacket(spoof); CHECK(!viewer.packet(spoofWire.data(),spoofWire.size(),125));
     CHECK(!viewer.screens.empty()); viewer.tick(200,{}); CHECK(viewer.screens.count(1)); viewer.tick(3201,{}); CHECK(!viewer.screens.count(1));
-    CHECK(viewer.packet(wire.data(),wire.size(),3300)); CHECK(viewer.packet(deploymentPacket(owner.local()).data(),40,3400));
+    CHECK(viewer.packet(wire.data(),wire.size(),3300)); CHECK(viewer.packet(deploymentPacket(owner.local()).data(),56,3400));
     // Continuous identical 500 ms heartbeats must never flicker over >12 seconds.
     Deployments persistent; persistent.me=3;
     for(uint64_t now=100;now<14100;now+=100) {
@@ -130,7 +130,7 @@ int main(){
     auto place=placement(deployed); float behind=(place.center[0]-eye[0])*place.forward[0]+(place.center[1]-eye[1])*place.forward[1];
     CHECK(fabsf(behind+ScreenBehind)<1e-4f); CHECK(fabsf(place.ground-(eye[2]-CameraEye))<1e-5f); CHECK(fabsf(place.bottom-place.ground-ScreenBottom)<1e-5f);
     for(unsigned i=0;i<SeatCount;++i) {
-        auto stool=seatPoint(deployed,i); CHECK(fabsf(stool[2]-place.ground)<1e-5f);
+        auto stool=seatPoint(deployed,i); CHECK(fabsf(stool[2]-place.stool[i])<1e-5f && fabsf(stool[2]-place.ground)<1e-5f);
         float entry[3]={stool[0]+place.forward[0],stool[1]+place.forward[1],stool[2]+CameraEye};
         float face=deployed.yaw+3.14159265f, pitch=atan2f(SeatHeight-CameraEye,1);
         CHECK(aimSeat(deployed,entry,face,pitch)==int(i));
@@ -150,6 +150,70 @@ int main(){
         minz=std::min(minz,v.pos[2]); maxz=std::max(maxz,v.pos[2]); minu=std::min(minu,v.uv[0]); maxu=std::max(maxu,v.uv[0]); minv=std::min(minv,v.uv[1]); maxv=std::max(maxv,v.uv[1]); }
     CHECK(fabsf(minz-place.bottom)<1e-4f && fabsf(maxz-minz-ScreenHeight)<1e-4f); CHECK(minu==0 && maxu==1 && minv==0 && maxv==1);
     for(const auto& v:giant.body) for(float x:v.pos) CHECK(std::isfinite(x));
+    // ---- Terrain: stools stand on their own ground, the screen clears the highest ground under it, and the drop probe survives hostile worlds.
+    {
+        Deployment slope=deployed; slope.active=true; slope.relief[0]=74; slope.relief[1]=0; slope.relief[2]=-71; slope.relief[3]=-30; slope.relief[4]=40; slope.relief[5]=110; slope.measured=63;
+        CHECK(validDeployment(slope)); auto sw=deploymentPacket(slope); Deployment back; CHECK(parseDeployment(sw.data(),sw.size(),back) && back.measured==63);
+        for(unsigned i=0;i<ReliefCount;++i) CHECK(back.relief[i]==slope.relief[i]);
+        auto sp=placement(slope); float g0=slope.eye[2]-CameraEye;
+        CHECK(fabsf(sp.stool[0]-(g0+.74f))<1e-4f && fabsf(sp.stool[1]-g0)<1e-4f && fabsf(sp.stool[2]-(g0-.71f))<1e-4f);
+        for(unsigned i=0;i<3;++i) { auto q=seatPoint(slope,i); CHECK(fabsf(q[2]-sp.stool[i])<1e-5f); CHECK(fabsf(seatModelGround(q[2]+SeatEye)-q[2])<1e-4f); }
+        CHECK(fabsf(sp.bottom-(g0+1.10f+ScreenBottom))<1e-4f);                      // the highest ground under the screen (1.10 m) is cleared by the usual 2 m
+        for(unsigned i=3;i<ReliefCount;++i) CHECK(sp.bottom>=g0+reliefAt(slope,i)+ScreenBottom-1e-4f);
+        Deployment low=slope; low.relief[3]=low.relief[4]=low.relief[5]=-100; auto lp=placement(low); CHECK(fabsf(lp.bottom-(g0+ScreenBottom))<1e-4f);   // a drop behind never lowers the screen
+        auto mesh=audienceMesh(slope); float stoolLow=1e9f; for(const auto& v:mesh.body) if(v.pos[2]<g0-.6f) stoolLow=std::min(stoolLow,v.pos[2]);
+        CHECK(fabsf(stoolLow-(g0-.71f))<.02f);                                       // the lowest leg ends on the lowest stool's ground
+        Deployment unmeasured=slope; unmeasured.measured=0; auto up=placement(unmeasured); CHECK(fabsf(up.stool[0]-g0)<1e-5f && fabsf(up.bottom-(g0+ScreenBottom))<1e-5f);
+        Deployment wild=slope; wild.relief[0]=900; CHECK(!validDeployment(wild)); wild=slope; wild.measured=64; CHECK(!validDeployment(wild)); wild=slope; wild.relief[0]=900; CHECK(fabsf(placement(wild).stool[0]-(g0+MaxRelief))<1e-4f);   // even an unvalidated value cannot lift a stool out of bounds
+        
+        auto ww=deploymentPacket(slope); ww[36]^=1; CHECK(!parseDeployment(ww.data(),ww.size(),back));    // the checksum covers the relief
+        auto oldMagic=deploymentPacket(slope); oldMagic.resize(40); memcpy(oldMagic.data(),"WTD1",4); seal(oldMagic); CHECK(!parseDeployment(oldMagic.data(),40,back));
+        int16_t cm=0; CHECK(acceptLanding(10,10+CameraEye+.74f,&cm) && cm==74); CHECK(!acceptLanding(10,10+CameraEye+2.f,&cm)); CHECK(!acceptLanding(10,10+CameraEye-3.f,&cm)); CHECK(!acceptLanding(10,NAN,&cm));
+    }
+    {
+        // A simulated world: ground height by position, 30 fps, gravity, 12 held frames after every teleport, hostile regions.
+        struct World {
+            float spawn[2]={500,500}; bool collisionHole=false; int refuseFirst=0; bool roofZone=false; float roofAt[2]={}; int unloadedFor=0;
+            float height(float x,float y) const {
+                if(roofZone && hypotf(x-roofAt[0],y-roofAt[1])<.6f) return 24.f;          // a rock top 4 m above the slope
+                if(fabsf(x)>100.f) return 20.f;                                          // the spawn area: flat, and near the wearer's own height
+                return 20.f+.3f*x+.5f*sinf(y*.7f);                                       // a slope with ripples
+            }
+        };
+        auto runProbe=[&](World w,const Deployment& base,Ground& out,float fps,bool* returned)->bool {
+            GroundProber pr; float home[3]={base.eye[0],base.eye[1],base.eye[2]}; float cam[3]={home[0],home[1],home[2]}; pr.begin(base,cam,0);
+            float vz=0; int hold=0; uint64_t now=0; float hz[3]={}; if(returned) *returned=false;
+            for(unsigned frame=0;frame<20000 && !pr.done();++frame) {
+                now=uint64_t(frame*1000.f/fps); float dt=1.f/fps;
+                auto c=pr.update(cam,now);
+                if(c.teleport) { for(int i=0;i<3;++i) hz[i]=c.to[i]; hold=12; vz=0; if(w.unloadedFor>0) --w.unloadedFor;
+                    if(w.refuseFirst>0 && hypotf(c.to[0]-home[0],c.to[1]-home[1])>.01f) { --w.refuseFirst; hz[0]=w.spawn[0]; hz[1]=w.spawn[1]; }   // collision not loaded yet: the game returns the player
+                    if(w.collisionHole && hypotf(c.to[0]-home[0],c.to[1]-home[1])>.01f) { hz[0]=w.spawn[0]; hz[1]=w.spawn[1]; } }
+                if(hold>0) { --hold; cam[0]=hz[0]; cam[1]=hz[1]; cam[2]=hz[2]; }
+                else { vz-=9.8f*dt; cam[2]+=vz*dt; float g=(w.unloadedFor>0?base.eye[2]-CameraEye+1.26f:w.height(cam[0],cam[1]))+CameraEye; if(cam[2]<=g) { cam[2]=g; vz=0; } }
+                if(pr.done() && returned) *returned=hypotf(hz[0]-home[0],hz[1]-home[1])<1e-3f;
+            }
+            out=pr.result(); return pr.done();
+        };
+        Deployment base; base.from=1; base.target=2; base.sequence=1; base.active=true; base.yaw=.7f;
+        base.eye[0]=0; base.eye[1]=0; { World w; base.eye[2]=w.height(0,0)+CameraEye; }
+        Ground g; bool back=false;
+        for(float fps:{30.f,60.f,144.f}) {
+            World w; CHECK(runProbe(w,base,g,fps,&back)); CHECK(g.measured==63 && back);       // every point measured, the player returned
+            Deployment d=base; memcpy(d.relief,g.relief,sizeof d.relief); d.measured=g.measured; auto pl=placement(d);
+            for(unsigned i=0;i<3;++i) { auto xy=probeXY(base,i); CHECK(fabsf(pl.stool[i]-w.height(xy[0],xy[1]))<.02f); }
+            for(unsigned i=3;i<ReliefCount;++i) { auto xy=probeXY(base,i); CHECK(pl.bottom>=w.height(xy[0],xy[1])+ScreenBottom-.02f); }
+        }
+        { World w; w.roofZone=true; auto xy=probeXY(base,0); w.roofAt[0]=xy[0]; w.roofAt[1]=xy[1];     // a rock top over stool 0 only
+          CHECK(runProbe(w,base,g,30.f,&back)); CHECK(!(g.measured&1) && (g.measured&62)==62 && back);      // that point is refused, the rest measured
+          for(unsigned i=0;i<ReliefCount;++i) if(g.measured&(1u<<i)) CHECK(abs(int(g.relief[i]))<=int(MaxRelief*100)); }
+        { World w; w.unloadedFor=100000; CHECK(runProbe(w,base,g,30.f,&back)); CHECK(g.measured==0 && back); }          // no collision anywhere: the parked level looks like ground, the calibration drop at the wearer exposes it
+        { World w; w.unloadedFor=8; CHECK(runProbe(w,base,g,30.f,&back)); CHECK(g.measured==63 && back);          // unloaded for the whole first pass, loaded for the second
+          Deployment d=base; memcpy(d.relief,g.relief,sizeof d.relief); d.measured=g.measured; auto pl=placement(d); for(unsigned i=0;i<3;++i) { auto xy=probeXY(base,i); CHECK(fabsf(pl.stool[i]-w.height(xy[0],xy[1]))<.02f); } }
+        { World w; w.refuseFirst=10; CHECK(runProbe(w,base,g,30.f,&back)); CHECK(g.measured==63 && back); }                 // ten refused drops (two passes' worth) are tried again in a third pass
+        { World w; w.collisionHole=true; CHECK(runProbe(w,base,g,30.f,&back)); CHECK(g.measured==0 && back); }      // the game keeps returning the player to its spawn point: all flat, honestly
+        { GroundProber pr; float cam[3]={0,0,22}; Deployment b3=base; pr.begin(b3,cam,0); pr.cancel(); CHECK(!pr.active()); CHECK(!pr.update(cam,10).teleport); }
+    }
     CHECK(owner.retract(3500)); auto offWire=deploymentPacket(owner.local()); CHECK(viewer.packet(offWire.data(),offWire.size(),3500)); CHECK(!viewer.screens[1].active);
     puts("TV: consent, shared subscriptions, deployment authority/placement, wire, caps, expiry, loss/replay, fuzz, spring and meshes passed");
 }
