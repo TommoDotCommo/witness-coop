@@ -16,7 +16,7 @@ def finishes(logic, allowed, goal, start=frozenset()):
     solved = set(start)
     while True:
         new = [h for h in logic.available(solved) if h in allowed]
-        if not new: return goal <= solved
+        if not new: return goal <= solved or goal <= logic.derive(solved)[0]      # (a laser or door goal is lit or open, not solved)
         solved.update(new)
 
 
