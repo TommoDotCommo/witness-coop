@@ -90,8 +90,8 @@ time.sleep(2)
 # Deploy aimed sky TV via key J
 key(db, 'J')
 time.sleep(.5)
-if not dump(db).get('deploy_target'): send(db, ['tvdeploy'])
-aud_b1 = wait(lambda: dump(db), lambda s: s.get('deploy_target')!=0 and len(s.get('audience',[]))>=1, timeout=15, failure='deploy aimed sky TV failed')
+if not dump(db).get('deploy_target') and not dump(db).get('probing'): send(db, ['tvdeploy'])     # a second press while the ground is being measured cancels it
+aud_b1 = wait(lambda: dump(db), lambda s: s.get('deploy_target')!=0 and len(s.get('audience',[]))>=1, timeout=40, failure="deploy aimed sky TV failed")
 check('deploy action sets deployment target and creates audience screen', aud_b1['deploy_target']==1)
 scr1 = aud_b1['audience'][0]
 check('audience screen size is 4.0m x 2.5m', abs(scr1['width']-4.0)<1e-3 and abs(scr1['height']-2.5)<1e-3)
