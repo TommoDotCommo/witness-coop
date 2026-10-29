@@ -124,7 +124,7 @@ class Playthrough:
         self.planner = None; self.solved = set(); self.lock = threading.Lock()
         self.prop = []      # (panel, from bot, to bot, seconds)
         self.powered = set(); self.variant = {}; self.stalled_since = {}; self.fixups = []      # see stalls()
-        self.last_why = {}; self.restore = set()      # why a panel's last attempt failed; panels whose redraw was refused (drawn back the first way)
+        self.last_why = {}; self.restore = set(); self.candidates_only = set()      # panels drawn from relaxed-rule candidates (the game judges)      # why a panel's last attempt failed; panels whose redraw was refused (drawn back the first way)
 
     # ---- set-up
     def launch(self):
@@ -172,6 +172,20 @@ class Playthrough:
             q['only_edges'] = sweep.floor_edges(h)
             try: v = solver.variants(q); self.variant[h] = (0, v); self.paths[h] = v[0] if v else None
             except Exception as e: self.paths[h] = None; self.rec('solver error', panel='%#x' % h, error=repr(e))
+            if self.paths[h] is None and not solver.unsupported(q):
+                # No line satisfies every rule as the solver models them (Mountain Near Row 4): the solver may miss a detail, so ask it again with
+                # one rule switched off at a time (psolve's own switch) and let the game judge each candidate; a wrong line on an unsolved panel is
+                # harmless (the game resets it).
+                cands = []
+                for rule in ('stars', 'squares', 'poly', 'triangles', 'dots'):
+                    os.environ['PSOLVE_MUTANT'] = rule
+                    try: c_ = solver.solve_rules(q, timeout=120)
+                    except Exception: c_ = None
+                    finally: os.environ.pop('PSOLVE_MUTANT', None)
+                    if c_ and c_ not in cands: cands.append(c_)
+                if cands:
+                    self.variant[h] = (0, cands); self.paths[h] = cands[0]; self.candidates_only.add(h)
+                    self.rec('candidate lines', panel='%#x' % h, name=self.logic.entities[h].name, n=len(cands), why='no line meets every modelled rule')
             if self.paths[h] is None:
                 self.no_solver.add(h); self.rec('no solver', panel='%#x' % h, name=self.logic.entities[h].name, area=self.logic.entities[h].area, why=', '.join(solver.unsupported(q)) or 'no path found')
         return self.paths[h]
@@ -317,6 +331,9 @@ class Playthrough:
                         # worked back at once, and do not try this panel's other ways again.
                         k, v = self.variant[h]; self.variant[h] = (len(v), v); self.paths[h] = v[0]; self.fixups.insert(0, h)
                         self.rec('redraw refused: restoring', panel='%#x' % h, why=why)
+                    elif 'did not accept' in why and h in self.candidates_only and self.variant[h][0] + 1 < len(self.variant[h][1]):
+                        k, v = self.variant[h]; self.variant[h] = (k + 1, v); self.paths[h] = v[k + 1]; self.planner.tries[h] = 0      # the next candidate line
+                        self.rec('next candidate', panel='%#x' % h, candidate=k + 1, of=len(v))
                     elif why.startswith('stuck') or 'did not accept' in why:
                         # The line got stuck (or was refused) on a panel the game has powered: what blocks it may be a prerequisite solved the
                         # wrong way (the tutorial gate's latches stay shut unless Back Left ends at its bottom exit). Redraw those another way and
