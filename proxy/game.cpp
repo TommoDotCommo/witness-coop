@@ -249,6 +249,15 @@ void GameMarkPanelSolved(unsigned id) {
     for (auto& x : w) memcpy((void*)(e + x.off), &x.v, 4);
 }
 
+// What the game itself leaves when a timer panel resets (measured on the Shadows door timers 0x334DB/0x334DC, build 11370412): +0x278, +0x280,
+// +0x290 and +0x294 back to 0; +0x298 (solved at least once) stays 1.
+bool GameMarkPanelUnsolved(unsigned id) {
+    uintptr_t e = id < 0x40000 ? GameEntity(id) : 0;
+    if (!e || IsBadReadPtr((void*)(e + 8), 8) || *(uintptr_t*)(e + 8) != Base() + kPanelTypeInfo) return false;
+    const unsigned zero = 0; for (int off : {0x278, 0x280, 0x290, 0x294}) memcpy((void*)(e + off), &zero, 4);
+    return true;
+}
+
 bool GameDispatchTargetNow(unsigned panelId, bool any) {
     uintptr_t e = panelId < 0x40000 ? GameEntity(panelId) : 0;
     if (!e || IsBadReadPtr((void*)(e + 8), 8) || *(uintptr_t*)(e + 8) != Base() + kPanelTypeInfo || IsBadReadPtr((void*)(e + 0x2B4), 4)) return false;

@@ -73,6 +73,9 @@ public:
         if (!GetCfg().noTargetDispatch) GameDispatchTargetNow(id);       // targets without a dedicated event (laser, plate, gauge, ...) react as in a native solve
     }
     bool applyDoorOpen(unsigned id) override { return GameDoorOpenNow(id, 1.0f); }
+    bool applyPanelUnsolved(unsigned id) override { return GameMarkPanelUnsolved(id); }
+    bool applyDoorClose(unsigned id) override { return GameDoorOpenNow(id, 0.0f); }      // the same call with a target of 0 (as the game's own timed doors: +0x1D4 goes to 0)
+    bool doorRequested(unsigned id) override { uintptr_t e = GameEntity(id); return e && Rd32(e + 0x1D4) == kOne; }      // where the door is going (+0x1D0 is where it is)
     // The game keeps a drawn line as an array of segment records at +0x230 (count at +0x228, 13 dwords each: node a, node b, the panel's engine id twice,
     // 1.0, 1.0, the world position of a (3 floats), of b (3 floats), a zero). It stays after the panel is solved. Each node goes out with its place in
     // bounded local units from the panel's own position, so the other game never has to know how the panel's graph sits in the world.
