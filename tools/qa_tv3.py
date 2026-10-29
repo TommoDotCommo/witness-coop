@@ -235,9 +235,10 @@ def main():
             wait(live_streams, 'both audience clients B and C receive live source POV independently', 20)
             c2.send('shot tv3_live_b'); c3.send('shot tv3_live_c')
 
-            # Watch from the viewing side and aim up at the raised screen.
+            # Watch from the viewing side and aim up at the raised screen: close to where the deployer stood (3 m out), which it could see
+            # across, so nothing stands in the way (5 m out and 2.5 m aside put client 2 behind a tree here).
             center=c2.tv()['audience'][0]['center']
-            for c,side,front in ((c2,2.5,5.0),(c3,-2.0,6.0)):
+            for c,side,front in ((c2,0.8,3.2),(c3,-1.0,3.6)):
                 x=center[0]+math.cos(syaw)*front+math.sin(syaw)*side
                 y=center[1]+math.sin(syaw)*front-math.cos(syaw)*side
                 look=math.atan2(center[1]-y,center[0]-x)

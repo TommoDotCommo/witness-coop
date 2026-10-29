@@ -86,6 +86,7 @@ time.sleep(3)
 send(db, ['hover %.5f %.5f %.5f %.6f -0.10' % (ax-math.cos(yaw)*3.5, ay-math.sin(yaw)*3.5, az, yaw)])
 wait(B.camera, lambda c: abs(c[0][0]-(ax-math.cos(yaw)*3.5)) < .3 and abs(c[0][1]-(ay-math.sin(yaw)*3.5)) < .3)
 time.sleep(2)
+(bx, by, bz), (byaw, _) = B.camera()      # where the deployer stands and looks when it deploys
 
 # Deploy aimed sky TV via key J
 key(db, 'J')
@@ -96,8 +97,8 @@ check('deploy action sets deployment target and creates audience screen', aud_b1
 scr1 = aud_b1['audience'][0]
 check('audience screen size is 4.0m x 2.5m', abs(scr1['width']-4.0)<1e-3 and abs(scr1['height']-2.5)<1e-3)
 check('screen bottom is 2.0m above ground', abs(scr1['bottom']-(scr1['ground']+2.0))<1e-3)
-ahead = (scr1['center'][0]-(ax-math.cos(yaw)*2.5))*math.cos(yaw) + (scr1['center'][1]-(ay-math.sin(yaw)*2.5))*math.sin(yaw)      # B stood 2.5 m behind A, looking along yaw
-check('screen stands ~3.0m ahead of the deployer, its picture facing it', abs(ahead-3.0)<0.35 and abs((scr1['yaw']-yaw-math.pi+math.pi)%(2*math.pi)-math.pi)<.02)
+ahead = (scr1['center'][0]-bx)*math.cos(byaw) + (scr1['center'][1]-by)*math.sin(byaw); turn = (scr1['yaw']-byaw-math.pi+math.pi)%(2*math.pi)-math.pi
+check('screen stands ~3.0m ahead of the deployer, its picture facing it (ahead %.2f m, heading off %.3f rad)' % (ahead, turn), abs(ahead-3.0)<0.35 and abs(turn)<.02)
 time.sleep(1)
 aud_b1 = dump(db)
 check('audience screen with no consent shows static noise', not aud_b1['audience'][0]['fresh'] and not aud_b1['audience'][0]['drawn_live'] and aud_b1['audience'][0]['draws']>0)

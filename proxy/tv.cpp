@@ -54,7 +54,8 @@ bool TvProbing(){ Guard g; return state().probing; }
 bool TvProbeHome(float pos[3],float ang[2]){
     Guard g; auto& s=state();
     if(!s.probing || GetCfg().tvProbeShow) return false;
-    for(unsigned i=0;i<3;++i) pos[i]=s.probeHome[i]; ang[0]=s.probeHome[3]; ang[1]=s.probeHome[4]; return true;
+    for(unsigned i=0;i<3;++i) pos[i]=s.probeHome[i]; ang[0]=s.probeHome[3]; ang[1]=s.probeHome[4];
+    return true;
 }
 unsigned TvDeploymentTarget(){ Guard g; return state().deployments.local().active?state().deployments.local().target:0; }
 std::vector<wtv::Deployment> TvAudienceScreens(){
