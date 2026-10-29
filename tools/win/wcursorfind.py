@@ -39,8 +39,13 @@ for ri, (a, n) in enumerate(R):
         a0 = A[i]
         if a0 != a0 or abs(a0) > 1e6: continue
         if not near(a0, C[i]) or not near(a0, E[i]): continue
-        if abs(B[i] - a0) > 1e-5 and near(a0, D[i]): xs.append((a + 4 * i, a0, B[i]))
-        if abs(D[i] - a0) > 1e-5 and near(a0, B[i]): ys.append((a + 4 * i, a0, D[i]))
+        sane = lambda v: v == v and abs(v) < 1e4      # a cursor is a modest number (panel units or pixels), never garbage-sized
+        if sane(B[i]) and 1e-4 < abs(B[i] - a0) < 1e4 and near(a0, D[i]): xs.append((a + 4 * i, a0, B[i]))
+        if sane(D[i]) and 1e-4 < abs(D[i] - a0) < 1e4 and near(a0, B[i]): ys.append((a + 4 * i, a0, D[i]))
 base = int(P.base)
 def show(v): return [('exe+%#x' % (ad - base) if base <= ad < base + 0x1000000 else hex(ad), round(x0, 4), round(x1, 4)) for ad, x0, x1 in v[:40]]
-print('x candidates', len(xs), show(xs)); print('y candidates', len(ys), show(ys))
+print('x candidates', len(xs), show(xs[:10])); print('y candidates', len(ys), show(ys[:10]))
+# a cursor is a pair (x, y) of neighbouring floats: an x candidate whose next float is a y candidate (or the other way round, y first)
+yset = {ad for ad, _, _ in ys}; xset = {ad for ad, _, _ in xs}
+pairs = [(ad, x0, x1) for ad, x0, x1 in xs if ad + 4 in yset] + [(ad - 4, x0, x1) for ad, x0, x1 in xs if ad - 4 in yset]
+print('x,y pairs', len(pairs), show(pairs[:40]))

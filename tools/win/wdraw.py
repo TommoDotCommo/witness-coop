@@ -43,6 +43,9 @@ def done(solved, why, traced=0, dist=0.0):
 
 def is_solved(): return p.u32(e + 0x294) == 0x3f800000 and p.u32(e + 0x298) == 1
 def traced(): return p.u32(e + 0x228)
+def first_t():      # how far the line has got along its first edge (traced-edge records at [+0x230], 0x34 bytes each, t at +0x10): 1.0 on a finished line, near 0 on a new one
+    ptr = p.u64(e + 0x230)
+    return struct.unpack('<f', p.rd(ptr + 0x10, 4))[0] if ptr else 1.0
 def state(): return p.u32(e + 0x280)
 if not e or p.type_of(e) != TI_PANEL: done(False, 'not a panel')
 REDRAW = bool(os.environ.get('WDRAW_REDRAW'))      # draw again over a solved panel (another solution: a panel whose other exit powers something else)
@@ -216,7 +219,7 @@ for attempt, rd_ in enumerate(ROUNDS):
         c.send(['button L down', 'button L up'], 0.14)      # press and release on the start circle: the line starts
         # A redraw: the solved line's count stays until a new line starts, and state 3 shows up just from entering a solved panel, so only the count
         # changing from what the old line had (a new line counts 1) says the click started it.
-        if (not REDRAW and (traced() >= 1 or state() == 3)) or (REDRAW and traced() >= 1 and traced() != OLD_TRACED): started = (w_, dy_); break
+        if (not REDRAW and (traced() >= 1 or state() == 3)) or (REDRAW and traced() >= 1 and (traced() != OLD_TRACED or first_t() < 0.99)): started = (w_, dy_); break
     if started: break
     rclick()
 if not started: done(False, 'the line did not start with any panel size or offset tried', traced(), dist)
