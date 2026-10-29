@@ -151,6 +151,7 @@ static DWORD WINAPI CmdThread(LPVOID) {
             } else if (sscanf(line, "mouse %d %d", &dx, &dy) == 2) { Cmd c = {2, 0, 0, 0, 0, false, dx, dy, 0}; EnterCriticalSection(&g_lock); if (g_n < 64) g_q[g_n++] = c; LeaveCriticalSection(&g_lock); }
             else if (sscanf(line, "shot %15s", a) == 1) RequestShot(a);
             else if (!strncmp(line, "probegrid", 9)) { float b[4] = {0.2f, 0.2f, 0.8f, 0.8f}; sscanf(line + 9, "%f %f %f %f", &b[0], &b[1], &b[2], &b[3]); ModelGpuRequestProbeGrid(b[0], b[1], b[2], b[3]); }
+            else if (!strncmp(line, "depthdump", 9)) ModelGpuRequestDepthDump();
             else if (!strncmp(line, "probe", 5)) ModelGpuRequestProbe();
             else if (!strncmp(line, "depthview ", 10)) ModelGpuDepthView(!strncmp(line + 10, "on", 2));
             else if (!strncmp(line, "fakepose off", 12)) CoopSetFakeRemote(false, nullptr, 0);

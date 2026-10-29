@@ -1,0 +1,140 @@
+"""Game-free checks of the walking map and planner (tools/win/wnav.py) on made-up scenes, with a mutant for each protection.
+Usage: python3 tools/test_wnav.py      (prints one line per check and per mutant; exit 0 when all checks pass and every mutant is rejected)
+
+Scenes are built from points as a depth picture would give them (0.25 m apart):
+ - wall:     flat ground, a 3 m wall across it with a 2 m gap: the way goes through the gap (scenes reach past the search margin, else
+             the plan goes round the end of a wall through cells never seen, as it should in the game);
+ - cliff:    a 3 m step up with stairs at one end: the way climbs the stairs, never the cliff face;
+ - cliff2:   the same step with no stairs: never climbed;
+ - walkway:  a deck 2 m above the ground: walking along it stays on the deck (two levels in one cell); the ground under its far end
+             is not reached from it (no way down);
+ - door:     a closed door blocks a corridor; a later look sees the floor there with the band above it empty: it is open;
+ - bump:     cells bumped into on this walk are not entered again;
+ - foliage:  the cell the player stands in is walkable whatever was seen in it;
+ - depth:    a depth picture of flat ground decodes to points on the ground."""
+import math, os, shutil, struct, subprocess, sys, tempfile
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+CHECK = r'''
+import math, struct, sys
+sys.path.insert(0, D); import wnav
+E = wnav.EYE
+def ground(m, x0, x1, y0, y1, z):
+    pts = []; x = x0
+    while x <= x1:
+        y = y0
+        while y <= y1: pts.append((x, y, z)); y += 0.25
+        x += 0.25
+    return pts
+def wall(x, y0, y1, z0, z1):
+    pts = []; y = y0
+    while y <= y1:
+        z = z0
+        while z <= z1: pts.append((x, y, z)); z += 0.25
+        y += 0.25
+    return pts
+def cells_x(path, x): return [wnav.centre(c)[1] for c in path if abs(wnav.centre(c)[0] - x) < 0.3]
+fails = []
+def check(name, ok, why=''):
+    print('%-8s %s %s' % (name, 'ok' if ok else 'FAILED', why)); ok or fails.append(name)
+
+# wall with a gap at y 12..14
+m = wnav.Map(); m.integrate(ground(m, -5, 25, -15, 30, 0.0) + wall(10.1, -15, 11.9, 0.25, 3.0) + wall(10.1, 14.1, 30, 0.25, 3.0))
+p = m.plan((5, 5, E), (15, 5, E), margin=12); ys = cells_x(p or [], 10.25)
+check('wall', p is not None and ys and all(12 <= y <= 14 for y in ys), 'crossed at y %s' % ys)
+
+# cliff: ground 0 for x < 10, plateau 3 for x >= 10, stairs 0.25 m a step (0.5 m treads) at y 16..18 from x 4 to 10
+pts = ground(m, -5, 9.9, -15, 30, 0.0) + ground(m, 10, 25, -15, 30, 3.0) + wall(10.0, -15, 12.9, 0.25, 3.0) + wall(10.0, 15.1, 30, 0.25, 3.0)
+for k in range(12): pts += ground(m, 4 + k * 0.5, 4 + k * 0.5 + 0.49, 13, 15, (k + 1) * 0.25)
+m = wnav.Map(); m.integrate(pts)
+p = m.plan((5, 5, E), (15, 5, 3 + E), margin=12); xs = [wnav.centre(c) for c in (p or []) if 9.5 <= wnav.centre(c)[0] <= 10.5]
+check('cliff', p is not None and xs and all(12.5 <= y <= 15.5 for _, y in xs), 'reached the plateau at %s' % [round(y, 1) for _, y in xs])
+check('ahead', p is not None and not m.blocked_along((5, 5, E), p, 99), 'the way up the stairs reads as blocked')
+m = wnav.Map(); m.integrate(ground(m, -5, 9.9, -15, 30, 0.0) + ground(m, 10, 25, -15, 30, 3.0) + wall(10.0, -15, 30, 0.25, 3.0))      # no stairs
+p = m.plan((5, 5, E), (15, 5, 3 + E), margin=12); top = [c for c in (p or []) if wnav.centre(c)[0] > 10.5]
+check('cliff2', not top and not m.reached, 'climbed the cliff: %d cells on the plateau' % len(top))
+
+# walkway: deck at 2 m over ground 0, along x 0..20 at y 9..11
+m = wnav.Map(); m.integrate(ground(m, 0, 20, 0, 20, 0.0) + ground(m, 0, 20, 9, 11, 2.0))
+p = m.plan((1, 10, 2 + E), (19, 10, 2 + E))
+check('walkway', p is not None and wnav.centre(p[-1])[0] > 18, 'no way along the deck' if p is None else 'ended at %.1f' % wnav.centre(p[-1])[0])
+p = m.plan((1, 10, 2 + E), (19, 10, E))      # under the deck's far end: no way down, so not there
+check('level', not m.reached, 'took the deck above for the ground under it')
+
+# door: corridor x 0..20, y 9..11 between walls; a door at x 10; later seen open
+side = wall(0, 0, 0, 0, 0)
+corr = ground(m, 0, 20, 9, 11, 0.0) + [(x / 4, 8.9, z / 4) for x in range(81) for z in range(1, 13)] + [(x / 4, 11.1, z / 4) for x in range(81) for z in range(1, 13)]
+door = [(10.1, 9 + y / 4, z / 4) for y in range(9) for z in range(1, 10)]
+m = wnav.Map(); m.integrate(corr + door); shut = m.walkable(wnav.cell_of(10.1, 10), 0.0)
+m.integrate(ground(m, 9.5, 10.5, 9.5, 10.5, 0.0)); opened = m.walkable(wnav.cell_of(10.1, 10), 0.0)
+check('door', shut[2] > 1 and opened[0] and opened[2] == 1, 'shut %s, after the open look %s' % (shut, opened))
+p = m.plan((2, 10, E), (18, 10, E)); free = m.blocked_along((2, 10, E), p or [], 99)
+m.integrate([(10.1 + dx / 4, 9 + y / 4, z / 4) for dx in (0, 1) for y in range(9) for z in range(1, 13)] + [(10.1 + dx / 4, 9 + y / 4, 3.5) for dx in (0, 1) for y in range(9)])      # it shuts again (a 3 m slab)
+check('shut', p is not None and not free and m.blocked_along((2, 10, E), p, 99), 'way through the open door free: %s, after it shut blocked: %s' % (not free, m.blocked_along((2, 10, E), p, 99)))
+
+# bump: the straight way is free, but bumped cells on this walk are avoided
+m = wnav.Map(); m.integrate(ground(m, -5, 25, -15, 30, 0.0)); avoid = set()
+for y in range(-30, 41): m.bump(10.1, y * 0.5); avoid.add(wnav.cell_of(10.1, y * 0.5))      # (a detour dearer than a bumped cell)
+p = m.plan((5, 5, E), (15, 5, E), avoid=avoid, margin=20); ys = cells_x(p or [], 10.25)
+check('bump', p is not None and ys and all(y > 20 for y in ys), 'crossed at y %s' % ys)
+
+# foliage: where the player stands is walkable, whatever fills the band there
+m = wnav.Map(); m.integrate(ground(m, 0, 4, 0, 4, 0.0) + [(2.1, 2.1, z / 4) for z in range(1, 7)])
+before = m.walkable(wnav.cell_of(2.1, 2.1), 0.0); m.stand(2.1, 2.1, 0.0); after = m.walkable(wnav.cell_of(2.1, 2.1), 0.0)
+check('stand', before[2] > 1 and after[0] and after[2] == 1, 'before %s after %s' % (before, after))
+
+# depth: a picture of flat ground at z 0 from a camera 1.65 m up, looking 0.3 rad down
+W, H, near, cam = 64, 36, 0.06, (3.0, -2.0, 1.65, 0.7, -0.3, 54.0, 16 / 9)
+cx, cy, cz, th, ph, vf, asp = cam
+fwd = (math.cos(ph) * math.cos(th), math.cos(ph) * math.sin(th), math.sin(ph)); rt = (math.sin(th), -math.cos(th), 0.0)
+up = (-math.sin(ph) * math.cos(th), -math.sin(ph) * math.sin(th), math.cos(ph)); tv = math.tan(math.radians(vf) / 2); tu = tv * asp
+px = []; want = []
+for j in range(H):
+    for i in range(W):
+        nx = (2 * (i + 0.5) / W - 1) * tu; ny = (1 - 2 * (j + 0.5) / H) * tv
+        dz = fwd[2] + ny * up[2]; t = -cz / dz if dz < -1e-6 else 99
+        px.append(near / t if t < 25 else 0.0)
+        if t < 25: want.append((cx + t * (fwd[0] + nx * rt[0] + ny * up[0]), cy + t * (fwd[1] + nx * rt[1] + ny * up[1])))
+data = struct.pack('<3I', 0x31444457, W, H) + struct.pack('<8f', cx, cy, cz, th, ph, vf, asp, near) + struct.pack('<%df' % len(px), *px)
+c_, pts = wnav.depth_points(data, 1)
+err = max((math.dist(q[:2], w) for q, w in zip(pts, want)), default=9)
+check('depth', len(pts) == len(want) > 200 and max(abs(z) for _, _, z in pts) < 0.02 and err < 0.02, '%d points, worst height %.3f, worst place %.3f m' % (len(pts), max((abs(z) for _, _, z in pts), default=9), err))
+sys.exit(1 if fails else 0)
+'''
+
+MUTANTS = [      # (file text, replacement): each removes one protection
+    ("return [z0 + b * BIN for b in range(64) if m >> b & 1 and not (m >> b) & BAND_MASK]", "return [z0 + b * BIN for b in range(64) if m >> b & 1]"),      # nothing in the way counts
+    ("fit = [(z, 1.0) for z in surf if (z > SEA or walked) and -DOWN <= z - fu <= UP]", "fit = [(z, 1.0) for z in surf[:1] if (z > SEA or walked) and -DOWN <= z - fu <= UP]"),      # one level a cell (stairs over ground, decks)
+    ("if -DOWN <= r[0] - fu <= UP and r[0] > SEA: return [(r[0], SOFT)]", "if r[0] > SEA: return [(r[0], SOFT)]"),      # a cliff face is soft, any height
+    ("and abs(fu - fb) < 2.0: self.reached = True", ": self.reached = True"),      # the target's height not asked
+    ("if abs(f[0] - old[0]) < 2 * BIN and not (f[1] & BAND_MASK): self.cells[c] = [f[0], f[1], old[2]]; continue", "pass"),      # an opened door stays shut
+    ("or v in avoid: continue", ": continue"),      # bumped cells entered again
+    ("if b0 is not None and b0 >= 0: rec[1] &= ~(HEAD_MASK << (b0 + 1)) & 0xFFFFFFFFFFFFFFFF", "pass"),      # where the player stands stays blocked
+    ("nxt |= {f} if st is None else {round(z if z is not None else f, 2) for z, _ in st}", "nxt |= {f} if st is None else {round(z if z is not None else f, 2) for z, _ in sorted(st, key=lambda q_: abs((q_[0] if q_[0] is not None else f) - f))[:1]}"),      # one level carried
+    ("if st and c not in self.soft: st = [q_ for q_ in st if q_[1] != SOFT]", "pass"),      # a door shut on the way is not seen
+    ("up = (-math.sin(ph) * math.cos(th), -math.sin(ph) * math.sin(th), math.cos(ph))\n    tv", "up = (math.sin(ph) * math.cos(th), math.sin(ph) * math.sin(th), math.cos(ph))\n    tv"),      # the camera's up vector wrong
+]
+
+
+def run_with(folder):
+    r = subprocess.run([sys.executable, '-c', 'D=%r\n' % folder + CHECK], capture_output=True, text=True, timeout=300)
+    return r.returncode == 0, ' | '.join(l for l in (r.stdout + r.stderr).strip().splitlines() if 'FAILED' in l or 'Error' in l)[:300]
+
+
+def main():
+    src = os.path.join(HERE, 'win', 'wnav.py')
+    r = subprocess.run([sys.executable, '-c', 'D=%r\n' % os.path.dirname(src) + CHECK], capture_output=True, text=True, timeout=300)
+    print(r.stdout.strip()); print(r.stderr.strip()[-500:]) if r.returncode and r.stderr else None
+    bad = r.returncode != 0; print('clean:', 'passed' if not bad else 'FAILED')
+    text = open(src).read()
+    for old, new in MUTANTS:
+        if old not in text:
+            print('mutant text not found: %s' % old[:70]); bad = True; continue
+        with tempfile.TemporaryDirectory(prefix='wnav-mut-') as d:
+            open(os.path.join(d, 'wnav.py'), 'w').write(text.replace(old, new, 1))
+            ok, out = run_with(d)
+            print('mutant %-70s %s (%s)' % (old[:70], 'rejected' if not ok else 'SURVIVED', out), flush=True); bad |= ok
+    print('ALL OK' if not bad else 'FAILED'); return 1 if bad else 0
+
+
+if __name__ == '__main__': sys.exit(main())

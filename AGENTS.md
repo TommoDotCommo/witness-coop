@@ -21,7 +21,9 @@ prepare a reviewable diff before asking to publish. Never force-push.
 - `tools/`: WSL scripts (`config.sh`, `install.sh`, `restart.sh`, `qa.sh`, `qa_par.sh`, `suite.py`, `shard.py`, `solve_bot.py`,
   `state_diff.py`) and `tools/win/` (Windows Python probes and input helpers; `wlib.py` is shared).
 - Puzzle sweep: `tools/sweep.sh` / `tools/sweep.py` (every panel), `tools/puzzle.sh` / `puzzle.py` (one panel), `tools/solver.py` (which line to draw),
-  `tools/psolve/` (the rule solver, C++, `make -C tools/psolve test`), `tools/win/wdraw.py` (teleport, enter, find the start, draw), `tools/win/wpanels.py` (manifest).
+  `tools/psolve/` (the rule solver, C++, `make -C tools/psolve test`), `tools/win/wdraw.py` (walk there, enter, find the start, draw), `tools/win/wpanels.py` (manifest).
+- Walking: `tools/win/wnav.py` (the player walks with mouse and keys; it maps the island from the proxy's `depthdump` and plans with A*;
+  teleport only when a walk fails, and every move is recorded), `tools/navmap.py` (picture of a map), `python3 tools/test_wnav.py` (game-free, with mutants).
 - `local/`: ignored private configuration, disposable test copies and QA evidence.
 
 ## Build and validation

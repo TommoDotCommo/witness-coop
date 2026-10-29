@@ -1,12 +1,14 @@
-"""Draw a given path on a panel through in-process input: teleport with the dev menu, enter the puzzle, trace the node list, finish.
+"""Draw a given path on a panel through in-process input: walk to it (teleport only when walking fails), enter the puzzle, trace the node list, finish.
 
 Usage: Windows Python wdraw.py <pid> <game folder> <panel id hex> <node,node,...>
 The path is a list of panel node indices from a start node to an end node (the end stub included). Prints one JSON line:
-{"id", "solved", "why", "traced", "dist", "seq", "want"}; the verdict is the game's own solved flag after the line was drawn and finished.
+{"id", "solved", "why", "traced", "dist", "seq", "want", "moves"}; the verdict is the game's own solved flag after the line was drawn and finished.
+"moves": how the player got to each place it stood ({"how": "walk" | "teleport", ...}): it walks (wnav.py) and is teleported only when the walk
+did not get there (WDRAW_WALK=0: teleport straight away, the old way).
 Environment: WDRAW_KCACHE (a json file that remembers what a panel needed), WDRAW_TIMING, WDRAW_SHOTS (debug output on stderr).
 
 What it does, and what was measured (build 11370412, 1920x1080, see NOTES.md of the hub):
- 1. teleport with the dev menu (it holds the player 2 s so it settles on the ground), then aim the camera at the middle of the panel;
+ 1. walk to 2.5 m in front of the panel (else teleport with the dev menu: it holds the player 2 s so it settles on the ground), then aim the camera at the middle of the panel;
  2. enter the puzzle with a click; the cursor appears at the screen centre, i.e. on the middle of the panel; a 4-count mouse move that does not turn the
     view proves it was entered;
  3. find the start circle: node positions are projected with a pinhole camera (1033 px at 1 m, the panel's full rotation, its size in metres W unknown), and
@@ -39,7 +41,7 @@ def done(solved, why, traced=0, dist=0.0):
     if not solved: c.send(['shot fail_%x' % eid], 0.8)      # what the game showed, taken while still there
     rclick()                                                 # leave the puzzle if it is still entered (nothing happens otherwise)
     c.send(['hover off'], 0.2)
-    print(json.dumps({'id': eid, 'solved': solved, 'why': why, 'traced': traced, 'dist': round(dist, 2), 'seq': sequence(), 'want': path}), flush=True); sys.exit(0 if solved else 1)
+    print(json.dumps({'id': eid, 'solved': solved, 'why': why, 'traced': traced, 'dist': round(dist, 2), 'seq': sequence(), 'want': path, 'moves': MOVES}), flush=True); sys.exit(0 if solved else 1)
 
 def is_solved(): return p.u32(e + 0x294) == 0x3f800000 and p.u32(e + 0x298) == 1
 def traced(): return p.u32(e + 0x228)
@@ -79,10 +81,36 @@ def standing(pos):      # distance along the (horizontal part of the) panel's no
     nx, ny = NORMAL[0], NORMAL[1]; nn = math.hypot(nx, ny) or 1.0; nx, ny = nx / nn, ny / nn
     ux, uy = pos[0] - px_, pos[1] - py_; return ux * nx + uy * ny, -ux * ny + uy * nx
 
-# ---- teleport -------------------------------------------------------------------------------------------------------------------------------
+# ---- getting there: walk, teleport only when that fails -------------------------------------------------------------------------------------
+WALK = os.environ.get('WDRAW_WALK', '1') != '0'
+MOVES = []      # how the player got to each place it stood (in the result)
+walker = None
+def walk_to(hx, hy, hz, tol=1.0):
+    """Walk to (hx, hy) with the eye near hz. True when there."""
+    global walker
+    if not WALK: return False
+    import wnav
+    if walker is None: walker = wnav.Walker(p, c, gdir, log=dbg)
+    d = math.dist(p.camera()[0][:2], (hx, hy))
+    r = walker.go((hx, hy, hz), tol, min(300.0, 60.0 + 2.0 * d), ztol=1.8)
+    MOVES.append({'how': 'walk', 'ok': r['ok'], 'why': r['why'], 'seconds': r['seconds'], 'walked': r['walked'], 'stuck': r['stuck']})
+    stamp('walked %.0f m in %.0f s: %s' % (r['walked'], r['seconds'], 'there' if r['ok'] else r['why']))
+    return r['ok']
+def teleported(why): MOVES.append({'how': 'teleport', 'why': why}); stamp('TELEPORT (last resort): %s' % why)
+def hover_to(hx, hy, hz, yaw, why):
+    """Walk to (hx, hy); when that fails, the old way: held there (a teleport) and let go to settle."""
+    if walk_to(hx, hy, hz): return
+    teleported(why); c.send(['hover %.4f %.4f %.4f %.5f 0.0' % (hx, hy, hz, yaw)], 2.4); c.send(['hover off'], 1.5)
+
 def menu_teleport():
-    """The dev menu's teleport (the feature under test): 3 m in front of the panel, held 2 s while the player settles on the ground there."""
+    """Walk to 2.5 m in front of the panel; when that fails, the dev menu's teleport: 3 m in front, held 2 s while the player settles there."""
     if os.environ.get('WDRAW_NO_TELEPORT'): return p.camera()[0]      # a human is standing in front of the panel: draw from where they are (the menu teleport may land off the platform they are on)
+    nx, ny = NORMAL[0], NORMAL[1]; nn = math.hypot(nx, ny) or 1.0
+    if walk_to(px_ + 2.5 * nx / nn, py_ + 2.5 * ny / nn, pz_):
+        pos = p.camera()[0]; dn_, lat_ = standing(pos)
+        if 1.0 < dn_ < 8 and abs(lat_) < 2.0 and abs(pos[2] - pz_) < 2.0: return pos
+        MOVES[-1]['ok'] = False; MOVES[-1]['why'] = 'arrived, but not in front of the panel (%.1f m out, %.1f m aside, %.1f m in height)' % (dn_, lat_, pos[2] - pz_)
+    teleported('the walk did not get in front of the panel' if WALK else 'walking is off (WDRAW_WALK=0)')
     for attempt in range(3):
         c.send(['menusel %x' % eid, 'menudo teleport'], 3.2)
         pos, ang = p.camera(); dn_, lat_ = standing(pos)
@@ -105,7 +133,8 @@ def stand_beside_flat():
         sx_, sy_, _ = quat_rot(ax_); sn_ = math.hypot(sx_, sy_)
         if sn_ < 0.3: continue
         hx_, hy_ = px_ + 1.6 * sx_ / sn_, py_ + 1.6 * sy_ / sn_
-        c.send(['hover %.4f %.4f %.4f %.5f -0.8' % (hx_, hy_, pz_ + 1.65, math.atan2(py_ - hy_, px_ - hx_))], 2.4)
+        if not walk_to(hx_, hy_, pz_ + 1.65, tol=0.6):
+            teleported('the walk did not get beside the flat panel'); c.send(['hover %.4f %.4f %.4f %.5f -0.8' % (hx_, hy_, pz_ + 1.65, math.atan2(py_ - hy_, px_ - hx_))], 2.4)
         aim(); r_ = depth_ratio(); stamp('flat panel: beside it at (%.1f, %.1f), depth ratio %.2f' % (hx_, hy_, r_))
         if 0.7 < r_ < 1.45: return p.camera()[0]
     return p.camera()[0]
@@ -114,19 +143,26 @@ STAND = os.environ.get('WDRAW_STAND')      # "sideways,distance" in metres: stan
 if STAND and not FLIP:                     # cursor only reaches what the camera sees, so a line stops at the edge of a wall in front of the panel)
     lat_, dd_ = (float(v) for v in STAND.split(',')); nx_, ny_ = NORMAL[0], NORMAL[1]; nn_ = math.hypot(nx_, ny_) or 1.0; nx_, ny_ = nx_ / nn_, ny_ / nn_
     hx_, hy_ = px_ + dd_ * nx_ - lat_ * ny_, py_ + dd_ * ny_ + lat_ * nx_
-    c.send(['hover %.4f %.4f %.4f %.5f 0.0' % (hx_, hy_, pz_ + 0.2, math.atan2(py_ - hy_, px_ - hx_))], 2.4); c.send(['hover off'], 1.5)
+    hover_to(hx_, hy_, pz_ + 0.2, math.atan2(py_ - hy_, px_ - hx_), 'the walk did not get to the standing spot asked for')
     pos = p.camera()[0]; stamp('stood at %.1f m sideways, %.1f m out' % (lat_, dd_))
 if FLIP:      # the menu's teleport puts us on its side: move to the other one (3 m along the flipped normal), then let the player settle there
     nx_, ny_ = NORMAL[0], NORMAL[1]; nn_ = math.hypot(nx_, ny_) or 1.0; hx_, hy_ = px_ + 3.0 * nx_ / nn_, py_ + 3.0 * ny_ / nn_
-    c.send(['hover %.4f %.4f %.4f %.5f 0.0' % (hx_, hy_, pz_ + 0.2, math.atan2(py_ - hy_, px_ - hx_))], 2.4); c.send(['hover off'], 1.5)
+    hover_to(hx_, hy_, pz_ + 0.2, math.atan2(py_ - hy_, px_ - hx_), 'the walk did not get to the other side of the panel')
     pos = p.camera()[0]; stamp('moved to the other side of the panel')
 dist = math.dist(pos, (px_, py_, pz_))
-stamp('teleported')
+stamp('in front of the panel')
 
+def look(yaw, pitch):
+    """Turn the camera to these angles with the mouse, as a player does (0.0025 rad a count; dx right turns the yaw down, dy down the pitch)."""
+    for _ in range(3):
+        _, (cy_, cp_) = p.camera(); ey = (yaw - cy_ + math.pi) % (2 * math.pi) - math.pi; ep = pitch - cp_
+        if abs(ey) < 0.004 and abs(ep) < 0.004: break
+        c.send(['mouse %d %d' % (max(-1500, min(1500, round(-ey / 0.0025))), max(-1500, min(1500, round(-ep / 0.0025))))], 0.08)
+    time.sleep(0.3)
 def aim():
-    """Point the camera at the middle of the panel (the angles are set by a teleport to where we already stand)."""
+    """Point the camera at the middle of the panel."""
     cx, cy, cz = p.camera()[0]; hd = math.hypot(px_ - cx, py_ - cy) or 1.0
-    c.send(['tp %.4f %.4f %.4f %.5f %.5f' % (cx, cy, cz, math.atan2(py_ - cy, px_ - cx), math.atan2(pz_ - cz, hd))], 0.4)
+    look(math.atan2(py_ - cy, px_ - cx), math.atan2(pz_ - cz, hd))
 aim()
 
 def depth_ratio():
@@ -170,15 +206,14 @@ def centre_on_panel():
     fx = sum(x for x, _ in cells) / len(cells); fy = sum(y for _, y in cells) / len(cells)
     if abs(fx - 0.5) < 0.04 and abs(fy - 0.5) < 0.04: return
     dyaw = -math.atan((fx - 0.5) * 1920 / FOCAL); dpitch = -math.atan((fy - 0.5) * 1080 / FOCAL)      # screen right: yaw down; screen down: pitch down
-    c.send(['tp %.4f %.4f %.4f %.5f %.5f' % (cpos[0], cpos[1], cpos[2], cang[0] + dyaw, cang[1] + dpitch)], 0.4)
+    look(cang[0] + dyaw, cang[1] + dpitch)
     stamp('re-aimed on the panel found in the depth grid (%.2f, %.2f), %d cells' % (fx, fy, len(cells)))
 if FLAT: pos = stand_beside_flat(); dist = math.dist(pos, (px_, py_, pz_)); stamp('stood beside the flat panel')
 r_ = depth_ratio(); stamp('view check: depth ratio %.2f' % r_)
 if not 0.7 < r_ < 1.45:
     ok_view = False
     for (hx, hy) in other_standing_points():
-        c.send(['hover %.4f %.4f %.4f %.5f 0.0' % (hx, hy, pz_ + 0.2, math.atan2(py_ - hy, px_ - hx))], 2.4)
-        c.send(['hover off'], 1.5)
+        hover_to(hx, hy, pz_ + 0.2, math.atan2(py_ - hy, px_ - hx), 'the walk did not get to another place to see the panel from')
         cx, cy, cz = p.camera()[0]
         if math.hypot(cx - px_, cy - py_) > 12: continue            # put back at the spawn point: nothing to stand on there
         aim(); r_ = depth_ratio(); stamp('view check at (%.1f, %.1f): depth ratio %.2f' % (hx, hy, r_))

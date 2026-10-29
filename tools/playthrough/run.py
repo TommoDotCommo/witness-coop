@@ -125,6 +125,7 @@ class Playthrough:
         self.fps, self.drop, self.start, self.resume = fps, drop, start, resume
         self.bots = [Bot(i) for i in range(1, n + 1)]
         self.out = Path(RUN) / 'playthrough' / time.strftime('%Y%m%d-%H%M%S'); self.rec = Recorder(self.out)
+        self.nav_map = Path(RUN) / 'playthrough' / 'nav_map.bin'      # the walking map every run adds to (see merge_maps)
         self.manifest = {}; self.paths = {}; self.no_solver = set()
         self.planner = None; self.solved = set(); self.lock = threading.Lock()
         self.prop = []      # (panel, from bot, to bot, seconds)
@@ -212,7 +213,9 @@ class Playthrough:
         e = self.logic.entities[h]; path = self.paths[h]; t0 = time.time()
         script = 'wwalk.py' if str(h) in sweep.floor_panels() else 'wdraw.py'
         # the drawing script's own account (timings and each segment) goes to stderr: kept with a failure, and the time split recorded for every solve
-        env = {**os.environ, 'WDRAW_KCACHE': win(sweep.KCACHE), 'WDRAW_TIMING': '1', 'WDRAW_SHOTS': '1', 'WSLENV': os.environ.get('WSLENV', '') + ':WDRAW_KCACHE:WDRAW_TIMING:WDRAW_SHOTS:WDRAW_REDRAW'}
+        env = {**os.environ, 'WDRAW_KCACHE': win(sweep.KCACHE), 'WDRAW_TIMING': '1', 'WDRAW_SHOTS': '1', 'WSLENV': os.environ.get('WSLENV', '') + ':WDRAW_KCACHE:WDRAW_TIMING:WDRAW_SHOTS:WDRAW_REDRAW:WNAV_MAPS'}
+        # it walks there (tools/win/wnav.py): what the other bots and earlier runs saw of the island is read with its own map
+        env['WNAV_MAPS'] = ';'.join(win(str(p)) for p in [self.nav_map] + [b.dir / 'wnav_map.bin' for b in self.bots if b is not bot] if p.exists())
         if redraw: env['WDRAW_REDRAW'] = '1'
         # A first attempt gets a short search for the start circle, so a hard panel does not hold a bot while easy work waits; later attempts the full one.
         env['WDRAW_START_BUDGET'] = '75' if self.planner.tries.get(h, 0) == 0 else '230'; env['WSLENV'] += ':WDRAW_START_BUDGET:WDRAW_FLIP_SIDE'
@@ -234,7 +237,7 @@ class Playthrough:
         if not self.last_why.get(h, '').startswith(('tracer', 'the in-game tracer')): env['WDRAW_TRACER'] = '1'
         err = ''
         try:
-            out, err = pyw(script, bot.pid, win(str(bot.dir)), '%x' % h, ','.join(map(str, path)), timeout=420, env=env, both=True)
+            out, err = pyw(script, bot.pid, win(str(bot.dir)), '%x' % h, ','.join(map(str, path)), timeout=780, env=env, both=True)      # (a walk may take 5 minutes)
             lines = [l for l in out.splitlines() if l.startswith('{')]; r = json.loads(lines[-1]) if lines else {'solved': False, 'why': 'no result: ' + out[-160:]}
         except subprocess.TimeoutExpired: r = {'solved': False, 'why': 'the drawing script timed out'}
         dt = round(time.time() - t0, 1)
@@ -244,12 +247,12 @@ class Playthrough:
         if r.get('solved') and r.get('why') == 'already solved':      # its own world already had it: nothing was drawn
             self.rec('already solved', bot=bot.id, panel='%#x' % h, name=e.name); return True
         if r.get('solved'):
-            self.rec('solved', bot=bot.id, panel='%#x' % h, name=e.name, area=e.area, seconds=dt, method=script, timing=[l.strip() for l in err.splitlines() if ' s  ' in l][-12:])
+            self.rec('solved', bot=bot.id, panel='%#x' % h, name=e.name, area=e.area, seconds=dt, method=script, moves=r.get('moves', []), timing=[l.strip() for l in err.splitlines() if ' s  ' in l][-12:])
             threading.Thread(target=self.propagation, args=(bot, h), daemon=True).start()
             return True
         self.last_why[h] = r.get('why', '')
         shot = 'fail_%x_b%d' % (h, bot.id); bot.send('shot ' + shot)
-        self.rec('failed', bot=bot.id, panel='%#x' % h, name=e.name, area=e.area, seconds=dt, why=r.get('why', ''), shot=str(bot.dir / 'shots' / (shot + '.bmp')), trace=err.splitlines()[-40:])
+        self.rec('failed', bot=bot.id, panel='%#x' % h, name=e.name, area=e.area, seconds=dt, why=r.get('why', ''), moves=r.get('moves', []), shot=str(bot.dir / 'shots' / (shot + '.bmp')), trace=err.splitlines()[-40:])
         return False
 
     def event_time(self, bot, text):
@@ -436,8 +439,18 @@ class Playthrough:
         try: time.sleep(5); self.compare_worlds(); self.checkpoint()
         finally: self.summary()
 
+    def merge_maps(self):
+        """The bots' walking maps into the shared one (next to the run folders: later runs start from what this one saw)."""
+        try: sys.path.insert(0, os.path.join(TOOLS, 'win')); import wnav
+        except ImportError as e: self.rec('map not merged', why=str(e)); return
+        m = wnav.Map(); m.load(str(self.nav_map))
+        for b in self.bots: m.load(str(b.dir / 'wnav_map.bin'))
+        try: m.save(str(self.nav_map))
+        except OSError as e: self.rec('map not saved', why=str(e))
+
     def checkpoint(self):
         """A save point of bot 1's world copied into the run folder (checkpoint.witness_campaign): the next run can --resume from it."""
+        self.merge_maps()
         try:
             b = self.bots[0]; src = b.dir / 'savepoints' / 'checkpoint.witness_campaign'; t0 = src.stat().st_mtime if src.exists() else 0
             b.send('savepoint checkpoint'); deadline = time.time() + 30
@@ -449,6 +462,7 @@ class Playthrough:
     def summary(self):
         ev = [json.loads(l) for l in open(self.out / 'events.jsonl')]
         solves = [e for e in ev if e['kind'] == 'solved']; fails = [e for e in ev if e['kind'] == 'failed']
+        moves = [m for e in solves + fails for m in e.get('moves', [])]; self.merge_maps()
         props = [p[3] for p in self.prop]
         def pct(v, q): return round(statistics.quantiles(v, n=100)[q - 1], 2) if len(v) >= 2 else (round(v[0], 2) if v else None)
         by_area = {}
@@ -460,7 +474,9 @@ class Playthrough:
                  by_area=by_area, median_solve_s=statistics.median([e['seconds'] for e in solves]) if solves else None,
                  propagation_s=dict(p50=pct(props, 50), p95=pct(props, 95), max=round(max(props), 2) if props else None, n=len(props)),
                  divergences=sum(1 for e in ev if e['kind'] == 'divergence' and e.get('persistent', True)), transient_differences=sum(1 for e in ev if e['kind'] == 'divergence' and e.get('persistent') is False), crashes=sum(1 for e in ev if e['kind'] == 'crash'),
-                 no_solver=sorted('%#x' % h for h in self.no_solver), blocked=[e for e in ev if e['kind'] == 'blocked'][-1:] or None)
+                 no_solver=sorted('%#x' % h for h in self.no_solver), blocked=[e for e in ev if e['kind'] == 'blocked'][-1:] or None,
+                 movement=dict(walks=sum(1 for m in moves if m['how'] == 'walk' and m.get('ok')), walks_failed=sum(1 for m in moves if m['how'] == 'walk' and not m.get('ok')),
+                               teleports=sum(1 for m in moves if m['how'] == 'teleport'), metres_walked=round(sum(m.get('walked', 0) for m in moves))))
         (self.out / 'summary.json').write_text(json.dumps(s, indent=1)); print('SUMMARY', json.dumps(s), flush=True)
 
 
