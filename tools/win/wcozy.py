@@ -65,7 +65,7 @@ def capture(label, width, height):
     assert (w, h) == (width, height), ('render target size', w, h, width, height)
     assert texts > 0 and overflow == 0, (label, 'text outside render target', matches[-1])
     assert targets == 0, (label, 'controls too small for UI scale', targets)
-    assert clipped == 0, (label, 'action buttons cut off by their pane', matches[-1])
+    assert clipped == 0, (label, 'action buttons or information lines cut off by their pane', matches[-1])
     assert font >= 10, (label, 'font too small', font)
     data = open(bmp, 'rb').read(54)
     assert struct.unpack_from('<ii', data, 18) == (width, -height), 'capture size'
@@ -79,6 +79,19 @@ try:
         key('F5'); key('ESC'); guide_open(False)
         print('PASS roster Escape consumed', flush=True)
         sys.exit(0)
+    if len(sys.argv) > 6 and sys.argv[6] == 'layout':      # the selected panel's detail pane at this size: how many controls or information lines are cut off
+        bmp = os.path.join(directory, 'shots', 'cozy_layout.bmp')
+        send(['menusel 293', 'menu map'], .6)
+        for _ in range(2):      # the stats line describes the frame before the capture: the second capture reports the first one's layout
+            if os.path.exists(bmp): os.remove(bmp)
+            send(['uishot %s %s cozy_layout' % (sys.argv[4], sys.argv[5])], .5)
+            deadline = time.monotonic() + 15; last = -1
+            while time.monotonic() < deadline:
+                size = os.path.getsize(bmp) if os.path.exists(bmp) else 0
+                if size > 54 and size == last: break
+                last = size; time.sleep(.2)
+        with open(logpath, errors='ignore') as f: matches = re.findall(r'uistat: size (\d+) (\d+) texts \d+ overflow \d+ minfont [\d.]+ smalltargets \d+ clipped (\d+)', f.read())
+        print('layout clipped', int(matches[-1][2]), flush=True); sys.exit(0)
     send(['menusel 293', 'savepreset cozy-layout-example'], .5)
     for width, height in [(int(sys.argv[4]), int(sys.argv[5]))]:
         r = wt.RECT(0, 0, width, height)

@@ -207,9 +207,12 @@ void UiLogStats() {
     char msg[160]; snprintf(msg, sizeof msg, "uistat: size %.0f %.0f texts %u overflow %u minfont %.2f smalltargets %u clipped %u", g_w, g_h, g_textCalls, g_textOverflow, g_smallestText, g_smallTargets, g_clippedActions); Log(msg);
 }
 
-void UiCheckReachable(float x, float y, float w, float h) {      // a button that sticks out of its clip rectangle or the screen cannot be fully clicked
+void UiCheckReachable(float x, float y, float w, float h) {      // a button or an information line that sticks out of its clip rectangle or the screen cannot be fully used or read
     const Seg& s = g_seg.back(); float l = s.clip ? (float)s.r.left : 0, t = s.clip ? (float)s.r.top : 0, r = s.clip ? (float)s.r.right : g_w, b = s.clip ? (float)s.r.bottom : g_h;
-    if (x < l - .5f || y < t - .5f || x + w > r + .5f || y + h > b + .5f) ++g_clippedActions;
+    if (x < l - .5f || y < t - .5f || x + w > r + .5f || y + h > b + .5f) {
+        static float lastX = -1, lastY = -1; ++g_clippedActions;
+        if (x != lastX || y != lastY) { lastX = x; lastY = y; char m[200]; snprintf(m, sizeof m, "uistat: clipped item at %.0f %.0f size %.0f %.0f inside %.0f %.0f %.0f %.0f", x, y, w, h, l, t, r, b); Log(m); }
+    }
 }
 
 void UiCheckTarget(float width, float height, float scale) {

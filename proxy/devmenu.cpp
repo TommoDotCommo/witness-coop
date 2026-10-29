@@ -176,16 +176,18 @@ UiColor PanelColor(const Pn& p) { return p.solved ? uitheme::Good : p.powered ? 
 void SelectPanel(int i) { g_selKind = SelPanel; g_selPanel = i; }
 
 // ---- panels of the "what is connected" view: downstream and upstream chains over panel targets
-void Chain(float x, float& y, const char* title, bool down, int start, float sc) {
-    UiText(x, y, title, uitheme::Cool, sc); y += UiLineHeight(sc);
-    int cur = start; std::vector<int> seen = {cur}; float px = x + 10;
+void Chain(float x, float& y, float w, const char* title, bool down, int start, float sc) {      // the title and the panels of the chain share one row, which wraps at the pane's width
+    const bool old = GetCfg().noDetailFit; if (old) w = 520;
+    UiCheckReachable(x, y, UiTextWidth(title, sc), UiLineHeight(sc) + 4); UiText(x, y + (old ? 0 : 2), title, uitheme::Cool, sc); if (old) y += UiLineHeight(sc);
+    int cur = start; std::vector<int> seen = {cur}; float px = x + (old ? 10 : UiTextWidth(title, sc) + 10);
     for (int depth = 0; depth < 6; depth++) {
         int next = -1;
         if (down) { if (g_pn[cur].target >= 0) { auto it = g_pidx.find((unsigned)g_pn[cur].target); if (it != g_pidx.end()) next = it->second; } }
         else { auto it = g_rev.find((int)g_pn[cur].id); if (it != g_rev.end() && !it->second.empty()) next = it->second[0]; }
         if (next < 0 || std::find(seen.begin(), seen.end(), next) != seen.end()) break;
         char b[48]; snprintf(b, sizeof b, "%#x%s", g_pn[next].id, g_pn[next].solved ? " ok" : ""); float bw = UiTextWidth(b, sc) + 12;
-        if (px + bw > x + 520) break;
+        if (px + bw > x + w) break;
+        UiCheckReachable(px, y, bw, UiLineHeight(sc) + 4);
         if (Button(px, y, bw, UiLineHeight(sc) + 4, b, false, sc)) SelectPanel(next);
         px += bw + 6; cur = next; seen.push_back(next);
     }
@@ -278,8 +280,9 @@ bool Do(const char* what, int pi) {      // one action on panel index pi, by nam
     else return false;
     return true;
 }
+float g_detailNeed = 0;      // height the detail pane's content needed on the last frame, so the map page can give the pane that much
 void DetailPane(float x, float y, float w, float sc) {
-    float lh = UiLineHeight(sc); char b[256];
+    float lh = UiLineHeight(sc); char b[256]; const float top = y;
     if (g_selKind == SelPanel && g_selPanel >= 0 && g_selPanel < (int)g_pn.size()) {
         Pn& p = g_pn[g_selPanel]; uintptr_t te = p.target >= 0 ? GameEntity(p.target) : 0; const char* tt = te ? TypeName(te) : "nothing";
         snprintf(b, sizeof b, "Panel %#x   %u nodes", p.id, p.nodes); UiText(x, y, b, uitheme::Text, sc * 1.15f); y += lh * 1.3f;
@@ -300,10 +303,12 @@ void DetailPane(float x, float y, float w, float sc) {
         if (te && p.target >= 0 && g_pidx.count((unsigned)p.target) && act("Select target panel")) SelectPanel(g_pidx[(unsigned)p.target]);
         y += bh + 12;
         auto rv = g_rev.find((int)p.id); size_t nrev = rv == g_rev.end() ? 0 : rv->second.size();
-        snprintf(b, sizeof b, "Targeted by %zu panel(s)", nrev); UiText(x, y, b, uitheme::Cool, sc); y += lh * 1.2f;
-        float px = x; for (size_t k = 0; k < nrev && k < 8; k++) { int i = rv->second[k]; snprintf(b, sizeof b, "%#x", g_pn[i].id); float bw = UiTextWidth(b, sc) + 12; if (Button(px, y, bw, lh + 4, b, false, sc)) SelectPanel(i); px += bw + 6; }
+        const bool old = GetCfg().noDetailFit;
+        if (old) snprintf(b, sizeof b, "Targeted by %zu panel(s)", nrev); else snprintf(b, sizeof b, "Targeted by %zu:", nrev);
+        UiCheckReachable(x, y, UiTextWidth(b, sc), lh + 4); UiText(x, y + (old ? 0 : 2), b, uitheme::Cool, sc);
+        float px = x + (old ? 0 : UiTextWidth(b, sc) + 10); if (old) y += lh * 1.2f; for (size_t k = 0; k < nrev && k < 8; k++) { int i = rv->second[k]; snprintf(b, sizeof b, "%#x", g_pn[i].id); float bw = UiTextWidth(b, sc) + 12; if (!old && px + bw > x + w) { px = x; y += lh + 8; } UiCheckReachable(px, y, bw, lh + 4); if (Button(px, y, bw, lh + 4, b, false, sc)) SelectPanel(i); px += bw + 6; }
         y += lh + 12;
-        Chain(x, y, "Powers on from here:", true, g_selPanel, sc); Chain(x, y, "Fed by:", false, g_selPanel, sc);
+        Chain(x, y, w, "Powers on from here:", true, g_selPanel, sc); Chain(x, y, w, "Fed by:", false, g_selPanel, sc);
     } else if (g_selKind == SelPoint) {
         snprintf(b, sizeof b, "Point %.0f %.0f", g_selX, g_selY); UiText(x, y, b, uitheme::Text, sc * 1.15f); y += lh * 1.5f;
         float z; bool ok = GroundNear(g_selX, g_selY, &z);
@@ -314,7 +319,8 @@ void DetailPane(float x, float y, float w, float sc) {
         snprintf(b, sizeof b, "Player %d", g_selPlayer); UiText(x, y, b, uitheme::Accent, sc * 1.15f); y += lh * 1.5f;
         if (have) { snprintf(b, sizeof b, "at %.1f %.1f %.1f\nseen %lu ms ago", rp.pos[0], rp.pos[1], rp.pos[2], (unsigned long)rp.ageMs); UiText(x, y, b, uitheme::Muted, sc); y += lh * 2.5f; if (Button(x, y, 200 * sc, lh + 12, "Teleport to them", false, sc)) TeleportToPlayer(rp); }
         else UiText(x, y, "Not connected.", uitheme::Danger, sc);
-    } else UiText(x, y, Wrap("Click a dot on the map, a spot in the list, or a panel in the nearby list.", w, sc).c_str(), uitheme::Muted, sc);
+    } else { UiText(x, y, Wrap("Click a dot on the map, a spot in the list, or a panel in the nearby list.", w, sc).c_str(), uitheme::Muted, sc); y += lh * 2.5f; }
+    g_detailNeed = y - top;
 }
 
 void MapPage(float x, float y, float w, float h, float sc) {
@@ -569,6 +575,7 @@ void DevMenuDraw(float W, float H) {
     if (!g_built) { UiText(x0 + 20 * sc, cy0 + 20 * sc, "The world is not loaded yet.", uitheme::Danger, sc); }
     else {
         float rx = x0 + 20 * sc + lw + gap, rw = w - 40 * sc - lw - gap, dh = std::min(ch * 0.46f, 440.f * sc);
+        if (g_page == 0 && !GetCfg().noDetailFit) dh = std::min(ch * 0.66f, std::max(dh, g_detailNeed + 24 * sc));      // the selected panel's chains need room: grow the pane (the list above shrinks) rather than cut them off
         if (g_page == 2) SavesPage(x0 + 20 * sc, cy0, w - 40 * sc, ch, sc);
         else if (g_page == 0) { SpotList(x0 + 20 * sc, cy0, lw, ch - dh - gap, sc); MapPage(rx, cy0, rw, ch, sc); }
         else if (g_page == 1) { NearbyPage(x0 + 20 * sc, cy0, lw, ch, sc); Pane(rx, cy0, rw, ch); }

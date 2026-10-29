@@ -50,6 +50,12 @@ def main():
                                  str(width), str(height), 'input'], capture_output=True, text=True, timeout=60)
         assert result.returncode != 0 and 'UI leaked input to pause menu' in result.stderr, result.stdout + result.stderr
         print('PASS no_key_swallow mutant caught by process pause state', flush=True)
+        if not native:
+            print('=== MUTANT no_detail_fit: the old detail pane layout must show clipped lines at 1920x1080', flush=True)
+            restart('name=Explorer\nno_detail_fit=1')
+            result = subprocess.run([PYW, '-I', win(os.path.join(TOOLS, 'win', 'wcozy.py')), pid('A'), win(DIR1), win(output), '1920', '1080', 'layout'], capture_output=True, text=True, timeout=60)
+            assert 'layout clipped' in result.stdout and int(result.stdout.split('layout clipped')[1].split()[0]) > 0, 'the old layout was not reported as clipped: ' + result.stdout + result.stderr
+            print('PASS no_detail_fit mutant: ' + result.stdout.strip(), flush=True)
         return 0
     finally:
         if original is not None:
