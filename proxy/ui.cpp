@@ -36,7 +36,7 @@ ID3D11Device* g_dev; ID3D11DeviceContext* g_ctx;
 ID3D11VertexShader* g_vs; ID3D11PixelShader *g_ps, *g_psi; ID3D11InputLayout* g_il; ID3D11Buffer *g_vb, *g_cb;
 ID3D11ShaderResourceView* g_srv; ID3D11SamplerState* g_smp; ID3D11BlendState* g_blend; ID3D11RasterizerState* g_rs; ID3D11DepthStencilState* g_ds;
 const size_t kMaxVerts = 60000;
-unsigned g_textCalls = 0, g_textOverflow = 0, g_smallTargets = 0;
+unsigned g_textCalls = 0, g_textOverflow = 0, g_smallTargets = 0, g_clippedActions = 0;
 float g_smallestText = 0;
 std::vector<uint8_t> g_atlasAlpha;
 std::vector<Vtx> g_v; std::vector<Seg> g_seg; float g_w = 1, g_h = 1; bool g_ok;
@@ -121,7 +121,7 @@ bool UiInit(ID3D11Device* dev, ID3D11DeviceContext* ctx) {
     return g_ok;
 }
 
-void UiBegin(float w, float h) { g_w = w; g_h = h; g_textCalls = g_textOverflow = g_smallTargets = 0; g_smallestText = h; g_v.clear(); g_seg.clear(); g_seg.push_back({0, false, {}, nullptr}); }
+void UiBegin(float w, float h) { g_w = w; g_h = h; g_textCalls = g_textOverflow = g_smallTargets = g_clippedActions = 0; g_smallestText = h; g_v.clear(); g_seg.clear(); g_seg.push_back({0, false, {}, nullptr}); }
 void UiClip(float x, float y, float w, float h) {
     Seg s = {g_v.size(), w > 0, {(LONG)x, (LONG)y, (LONG)(x + w), (LONG)(y + h)}, nullptr};
     if (g_seg.back().first == s.first) g_seg.back() = s; else g_seg.push_back(s);
@@ -204,7 +204,12 @@ void UiDumpAtlas(const char* name) {      // test command: the glyph atlas as sh
 }
 
 void UiLogStats() {
-    char msg[160]; snprintf(msg, sizeof msg, "uistat: size %.0f %.0f texts %u overflow %u minfont %.2f smalltargets %u", g_w, g_h, g_textCalls, g_textOverflow, g_smallestText, g_smallTargets); Log(msg);
+    char msg[160]; snprintf(msg, sizeof msg, "uistat: size %.0f %.0f texts %u overflow %u minfont %.2f smalltargets %u clipped %u", g_w, g_h, g_textCalls, g_textOverflow, g_smallestText, g_smallTargets, g_clippedActions); Log(msg);
+}
+
+void UiCheckReachable(float x, float y, float w, float h) {      // a button that sticks out of its clip rectangle or the screen cannot be fully clicked
+    const Seg& s = g_seg.back(); float l = s.clip ? (float)s.r.left : 0, t = s.clip ? (float)s.r.top : 0, r = s.clip ? (float)s.r.right : g_w, b = s.clip ? (float)s.r.bottom : g_h;
+    if (x < l - .5f || y < t - .5f || x + w > r + .5f || y + h > b + .5f) ++g_clippedActions;
 }
 
 void UiCheckTarget(float width, float height, float scale) {

@@ -59,12 +59,13 @@ def capture(label, width, height):
         if size > 54 and size == last: break
         last = size; time.sleep(.1)
     else: raise AssertionError('capture timed out')
-    with open(logpath, errors='ignore') as f: matches = re.findall(r'uistat: size (\d+) (\d+) texts (\d+) overflow (\d+) minfont ([\d.]+) smalltargets (\d+)', f.read())
+    with open(logpath, errors='ignore') as f: matches = re.findall(r'uistat: size (\d+) (\d+) texts (\d+) overflow (\d+) minfont ([\d.]+) smalltargets (\d+) clipped (\d+)', f.read())
     assert matches, 'no renderer layout stats'
-    w, h, texts, overflow, font, targets = map(float, matches[-1])
+    w, h, texts, overflow, font, targets, clipped = map(float, matches[-1])
     assert (w, h) == (width, height), ('render target size', w, h, width, height)
     assert texts > 0 and overflow == 0, (label, 'text outside render target', matches[-1])
     assert targets == 0, (label, 'controls too small for UI scale', targets)
+    assert clipped == 0, (label, 'action buttons cut off by their pane', matches[-1])
     assert font >= 10, (label, 'font too small', font)
     data = open(bmp, 'rb').read(54)
     assert struct.unpack_from('<ii', data, 18) == (width, -height), 'capture size'

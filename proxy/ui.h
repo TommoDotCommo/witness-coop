@@ -22,4 +22,5 @@ void UiImage(float x, float y, float w, float h, ID3D11ShaderResourceView* srv, 
 
 void UiLogStats(); // test oracle: previous frame text bounds and smallest font
 
+void UiCheckReachable(float x, float y, float w, float h); // test oracle: counts action buttons that are not fully inside the visible area
 void UiCheckTarget(float width, float height, float scale); // accessible target-size oracle

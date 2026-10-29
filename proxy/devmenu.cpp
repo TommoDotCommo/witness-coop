@@ -288,13 +288,8 @@ void DetailPane(float x, float y, float w, float sc) {
             bool lit = !strcmp(tt, "Power_Cable") && One(te + 0xC4) && One(te + 0xC8), open = !strcmp(tt, "Door") && One(te + 0x1D0);
             snprintf(b, sizeof b, "Targets: %s %#x%s", tt, (unsigned)p.target, lit ? " (lit)" : open ? " (open)" : ""); UiText(x, y, b, uitheme::Accent, sc); y += lh * 1.3f;
         } else { UiText(x, y, "Targets: nothing", uitheme::Muted, sc); y += lh * 1.3f; }
-        auto rv = g_rev.find((int)p.id); size_t nrev = rv == g_rev.end() ? 0 : rv->second.size();
-        snprintf(b, sizeof b, "Targeted by %zu panel(s)", nrev); UiText(x, y, b, uitheme::Cool, sc); y += lh * 1.2f;
-        float px = x; for (size_t k = 0; k < nrev && k < 8; k++) { int i = rv->second[k]; snprintf(b, sizeof b, "%#x", g_pn[i].id); float bw = UiTextWidth(b, sc) + 12; if (Button(px, y, bw, lh + 4, b, false, sc)) SelectPanel(i); px += bw + 6; }
-        y += lh + 12;
-        Chain(x, y, "Powers on from here:", true, g_selPanel, sc); Chain(x, y, "Fed by:", false, g_selPanel, sc);
         float bx = x, bh = lh + 12;
-        auto act = [&](const char* label) { float bw2 = UiTextWidth(label, sc) + 24; if (bx > x && bx + bw2 > x + w) { bx = x; y += bh + 8; } bool r = Button(bx, y, bw2, bh, label, false, sc); bx += bw2 + 8; return r; };
+        auto act = [&](const char* label) { float bw2 = UiTextWidth(label, sc) + 24; if (bx > x && bx + bw2 > x + w) { bx = x; y += bh + 8; } UiCheckReachable(bx, y, bw2, bh); bool r = Button(bx, y, bw2, bh, label, false, sc); bx += bw2 + 8; return r; };
         if (act("Teleport to it")) Do("teleport", g_selPanel);
         if (act("Solve (and run target)")) Do("solve", g_selPanel);
         if (!p.powered && act("Power on")) Do("power", g_selPanel);
@@ -303,6 +298,12 @@ void DetailPane(float x, float y, float w, float sc) {
         if (te && !strcmp(tt, "Power_Cable") && act("Light cable")) Do("cableon", g_selPanel);
         if (te && !strcmp(tt, "Power_Cable") && act("Cable off")) Do("cableoff", g_selPanel);
         if (te && p.target >= 0 && g_pidx.count((unsigned)p.target) && act("Select target panel")) SelectPanel(g_pidx[(unsigned)p.target]);
+        y += bh + 12;
+        auto rv = g_rev.find((int)p.id); size_t nrev = rv == g_rev.end() ? 0 : rv->second.size();
+        snprintf(b, sizeof b, "Targeted by %zu panel(s)", nrev); UiText(x, y, b, uitheme::Cool, sc); y += lh * 1.2f;
+        float px = x; for (size_t k = 0; k < nrev && k < 8; k++) { int i = rv->second[k]; snprintf(b, sizeof b, "%#x", g_pn[i].id); float bw = UiTextWidth(b, sc) + 12; if (Button(px, y, bw, lh + 4, b, false, sc)) SelectPanel(i); px += bw + 6; }
+        y += lh + 12;
+        Chain(x, y, "Powers on from here:", true, g_selPanel, sc); Chain(x, y, "Fed by:", false, g_selPanel, sc);
     } else if (g_selKind == SelPoint) {
         snprintf(b, sizeof b, "Point %.0f %.0f", g_selX, g_selY); UiText(x, y, b, uitheme::Text, sc * 1.15f); y += lh * 1.5f;
         float z; bool ok = GroundNear(g_selX, g_selY, &z);
