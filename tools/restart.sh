@@ -2,8 +2,8 @@
 # Restart test copies with the current proxy, fresh new games, windows side by side. Optional A/B restarts only that peer.
 # force_active=1: each game believes its window is active (full speed, accepts injected input) without taking the focus or the mouse.
 # Every copy gets its own save folder (save_dir=instance: <game folder>\appdata, so the owner's real saves are never touched) and a
-# frame cap (WITNESS_FPS, default 30). WITNESS_HUMAN=1: for a person playing both games: no force_active (the real mouse and keyboard work, the unfocused game
-# drops to ~10 fps), no focus guard, A on the first monitor and B on the second (WITNESS_RECT_A/B = "x y w h"). CFG_A / CFG_B add lines to each copy's witness_coop.cfg (test-only switches: drop_first_event=1, no_resend=1, no_echo_guard=1).
+# frame cap (WITNESS_FPS, default 30). WITNESS_HUMAN=1: for a person playing both games: no force_active (the real mouse and keyboard work) but run_unfocused=1 (the window
+# without the focus keeps its frame rate instead of dropping to ~10 fps, so the other player stays smooth), no focus guard, A on the first monitor and B on the second (WITNESS_RECT_A/B = "x y w h"). CFG_A / CFG_B add lines to each copy's witness_coop.cfg (test-only switches: drop_first_event=1, no_resend=1, no_echo_guard=1).
 . "$(dirname "$0")/config.sh" || exit $?
 case "${1:-both}" in
   both) peers=(A B);;
@@ -21,7 +21,7 @@ launch() {   # dir -> pid; the game opens an options dialog unless -skip_config_
 for p in "${peers[@]}"; do
   if [ "$p" = A ]; then d="$WITNESS_DIR1"; id=1; listen="$WITNESS_PORT1"; peer="$WITNESS_PORT2"; cfg="${CFG_A:-}";
   else d="$WITNESS_DIR2"; id=2; listen="$WITNESS_PORT2"; peer="$WITNESS_PORT1"; cfg="${CFG_B:-}"; fi
-  printf 'id=%s\nlisten=%s\npeer=%s\nsave_dir=instance\nshare_zip=1\nforce_active=%s\ncap_fps=%s\ndev_menu=1\nvoice_mode=off\nvoice_mute_output=1\n%s\n' "$id" "$listen" "$peer" "$([ -n "${WITNESS_HUMAN:-}" ] && echo 0 || echo 1)" "${WITNESS_FPS:-30}" "$cfg" > "$d/witness_coop.cfg"
+  printf 'id=%s\nlisten=%s\npeer=%s\nsave_dir=instance\nshare_zip=1\nforce_active=%s\nrun_unfocused=%s\ncap_fps=%s\ndev_menu=1\nvoice_mode=off\nvoice_mute_output=1\n%s\n' "$id" "$listen" "$peer" "$([ -n "${WITNESS_HUMAN:-}" ] && echo 0 || echo 1)" "$([ -n "${WITNESS_HUMAN:-}" ] && echo 1 || echo 0)" "${WITNESS_FPS:-30}" "$cfg" > "$d/witness_coop.cfg"
   rm -f "$d/witness_proxy.log" "$d/witness_cmd.txt"
   [ -n "${WITNESS_KEEP_VIDEO:-}" ] || rm -f "$d/appdata/The Witness/Launcher.variables"     # a size left behind by an earlier scenario on this slot would move the cursor calibration of every bot (1366x768 instead of the default window)
   [ -d "$d/appdata/The Witness" ] && rm -f "$d/appdata/The Witness/"*.witness_campaign "$d/appdata/The Witness/"*.png "$d/appdata/The Witness/coop_progress.txt" "$d/appdata/The Witness/"*.coop.txt   # this instance's own saves only: reloads must start from known saves

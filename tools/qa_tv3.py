@@ -202,20 +202,23 @@ def main():
 
             tv2 = c2.tv(); tv3 = c3.tv()
             scr2 = tv2['audience'][0]; scr3 = tv3['audience'][0]
+            syaw = scr2['yaw']      # the screen's own heading: it faces the deployer (client 2), who stands behind client 1 looking along yaw
             assert scr2['owner'] == 2 and scr2['source'] == 1
             assert scr3['owner'] == 2 and scr3['source'] == 1
             if modes:
-                f = (math.cos(yaw), math.sin(yaw)); ground = scr2['stools'][1]
+                f = (math.cos(syaw), math.sin(syaw)); ground = scr2['stools'][1]
                 stool = [scr2['center'][0] + f[0] * 4, scr2['center'][1] + f[1] * 4, ground]
                 entry = [stool[0] + f[0], stool[1] + f[1], ground + 1.71]
-                race3(c1, c2, c3, stool, entry, yaw + math.pi, math.atan2(.5 - 1.71, 1), int(os.environ.get('TV3_TRIALS', '5')), 'race_mutant' in modes)
+                race3(c1, c2, c3, stool, entry, syaw + math.pi, math.atan2(.5 - 1.71, 1), int(os.environ.get('TV3_TRIALS', '5')), 'race_mutant' in modes)
                 print('ALL OK: 3-client double-seat scenario', flush=True); return
             assert abs(scr2['width'] - 4.0) < 1e-3 and abs(scr2['height'] - 2.5) < 1e-3
             assert scr2['bottom'] >= scr2['ground'] + 2.0 - 1e-3, 'screen bottom edge below the wearer ground + 2 m'
             assert scr2['stools'] == scr3['stools'] and scr2['measured'] == scr3['measured'] and abs(scr2['bottom'] - scr3['bottom']) < 1e-4, 'clients disagree about the measured ground'
-            behind = (scr2['center'][0] - ax) * math.cos(yaw) + (scr2['center'][1] - ay) * math.sin(yaw)
-            assert abs(behind + 3.0) < 0.35, f'placement behind={behind}'
-            print('PASS audience screen size 4.0x2.5, bottom +2.0m, behind +3.0m verified across clients', flush=True)
+            dx, dy = ax - math.cos(yaw) * 3.5, ay - math.sin(yaw) * 3.5      # where the deployer stood
+            ahead = (scr2['center'][0] - dx) * math.cos(yaw) + (scr2['center'][1] - dy) * math.sin(yaw)
+            assert abs(ahead - 3.0) < 0.35, f'placement ahead of the deployer={ahead}'
+            assert abs((syaw - yaw - math.pi + math.pi) % (2 * math.pi) - math.pi) < .02, f'the screen does not face the deployer: {syaw} vs {yaw}'
+            print('PASS audience screen size 4.0x2.5, bottom +2.0m, 3.0m ahead of the deployer facing it, verified across clients', flush=True)
 
             # Both B and C show static noise without consent
             assert not scr2['fresh'] and not scr2['drawn_live'] and scr2['draws'] > 0
@@ -235,8 +238,8 @@ def main():
             # Watch from the viewing side and aim up at the raised screen.
             center=c2.tv()['audience'][0]['center']
             for c,side,front in ((c2,2.5,5.0),(c3,-2.0,6.0)):
-                x=center[0]+math.cos(yaw)*front+math.sin(yaw)*side
-                y=center[1]+math.sin(yaw)*front-math.cos(yaw)*side
+                x=center[0]+math.cos(syaw)*front+math.sin(syaw)*side
+                y=center[1]+math.sin(syaw)*front-math.cos(syaw)*side
                 look=math.atan2(center[1]-y,center[0]-x)
                 pitch=math.atan2(center[2]-az,math.hypot(center[0]-x,center[1]-y))
                 c.send(f'hover {x} {y} {az} {look} {pitch}')
@@ -319,9 +322,9 @@ def main():
             # Aim at the middle stool, use the real input binding, and inspect the
             # synchronized Sit emote and eye position from the other process.
             center=c2.tv()['audience'][0]['center']; ground=c2.tv()['audience'][0]['stools'][1]
-            stool=[center[0]+math.cos(yaw)*4,center[1]+math.sin(yaw)*4,ground]
-            entry=[stool[0]+math.cos(yaw),stool[1]+math.sin(yaw),ground+1.71]
-            face=yaw+math.pi; pitch=math.atan2(.5-1.71,1)
+            stool=[center[0]+math.cos(syaw)*4,center[1]+math.sin(syaw)*4,ground]
+            entry=[stool[0]+math.cos(syaw),stool[1]+math.sin(syaw),ground+1.71]
+            face=syaw+math.pi; pitch=math.atan2(.5-1.71,1)
             c3.send(f'hover {entry[0]} {entry[1]} {entry[2]} {face} {pitch}')
             wait(lambda:abs(c3.camera()[0][0]-entry[0])<.1,'audience reached stool interaction',20)
             c3.send('hover off')

@@ -213,7 +213,8 @@ for s, x in (('L', 1), ('R', -1)):
     part(box('boot_heel.' + s, (0.10 * x, 0.048, 0.033), (0.112, 0.080, 0.050), 'sole', 0.010), ['foot.' + s, 'shin.' + s])
     part(box('boot_lace.' + s, (0.10 * x, -0.095, 0.112), (0.034, 0.100, 0.014), 'boots_cuff', 0.004, Matrix.Rotation(-0.55, 3, 'X')), ['foot.' + s])
 # -- an adult face with recessed almond-shaped eyes and restrained sculptural detail
-part(loft('neck', [(1.44, 0, 0, 0.052, 0.052), (1.56, 0, -0.004, 0.047, 0.049)], 'skin', 20), ['neck', 'head', 'chest'])
+# the neck sits behind the jaw and rises into the base of the skull (a thin column under the chin read as a stalk)
+part(loft('neck', [(1.44, 0, 0.012, 0.062, 0.060), (1.58, 0, 0.022, 0.055, 0.056), (1.63, 0, 0.034, 0.048, 0.050)], 'skin', 20), ['neck', 'head', 'chest'])
 def sculpt_head():
     ctrl = [(1.548, -0.041, 0.024, 0.034), (1.565, -0.037, 0.055, 0.063), (1.590, -0.023, 0.080, 0.091), (1.640, -0.004, 0.099, 0.108), (1.690, 0.003, 0.104, 0.115), (1.738, 0.008, 0.099, 0.109), (1.776, 0.012, 0.077, 0.086), (1.794, 0.012, 0.034, 0.042)]
     def cr(p0, p1, p2, p3, t): return 0.5 * ((2 * p1) + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t + (-p0 + 3 * p1 - 3 * p2 + p3) * t ** 3)
@@ -391,18 +392,22 @@ for i, angle in enumerate((0.0, 0.65, 1.30, 1.95, 2.60, 3.10)):
     part(loft('hair_lock.'+str(i), [(top.z, top.x, top.y, 0.008, 0.006), (mid.z, mid.x, mid.y, 0.010, 0.007), (tip.z, tip.x, tip.y, 0.002, 0.003)], 'hair', 8), ['head'])
 HAT0 = len(parts)
 # -- weathered felt hat, with an asymmetric brim, a pinched crown and a feather vane
-brim = loft('hat_brim', [(1.768, 0, 0, 0.128, 0.128), (1.758, 0, 0, 0.180, 0.178), (1.748, 0, 0, 0.222, 0.216), (1.750, 0, -0.004, 0.252, 0.244), (1.762, 0, -0.006, 0.264, 0.254)], 'hat', 48, 1, False, 0.007)
+# The opening is an oval the size of the head at the brow line (plus the hair), so the hat sits on the head instead of above it
+# (the check below measures the result).
+HAT_OPEN = (0.128, 0.128) if '--hat-mutant' in args else (0.110, 0.122)      # (the mutant: the earlier round opening, which floated above the head)
+brim = loft('hat_brim', [(1.768, 0, 0.006, *HAT_OPEN), (1.758, 0, 0.004, 0.176, 0.178), (1.748, 0, 0, 0.222, 0.216), (1.750, 0, -0.004, 0.252, 0.244), (1.762, 0, -0.006, 0.264, 0.254)], 'hat', 48, 1, False, 0.007)
 for v in brim.data.vertices:
     v.co.z += 0.014 * (abs(v.co.x) / 0.264) ** 2 + 0.004 * math.sin(v.co.y * 15)
 part(brim, ['head'])
-crown = loft('hat_crown', [(1.768, 0, 0, 0.128, 0.128), (1.806, 0, 0, 0.124, 0.124), (1.844, 0.004, 0.006, 0.116, 0.119), (1.877, 0.006, 0.010, 0.100, 0.108), (1.895, 0.004, 0.012, 0.072, 0.088), (1.899, 0, 0.014, 0.038, 0.046)], 'hat', 40, 1)
+crown = loft('hat_crown', [(1.756, 0, 0.006, HAT_OPEN[0] - 0.001, HAT_OPEN[1] - 0.001), (1.768, 0, 0.006, *HAT_OPEN),      # (a support ring: the wall stays straight down under the brim)
+     (1.806, 0, 0.006, 0.115, 0.127), (1.844, 0.004, 0.008, 0.115, 0.125), (1.877, 0.006, 0.010, 0.106, 0.114), (1.895, 0.004, 0.012, 0.078, 0.094), (1.899, 0, 0.014, 0.038, 0.046)], 'hat', 32, 1)
 for v in crown.data.vertices:
     if v.co.z > 1.85:
         v.co.z -= 0.013 * math.exp(-((v.co.x / 0.045) ** 2 + ((v.co.y - 0.01) / 0.065) ** 2))
 part(crown, ['head'])
-part(loft('hat_band', [(1.776, 0, 0, 0.132, 0.132), (1.803, 0, 0, 0.130, 0.130)], 'band', 40, 0, False, 0.002), ['head'])
-part(ellipsoid('hat_knot', (0.100, -0.082, 1.790), (0.015, 0.012, 0.013), 'band', 14, 8), ['head'])
-f0, f1 = V(0.108, -0.066, 1.798), V(0.152, 0.075, 1.900)
+part(loft('hat_band', [(1.776, 0, 0.006, 0.116, 0.128), (1.803, 0, 0.006, 0.119, 0.131)], 'band', 40, 0, False, 0.002), ['head'])
+part(ellipsoid('hat_knot', (0.095, -0.078, 1.790), (0.015, 0.012, 0.013), 'band', 14, 8), ['head'])
+f0, f1 = V(0.097, -0.060, 1.798), V(0.150, 0.078, 1.900)
 bm = bmesh.new(); rows = []
 for i in range(17):
     t = i / 16; c = f0.lerp(f1, t); w = 0.020 * math.sin(math.pi*t) ** 0.75 * (1 + 0.08*math.sin(i*2.7))
@@ -412,7 +417,21 @@ part(face_finish('feather_vane', bm, 'feather', True, 0, 0, 0.001), ['head'])
 part(tube('feather_shaft', f0, f1, 0.0018, 'bedroll', 6), ['head'])
 def tilt(ob, rx, pivot=(0, -0.02, 1.74)):
     p = Vector(pivot); ob.data.transform(Matrix.Translation(p) @ Matrix.Rotation(rx, 4, 'X') @ Matrix.Translation(-p))
-for o, _ in parts[HAT0:]: tilt(o, -0.07); o.data.transform(Matrix.Translation((0, 0, -0.010)))
+HAT_DROP = 0.010 if '--hat-mutant' in args else 0.040      # the opening lands at the brow line, about 4 cm above the eyes
+for o, _ in parts[HAT0:]: tilt(o, -0.07); o.data.transform(Matrix.Translation((0, 0, -HAT_DROP)))
+# Fit check: the rim of the hat's opening (the crown's lowest vertex in each direction) must sit just outside the head and hair there.
+rim = {}; low = {}
+def _bin(co): return int(((math.atan2(co.y - 0.006, co.x) + 2 * math.pi) % (2 * math.pi)) / (2 * math.pi) * 36) % 36
+for v in crown.data.vertices: k = _bin(v.co); low[k] = min(low.get(k, 9.0), v.co.z)
+for v in crown.data.vertices:      # the wall at the opening: the widest vertex within 8 mm of the lowest in each direction (subdivision rounds the cap's edge)
+    k = _bin(v.co)
+    if v.co.z <= low[k] + 0.008 and (k not in rim or V(v.co.x, v.co.y - 0.006, 0).length > V(rim[k].x, rim[k].y - 0.006, 0).length): rim[k] = v.co.copy()
+gaps = []
+for k, p in rim.items():
+    r = V(p.x, p.y - 0.006, 0); d = r.length; r.normalize(); hh = head_bvh.ray_cast(V(0, 0.006, p.z) + r * 0.2, -r)[0]
+    if hh is not None: gaps.append((d - (hh - V(0, 0.006, p.z)).length - 0.004, k * 10))      # 4 mm of hair on the scalp
+print('REPORT hat fit: rim to hair min %.1f mm (%d deg) max %.1f mm (%d deg), %d directions' % (min(gaps)[0] * 1000, min(gaps)[1], max(gaps)[0] * 1000, max(gaps)[1], len(gaps)))
+if (len(gaps) < 30 or min(gaps)[0] < -0.002 or max(gaps)[0] > 0.012): raise ValueError('the hat does not fit the head: %s %s' % (min(gaps), max(gaps)))
 # -- a softer scarf and well-used travelling gear
 scarf_wrap = loft('scarf', [(1.425, 0, 0.008, 0.126, 0.112), (1.465, 0.003, 0.004, 0.116, 0.102), (1.505, -0.003, 0.004, 0.104, 0.092), (1.535, -0.004, 0.006, 0.094, 0.083)], 'scarf', 40, folds=0.018)
 if '--scarf-mutant' in args:

@@ -10,6 +10,7 @@
 #include <cmath>
 #include <vector>
 #include "coop.h"
+#include "tv.h"
 #include "frame/panelframe.h"
 #include "game.h"
 #include "state.h"
@@ -110,6 +111,7 @@ public:
         return true;
     }
     bool pose(float pos[3], float ang[2]) override {
+        if (TvProbeHome(pos, ang)) return true;      // (measuring the ground for a screen: the others keep seeing the player where it stood)
         const float* cam = (const float*)(Base() + 0x6304B0 + 0x10); const float* a = (const float*)(Base() + 0x6303EC);
         if (IsBadReadPtr(cam, 12) || IsBadReadPtr(a, 8) || (cam[0] == 0 && cam[1] == 0)) return false;
         for (int i = 0; i < 3; i++) pos[i] = cam[i];

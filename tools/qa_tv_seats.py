@@ -4,6 +4,9 @@ A is the wearer (source of the picture), B deploys A's screen. Everything is ass
   race:     (race_mutant: the same with the tiebreak switched off, which must show the double seat) both players take the same stool in the same instant; afterwards exactly one may be seated there.
   wearer:   the wearer's game dies while the deployer sits; the deployer must stand at the entry pose, screen and streams gone.
   deployer: the deployer's game dies while the wearer sits; same expectations for the wearer.
+  hidden:   (hidden_mutant: tv_probe_show=1, which must show the jumps) while the deployer's game measures the ground (it drops its player onto each
+            point), the wearer's game must keep seeing the deployer where it stood and the deployer's own picture must stay the frame from before;
+            the screen must stand 3 m ahead of the deployer with its picture towards it.
   look:     takes in-game captures of the screen and stools (flat ground and the spot below) into the run folder.
   terrain:  deploy at several places on the island (tour spots, spot 17 is steep); every stool must stand on the ground the game really has there (probed from a higher drop than the mod's own),
             and the screen's bottom edge must clear the ground under both ends. terrain_mutant: the same with no_terrain_probe=1 (flat-ground placement), which must fail at spot 17.
@@ -77,7 +80,7 @@ def deploy(a, b, command='menusel c335\nmenudo teleport'):
     b.send('tvdeploy 1')
     wait(lambda: len(a.tv()['audience']) == 1 and len(b.tv()['audience']) == 1 and not b.tv()['probing'], 'screen deployed (ground measured) and known to both', 60)
     s = b.tv()['audience'][0]
-    return dict(yaw=yaw, center=s['center'], ground=s['ground'], stools=s['stools'], wearer=(x, y, z))
+    return dict(yaw=s['yaw'], center=s['center'], ground=s['ground'], stools=s['stools'], wearer=(x, y, z))
 
 
 def stool(g, i):
@@ -168,7 +171,7 @@ def terrain(mutant=False):
         if b.tv()['deploy_target']: b.send('tvretract'); time.sleep(1.5)
         try: s = deploy_near(a, b, 'spot %d' % n)
         except AssertionError: continue
-        g = dict(yaw=yaw, center=s['center'], ground=s['ground'], stools=s['stools'], bottom=s['bottom'])
+        g = dict(yaw=s['yaw'], center=s['center'], ground=s['ground'], stools=s['stools'], bottom=s['bottom'])
         row = dict(spot=n, measured=s['measured'], wearer_ground=round(z - EYE, 2), screen_bottom=round(s['bottom'], 2), stools=[])
         for i in range(3):
             t = stool(g, i)
@@ -228,7 +231,7 @@ def look():
             pyw('wtour.py', pid('A'), win(DIR1), win(os.path.join(RUN, 'tourA.txt')), 'go', '17', timeout=120); time.sleep(3)
             x, y, z, yaw, _ = a.camera(); b.send('tvretract'); time.sleep(1.5)
             s = deploy_near(a, b, 'slope'); b.send('hover off')
-            g = dict(yaw=yaw, center=s['center'], ground=s['ground'], stools=s['stools'], wearer=(x, y, z))
+            g = dict(yaw=s['yaw'], center=s['center'], ground=s['ground'], stools=s['stools'], wearer=(x, y, z))
         else:
             g = deploy(a, b, command)
         for view, dist, aim in (('view', 7, 'screen'), ('stools', 7.5, 'stools'), ('side', 6, 'stools')):
@@ -247,9 +250,60 @@ def look():
         print('captures', tag, flush=True); b.send('hover off')
 
 
+def picture(game, name):
+    """An in-game shot of the game's own picture, as (width, height, 32-bit BGRA bytes)."""
+    bmp = os.path.join(game.dir, 'shots', name + '.bmp')
+    if os.path.exists(bmp): os.remove(bmp)
+    game.send('shot ' + name); deadline = time.monotonic() + 10
+    while time.monotonic() < deadline and not (os.path.exists(bmp) and os.path.getsize(bmp) > 1000): time.sleep(.1)
+    time.sleep(.3); b = open(bmp, 'rb').read(); off = int.from_bytes(b[10:14], 'little')
+    return int.from_bytes(b[18:22], 'little', signed=True), abs(int.from_bytes(b[22:26], 'little', signed=True)), b[off:]
+
+
+def difference(p, q):
+    """Mean absolute difference per channel (0..255) over a grid of samples."""
+    (w, h, a), (w2, h2, b) = p, q
+    if (w, h) != (w2, h2): return 255.0
+    total = n = 0
+    for y in range(0, h, max(1, h // 48)):
+        for x in range(0, w, max(1, w // 64)):
+            i = (y * w + x) * 4; total += sum(abs(a[i + k] - b[i + k]) for k in range(3)); n += 3
+    return total / n
+
+
+def hidden(mutant=False):
+    a, b = start(extra='\ntv_probe_show=1' if mutant else '')
+    a.send('menusel c335\nmenudo teleport'); time.sleep(3)
+    x, y, z, yaw, _ = a.camera(); bx, by = x - math.cos(yaw) * 3.5, y - math.sin(yaw) * 3.5
+    b.send('hover %.5f %.5f %.5f %.6f -0.1' % (bx, by, z, yaw))
+    wait(lambda: abs(b.camera()[0] - bx) < .4 and abs(b.camera()[1] - by) < .4, 'deployer next to the wearer', 30); time.sleep(3)
+    hx, hy, hz, hyaw, _ = b.camera(); before = picture(b, 'probe_before')
+    b.send('tvdeploy 1'); wait(lambda: b.tv()['probing'] == 1, 'the deployer started measuring the ground', 15)
+    seen = moved = 0.0; during = None; t0 = time.monotonic()
+    while time.monotonic() - t0 < 90:
+        if not b.tv()['probing']: break
+        cx, cy = b.camera()[:2]; moved = max(moved, math.hypot(cx - hx, cy - hy))
+        for r in a.net()['remotes']:
+            if r['id'] == 2: seen = max(seen, math.hypot(r['pos'][0] - hx, r['pos'][1] - hy))
+        if during is None and moved > 1.0: during = picture(b, 'probe_during')
+    wait(lambda: len(b.tv()['audience']) == 1 and not b.tv()['probing'], 'screen deployed', 30)
+    d = difference(before, during) if during else None
+    print('  deployer dropped up to %.2f m away; the wearer saw it up to %.2f m from where it stood; its picture during the drop differs by %s' % (moved, seen, '%.1f' % d if d is not None else 'n/a'), flush=True)
+    assert moved > 1.0 and during is not None, 'the deployer never left its spot: the measurement did not run and this proves nothing'
+    if mutant:
+        assert seen > 1.0 and d > 10, 'the mutant did not show the jumps (seen %.2f m, picture %.1f): the checks cannot fail' % (seen, d)
+        print('PASS (mutant) the jumps are seen by the wearer and in the picture', flush=True); return
+    assert seen < .5, 'FAIL the wearer saw the deployer jump %.2f m while it measured the ground' % seen
+    assert d < 10, 'FAIL the deployer\'s picture changed while it measured the ground (difference %.1f)' % d
+    s = b.tv()['audience'][0]; f = (math.cos(hyaw), math.sin(hyaw))
+    ahead = (s['center'][0] - hx) * f[0] + (s['center'][1] - hy) * f[1]; turn = (s['yaw'] - hyaw - math.pi + math.pi) % (2 * math.pi) - math.pi
+    assert abs(ahead - 3.0) < .35 and abs(turn) < .02, 'FAIL the screen is not 3 m ahead of the deployer facing it (ahead %.2f m, heading off by %.3f rad)' % (ahead, turn)
+    print('PASS the measurement is hidden (wearer saw %.2f m, picture difference %.1f) and the screen stands %.2f m ahead of the deployer, facing it' % (seen, d, ahead), flush=True)
+
+
 def main():
     # 'terrain', 'terrain_mutant' and 'look' are not in the default set: name them
-    which = sys.argv[1:] or ['race', 'race_mutant', 'wearer', 'deployer']; before = real_saves(); failures = []
+    which = sys.argv[1:] or ['race', 'race_mutant', 'wearer', 'deployer', 'hidden', 'hidden_mutant']; before = real_saves(); failures = []
     try:
         for name in which:
             print('=== tv seats:', name, flush=True)
@@ -259,6 +313,8 @@ def main():
                 elif name == 'deployer': seated_loss('A', 'B')
                 elif name == 'terrain': terrain()
                 elif name == 'terrain_mutant': terrain(True)
+                elif name == 'hidden': hidden()
+                elif name == 'hidden_mutant': hidden(True)
                 elif name == 'look': look()
                 else: raise SystemExit('unknown scenario ' + name)
             except AssertionError as e: print(e, flush=True); failures.append(name)

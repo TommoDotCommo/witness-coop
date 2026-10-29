@@ -599,3 +599,5 @@ void DevMenuDraw(float W, float H) {
     if (GetTickCount() - g_msgAt < 6000 && g_msg[0]) UiText(x0 + 20 * sc, y0 + h - UiLineHeight(sc) - 8 * sc, g_msg, uitheme::Accent, sc);
     UiTri(g_cx + 2, g_cy + 2, 12, 0.9f, Rgba(1, 1, 1)); UiTri(g_cx + 2, g_cy + 2, 8, 0.9f, Rgba(0, 0, 0));
 }
+
+void DevMenuNotice(const char* text) { Msg("%s", text); }

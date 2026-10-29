@@ -17,5 +17,6 @@ void DevMenuSetCursor(float x, float y);      // test command: absolute cursor p
 void DevMenuDraw(float w, float h);           // render thread, between UiBegin and UiEnd
 void DevMenuCommand(const char* what, unsigned id);   // test command channel: "select" (panel id) or an action name (teleport, solve, power, run, door, cableon, cableoff) on the selected panel; runs on the next frame
 void DevMenuTick();                           // render thread, every frame: pending teleport check
+void DevMenuNotice(const char* text);         // a short message shown as the toast (any thread that the menu's own code runs on: the render thread)
 void DevMenuToast(float w, float h);          // render thread, between UiBegin and UiEnd, when the menu is closed
 bool DevMenuToastWanted();                    // a message is still to be shown

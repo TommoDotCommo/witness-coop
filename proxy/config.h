@@ -29,6 +29,7 @@ struct Cfg {
 #undef BIND
     bool noDetailFit = false;      // test mutant: the map page keeps the old detail-pane layout (stacked chain titles, fixed pane height) that cut off "Fed by:" at 1920x1080
     bool noTerrainProbe = false;   // test mutant: the audience screen and stools assume flat ground (the wearer's) instead of measuring it
+    bool tvProbeShow = false;      // test mutant: measuring the ground for a screen is seen (the picture is not held, the others are sent the jumps)
     bool noSeatTiebreak = false;   // test mutant: two players who take the same audience stool in the same instant both stay seated
     bool noEmoteAnim = false, noEmoteClips = false, noEmoteSend = false;   // test mutants: emotes shown but not animated / never play a model's own clip / emotes not sent
     bool noChatUi = false, noTypingDots = false, noPingMarks = false;      // test mutants: T does nothing; typing is not announced; pings are not drawn

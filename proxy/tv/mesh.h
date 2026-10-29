@@ -10,6 +10,8 @@ template<size_t N> inline void audiencePalette(float (&palette)[N][4]) {
     for(auto& row:palette) for(float& channel:row) channel=1.f;
 }
 struct Mesh { std::vector<wm::Vertex> body,screen; };
+// The picture is 16:9 (W x H); the screens crop its sides to their own shape instead of stretching it.
+constexpr float WornCrop=(1.f-(4.f/3.f)/(float(W)/float(H)))/2, AudienceCrop=(1.f-(ScreenWidth/ScreenHeight)/(float(W)/float(H)))/2;
 inline Mesh mesh(unsigned chest,const Motion& motion) {
     Mesh out;
     auto vertex=[&](float x,float y,float z,float nx,float ny,float nz,const std::array<uint8_t,3>& col,bool texture,float u=0,float v=0){
@@ -43,6 +45,7 @@ inline Mesh mesh(unsigned chest,const Motion& motion) {
     // Screen opens/closes like a CRT. The texture can be replaced without changing the prop.
     float sh=.103f*(.015f+.985f*motion.power);
     quad({{{.124f,1.21f-sh,-.481f},{-.139f,1.21f-sh,-.481f},{-.139f,1.21f+sh,-.481f},{.124f,1.21f+sh,-.481f}}},{255,255,255},true,true);
+    for(auto& v:out.screen) v.uv[0]=WornCrop+(1-2*WornCrop)*v.uv[0];      // the 16:9 picture, cropped to the middle of this 4:3 screen
     // Two straps continue over the shoulders to the front. Moving attachment
     // points stretch each ribbon, keeping tension as the bracket sways.
     for(float x:{-.14f,.14f}) {
@@ -84,7 +87,10 @@ inline Mesh audienceMesh(const Deployment& deployment) {
     box(0,1.335f,.035f,4.38f,.17f,.15f,trim); box(0,-1.335f,.035f,4.38f,.17f,.15f,trim);
     box(-2.085f,0,.035f,.17f,2.54f,.15f,trim); box(2.085f,0,.035f,.17f,2.54f,.15f,trim);
     box(0,1.43f,-.12f,1.1f,.06f,.25f,brass);
-    quad({point(-ScreenWidth/2,-ScreenHeight/2,.081f),point(ScreenWidth/2,-ScreenHeight/2,.081f),point(ScreenWidth/2,ScreenHeight/2,.081f),point(-ScreenWidth/2,ScreenHeight/2,.081f)},{255,255,255},true);
+    // p.right is the left hand of anyone facing the screen (the camera's right is (sin, -cos) of its heading, and they face yaw+pi),
+    // so the picture's left edge (u=0) goes at +right; drawn the other way round the picture is mirrored.
+    quad({point(ScreenWidth/2,-ScreenHeight/2,.081f),point(-ScreenWidth/2,-ScreenHeight/2,.081f),point(-ScreenWidth/2,ScreenHeight/2,.081f),point(ScreenWidth/2,ScreenHeight/2,.081f)},{255,255,255},true);
+    for(auto& v:out.screen) v.uv[0]=AudienceCrop+(1-2*AudienceCrop)*v.uv[0];      // the 16:9 picture fills the 16:10 screen, a sliver off each side
     // Original makeshift wooden audience stools, on the same deployment plane.
     // Coordinates below are relative to the screen centre (not camera eye).
     for(unsigned i=0;i<SeatCount;++i) {

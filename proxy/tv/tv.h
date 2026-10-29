@@ -9,7 +9,10 @@
 #include <vector>
 namespace wtv {
 using Bytes = std::vector<uint8_t>;
-constexpr unsigned W = 128, H = 96, Pixels = W * H, Chunk = 1024, MaxChunks = 12;
+// 256 x 144 (16:9, the shape of the captured view) in RGB332: a raw frame is 31 chunks of 1200 bytes (one UDP datagram each, under a
+// 1500-byte MTU). A frame's chunks are tracked in a 32-bit mask, so a frame must stay within 32 chunks.
+constexpr unsigned W = 256, H = 144, Pixels = W * H, Chunk = 1200, MaxChunks = (Pixels + Chunk - 1) / Chunk;
+static_assert(MaxChunks <= 32, "a frame's chunks must fit the 32-bit mask");
 constexpr unsigned MaxPlayers = 16, MaxSubscriptions = 2 * (MaxPlayers - 1);
 constexpr uint64_t Period = 200, Lease = 1500, Fresh = 800;
 inline uint32_t get(const uint8_t* p) { return uint32_t(p[0]) | uint32_t(p[1])<<8 | uint32_t(p[2])<<16 | uint32_t(p[3])<<24; }
@@ -238,6 +241,13 @@ inline Placement placement(const Deployment& d) {
 #endif
     for(unsigned i=0;i<2;++i) p.center[i]=d.eye[i]-p.forward[i]*ScreenBehind;
     p.center[2]=p.bottom+ScreenHeight*.5f; return p;
+}
+// Where a screen goes: it is set up by the player who deploys it, to watch on. The deployment is anchored at the deployer's eye and faces
+// back along their heading, so the screen stands ScreenBehind ahead of them with its picture towards them, and the stools are just
+// behind them. (Anchored at the player being watched, it stood behind that player and faced away from a deployer behind them.)
+inline void anchorAtDeployer(const float eye[3],float heading,float out[3],float* yaw) {
+    for(unsigned i=0;i<3;++i) out[i]=eye[i];
+    *yaw=heading+3.14159265f;
 }
 // Three low stools on the viewing side. The Sit gesture bends the legs;
 // its eye drops 0.40 m. The existing gesture already lowers the pelvis, so

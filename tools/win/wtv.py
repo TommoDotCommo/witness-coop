@@ -96,8 +96,8 @@ check('deploy action sets deployment target and creates audience screen', aud_b1
 scr1 = aud_b1['audience'][0]
 check('audience screen size is 4.0m x 2.5m', abs(scr1['width']-4.0)<1e-3 and abs(scr1['height']-2.5)<1e-3)
 check('screen bottom is 2.0m above ground', abs(scr1['bottom']-(scr1['ground']+2.0))<1e-3)
-behind_dist = (scr1['center'][0]-ax)*math.cos(yaw) + (scr1['center'][1]-ay)*math.sin(yaw)
-check('screen is anchored ~3.0m behind wearer deployment pose', abs(behind_dist+3.0)<0.35)
+ahead = (scr1['center'][0]-(ax-math.cos(yaw)*2.5))*math.cos(yaw) + (scr1['center'][1]-(ay-math.sin(yaw)*2.5))*math.sin(yaw)      # B stood 2.5 m behind A, looking along yaw
+check('screen stands ~3.0m ahead of the deployer, its picture facing it', abs(ahead-3.0)<0.35 and abs((scr1['yaw']-yaw-math.pi+math.pi)%(2*math.pi)-math.pi)<.02)
 time.sleep(1)
 aud_b1 = dump(db)
 check('audience screen with no consent shows static noise', not aud_b1['audience'][0]['fresh'] and not aud_b1['audience'][0]['drawn_live'] and aud_b1['audience'][0]['draws']>0)

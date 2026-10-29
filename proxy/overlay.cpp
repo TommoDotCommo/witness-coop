@@ -513,6 +513,22 @@ static void DrawDevMenu(IDXGISwapChain* sc) {
     bb->Release();
 }
 
+// While a new audience screen measures the ground (tv.cpp drops the player onto each point), the last normal frame is shown instead, for
+// the player and for the TV stream taken from it, and a few frames more after the return so the jump back is not seen either.
+static ID3D11Texture2D* g_held; static int g_heldTail;
+static void HoldPictureWhileProbing(IDXGISwapChain* sc) {
+    if (TvProbing()) g_heldTail = 4; else if (g_heldTail > 0) --g_heldTail;
+    if (!g_heldTail) { if (g_held) { g_held->Release(); g_held = nullptr; } return; }
+    ID3D11Texture2D* bb = nullptr; if (FAILED(sc->GetBuffer(0, __uuidof(ID3D11Texture2D), (void**)&bb))) return;
+    D3D11_TEXTURE2D_DESC d; bb->GetDesc(&d);
+    if (g_held) { D3D11_TEXTURE2D_DESC h; g_held->GetDesc(&h); if (h.Width != d.Width || h.Height != d.Height || h.Format != d.Format || h.SampleDesc.Count != d.SampleDesc.Count) { g_held->Release(); g_held = nullptr; g_heldTail = 0; bb->Release(); return; } }
+    if (GetCfg().tvProbeShow) {}
+    else if (!g_held) { d.BindFlags = 0; d.CPUAccessFlags = 0; d.Usage = D3D11_USAGE_DEFAULT; d.MiscFlags = 0; if (SUCCEEDED(g_dev->CreateTexture2D(&d, nullptr, &g_held))) g_ctx->CopyResource(g_held, bb); }
+    else g_ctx->CopyResource(bb, g_held);
+    static DWORD said; if (TvProbing() && GetTickCount() - said > 2000) { DevMenuNotice("Setting up the screen: measuring the ground under it..."); said = GetTickCount(); }
+    bb->Release();
+}
+
 static HRESULT STDMETHODCALLTYPE HookPresent(IDXGISwapChain* sc, UINT sync, UINT flags) {
     LONG f = InterlockedIncrement(&g_frames);
     GameRunQueued();
@@ -523,6 +539,7 @@ static HRESULT STDMETHODCALLTYPE HookPresent(IDXGISwapChain* sc, UINT sync, UINT
     bool mapgen = MapGenActive() && !GetCfg().mapgenShowOverlay; if (MapGenActive() && !mapgen) MapGenCountOverlayFrame();      // the map picture is made of the game's frames alone
     if (g_ready) { const float* camera = (const float*)((uintptr_t)GetModuleHandleA(nullptr) + kCamPos);
         if (Readable(camera, 12)) TvTick(camera, !mapgen && !GamePaused() && CoopCore() && CoopCore()->ready());
+        HoldPictureWhileProbing(sc);
         if (!mapgen) VideoFrame(sc, g_dev, g_ctx);
     }
     if (g_ready && !mapgen) DrawMarkers(sc);

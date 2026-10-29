@@ -86,7 +86,7 @@ int main(){
     float minx=1,maxx=-1,miny=2,maxy=0;
     for(auto v:model.screen){ CHECK(v.pos[2]<-.47f); CHECK(v.col[3]==255 && v.appearanceGroup==0); CHECK(v.joints[0]==3 && v.weights[0]==1);
         minx=std::min(minx,v.uv[0]); maxx=std::max(maxx,v.uv[0]); miny=std::min(miny,v.uv[1]); maxy=std::max(maxy,v.uv[1]); }
-    CHECK(minx==0 && maxx==1 && miny==0 && maxy==1);
+    CHECK(fabsf(minx-WornCrop)<1e-5f && fabsf(maxx-(1-WornCrop))<1e-5f && miny==0 && maxy==1 && WornCrop>.1f);
     for(auto v:model.body) for(float p:v.pos) CHECK(std::isfinite(p));
     auto off=mesh(3,Motion{}); float open=fabsf(model.screen[2].pos[1]-model.screen[0].pos[1]),closed=fabsf(off.screen[2].pos[1]-off.screen[0].pos[1]); CHECK(closed<open*.02f);
     Deployments owner; owner.me=1; float eye[3]={10,20,5}; CHECK(owner.deploy(2,eye,.4f,100)); CHECK(!owner.deploy(1,eye,0,100));
@@ -148,7 +148,21 @@ int main(){
     float minz=1e9f,maxz=-1e9f,minu=1,maxu=-1,minv=1,maxv=-1;
     for(const auto& v:giant.screen){ CHECK(v.col[3]==255 && v.weights[0]==1); CHECK(fabsf(v.nrm[0]*place.forward[0]+v.nrm[1]*place.forward[1]+v.nrm[2]*place.forward[2]-1)<1e-5f);
         minz=std::min(minz,v.pos[2]); maxz=std::max(maxz,v.pos[2]); minu=std::min(minu,v.uv[0]); maxu=std::max(maxu,v.uv[0]); minv=std::min(minv,v.uv[1]); maxv=std::max(maxv,v.uv[1]); }
-    CHECK(fabsf(minz-place.bottom)<1e-4f && fabsf(maxz-minz-ScreenHeight)<1e-4f); CHECK(minu==0 && maxu==1 && minv==0 && maxv==1);
+    CHECK(fabsf(minz-place.bottom)<1e-4f && fabsf(maxz-minz-ScreenHeight)<1e-4f); CHECK(fabsf(minu-AudienceCrop)<1e-5f && fabsf(maxu-(1-AudienceCrop))<1e-5f && minv==0 && maxv==1);
+    // Seen from the middle stool (facing the screen), the picture reads left to right: u grows towards the viewer's right hand.
+    { auto seat=seatPoint(deployed,1); float th=deployed.yaw+3.14159265f, right[2]={sinf(th),-cosf(th)}; float cov=0,mu=0,mx=0;
+      for(const auto& v:giant.screen){ mu+=v.uv[0]/6; mx+=((v.pos[0]-seat[0])*right[0]+(v.pos[1]-seat[1])*right[1])/6; }
+      for(const auto& v:giant.screen) cov+=(v.uv[0]-mu)*(((v.pos[0]-seat[0])*right[0]+(v.pos[1]-seat[1])*right[1])-mx);
+      CHECK(cov>0); }
+    // Deployed by a player standing at `me` looking along `heading`: the screen is ahead of them, its picture faces them, the stools are within reach behind.
+    for(float heading:{0.f,1.1f,-2.4f,3.0f}) {
+        float me[3]={-40,12,7},at[3]; float yaw; anchorAtDeployer(me,heading,at,&yaw);
+        Deployment mine=deployed; for(unsigned i=0;i<3;++i) mine.eye[i]=at[i]; mine.yaw=yaw; auto pl=placement(mine);
+        float look[2]={cosf(heading),sinf(heading)}, to[2]={pl.center[0]-me[0],pl.center[1]-me[1]};
+        CHECK(to[0]*look[0]+to[1]*look[1]>2.5f);                                  // in front of the deployer
+        CHECK(-(to[0]*pl.forward[0]+to[1]*pl.forward[1])>2.5f);                   // its picture side towards them
+        auto st=seatPoint(mine,1); CHECK(hypotf(st[0]-me[0],st[1]-me[1])<1.5f);   // the middle stool where they stand
+    }
     for(const auto& v:giant.body) for(float x:v.pos) CHECK(std::isfinite(x));
     // ---- Terrain: stools stand on their own ground, the screen clears the highest ground under it, and the drop probe survives hostile worlds.
     {

@@ -47,6 +47,7 @@ mutations = {
     'probe-spawn-return': ('dx*dx+dy*dy>ProbeSlack*ProbeSlack', 'false'),
     'probe-calibration': ('trusted_=fabsf(camera[2]-CameraEye-wearer_)<=CalibrationTolerance', 'trusted_=true'),
     'probe-retry': ('pass_<ProbePasses','false'),
+    'screen-faces-away-from-deployer': ('*yaw=heading+3.14159265f;', '*yaw=heading;'),
     'probe-return-home': ('c.teleport=true; for(unsigned i=0;i<3;++i) c.to[i]=home_[i]; return c;', 'return c;'),
 }
 mesh_mutations = {
@@ -55,6 +56,10 @@ mesh_mutations = {
     'screen-uv': ('{1,1},{1,0}', '{0,1},{0,0}'),
     'screen-power': ('.015f+.985f*motion.power', '1.f'),
     'chest-weight': ('p.joints[0]=uint8_t(chest)', 'p.joints[0]=0'),
+    'audience-picture-mirrored': ('point(ScreenWidth/2,-ScreenHeight/2,.081f),point(-ScreenWidth/2,-ScreenHeight/2,.081f),point(-ScreenWidth/2,ScreenHeight/2,.081f),point(ScreenWidth/2,ScreenHeight/2,.081f)',
+                                  'point(-ScreenWidth/2,-ScreenHeight/2,.081f),point(ScreenWidth/2,-ScreenHeight/2,.081f),point(ScreenWidth/2,ScreenHeight/2,.081f),point(-ScreenWidth/2,ScreenHeight/2,.081f)'),
+    'audience-picture-stretched': ('v.uv[0]=AudienceCrop+(1-2*AudienceCrop)*v.uv[0];', ''),
+    'worn-picture-stretched': ('v.uv[0]=WornCrop+(1-2*WornCrop)*v.uv[0];', ''),
     'audience-screen-facing': ('for(unsigned i=0;i<3;++i) n[i]=p.forward[i];', 'for(unsigned i=0;i<3;++i) n[i]=-p.forward[i];'),
 }
 def run(name, text, geometry, ownership=resources):

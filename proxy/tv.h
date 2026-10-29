@@ -16,6 +16,9 @@ ID3D11ShaderResourceView* TvTexture(ID3D11Device*,ID3D11DeviceContext*,bool* liv
 void TvDrawn(unsigned vertices,bool live,float sway,float power); // actual draw bridge
 void TvVisible(unsigned pixels);
 bool TvDeployAction(unsigned target); // aimed remote player; a second press retracts this player's screen
+// While the ground under a new screen is measured the player is dropped onto each point: the picture is held (overlay.cpp) and the
+// others are sent the pose the player had before (state.cpp), so nobody sees the jumps.
+bool TvProbing(); bool TvProbeHome(float pos[3], float ang[2]);
 unsigned TvDeploymentTarget();
 std::vector<wtv::Deployment> TvAudienceScreens();
 ID3D11ShaderResourceView* TvAudienceTexture(ID3D11Device*,ID3D11DeviceContext*,unsigned source,bool* live);

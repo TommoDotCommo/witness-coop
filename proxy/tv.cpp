@@ -46,10 +46,15 @@ bool TvDeployAction(unsigned target){
     if(s.deployments.local().active){ bool ok=s.deployments.retract(now); if(ok) sendDeployment(s.deployments.local()); return ok; }
     if(!target || target==CoopMyId() || seated) return false;
     for(const auto& r:CoopGetRemotes()) if(r.id==target && r.valid && r.ageMs<1000){
-        for(unsigned i=0;i<3;++i) s.probeEye[i]=r.pos[i];
-        s.probeYaw=r.ang[0]; s.probeTarget=target; s.wantProbe=true; return true;     // TvTick measures the ground, then deploys
+        s.probeTarget=target; s.wantProbe=true; return true;     // TvTick anchors it at this player, measures the ground, then deploys
     }
     return false;
+}
+bool TvProbing(){ Guard g; return state().probing; }
+bool TvProbeHome(float pos[3],float ang[2]){
+    Guard g; auto& s=state();
+    if(!s.probing || GetCfg().tvProbeShow) return false;
+    for(unsigned i=0;i<3;++i) pos[i]=s.probeHome[i]; ang[0]=s.probeHome[3]; ang[1]=s.probeHome[4]; return true;
 }
 unsigned TvDeploymentTarget(){ Guard g; return state().deployments.local().active?state().deployments.local().target:0; }
 std::vector<wtv::Deployment> TvAudienceScreens(){
@@ -86,6 +91,7 @@ void TvTick(const float camera[3],bool captureAllowed){
     const float* angles=(const float*)((uintptr_t)GetModuleHandleA(nullptr)+0x6303EC);
     bool anglesOk=!IsBadReadPtr(angles,8), exit=seatExit.exchange(false), action=seatRequest.exchange(false);
     // Deploy: first measure the ground under the stools and the screen (the player drops onto each point and is put back), then announce.
+    if(s.wantProbe && anglesOk) wtv::anchorAtDeployer(camera,angles[0],s.probeEye,&s.probeYaw);
     if(s.wantProbe){
         s.wantProbe=false; wtv::Deployment base; base.from=CoopMyId(); base.target=s.probeTarget; base.sequence=1; base.active=true; base.yaw=s.probeYaw;
         for(unsigned i=0;i<3;++i) base.eye[i]=s.probeEye[i];
@@ -162,12 +168,15 @@ bool TvWanted(){ Guard g; auto& s=state(); s.sender.expire(GetTickCount64()); re
 void TvCapture(const uint8_t* rgba,unsigned w,unsigned h){
     Guard g; auto& s=state(); if(!s.capture || !s.sender.due(GetTickCount64(),s.audience.count(CoopMyId())!=0) || !w || !h) return;
     LARGE_INTEGER start,end,freq; QueryPerformanceCounter(&start); QueryPerformanceFrequency(&freq);
-    wtv::Bytes px(wtv::Pixels,0); // Letterbox to 4:3 rather than stretch the sender's view.
+    wtv::Bytes px(wtv::Pixels,0); // Letterbox to the stream's 16:9 rather than stretch the sender's view.
     unsigned oh=wtv::H,ow=wtv::W;
     if(uint64_t(w)*wtv::H>uint64_t(h)*wtv::W) oh=std::max(1u,unsigned(uint64_t(h)*wtv::W/w)); else ow=std::max(1u,unsigned(uint64_t(w)*wtv::H/h));
     for(unsigned y=0;y<oh;++y) for(unsigned x=0;x<ow;++x){
         const uint8_t* p=rgba+(size_t(y*h/oh)*w+x*w/ow)*4;
-        px[(y+(wtv::H-oh)/2)*wtv::W+x+(wtv::W-ow)/2]=(p[0]&224)|((p[1]>>3)&28)|(p[2]>>6);
+        // RGB332 bands smooth skies and walls into stripes; an ordered (4x4 Bayer) dither turns the steps into fine grain.
+        static const uint8_t bayer[16]={0,8,2,10,12,4,14,6,3,11,1,9,15,7,13,5}; int t=bayer[(y&3)*4+(x&3)];
+        auto q=[&](int v,int step){ return std::min(255,std::max(0,v+(2*t-15)*step/32)); };
+        px[(y+(wtv::H-oh)/2)*wtv::W+x+(wtv::W-ow)/2]=uint8_t((q(p[0],32)&224)|((q(p[1],32)>>3)&28)|(q(p[2],64)>>6));
     }
     if(!++s.sequence) ++s.sequence;
     auto itSelf=s.audience.find(CoopMyId());
@@ -201,7 +210,7 @@ ID3D11ShaderResourceView* TvTexture(ID3D11Device* dev,ID3D11DeviceContext* ctx,b
     static uint64_t noiseAt=0; static bool wasLive=false; uint64_t now=GetTickCount64();
     bool update=*live ? (s.uploaded!=s.receiver.decoded || !wasLive) : (wasLive || now-noiseAt>=200);
     if(update){
-        std::array<uint8_t,wtv::Pixels*4> px; uint32_t rng=unsigned(now/200);
+        static std::array<uint8_t,wtv::Pixels*4> px; uint32_t rng=unsigned(now/200);
         for(unsigned i=0;i<wtv::Pixels;++i){ auto* p=px.data()+i*4;
             if(*live){ uint8_t c=s.receiver.pixels[i]; p[0]=uint8_t(((c>>5)*255)/7); p[1]=uint8_t((((c>>2)&7)*255)/7); p[2]=uint8_t((c&3)*85); }
             else { rng=rng*1664525+1013904223; p[0]=p[1]=p[2]=uint8_t(24+(rng>>27)*3); }
@@ -221,7 +230,7 @@ ID3D11ShaderResourceView* TvAudienceTexture(ID3D11Device* dev,ID3D11DeviceContex
     }
     bool update=*live?(stream.uploaded!=stream.receiver.decoded || !stream.wasLive):(stream.wasLive || now-stream.noiseAt>=wtv::Period);
     if(update){
-        std::array<uint8_t,wtv::Pixels*4> px; uint32_t rng=unsigned(now/wtv::Period)^source;
+        static std::array<uint8_t,wtv::Pixels*4> px; uint32_t rng=unsigned(now/wtv::Period)^source;
         for(unsigned i=0;i<wtv::Pixels;++i){ auto* p=px.data()+i*4;
             if(*live){ uint8_t c=stream.receiver.pixels[i]; p[0]=uint8_t(((c>>5)*255)/7); p[1]=uint8_t((((c>>2)&7)*255)/7); p[2]=uint8_t((c&3)*85); }
             else { rng=rng*1664525+1013904223; p[0]=p[1]=p[2]=uint8_t(24+(rng>>27)*3); }
@@ -247,7 +256,7 @@ void TvDump(){
     fprintf(f,"],\"audience\":[");
     bool comma=false; for(const auto& entry:s.deployments.screens){ const auto& d=entry.second; if(!d.active) continue; auto p=wtv::placement(d); const auto& stats=s.audienceStats[d.from];
         auto stream=s.audience.find(d.target); bool fresh=stream!=s.audience.end() && stream->second.receiver.fresh(now);
-        fprintf(f,"%s{\"owner\":%u,\"source\":%u,\"sequence\":%u,\"center\":[%.5f,%.5f,%.5f],\"ground\":%.5f,\"stools\":[%.5f,%.5f,%.5f],\"measured\":%u,\"bottom\":%.5f,\"width\":%.2f,\"height\":%.2f,\"draws\":%u,\"vertices\":%u,\"drawn_live\":%d,\"fresh\":%d,\"visible_pixels\":%u",comma?",":"",d.from,d.target,d.sequence,p.center[0],p.center[1],p.center[2],p.ground,p.stool[0],p.stool[1],p.stool[2],d.measured,p.bottom,wtv::ScreenWidth,wtv::ScreenHeight,stats.draws,stats.vertices,stats.drawnLive,fresh,stats.visiblePixels);
+        fprintf(f,"%s{\"owner\":%u,\"source\":%u,\"sequence\":%u,\"yaw\":%.6f,\"center\":[%.5f,%.5f,%.5f],\"ground\":%.5f,\"stools\":[%.5f,%.5f,%.5f],\"measured\":%u,\"bottom\":%.5f,\"width\":%.2f,\"height\":%.2f,\"draws\":%u,\"vertices\":%u,\"drawn_live\":%d,\"fresh\":%d,\"visible_pixels\":%u",comma?",":"",d.from,d.target,d.sequence,d.yaw,p.center[0],p.center[1],p.center[2],p.ground,p.stool[0],p.stool[1],p.stool[2],d.measured,p.bottom,wtv::ScreenWidth,wtv::ScreenHeight,stats.draws,stats.vertices,stats.drawnLive,fresh,stats.visiblePixels);
         if(stream!=s.audience.end()) fprintf(f,",\"decoded\":%u,\"upload_hash\":%u,\"uploaded_sequence\":%u",stream->second.receiver.decoded,stream->second.uploadHash,stream->second.uploadedSequence);
         else fprintf(f,",\"decoded\":0,\"upload_hash\":0,\"uploaded_sequence\":0"); fprintf(f,"}"); comma=true;
     }
