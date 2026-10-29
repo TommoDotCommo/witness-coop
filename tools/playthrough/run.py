@@ -365,7 +365,9 @@ class Playthrough:
                         # worked back at once, and do not try this panel's other ways again.
                         k, v = self.variant[h]; self.variant[h] = (len(v), v); self.paths[h] = v[0]; self.fixups.insert(0, h)
                         self.rec('redraw refused: restoring', panel='%#x' % h, why=why)
-                    elif 'did not accept' in why and h in self.candidates_only and self.variant[h][0] + 1 < len(self.variant[h][1]):
+                    elif 'did not accept' in why and h in self.variant and self.variant[h][0] + 1 < len(self.variant[h][1]):
+                        # The game refused this line: the panel's next solution (another exit, another start: Town's Triple Exit; or the next
+                        # relaxed-rule candidate). A refused line on an unsolved panel costs nothing.
                         k, v = self.variant[h]; self.variant[h] = (k + 1, v); self.paths[h] = v[k + 1]; self.planner.tries[h] = 0      # the next candidate line
                         self.rec('next candidate', panel='%#x' % h, candidate=k + 1, of=len(v))
                     elif why.startswith('stuck') or 'did not accept' in why:
