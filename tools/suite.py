@@ -222,15 +222,28 @@ SCENARIOS = [   # name, extra cfg for A, extra cfg for B, check(a_stats, b_stats
   ('MUTANT: panel power chain disabled', 'no_panel_power=1', '', lambda a, b, ok: (not ok, 'target panel must remain dark on B')),
 ]
 args = sys.argv[1:]; shard = None
-if args and args[0] == '--shard': shard = tuple(map(int, args[1].split('/'))); args = args[2:]      # --shard i/n: run every n-th selected scenario starting at i (1-based), for parallel runs under separate resource provider owners
+if args and args[0] == '--shard': shard = tuple(map(int, args[1].split('/'))); args = args[2:]      # --shard i/n: run shard i (1-based) of n, for parallel runs under separate resource provider owners
+qfile = None
+if args and args[0] == '--queue': qfile = args[1]; args = args[2:]      # --queue FILE: pull scenarios one at a time from a file shared with other shards (qa_par.sh); the filters were applied when it was written
 only = args; results = []
 selected = [sc for sc in SCENARIOS if not only or any(o in sc[0] for o in only)]
-if shard: selected = [sc for k, sc in enumerate(selected) if k % shard[1] == shard[0] - 1]
+if shard:      # balanced by typical duration (tools/qa_durations.json, or QA_DURATIONS): every shard computes the same plan
+    import shard as shard_plan
+    mine = set(shard_plan.plan([sc[0] for sc in selected], shard_plan.load_durations(), shard[1])[shard[0] - 1])
+    selected = [sc for sc in selected if sc[0] in mine]
+    print('SHARD\t%d/%d\t%s' % (shard[0], shard[1], '; '.join(sc[0] for sc in selected)), flush=True)
+if qfile: import shard as shard_plan; selected = []
 SAVES0 = real_saves()
-queue = list(selected); tries = {}
-while queue:
-    name, ca, cb, check = queue.pop(0)
-    print('\n=== %s' % name, flush=True)
+queue = list(selected); tries = {}; spent = {}; by_name = {sc[0]: sc for sc in SCENARIOS}
+def next_scenario():
+    if queue: return queue.pop(0)      # a retry, or the fixed selection
+    picked = shard_plan.pop(qfile) if qfile else None
+    return by_name[picked] if picked else None
+while True:
+    sc = next_scenario()
+    if not sc: break
+    name, ca, cb, check = sc
+    print('\n=== %s' % name, flush=True); started = time.time()
     late = 'late join' in name
     if late:      # free B from the previous scenario and start A alone
         pb = os.path.join(RUN, 'pidB.txt')
@@ -403,10 +416,17 @@ while queue:
     if not bot_ok: ok = False
     print('A %s\nB %s' % (a, b)); print('RESULT: %s  (%s)' % ('PASS' if ok else 'FAIL', why), flush=True)
     tries[name] = tries.get(name, 0) + 1
+    secs = time.time() - started + spent.get(name, 0); spent[name] = secs      # a retried scenario counts both attempts
     if not bot_ok and tries[name] < 2:      # the scenario's own precondition failed (the game was not in the world yet, or a click did not register under load): that is no verdict, so run it once more
         print('RETRY: %s did not reach its precondition, running it once more' % name, flush=True); queue.insert(0, (name, ca, cb, check)); continue
-    results.append((name, ok))
+    results.append((name, ok, secs)); print('TIME\t%s\t%.0f\t%s' % (name, secs, 'PASS' if ok else 'FAIL'), flush=True)
+durations = os.path.join(RUN, 'qa_durations.json')      # this run's seconds per scenario, merged into the run folder's file
+try: known = json.load(open(durations))
+except (OSError, ValueError): known = {}
+known.update({n: round(s) for n, _, s in results}); json.dump(known, open(durations, 'w'), indent=1, sort_keys=True)
 print('\n==== SUMMARY')
-for n, ok in results: print('%-40s %s' % (n, 'PASS' if ok else 'FAIL'))
-print('ALL OK' if results and all(ok for _, ok in results) else 'SOME FAILED')
-sys.exit(0 if results and all(ok for _, ok in results) else 1)
+for n, ok, s in results: print('%-58s %6.0f s  %s' % (n, s, 'PASS' if ok else 'FAIL'))
+print('total %.0f s' % sum(s for _, _, s in results))
+passed = (results or qfile) and all(ok for _, ok, _ in results)      # a queue shard may find the queue already empty
+print('ALL OK' if passed else 'SOME FAILED')
+sys.exit(0 if passed else 1)

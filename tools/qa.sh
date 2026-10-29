@@ -1,11 +1,16 @@
 #!/bin/bash
 # `tools/qa.sh model [filter]` runs the character-model suite (suite_model.py) instead; `tools/qa.sh sweep` the puzzle-sweep scenario (qa_sweep.py); `tools/qa.sh lines` the shared-lines scenario (qa_lines.py); `tools/qa.sh tags` the name-tags scenario (qa_tags.py); `tools/qa.sh pov` the POV-screen scenario (qa_pov.py); `tools/qa.sh ui` the glyph-atlas check (qa_ui.py); `tools/qa.sh seats [race|wearer|deployer|terrain|look]` the two-client audience seat scenarios (qa_tv_seats.py).
-# Shared-state suite (live sync, packet loss, peer restart and two tutorial doors, with mutants). Accepts scenario name filters.
+# Shared-state suite (live sync, packet loss, peer restart and two tutorial doors, with mutants). `tools/qa.sh` with no arguments, or
+# `tools/qa.sh --all [filter ...]`, runs it in parallel shards (qa_par.sh: as many as the free slots and RAM allow). `tools/qa.sh --serial
+# [filter ...]` runs it one scenario after the other on one pair of games, as does `tools/qa.sh <filter ...>`.
 # resource provider mode: leases two slots (without waiting: exit 3 = busy, run game-free tests instead or retry), builds the hard-linked
 # instance folders, runs, and always kills this agent's games and frees the slots. QA_WAIT=<seconds> waits for slots.
 # (the whole body is one brace group: bash reads it completely before running, so editing this file while a run is in progress cannot break that run)
 export WITNESS_FPS="${WITNESS_FPS:-60}"      # injected mouse events are taken one per frame: the bots draw about twice as fast at 60 fps as at 30 (a pair of games costs little)
 {
+if [ "${1:-}" = --serial ]; then shift
+elif [ "${1:-}" = --all ] || { [ $# = 0 ] && [ -z "${WITNESS_SLOTS:-}" ]; }; then [ "${1:-}" = --all ] && shift; exec "$(dirname "$0")/qa_par.sh" "$@"
+fi
 WITNESS_ALLOCATING=1 . "$(dirname "$0")/config.sh" || exit $?
 QA_SLOTS="${QA_SLOTS:-$([ "${1:-}" = tv3 ] && echo 3 || echo 2)}"
 if [ -x "$WITNESS_RESOURCES" ] && [ -z "${WITNESS_SLOTS:-}" ]; then

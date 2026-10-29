@@ -253,6 +253,11 @@ no echo guard and no restart resync each have a twin the regression must catch.
 `tools/qa.sh` restarts both games for each scenario, and a bot plays player A through the proxy's in-process control (teleports to the
 first panel, aims, clicks to enter the puzzle, traces the line, clicks to finish), with no window focused and no desktop input, and `tools/state_diff.py` compares the
 solved panels and open doors read from both games' memory. Scenarios marked MUTANT are deliberately broken and must fail.
+With no arguments (or `--all [filter ...]`) it runs the whole suite in parallel shards through `tools/qa_par.sh`, one resource owner and
+two slots per shard, as many shards as the provider has room for (2 free slots and about 4 GB of free RAM each above the provider's own RAM floor, started 90 s apart, at most `QA_SHARDS_MAX`,
+default 4; it waits up to `QA_WAIT` seconds for room instead of failing). The shards take scenarios from one queue, longest first by the
+typical seconds in `tools/qa_durations.json` (`tools/shard.py`, tested game-free by `tools/test_shard.py`), and the run ends with a table of
+scenario, shard, seconds and result and the total wall time. `tools/qa.sh --serial` runs the suite on one pair of games.
 
 `tools/qa.sh model` runs the adventurer suite (`tools/suite_model.py`, `tools/win/wmodel.py`): visibility, idle/walk/run animation, measured speed, render-thread statistics and occlusion behind the first door. It also checks migration from a removed model name. Mutants disable gait, read statistics on the command thread, and draw through walls. The updated live scenarios require a fresh verifier run; no old model-selector results apply to this version.
 
