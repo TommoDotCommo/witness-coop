@@ -65,6 +65,8 @@ def quat_rot(v):      # rotate a local vector by the panel's quaternion
     x, y, z = v; tx = 2 * (qy * z - qz * y); ty = 2 * (qz * x - qx * z); tz = 2 * (qx * y - qy * x)
     return (x + qw * tx + (qy * tz - qz * ty), y + qw * ty + (qz * tx - qx * tz), z + qw * tz + (qx * ty - qy * tx))
 NORMAL = quat_rot((1.0, 0.0, 0.0))      # the panel faces along its local +x (a yaw-only panel at rotation rz faces (cos rz, sin rz, 0))
+FLIP = bool(os.environ.get('WDRAW_FLIP_SIDE'))      # stand on the other side: for a panel whose start was not found from the front (seen from behind, or through a cage)
+if FLIP: NORMAL = (-NORMAL[0], -NORMAL[1], -NORMAL[2])
 def standing(pos):      # distance along the (horizontal part of the) panel's normal and the sideways offset of a camera position
     nx, ny = NORMAL[0], NORMAL[1]; nn = math.hypot(nx, ny) or 1.0; nx, ny = nx / nn, ny / nn
     ux, uy = pos[0] - px_, pos[1] - py_; return ux * nx + uy * ny, -ux * ny + uy * nx
@@ -90,6 +92,10 @@ def menu_teleport():
 
 stamp('start')
 pos = menu_teleport()
+if FLIP:      # the menu's teleport puts us on its side: move to the other one (3 m along the flipped normal), then let the player settle there
+    nx_, ny_ = NORMAL[0], NORMAL[1]; nn_ = math.hypot(nx_, ny_) or 1.0; hx_, hy_ = px_ + 3.0 * nx_ / nn_, py_ + 3.0 * ny_ / nn_
+    c.send(['hover %.4f %.4f %.4f %.5f 0.0' % (hx_, hy_, pz_ + 0.2, math.atan2(py_ - hy_, px_ - hx_))], 2.4); c.send(['hover off'], 1.5)
+    pos = p.camera()[0]; stamp('moved to the other side of the panel')
 dist = math.dist(pos, (px_, py_, pz_))
 stamp('teleported')
 

@@ -185,7 +185,9 @@ class Playthrough:
         env = {**os.environ, 'WDRAW_KCACHE': win(sweep.KCACHE), 'WDRAW_TIMING': '1', 'WDRAW_SHOTS': '1', 'WSLENV': os.environ.get('WSLENV', '') + ':WDRAW_KCACHE:WDRAW_TIMING:WDRAW_SHOTS:WDRAW_REDRAW'}
         if redraw: env['WDRAW_REDRAW'] = '1'
         # A first attempt gets a short search for the start circle, so a hard panel does not hold a bot while easy work waits; later attempts the full one.
-        env['WDRAW_START_BUDGET'] = '75' if self.planner.tries.get(h, 0) == 0 else '230'; env['WSLENV'] += ':WDRAW_START_BUDGET'
+        env['WDRAW_START_BUDGET'] = '75' if self.planner.tries.get(h, 0) == 0 else '230'; env['WSLENV'] += ':WDRAW_START_BUDGET:WDRAW_FLIP_SIDE'
+        # The start was not found from the front last time: this time stand on the other side (a panel seen from behind or through a cage).
+        if 'did not start' in self.last_why.get(h, '') and self.planner.tries.get(h, 0) % 2 == 1: env['WDRAW_FLIP_SIDE'] = '1'
         err = ''
         try:
             out, err = pyw(script, bot.pid, win(str(bot.dir)), '%x' % h, ','.join(map(str, path)), timeout=420, env=env, both=True)
@@ -206,13 +208,30 @@ class Playthrough:
         self.rec('failed', bot=bot.id, panel='%#x' % h, name=e.name, area=e.area, seconds=dt, why=r.get('why', ''), shot=str(bot.dir / 'shots' / (shot + '.bmp')), trace=err.splitlines()[-40:])
         return False
 
+    def event_time(self, bot, text):
+        """Milliseconds (the machine's performance counter, shared by every game here) of the last line of bot's witness_events.log containing `text`."""
+        try:
+            with open(bot.dir / 'witness_events.log', 'rb') as f:
+                f.seek(0, 2); f.seek(max(0, f.tell() - 200000)); lines = f.read().decode(errors='ignore').splitlines()
+        except OSError: return None
+        for l in reversed(lines):
+            if text in l:
+                try: return float(l.split(' ', 1)[0])
+                except ValueError: return None
+        return None
+
     def propagation(self, origin, h, limit=60):
         """The co-op check: every other world must show the panel solved; how long each took."""
         t0 = time.time(); waiting = {b.id: b for b in self.bots if b is not origin}
         while waiting and time.time() - t0 < limit:
             for i, b in list(waiting.items()):
                 try:
-                    if h in b.state()[0]: self.prop.append((h, origin.id, i, time.time() - t0)); self.rec('propagated', panel='%#x' % h, origin=origin.id, to=i, seconds=round(time.time() - t0, 2)); del waiting[i]
+                    if h in b.state()[0]:
+                        # exact: the sender's event line against the receiver's "applied" line (both games log with the same clock); else the polled time
+                        t_sent = self.event_time(origin, 'local panel %#x solved' % h); t_got = self.event_time(b, 'remote panel %#x applied as solved' % h)
+                        exact = round((t_got - t_sent) / 1000, 3) if t_sent and t_got and t_got >= t_sent else None
+                        self.prop.append((h, origin.id, i, exact if exact is not None else time.time() - t0))
+                        self.rec('propagated', panel='%#x' % h, origin=origin.id, to=i, seconds=round(time.time() - t0, 2), exact_s=exact); del waiting[i]
                 except Exception: pass
             time.sleep(.5)
         for i in waiting: self.rec('divergence', panel='%#x' % h, origin=origin.id, missing_on=i, after=limit)

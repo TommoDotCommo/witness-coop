@@ -43,9 +43,9 @@ def one(folder, L, R):
     if s: print('  solves: %d, median %.1f s, p90 %.1f s' % (len(s), statistics.median(s), sorted(s)[int(0.9 * (len(s) - 1))]))
     fails = collections.Counter(reason(e.get('why', '')) for e in ev if e['kind'] == 'failed')
     if fails: print('  failures:', dict(fails))
-    p = sorted(e['seconds'] for e in ev if e['kind'] == 'propagated')
+    p = sorted(e['exact_s'] if e.get('exact_s') is not None else e['seconds'] for e in ev if e['kind'] == 'propagated')      # exact (event logs) where the games wrote them
     if p: print('  propagation: %d, p50 %.2f s, p95 %.2f s, max %.2f s' % (len(p), p[len(p) // 2], p[int(0.95 * (len(p) - 1))], p[-1]))
-    slow = [e for e in ev if e['kind'] == 'propagated' and e['seconds'] > 5]
+    slow = [dict(e, seconds=e['exact_s'] if e.get('exact_s') is not None else e['seconds']) for e in ev if e['kind'] == 'propagated' and (e.get('exact_s') if e.get('exact_s') is not None else e['seconds']) > 5]
     if slow: print('  slow propagation (>5 s):', ', '.join('%s %.1fs' % (e['panel'], e['seconds']) for e in slow[:8]))
     div = [e for e in ev if e['kind'] == 'divergence' and e.get('persistent', True)]
     if div:
