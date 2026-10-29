@@ -31,10 +31,12 @@ def measure(path):
     # Sample the middle of the top horizontal edge, away from corners/stubs.
     lo,hi=min(xs),max(xs);assert hi-lo>40,'maze edge too small'
     offsets=[];native=[];remote=[]
+    # The groove search window must stay inside the groove's own row: the next horizontal groove is about a quarter of the maze width away.
+    half=int(min(18,max(5,.17*(hi-lo))))
     for x in range(lo+(hi-lo)//4,hi-(hi-lo)//4):
         ry=[yy for yy in range(y-4,y+5) if red(x,yy)]
         gy=[]
-        for yy in range(y-18,y+19):
+        for yy in range(y-half,y+half+1):
             r,g,b=pixel(x,yy)
             if 70<r<190 and 50<g<145 and b<65:gy.append(yy)
         if ry and gy:

@@ -38,6 +38,7 @@ const Cfg& GetCfg() {
             else if (sscanf(line, "no_restore_copy=%d", &v) == 1) r.noRestoreCopy = v != 0;
             else if (sscanf(line, "no_power_link=%d", &v) == 1) r.noPowerLink = v != 0;
             else if (sscanf(line, "no_target_dispatch=%d", &v) == 1) r.noTargetDispatch = v != 0;
+            else if (sscanf(line, "old_projection=%d", &v) == 1) r.oldProjection = v != 0;
             else if (sscanf(line, "no_line_draw=%d", &v) == 1) r.noLineDraw = v != 0;
             else if (sscanf(line, "no_name_tags=%d", &v) == 1) r.noNameTags = v != 0;
             else if (sscanf(line, "ui_tight_atlas=%d", &v) == 1) r.uiTightAtlas = v != 0;

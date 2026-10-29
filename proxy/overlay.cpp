@@ -22,7 +22,7 @@ extern HMODULE g_selfModule();
 static const uintptr_t kGlobals = 0x62D0A0, kCamPos = 0x6304B0 + 0x10, kCamAng = 0x6303EC;
 static const uintptr_t kPauseDimA = 0x630070, kPauseDimB = 0x62FF3C;      // two floats: 0.0 in every state but the pause menu, where they are 1.0 (a state table: walking, dev menu, at a panel, in and out of a puzzle, after F7, pause menu)
 static const uintptr_t kPausedOld = 0x62DAC4;      // the first candidate, WRONG: it flips with F6 / F7 and with entering a puzzle; only kept for the mutant pause_wrong_flag=1
-static const float kVFovDeg = 60.0f;                 // calibrated: horizontal ~89 deg at 16:9
+#include "gamecam.h"
 #include "coop.h"
 #include "game.h"
 #include "state.h"
@@ -128,7 +128,7 @@ static bool Project(const float* cam, float th, float ph, const float* w, float 
     float up[3] = {-sinf(ph)*cosf(th), -sinf(ph)*sinf(th), cosf(ph)};
     float f = d[0]*fwd[0] + d[1]*fwd[1] + d[2]*fwd[2];
     if (f < 0.1f) return false;
-    float tv = tanf(kVFovDeg * 3.14159265f / 360.0f), th_ = tv * aspect;
+    float tv = tanf(GameProjection().vfovDeg * 3.14159265f / 360.0f), th_ = tv * aspect;
     *nx = ((d[0]*right[0] + d[1]*right[1] + d[2]*right[2]) / f) / th_;
     *ny = ((d[0]*up[0] + d[1]*up[1] + d[2]*up[2]) / f) / tv;
     return true;
@@ -222,16 +222,16 @@ static void DrawMarkers(IDXGISwapChain* sc) {
     if (FAILED(g_dev->CreateRenderTargetView(bb, nullptr, &rtv))) { bb->Release(); return; }
     uintptr_t base = (uintptr_t)GetModuleHandleA(nullptr);
     const float* cam = (const float*)(base + kCamPos); const float* ang = (const float*)(base + kCamAng);
-    float rects[32][4] = {}, cols[32][4] = {}; int n = 0; float aspect = (float)td.Width / (float)td.Height;
+    float rects[32][4] = {}, cols[32][4] = {}; int n = 0; float aspect = (float)td.Width / (float)td.Height; const float vfov = GameProjection().vfovDeg;
     uintptr_t glob = Readable((void*)(base + kGlobals), 8) ? *(uintptr_t*)(base + kGlobals) : 0;
     uintptr_t arr = glob && Readable((void*)(glob + 0x18), 8) ? *(uintptr_t*)(glob + 0x18) : 0;
     auto remotes = CoopGetRemotes();
     if (GamePaused()) {
-        if (ModelGpuReady()) { wm::Cam wc = {{cam[0], cam[1], cam[2]}, ang[0], ang[1], kVFovDeg, aspect, 0.1f, 2000.0f}; float p[3] = {}; ModelGpuDraw(rtv, td.Width, td.Height, wc, false, 0, p, 0); }      // draws nothing and says so in the stats
+        if (ModelGpuReady()) { wm::Cam wc = {{cam[0], cam[1], cam[2]}, ang[0], ang[1], vfov, aspect, 0.1f, 2000.0f}; float p[3] = {}; ModelGpuDraw(rtv, td.Width, td.Height, wc, false, 0, p, 0); }      // draws nothing and says so in the stats
         rtv->Release(); bb->Release(); return;
     }
     if (ModelGpuReady()) {      // the character model replaces the flat puppet
-        wm::Cam wc = {{cam[0], cam[1], cam[2]}, ang[0], ang[1], kVFovDeg, aspect, 0.1f, 2000.0f};
+        wm::Cam wc = {{cam[0], cam[1], cam[2]}, ang[0], ang[1], vfov, aspect, 0.1f, 2000.0f};
         bool first = true;
         for (const auto& rp : remotes) if (rp.ageMs < 2000) {
             ModelExtra ex; ex.seated=rp.emote==14 && TvSeatedPose(rp.pos); ex.appearance = rp.appearance; ex.proximitySpeaking = rp.proximitySpeaking; ex.radioEquipped = rp.radioEquipped; ex.radioTx = rp.radioTx; { int e = 0; float t = 0; if (SocialEmoteOf(rp.id, &e, &t)) { ex.emote = e; ex.emoteT = t; } }
