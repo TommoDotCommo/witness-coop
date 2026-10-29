@@ -20,15 +20,18 @@ def finishes(logic, allowed, goal):
         solved.update(new)
 
 
-def route(logic, goal=frozenset([CREDITS]), cache=ROUTE_CACHE):
+def route(logic, goal=frozenset([CREDITS]), cache=ROUTE_CACHE, avoid=frozenset(), solved=frozenset()):
     """A set of panels that reaches `goal`, pruned: a panel is dropped when the goal can still be reached without it. Greedy (not the
     smallest set in general, but every panel left in it is needed given the others). Cached in data/credits_route.json for the ending."""
+    if avoid: cache = None      # a detour is worked out afresh
     if cache and goal == frozenset([CREDITS]) and os.path.exists(cache):
         return set(int(h, 16) for h in json.load(open(cache))['panels'])
-    keep = set(logic.panels)
-    assert finishes(logic, keep, set(goal)), 'the goal cannot be reached at all'
+    keep = set(logic.panels) - set(avoid)
+    if not finishes(logic, keep, set(goal)):
+        if avoid: return None      # no way round the avoided panels
+        raise AssertionError('the goal cannot be reached at all')
     for h in sorted(logic.panels, key=lambda h: logic.entities[h].location or 0, reverse=True):      # later panels first: they are the likeliest extras
-        if h in goal: continue
+        if h in goal or h in solved: continue      # (what is solved already stays: pruning it would only reshuffle the route)
         keep.discard(h)
         if not finishes(logic, keep, set(goal)): keep.add(h)
     if cache and goal == frozenset([CREDITS]):
@@ -65,6 +68,14 @@ class Planner:
         return dict(zip(free_bots, cands))
 
     def failed(self, h): self.tries[h] = self.tries.get(h, 0) + 1
+
+    def reroute(self, solved, avoid):
+        """A route to the goal round the panels in `avoid` (the ones the bots keep failing): the ending needs any 7 of 11 lasers, and some areas
+        have two ways in, so a blocked panel may have a detour. Returns the panels it added to the route (None: no detour)."""
+        if self.goal != {CREDITS}: return None
+        new = route(self.logic, avoid=frozenset(avoid), solved=frozenset(solved))
+        if new is None: return None
+        added = new - self.targets; self.targets = new | (set(solved) & set(self.logic.panels)); return added
 
     def blocked(self, solved, busy=()):
         """When nothing is left to do but the goal is not reached: the available target panels the bots gave up on or cannot solve."""

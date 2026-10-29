@@ -52,8 +52,12 @@ class Bot:
 
     def state(self):
         """Solved panels and open doors as the game holds them (memory read: tools/win/wstatedump.py)."""
-        out = pyw('wstatedump.py', self.pid, timeout=60).strip().splitlines()
-        s = json.loads(out[-1]); return {int(k, 16) for k in s['panels']}, {int(k, 16) for k in s['doors']}, {int(k, 16) for k in s['powered_panels']}
+        for attempt in range(3):      # a read can come back empty (the game was busy, or it is gone: the caller checks alive())
+            try:
+                out = pyw('wstatedump.py', self.pid, timeout=60).strip().splitlines()
+                s = json.loads(out[-1]); return {int(k, 16) for k in s['panels']}, {int(k, 16) for k in s['doors']}, {int(k, 16) for k in s['powered_panels']}
+            except (IndexError, ValueError, KeyError, subprocess.SubprocessError): time.sleep(1)
+        raise RuntimeError('bot %d: no state' % self.id)
 
     def net(self):
         dest = self.dir / 'witness_net.json'; dest.unlink(missing_ok=True); self.send('netstate'); deadline = time.monotonic() + 15
@@ -110,7 +114,7 @@ class Recorder:
     def __call__(self, kind, **data):
         rec = dict(t=round(time.time() - self.t0, 2), kind=kind, **data)
         with self.lock: self.f.write(json.dumps(rec) + '\n'); self.f.flush()
-        if kind in ('solved', 'failed', 'blocked', 'divergence', 'goal', 'no solver', 'resolve another way', 'unpowered', 'crash'): print(json.dumps(rec), flush=True)
+        if kind in ('solved', 'failed', 'blocked', 'divergence', 'goal', 'no solver', 'resolve another way', 'unpowered', 'crash', 'reroute', 'candidate lines'): print(json.dumps(rec), flush=True)
         return rec
 
 
@@ -124,7 +128,7 @@ class Playthrough:
         self.planner = None; self.solved = set(); self.lock = threading.Lock()
         self.prop = []      # (panel, from bot, to bot, seconds)
         self.powered = set(); self.variant = {}; self.stalled_since = {}; self.fixups = []      # see stalls()
-        self.last_why = {}; self.restore = set(); self.candidates_only = set()      # panels drawn from relaxed-rule candidates (the game judges)      # why a panel's last attempt failed; panels whose redraw was refused (drawn back the first way)
+        self.last_why = {}; self.restore = set(); self.candidates_only = set(); self.avoid = set()      # avoid: panels a detour must go round      # panels drawn from relaxed-rule candidates (the game judges)      # why a panel's last attempt failed; panels whose redraw was refused (drawn back the first way)
 
     # ---- set-up
     def launch(self):
@@ -267,6 +271,17 @@ class Playthrough:
                 self.__dict__.setdefault('_unpowered_logged', {})[h] = True
                 self.rec('unpowered', panel='%#x' % h, name=self.logic.entities[h].name, seconds=round(now - t0), prerequisites=sorted('%#x' % q for q in pre))
 
+    def state_or_recover(self, b):
+        """A bot's world, or None when it cannot be read: a game that is gone is started again (it rejoins the others as a late join); one bad read
+        never stops the run."""
+        try: return b.state()
+        except RuntimeError:
+            if b.alive(): self.rec('state unreadable', bot=b.id); return None
+            self.rec('crash', bot=b.id, panel=None)
+            try: b.start(); wait(lambda: b.net()['ready'] if self.n > 1 else True, 'bot %d back' % b.id, 300)
+            except RuntimeError as e: self.rec('restart failed', bot=b.id, why=str(e))
+            return None
+
     def prerequisites(self, h, solved):
         return {int(t, 16) for alt in self.logic.entities[h].rule for t in alt if t.startswith('0x') and int(t, 16) in solved
                 and self.logic.entities.get(int(t, 16)) and self.logic.entities[int(t, 16)].kind == 'Panel'}
@@ -285,16 +300,21 @@ class Playthrough:
         """Compare every world with bot 1's, twice `settle` seconds apart: what differs both times is recorded as persistent (a real
         divergence); what differed only the first time was in flight (a door still moving, a solve still travelling) and is recorded as such."""
         def snap():
-            with cf.ThreadPoolExecutor(max_workers=self.n) as rp: return dict(zip([b.id for b in self.bots], rp.map(lambda b: b.state()[:2], self.bots)))
+            with cf.ThreadPoolExecutor(max_workers=self.n) as rp: got = dict(zip([b.id for b in self.bots], rp.map(self.state_or_recover, self.bots)))
+            return {i: st[:2] for i, st in got.items() if st} if all(got.values()) else None
         def diff(st):
             base = st[self.bots[0].id]; out = {}
             for i, (panels, doors) in st.items():
                 d = (frozenset(panels - base[0]), frozenset(base[0] - panels), frozenset(doors ^ base[1]))
                 if any(d): out[i] = d
             return out
-        first = diff(snap())
+        a = snap()
+        if not a: return      # a world could not be read: compare next time
+        first = diff(a)
         if not first: return
-        time.sleep(settle); second = diff(snap())
+        time.sleep(settle); b2 = snap()
+        if not b2: return
+        second = diff(b2)
         for i, (extra, missing, doors) in first.items():
             e2, m2, d2 = second.get(i, (frozenset(),) * 3)
             for persistent, (x, m, d) in ((True, (extra & e2, missing & m2, doors & d2)), (False, (extra - e2, missing - m2, doors - d2))):
@@ -317,7 +337,8 @@ class Playthrough:
             while time.time() < self.deadline:
                 # Plan from every world at once: a panel solved in one world counts as done even if it never reached another (that is a
                 # co-op failure, recorded by propagation() and compare_worlds(), not a reason to solve it again). Power likewise.
-                with cf.ThreadPoolExecutor(max_workers=self.n) as rp: states = list(rp.map(lambda b: b.state(), self.bots))
+                with cf.ThreadPoolExecutor(max_workers=self.n) as rp: states = [st for st in rp.map(self.state_or_recover, self.bots) if st]
+                if not states: continue
                 solved = set().union(*(st[0] for st in states)); self.powered = set().union(*(st[2] for st in states)); self.solved = solved
                 self.stalls(solved, [h for _, h in busy.values()])
                 for i, (fut, h) in list(busy.items()):
@@ -352,6 +373,11 @@ class Playthrough:
                 young = [h for h, t0 in self.stalled_since.items() if time.time() - t0 < 150]
                 if not busy and not self.fixups and not young:
                     blockers = self.planner.blocked(solved) or [h for h in self.stalled_since]
+                    # Before giving up: a detour round what the bots cannot do (another set of lasers, another way into an area).
+                    self.avoid |= set(blockers)
+                    added = self.planner.reroute(solved, self.avoid) if blockers else None
+                    if added is not None:
+                        self.rec('reroute', avoiding=sorted('%#x' % h for h in self.avoid), added=len(added), route=len(self.planner.targets)); continue
                     self.rec('blocked', panels=[dict(panel='%#x' % h, name=self.logic.entities[h].name, area=self.logic.entities[h].area,
                                                     tries=self.planner.tries.get(h, 0), no_solver=h in self.no_solver) for h in blockers])
                     break

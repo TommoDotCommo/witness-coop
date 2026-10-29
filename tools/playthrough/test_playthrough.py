@@ -45,6 +45,10 @@ check(min(per4.values()) > 0, 'every bot gets work')
 # a panel nobody can solve is reported as blocking, not skipped silently
 p = Planner(L, can_solve=lambda h: h != 0x00182)
 check(p.blocked({0x00064}) == [0x00182], 'an unsolvable panel on the route is reported as the blocker')
+# a detour: the Keep's hedge laser panel can be avoided (the Keep laser also lights from the pressure plates)
+pr = Planner(L); added = pr.reroute(set(), {0x0360E})
+check(added is not None and 0x0360E not in pr.targets and finishes(L, pr.targets, {CREDITS}), 'a detour round the hedge laser panel reaches the credits')
+check(Planner(L).reroute(set(), {0x00064}) is None, 'no detour round the very first panel')
 print('ALL OK')
 '''
 
@@ -60,6 +64,7 @@ MUTANTS = {
         ("if not new: return goal <= solved", "if not new: return True"),                                                    # route not verified
         ("return dict(zip(free_bots, cands))", "return dict(zip(free_bots[:1], cands))"),                                     # only one bot ever works
         ("return [h for h in self.logic.available(solved) if h in self.targets]", "return []"),                                # blockers never reported
+        ("added = new - self.targets; self.targets = new", "return None; self.targets = new"),                                  # no detour ever
     ],
 }
 
