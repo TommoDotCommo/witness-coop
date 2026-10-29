@@ -155,13 +155,16 @@ def centre_on_panel():
     log = os.path.join(gdir, 'witness_proxy.log')
     try: n0 = sum(1 for l in open(log, errors='ignore') if l.startswith('probegrid:'))
     except OSError: return
-    c.send(['probegrid'], 0.0); line = None
+    c.send(['probegrid'], 0.0); rows = None
     for _ in range(30):
         time.sleep(0.15)
         ls_ = [l for l in open(log, errors='ignore') if l.startswith('probegrid:')]
-        if len(ls_) > n0: line = ls_[-1]; break
-    if not line or 'failed' in line or 'no scene' in line: return
-    v_ = [float(x) for x in line.split()[3:]]; cpos, cang = p.camera(); d_ = math.dist(cpos, (px_, py_, pz_)); want = 0.0597 / max(0.3, d_)
+        if len(ls_) >= n0 + 7 or any('failed' in l or 'no scene' in l for l in ls_[n0:]): rows = ls_[n0:]; break
+    if not rows or len(rows) < 7 or any('failed' in l or 'no scene' in l for l in rows): return
+    try: v_ = [float(x) for l in rows[:7] for x in l.split(':', 2)[2].split()]
+    except (ValueError, IndexError): return      # a garbled line: no correction
+    if len(v_) != 77: return
+    cpos, cang = p.camera(); d_ = math.dist(cpos, (px_, py_, pz_)); want = 0.0597 / max(0.3, d_)
     cells = [(0.2 + 0.6 * (k % 11) / 10, 0.2 + 0.6 * (k // 11) / 6) for k, dv in enumerate(v_) if dv > 0 and 0.75 < dv / want < 1.35]
     if len(cells) < 2: stamp('panel not found in the depth grid'); return
     fx = sum(x for x, _ in cells) / len(cells); fy = sum(y for _, y in cells) / len(cells)
@@ -188,7 +191,9 @@ if not 0.7 < r_ < 1.45:
             done(False, 'the panel cannot be seen from any of the places tried (something is in the way, or there is nothing to stand on)', 0, dist)
         stamp('depth check failed everywhere; drawing anyway (glass or a thin cover?)')
     dist = math.dist(p.camera()[0], (px_, py_, pz_))
-if not os.environ.get('WDRAW_NO_RECENTRE'): centre_on_panel()
+if not os.environ.get('WDRAW_NO_RECENTRE'):
+    try: centre_on_panel()
+    except Exception as e_: stamp('re-centring skipped: %r' % e_)      # a help, never a reason to fail
 
 # ---- projection -----------------------------------------------------------------------------------------------------------------------------
 def cam_basis():

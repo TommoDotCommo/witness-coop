@@ -262,12 +262,15 @@ static void RunProbe(UINT w, UINT h, ID3D11ShaderResourceView* sceneSrv, bool ms
 // The scene depth on an 11 x 7 grid over the middle 60 % of the screen (x 0.2..0.8, y 0.2..0.8), one line: the bot finds where on the screen a
 // panel really is (the cells at the panel's distance) when its middle is not where its entity's origin says (Quarry Boat Spawn).
 static void RunProbeGrid(UINT w, UINT h, ID3D11ShaderResourceView* sceneSrv, bool ms) {
-    std::string line = "probegrid: 11 7"; char b[24];
-    for (int j = 0; j < 7; j++) for (int i = 0; i < 11; i++) {
-        float v[8]; if (!ProbeDepth(w, h, sceneSrv, ms, v, 0.2f + 0.6f * i / 10, 0.2f + 0.6f * j / 6)) { Log("probegrid: failed"); return; }
-        snprintf(b, sizeof b, " %.6g", v[0]); line += b;
+    char b[24];      // one log line per row (the log takes lines up to 512 bytes): "probegrid: row J of 7: v0 .. v10"
+    for (int j = 0; j < 7; j++) {
+        std::string line = "probegrid: row " + std::to_string(j) + " of 7:";
+        for (int i = 0; i < 11; i++) {
+            float v[8]; if (!ProbeDepth(w, h, sceneSrv, ms, v, 0.2f + 0.6f * i / 10, 0.2f + 0.6f * j / 6)) { Log("probegrid: failed"); return; }
+            snprintf(b, sizeof b, " %.6g", v[0]); line += b;
+        }
+        Log(line.c_str());
     }
-    Log(line.c_str());
 }
 // The distance (along the view direction) of the game's geometry under the middle of the screen, for location pings and free drawing: asked for, answered by the next frame.
 static volatile LONG g_centerReq, g_centerReady; static float g_centerDist = -1;
