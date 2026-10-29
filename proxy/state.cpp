@@ -55,6 +55,13 @@ public:
     bool applyCableLit(unsigned id) override { return GameCablePowerOnNow(id); }
     bool applyCableOff(unsigned id) override { return GameCableOffNow(id); }
     bool entityExists(unsigned id) override { return id < kMaxId && GameEntity(id) != 0; }
+    // The addresses of three tutorial panels: a save loaded in the same process re-creates every entity (measured: both panels moved), while
+    // a panel that resets itself keeps its object. 0 while any of them is missing (loading).
+    uint64_t generation() override {
+        uint64_t h = 1469598103934665603ull;
+        for (unsigned id : {0x64u, 0x182u, 0x293u}) { uintptr_t e = GameEntity(id); if (!e) return 0; h = (h ^ (uint64_t)e) * 1099511628211ull; }
+        return h;
+    }
     bool isPanel(unsigned id) override { uintptr_t e = id < kMaxId ? GameEntity(id) : 0; return e && Type(e) == Base() + kPanelTI; }
     bool isDoor(unsigned id) override { uintptr_t e = id < kMaxId ? GameEntity(id) : 0; return e && Type(e) == Base() + kDoorTI; }
     bool panelSolved(unsigned id) override { uintptr_t e = GameEntity(id); return e && PanelSolved(e); }

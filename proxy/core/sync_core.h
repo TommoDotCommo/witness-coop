@@ -34,6 +34,9 @@ public:
     virtual bool cameraValid() = 0;                                             // the world exists (the player has a position)
     virtual bool scan(std::vector<unsigned>& panels, std::vector<unsigned>& doors, uint64_t* tableId) = 0;   // false: unreadable
     virtual bool entityExists(unsigned id) = 0;
+    // Changes when the world is loaded again (a save restored in the same process re-creates the entities, so their addresses change); 0 when
+    // not known. With it a reload is told from progress that undoes itself (timed doors, desert panels that reset): see reloadSeen.
+    virtual uint64_t generation() { return 0; }
     virtual bool isPanel(unsigned id) = 0;                                      // type checks, so a wrong-typed event is refused
     virtual bool isDoor(unsigned id) = 0;
     virtual bool panelSolved(unsigned id) = 0;
@@ -71,6 +74,7 @@ struct Flags {   // all off by default
     bool noGroupCableIntent = false; // twin: glow/echo bookkeeping hides a genuine new cable command
     bool noGroupVersions = false; // twin: use the two-player cable arbiter in a group
     bool noReloadSync = false;  // twin: ignore a same-process save reload (no re-gate, no resync with the peer)
+    bool reloadByProgress = false;  // twin: ignore the world's generation and judge a reload by vanished progress alone (panels that reset themselves stalled sync)
     bool reloadOnDoor = false;  // twin: one closed door alone counts as a save reload (a timed door shutting by itself stalled sync for 10-50 s)
     bool noPingReply = false;   // twin: this game never answers a ping (the peers cannot measure it)
     bool noPingExpiry = false;  // twin: a ping measured once stays on show for ever, even when the peer is gone
@@ -194,6 +198,8 @@ private:
     std::vector<unsigned> cables_; std::set<unsigned> knownCable_; std::map<unsigned, uint64_t> suppressCable_; std::set<unsigned> everOff_; std::map<unsigned, uint64_t> cableToggledAt_;
     uint64_t lastLocalSolveAt_ = 0; bool anyLocalSolve_ = false;     // a door opening soon after a local solve is that solve's cascade, not a start-up flip
     bool settledLogged_ = false;
+    std::string vanished_;      // what reloadSeen found gone (for the log)
+    uint64_t gen_ = 0;          // the world's generation at the last baseline (0: not known)
     bool ready_ = false, gateStarted_ = false; uint64_t nextGate_ = 0, settleUntil_ = 0, nextScan_ = 0, nextStats_ = 0;
     size_t gateLastPanels_ = 0, gateLastDoors_ = 0; uint64_t gateLastSig_ = 0; int gateSame_ = 0;
 };

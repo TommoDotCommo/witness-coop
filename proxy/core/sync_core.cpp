@@ -342,6 +342,7 @@ uint64_t SyncCore::signature() {   // FNV-1a over which panels are solved and wh
 }
 
 void SyncCore::baseline(bool full) {
+    gen_ = w_->generation();
     for (unsigned id : panels_) {
         bool s = w_->entityExists(id) && w_->panelSolved(id);
         if (s) knownPanel_.insert(id); else knownPanel_.erase(id);
@@ -367,14 +368,18 @@ void SyncCore::baseline(bool full) {
 // by themselves (the timed doors of the Shadows, the playthrough bot saw one close and the whole session stall for 10-50 s while it
 // re-gated); one panel alone is not either (it can be redrawn). So: two panels, or a panel and a door.
 bool SyncCore::reloadSeen(uint64_t now) {
-    unsigned closed = 0, unsolved = 0;
+    if (!f_.reloadByProgress && !f_.reloadOnDoor) {      // the world can say whether it was loaded again (the twins judge by progress, the old way): then that alone decides (a panel resetting itself is not a load)
+        uint64_t g = w_->generation();
+        if (g && gen_) { if (g == gen_) return false; vanished_ = " the world was loaded again (entity generation changed)"; return true; }
+    }
+    unsigned closed = 0, unsolved = 0; vanished_.clear();
     for (unsigned id : doors_) {
         auto sp = suppressDoor_.find(id);
-        if (knownDoor_.count(id) && w_->entityExists(id) && !w_->doorOpen(id) && !(sp != suppressDoor_.end() && now < sp->second)) closed++;
+        if (knownDoor_.count(id) && w_->entityExists(id) && !w_->doorOpen(id) && !(sp != suppressDoor_.end() && now < sp->second)) { closed++; if (vanished_.size() < 120) { char b[16]; std::snprintf(b, sizeof b, " door %#x", id); vanished_ += b; } }
     }
     for (unsigned id : panels_) {
         auto sp = suppressPanel_.find(id);
-        if (knownPanel_.count(id) && w_->entityExists(id) && !w_->panelSolved(id) && !(sp != suppressPanel_.end() && now < sp->second)) unsolved++;
+        if (knownPanel_.count(id) && w_->entityExists(id) && !w_->panelSolved(id) && !(sp != suppressPanel_.end() && now < sp->second)) { unsolved++; if (vanished_.size() < 120) { char b[16]; std::snprintf(b, sizeof b, " panel %#x", id); vanished_ += b; } }
     }
     if (f_.reloadOnDoor) return closed >= 1 || unsolved >= 2;
     return unsolved >= 2 || (unsolved >= 1 && closed >= 1);
@@ -409,7 +414,7 @@ void SyncCore::pollState(uint64_t now) {
         // The process and the link are up, but the world lost progress it had: a save was loaded. Nothing told the peer, so
         // announce a new session (the peer then resends its full state, as for a restart), wait for the loading world to
         // settle again, and publish this world's full state once it has.
-        log("state: save reload suspected (known progress vanished), waiting for a stable world");
+        { std::string m = "state: save reload suspected (known progress vanished:" + vanished_ + "), waiting for a stable world"; log(m.c_str()); }
         ready_ = false; gateSame_ = 0; gateLastPanels_ = gateLastDoors_ = 0; gateLastSig_ = 0; nextGate_ = now + 3000;
         cableVersion_.clear();
         suppressPanel_.clear(); suppressDoor_.clear(); suppressPower_.clear(); suppressCable_.clear(); anyLocalSolve_ = false;

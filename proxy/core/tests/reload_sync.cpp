@@ -7,7 +7,8 @@
 #include <string>
 
 struct ReloadWorld : witness::World {
-    bool solved[4] = {}, open[4] = {};
+    bool solved[4] = {}, open[4] = {}; uint64_t gen = 1;      // gen: the world's generation (a load re-creates the entities)
+    uint64_t generation() override { return gen; }
     bool cameraValid() override { return true; }
     bool scan(std::vector<unsigned>& p, std::vector<unsigned>& d, uint64_t* t) override { p = {1, 2}; d = {3, 4}; *t = 1; return true; }
     bool entityExists(unsigned id) override { return id >= 1 && id <= 4; }
@@ -55,6 +56,7 @@ bool run(const char* mode, witness::Flags fb) {
     if (!p.b.solved[0] || !p.b.open[2]) return false;        // live sync worked before the reload
     for (int round = 0; round < (std::string(mode) == "second reload" ? 2 : 1); ++round) {
         for (int i = 0; i < 4; ++i) p.b.solved[i] = p.b.open[i] = false;       // the load: old save, everything solved is gone
+        p.b.gen++;                                           // and every entity was created anew
         if (std::string(mode) == "progress only in the save") p.b.solved[1] = true;
         p.advance(1500); p.b.open[3] = true;                 // door 4 flips while the world is still starting up: not player progress
         p.advance(1000); p.b.open[3] = false;
@@ -78,6 +80,18 @@ bool timer(witness::Flags fa) {
     return p.b.solved[1];
 }
 
+// Two panels reset by themselves (the desert's panels do, as the bot found) while the world stays the same one; A then opens door 4. That is no
+// load: B must have the door within two seconds. (Judged by vanished progress, two panels count as a load and A holds everything back for 9 s+.)
+bool resetting(witness::Flags fa) {
+    witness::Flags none; Pair p(none); witness::Hooks ha; ha.send = [&](const witness::Bytes& d) { p.toB.push_back(d); };
+    p.ca = std::make_unique<witness::SyncCore>(1, 1, &p.a, ha, fa);
+    p.advance(30000); p.a.solved[0] = p.a.solved[1] = true; p.advance(20000);
+    if (!p.b.solved[0] || !p.b.solved[1]) return false;
+    p.a.solved[0] = p.a.solved[1] = false; p.advance(4000);      // both reset themselves; the generation does not change
+    p.a.open[3] = true; p.advance(2000);
+    return p.b.open[3];
+}
+
 int main() {
     bool all = true;
     for (const char* mode : {"older save", "second reload", "progress only in the save"}) {
@@ -90,5 +104,8 @@ int main() {
     { bool ok = timer({}); std::printf("%s  a timed door shutting is not a load\n", ok ? "PASS" : "FAIL"); all &= ok;
       witness::Flags twin; twin.reloadOnDoor = true; bool caught = !timer(twin);
       std::printf("%s  reload-on-door twin: a timed door stalls sync\n", caught ? "PASS" : "FAIL"); all &= caught; }
+    { bool ok = resetting({}); std::printf("%s  panels resetting themselves are not a load\n", ok ? "PASS" : "FAIL"); all &= ok;
+      witness::Flags twin; twin.reloadByProgress = true; bool caught = !resetting(twin);
+      std::printf("%s  reload-by-progress twin: resetting panels stall sync\n", caught ? "PASS" : "FAIL"); all &= caught; }
     return all ? 0 : 1;
 }
