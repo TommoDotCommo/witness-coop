@@ -58,6 +58,7 @@ struct Flags {   // all off by default
     // bug twins: each switches one protection off so a test must fail (see core/tests)
     bool noDedupe = false, noEpochReset = false, noResyncOnRestart = false, noGate = false, noSettle = false;
     bool wrongAckEpoch = false, applyOutOfOrder = false, noChecksum = false;
+    bool countSkippedResends = false; // twin: an event the 32-per-round budget skipped is counted as resent (a startup burst of 248 events reads as 840 resends)
     bool noApplyRetry = false;  // twin: discard ACKed events when the game cannot apply them yet
     bool noPanelPower = false;  // twin: omit panel power-on progression from live sync and snapshots
     bool noCableSync = false;   // twin: omit cable lighting from live sync and snapshots

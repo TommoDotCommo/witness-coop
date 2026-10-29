@@ -6,7 +6,7 @@ HUB ?= $(abspath ../../../coop-anything)
 FUZZ = $(HUB)/tools/fuzz
 BUILD = build
 CXXF = -std=c++17 -O2 -Wall -Wextra
-TESTS = pov ping-names social-sync line-sync group-sync apply-retry power-sync reload-sync cable-sync cable-off race-isolation
+TESTS = pov ping-names social-sync line-sync group-sync apply-retry power-sync reload-sync cable-sync cable-off race-isolation resend-count
 
 $(BUILD)/sync_core.o: sync_core.cpp sync_core.h line_precision.h appearance.h emotes.h pov.h ../radio/radio.h
 	@mkdir -p $(BUILD)

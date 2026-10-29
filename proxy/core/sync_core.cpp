@@ -111,11 +111,12 @@ void SyncCore::tick(uint64_t now) {
         nextResend_ = now + 150; std::map<unsigned, unsigned> budget;
         for (auto& s : sent_) {
             if (s.acked) continue;
-            Bytes b; bool built = false;      // the datagram is only built when some peer is actually sent to this round (a stalled peer's backlog is long and its budget is spent after 32)
+            Bytes b; bool built = false, retried = false;      // the datagram is only built when some peer is actually sent to this round (a stalled peer's backlog is long and its budget is spent after 32)
             auto attempt = [&](unsigned peer) {
                 unsigned budgetKey = f_.noIndependentBudget ? 0 : peer;
                 if (budget[budgetKey] >= 32 || (f_.noResend && s.attempted.count(peer))) return;
                 bool first = s.attempted.insert(peer).second;
+                if (!first) retried = true;
                 ++budget[budgetKey];
                 if (!built) {
                     b.reserve(48); put32(b, fixedRoster_ ? kGroupEv : kMagicEv); put32(b, uint32_t(id_)); put64(b, epoch_); put32(b, s.seq); put32(b, s.kind); put32(b, s.entity);
@@ -126,7 +127,7 @@ void SyncCore::tick(uint64_t now) {
             };
             if (peers_.empty()) attempt(0);  // legacy transport before the first pose
             else for (const auto& peer : peers_) if (!s.acknowledgers.count(peer.first)) attempt(peer.first);
-            if (s.sentOnce) st_.resent++;
+            if (f_.countSkippedResends ? s.sentOnce : retried) st_.resent++;      // only a send that repeats an earlier one: events skipped by the budget were never sent
             s.sentOnce = true;
         }
     }
