@@ -19,7 +19,7 @@ def restart(cfg, first=False):
     raise RuntimeError('game never reached the renderer/world precondition')
 
 def main():
-    before = real_saves()
+    before = real_saves(); os.environ['WITNESS_KEEP_VIDEO'] = '1'      # the scenario chooses the window size itself
     video = os.path.join(DIR1, 'appdata', 'The Witness', 'Launcher.variables')
     original = open(video, 'rb').read() if os.path.exists(video) else None
     native = '--native' in sys.argv

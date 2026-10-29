@@ -23,6 +23,7 @@ for p in "${peers[@]}"; do
   else d="$WITNESS_DIR2"; id=2; listen="$WITNESS_PORT2"; peer="$WITNESS_PORT1"; cfg="${CFG_B:-}"; fi
   printf 'id=%s\nlisten=%s\npeer=%s\nsave_dir=instance\nshare_zip=1\nforce_active=%s\ncap_fps=%s\ndev_menu=1\nvoice_mode=off\nvoice_mute_output=1\n%s\n' "$id" "$listen" "$peer" "$([ -n "${WITNESS_HUMAN:-}" ] && echo 0 || echo 1)" "${WITNESS_FPS:-30}" "$cfg" > "$d/witness_coop.cfg"
   rm -f "$d/witness_proxy.log" "$d/witness_cmd.txt"
+  [ -n "${WITNESS_KEEP_VIDEO:-}" ] || rm -f "$d/appdata/The Witness/Launcher.variables"     # a size left behind by an earlier scenario on this slot would move the cursor calibration of every bot (1366x768 instead of the default window)
   [ -d "$d/appdata/The Witness" ] && rm -f "$d/appdata/The Witness/"*.witness_campaign "$d/appdata/The Witness/"*.png "$d/appdata/The Witness/coop_progress.txt" "$d/appdata/The Witness/"*.coop.txt   # this instance's own saves only: reloads must start from known saves
   game_pid=$(launch "$d"); echo "$game_pid" > "$RUN/pid$p.txt"
   [ -x "$WITNESS_RESOURCES" ] && "$WITNESS_RESOURCES" register-pid "$game_pid" >/dev/null 2>&1

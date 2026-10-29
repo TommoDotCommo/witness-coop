@@ -73,6 +73,7 @@ def write_resolution(w,h):
 
 
 def main():
+    os.environ['WITNESS_KEEP_VIDEO']='1'      # the scenario chooses the window size itself
     os.makedirs(RUN,exist_ok=True); before=real_saves(); results=[]; oracle=[]
     manifest={q['id']:q for q in sweep.load(sweep.MANIFEST,[])}
     write_resolution(*map(int,os.environ.get('LP_RES','1366x768').lower().split('x')))      # always written: the instance folder remembers the last size

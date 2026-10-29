@@ -394,7 +394,8 @@ while queue:
     if 'same-process reload' in name and not backup: ok, why = False, 'no first save to reload'
     if not bot_ok: ok, why = False, 'the bot did not solve the panel (a state diff of two untouched games proves nothing)'
     h = hygiene(SAVES0); f = h.pop('_fps'); cap_on = 'cap_fps=0' not in ca
-    h['frame cap: game A at %.1f fps (capped 20-40; uncapped far more)' % f] = (20 <= f <= 40) if cap_on else (f > 100)
+    cap = float(os.environ.get('WITNESS_FPS') or 30)      # the cap the restart script configured (qa.sh runs at 60)
+    h['frame cap: game A at %.1f fps (capped %.0f-%.0f; uncapped far more)' % (f, cap * .65, cap * 1.35)] = (cap * .65 <= f <= cap * 1.35 and cap < 100) if cap_on else (f > 100)
     for k_, v_ in h.items(): print('  hygiene: %-86s %s' % (k_, 'ok' if v_ else 'FAILED'))
     cap_key = [k_ for k_ in h if k_.startswith('frame cap')][0]; others = all(v_ for k_, v_ in h.items() if k_ != cap_key)
     if name.startswith('MUTANT: frame cap'): ok = h[cap_key] and others and bot_ok; why = 'the cap check must see an uncapped game (> 100 fps), otherwise it tests nothing'
