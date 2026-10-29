@@ -172,21 +172,34 @@ def terrain(mutant=False):
         row = dict(spot=n, measured=s['measured'], wearer_ground=round(z - EYE, 2), screen_bottom=round(s['bottom'], 2), stools=[])
         for i in range(3):
             t = stool(g, i)
-            b.send('tp %f %f %f %f 0' % (t[0], t[1], t[2] + 6, yaw)); time.sleep(1.5)     # the check drops from 6 m, the mod's own probe from 2.2 m
-            last = None
-            for _ in range(30):
-                c = b.camera(); z2 = c[2]
-                if last is not None and abs(z2 - last) < .01: break
-                last = z2; time.sleep(.5)
+            for k in range(1, 5):             # walk the checker towards the stool in hops so the ground there is loaded even when the mod did not probe it (the mutant)
+                f = k / 5.0; b.send('tp %f %f %f %f 0' % (x + (t[0] - x) * f, y + (t[1] - y) * f, z + 4, yaw)); time.sleep(1.2)
+            for attempt in range(5):          # the game returns a player dropped where no collision is loaded yet; standing near a place loads it, so try again
+                b.send('tp %f %f %f %f 0' % (t[0], t[1], t[2] + 6, yaw)); time.sleep(1.5)     # the check drops from 6 m, the mod's own probe from 2.2 m
+                last = None
+                for _ in range(30):
+                    c = b.camera(); z2 = c[2]
+                    if last is not None and abs(z2 - last) < .01: break
+                    last = z2; time.sleep(.5)
+                if math.hypot(c[0] - t[0], c[1] - t[1]) <= 1: break
             if math.hypot(c[0] - t[0], c[1] - t[1]) > 1:      # the game put the probe back at its spawn point: no ground known here
                 print('spot %d stool %d: probe was returned to %.0f %.0f, not measured' % (n, i, c[0], c[1]), flush=True); continue
             row['stools'].append(dict(stool=i, model_ground=round(t[2], 2), real_ground=round(z2 - EYE, 2), error=round(t[2] - (z2 - EYE), 2)))
         report.append(row); print(json.dumps(row), flush=True)
         b.send('tvretract'); time.sleep(1)
     json.dump(report, open(os.path.join(RUN, 'tv_terrain_mutant.json' if mutant else 'tv_terrain.json'), 'w'), indent=2)
+    if mutant:
+        # Without the mod's own walk-around nothing near the stools is loaded, so the game returns every drop of the checker. The real ground at a spot does not
+        # change, so the mutant is judged against the ground the fixed build's run (terrain, same spots) measured there.
+        ref = json.load(open(os.path.join(RUN, 'tv_terrain.json'))) if os.path.exists(os.path.join(RUN, 'tv_terrain.json')) else []
+        truth = {(r['spot'], s['stool']): s['real_ground'] for r in ref for s in r['stools']}
+        for r in report:
+            if r['stools']: continue
+            r['stools'] = [dict(stool=i, model_ground=r['wearer_ground'], real_ground=truth[(r['spot'], i)], error=round(r['wearer_ground'] - truth[(r['spot'], i)], 2))
+                           for i in range(3) if (r['spot'], i) in truth and r['measured'] == 0]
     errors = [abs(s['error']) for r in report for s in r['stools']]
-    assert errors, 'no spot could be measured'
-    uneven = [(r['spot'], s['stool'], s['error']) for r in report for s in r['stools'] if abs(s['error']) > .35]
+    assert errors, 'no spot could be measured (for the mutant: run terrain first, in the same run folder)'
+    uneven = [(r['spot'], s['stool'], s['error']) for r in report for s in r['stools'] if abs(s["error"]) > .15]
     print('terrain: %d stools measured, worst error %.2f m' % (len(errors), max(errors)), flush=True)
     if mutant:
         assert any(r['spot'] == 17 for r in report), 'spot 17 could not be measured: the mutant check proves nothing'
@@ -210,7 +223,7 @@ def shoot(game, name):
 def look():
     """In-game captures to look at (RUN folder): the screen and stools on flat ground and on the uneven spot, from the audience side."""
     a, b = start(); b.send('hover off')
-    for tag, command in (('flat', 'menusel c335\nmenudo teleport'), ('slope', None)):
+    for tag, command in (('flat', 'menusel c335\nmenudo teleport'), ('hill', None)):
         if command is None:
             pyw('wtour.py', pid('A'), win(DIR1), win(os.path.join(RUN, 'tourA.txt')), 'go', '17', timeout=120); time.sleep(3)
             x, y, z, yaw, _ = a.camera(); b.send('tvretract'); time.sleep(1.5)
