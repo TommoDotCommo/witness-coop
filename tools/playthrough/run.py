@@ -129,7 +129,7 @@ class Playthrough:
         self.planner = None; self.solved = set(); self.lock = threading.Lock()
         self.prop = []      # (panel, from bot, to bot, seconds)
         self.powered = set(); self.variant = {}; self.stalled_since = {}; self.fixups = []      # see stalls()
-        self.last_why = {}; self.restore = set(); self.candidates_only = set(); self.avoid = set(); self.attempts = {}      # avoid: panels a detour must go round      # panels drawn from relaxed-rule candidates (the game judges)      # why a panel's last attempt failed; panels whose redraw was refused (drawn back the first way)
+        self.last_why = {}; self.restore = set(); self.candidates_only = set(); self.avoid = set(); self.attempts = {}; self.redrawn = set()      # avoid: panels a detour must go round      # panels drawn from relaxed-rule candidates (the game judges)      # why a panel's last attempt failed; panels whose redraw was refused (drawn back the first way)
 
     # ---- set-up
     def launch(self):
@@ -301,12 +301,17 @@ class Playthrough:
 
     def other_ways(self, h, solved, busy=()):
         """Queue every solved prerequisite of `h` that has a solution not tried yet, drawn the next way. True when one was queued."""
+        # Only another EXIT can change what a solved panel powers (the tutorial gate's latch); a variant that ends where the drawn line ends (a
+        # colour-swapped symmetry line) changes nothing downstream and risks the panel: a refused redraw leaves it unsolved in that world (Symmetry
+        # Island Back 4-6 were lost that way). And each prerequisite is redrawn at most once in a run.
         moved = False
         for q in sorted(self.prerequisites(h, solved)):
             self.path_for(q); k, v = self.variant.get(q, (0, []))
-            if k + 1 < len(v) and q not in self.fixups and q not in busy:
-                self.variant[q] = (k + 1, v); self.paths[q] = v[k + 1]; self.fixups.append(q); moved = True
-                self.rec('resolve another way', panel='%#x' % q, because='%#x' % h, variant=k + 1, of=len(v), start=v[k + 1][0], end=v[k + 1][-1])
+            if q in self.redrawn or q in self.fixups or q in busy or k >= len(v): continue
+            nxt = next((j for j in range(k + 1, len(v)) if v[j][-1] != v[k][-1]), None)
+            if nxt is None: continue
+            self.variant[q] = (nxt, v); self.paths[q] = v[nxt]; self.fixups.append(q); self.redrawn.add(q); moved = True
+            self.rec('resolve another way', panel='%#x' % q, because='%#x' % h, variant=nxt, of=len(v), start=v[nxt][0], end=v[nxt][-1])
         return moved
 
     def compare_worlds(self, settle=5):
