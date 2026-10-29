@@ -261,6 +261,8 @@ while queue:
         folder = os.path.join(DIR1, 'savepoints' if natural else 'presets'); t0 = time.time()
         while time.time() - t0 < 60 and not (os.path.exists(os.path.join(folder, name_ + '.state')) and (not natural or os.path.exists(os.path.join(folder, name_ + '.witness_campaign')))): time.sleep(2)
         if not os.path.exists(os.path.join(folder, name_ + '.state')): return 'the %s was not written' % kind
+        listed = re.findall(r'^S ([0-9a-f]+)$', open(os.path.join(folder, name_ + '.state')).read(), re.M)
+        if natural and '64' in listed: return 'the progress list names panel 0x64, which the bot solved by play: only the game save may bring it back, or the mutant cannot fail'
         time.sleep(3); restart_both(ca, cb)
         if len(state('A')['panels']): return 'the new game was not fresh'
         if natural: pyw('wtour.py', pid('A'), win(DIR1), win(os.path.join(RUN, 'tourA.txt')), 'go', '1'); time.sleep(25)     # out of the intro tunnel: the pause menu can load from here

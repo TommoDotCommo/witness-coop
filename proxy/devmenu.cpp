@@ -15,6 +15,7 @@
 #include "devmenu.h"
 #include "ui.h"
 #include "ui/text.h"
+#include "ui/detail_layout.h"
 #include "coop.h"
 #include "game.h"
 #include "config.h"
@@ -176,32 +177,26 @@ UiColor PanelColor(const Pn& p) { return p.solved ? uitheme::Good : p.powered ? 
 void SelectPanel(int i) { g_selKind = SelPanel; g_selPanel = i; }
 
 // ---- panels of the "what is connected" view: downstream and upstream chains over panel targets
-void Chain(float x, float& y, float w, const char* title, bool down, int start, float sc) {      // the title and the panels of the chain share one row, which wraps at the pane's width
-    const bool old = GetCfg().noDetailFit; if (old) w = 520;
-    UiCheckReachable(x, y, UiTextWidth(title, sc), UiLineHeight(sc) + 4); UiText(x, y + (old ? 0 : 2), title, uitheme::Cool, sc); if (old) y += UiLineHeight(sc);
-    int cur = start; std::vector<int> seen = {cur}; float px = x + (old ? 10 : UiTextWidth(title, sc) + 10);
+std::vector<int> ChainOf(bool down, int start) {
+    int cur = start; std::vector<int> seen = {cur}, out;
     for (int depth = 0; depth < 6; depth++) {
         int next = -1;
         if (down) { if (g_pn[cur].target >= 0) { auto it = g_pidx.find((unsigned)g_pn[cur].target); if (it != g_pidx.end()) next = it->second; } }
         else { auto it = g_rev.find((int)g_pn[cur].id); if (it != g_rev.end() && !it->second.empty()) next = it->second[0]; }
         if (next < 0 || std::find(seen.begin(), seen.end(), next) != seen.end()) break;
-        char b[48]; snprintf(b, sizeof b, "%#x%s", g_pn[next].id, g_pn[next].solved ? " ok" : ""); float bw = UiTextWidth(b, sc) + 12;
-        if (px + bw > x + w) break;
-        UiCheckReachable(px, y, bw, UiLineHeight(sc) + 4);
-        if (Button(px, y, bw, UiLineHeight(sc) + 4, b, false, sc)) SelectPanel(next);
-        px += bw + 6; cur = next; seen.push_back(next);
+        out.push_back(next); cur = next; seen.push_back(next);
     }
-    y += UiLineHeight(sc) + 10;
+    return out;
 }
 
 void Refresh();
 std::vector<int> g_solveQ; size_t g_solveTotal;
 void QueueSolveSpots(int n) {      // complete the first n spots: solve every panel in their map cells (a few per frame, with its target)
-    if (!g_built) Build(); g_solveQ.clear();
+    if (!g_built) Build(); Refresh(); g_solveQ.clear();      // fresh solved flags: a panel solved by play since the last refresh is not queued, so it never counts as forced
     for (int k = 0; k < n && k < (int)g_spots.size(); k++) for (size_t i = 0; i < g_pn.size(); i++) if ((int)floorf(g_pn[i].x / 80) == g_spots[k].cx && (int)floorf(g_pn[i].y / 80) == g_spots[k].cy && !g_pn[i].solved) g_solveQ.push_back((int)i);
     g_solveTotal = g_solveQ.size(); Msg("solving %zu panels in the first %d spots", g_solveTotal, n);
 }
-std::set<unsigned> g_forced;      // panels the dev tools solved (the game's own save has no solution line for them)
+std::set<unsigned> g_forced;      // panels the dev tools solved (the game's own save has no solution line for them); only the solve queue adds to it, never a panel that was already solved
 std::string StateWrite(bool forcedOnly) { Refresh(); std::string t; char b[40]; for (auto& p : g_pn) if (p.solved && (!forcedOnly || g_forced.count(p.id))) { snprintf(b, sizeof b, "S %x\n", p.id); t += b; } return t; }
 void StateApply(const std::string& text) {      // solve every panel the list names that is not solved here yet (a few per frame)
     if (!g_built) Build(); Refresh(); unsigned id; size_t pos = 0, n = 0; g_solveQ.clear();
@@ -247,7 +242,7 @@ void StartProgressTick() {
     if (armed) {
         std::string err; auto ids = wprog::Resolve(wprog::Builtin(), c.startProgress, &err, !c.progressNoPrereq);
         if (ids.empty()) { Log(("start progress: nothing to do: " + (err.empty() ? std::string("empty") : err)).c_str()); DisarmStartProgress(); return; }
-        std::string text = ProgressText(ids); StateApply(text); QueueDoors(ids); for (unsigned id : ids) g_forced.insert(id);
+        std::string text = ProgressText(ids); StateApply(text); QueueDoors(ids);      // the solve queue marks what it solves as forced
         std::wstring sc = ProgressSidecar(); if (!sc.empty()) { FILE* f = _wfopen(sc.c_str(), L"wb"); if (f) { fwrite(text.data(), 1, text.size(), f); fclose(f); } }
         char m[200]; snprintf(m, sizeof m, "start progress: '%s' -> %zu panels to solve", c.startProgress.c_str(), ids.size()); Log(m); DisarmStartProgress();
     } else if (SolvedCount() > 0) {      // a loaded campaign: put back what a new game with progress forced
@@ -260,7 +255,7 @@ bool Snapshot(std::set<unsigned>* solved, unsigned* doorsOpen, unsigned* doorsTo
 void ProgressCommand(const char* spec) {      // test command: progress <spec>
     if (!g_built) Build(); std::string err; auto ids = wprog::Resolve(wprog::Builtin(), spec, &err, !GetCfg().progressNoPrereq);
     if (ids.empty()) { Msg("progress: %s", err.empty() ? "nothing" : err.c_str()); Log(("progress: error " + err).c_str()); return; }
-    StateApply(ProgressText(ids)); QueueDoors(ids); for (unsigned id : ids) g_forced.insert(id); char m[100]; snprintf(m, sizeof m, "progress: %zu panels asked for", ids.size()); Log(m);
+    StateApply(ProgressText(ids)); QueueDoors(ids); char m[100]; snprintf(m, sizeof m, "progress: %zu panels asked for", ids.size()); Log(m);
 }
 void ProgressStat() {      // test command: every solved panel (hex ids, 40 per line) and the state of the doors the data knows
     if (!g_built) Build(); Refresh(); std::vector<unsigned> ids; for (auto& p : g_pn) if (p.solved) ids.push_back(p.id); std::sort(ids.begin(), ids.end());
@@ -271,7 +266,7 @@ void ProgressStat() {      // test command: every solved panel (hex ids, 40 per 
 bool Do(const char* what, int pi) {      // one action on panel index pi, by name (the buttons and the 'menudo' test command)
     if (pi < 0 || pi >= (int)g_pn.size()) return false; Pn& p = g_pn[pi]; uintptr_t te = p.target >= 0 ? GameEntity(p.target) : 0; const char* tt = te ? TypeName(te) : "";
     if (!strcmp(what, "teleport")) TeleportToPanel(p);
-    else if (!strcmp(what, "solve")) { g_forced.insert(p.id); GameMarkPanelSolved(p.id); GameDispatchTargetNow(p.id, true); Msg("solved panel %#x and ran its target", p.id); }
+    else if (!strcmp(what, "solve")) { if (!p.solved) g_forced.insert(p.id); GameMarkPanelSolved(p.id); GameDispatchTargetNow(p.id, true); Msg("solved panel %#x and ran its target", p.id); }
     else if (!strcmp(what, "power")) { GamePanelPowerOnNow(p.id); Msg("powered panel %#x", p.id); }
     else if (!strcmp(what, "run") && te) { GameDispatchTargetNow(p.id, true); Msg("ran the target of %#x", p.id); }
     else if (!strcmp(what, "door") && te && !strcmp(tt, "Door")) { GameDoorOpenNow((unsigned)p.target, 1.0f); Msg("opened door %#x", (unsigned)p.target); }
@@ -280,35 +275,48 @@ bool Do(const char* what, int pi) {      // one action on panel index pi, by nam
     else return false;
     return true;
 }
-float g_detailNeed = 0;      // height the detail pane's content needed on the last frame, so the map page can give the pane that much
+// The selected panel's details as text and buttons (ui/detail_layout.h places them; the map page sizes its pane and text from the same layout).
+struct DetailModel { uidetail::Content c; std::vector<std::string> codes; std::vector<int> rev, chain[2]; UiColor targetColor; };
+bool PanelSelected() { return g_selKind == SelPanel && g_selPanel >= 0 && g_selPanel < (int)g_pn.size(); }
+DetailModel PanelDetail() {
+    DetailModel m; Pn& p = g_pn[g_selPanel]; uintptr_t te = p.target >= 0 ? GameEntity(p.target) : 0; const char* tt = te ? TypeName(te) : "nothing"; char b[256];
+    m.c.legacy = GetCfg().noDetailFit;
+    snprintf(b, sizeof b, "Panel %#x   %u nodes", p.id, p.nodes); m.c.title = b;
+    snprintf(b, sizeof b, "solved: %s    powered: %s\nat %.1f %.1f %.1f", YesNo(p.solved), YesNo(p.powered), p.x, p.y, p.z); m.c.info = b;
+    if (te) {
+        bool lit = !strcmp(tt, "Power_Cable") && One(te + 0xC4) && One(te + 0xC8), open = !strcmp(tt, "Door") && One(te + 0x1D0);
+        snprintf(b, sizeof b, "Targets: %s %#x%s", tt, (unsigned)p.target, lit ? " (lit)" : open ? " (open)" : ""); m.c.targets = b; m.targetColor = uitheme::Accent;
+    } else { m.c.targets = "Targets: nothing"; m.targetColor = uitheme::Muted; }
+    auto act = [&](bool when, const char* label, const char* code) { if (when) { m.c.actions.push_back(label); m.codes.push_back(code); } };
+    act(true, "Teleport to it", "teleport"); act(true, "Solve (and run target)", "solve"); act(!p.powered, "Power on", "power"); act(te, "Run its target", "run");
+    act(te && !strcmp(tt, "Door"), "Open target door", "door"); act(te && !strcmp(tt, "Power_Cable"), "Light cable", "cableon"); act(te && !strcmp(tt, "Power_Cable"), "Cable off", "cableoff");
+    act(te && p.target >= 0 && g_pidx.count((unsigned)p.target), "Select target panel", "select");
+    auto rv = g_rev.find((int)p.id); size_t nrev = rv == g_rev.end() ? 0 : rv->second.size();
+    snprintf(b, sizeof b, "Targeted by %zu:", nrev); m.c.revTitle = b;
+    for (size_t k = 0; k < nrev && k < 8; k++) { int i = rv->second[k]; snprintf(b, sizeof b, "%#x", g_pn[i].id); m.c.rev.push_back(b); m.rev.push_back(i); }
+    m.c.chainTitle[0] = "Powers on from here:"; m.c.chainTitle[1] = "Fed by:";
+    for (int c = 0; c < 2; c++) for (int i : ChainOf(c == 0, g_selPanel)) { snprintf(b, sizeof b, "%#x%s", g_pn[i].id, g_pn[i].solved ? " ok" : ""); m.c.chain[c].push_back(b); m.chain[c].push_back(i); }
+    return m;
+}
 void DetailPane(float x, float y, float w, float sc) {
-    float lh = UiLineHeight(sc); char b[256]; const float top = y;
-    if (g_selKind == SelPanel && g_selPanel >= 0 && g_selPanel < (int)g_pn.size()) {
-        Pn& p = g_pn[g_selPanel]; uintptr_t te = p.target >= 0 ? GameEntity(p.target) : 0; const char* tt = te ? TypeName(te) : "nothing";
-        snprintf(b, sizeof b, "Panel %#x   %u nodes", p.id, p.nodes); UiText(x, y, b, uitheme::Text, sc * 1.15f); y += lh * 1.3f;
-        snprintf(b, sizeof b, "solved: %s    powered: %s\nat %.1f %.1f %.1f", YesNo(p.solved), YesNo(p.powered), p.x, p.y, p.z); UiText(x, y, b, uitheme::Muted, sc); y += lh * 2.3f;
-        if (te) {
-            bool lit = !strcmp(tt, "Power_Cable") && One(te + 0xC4) && One(te + 0xC8), open = !strcmp(tt, "Door") && One(te + 0x1D0);
-            snprintf(b, sizeof b, "Targets: %s %#x%s", tt, (unsigned)p.target, lit ? " (lit)" : open ? " (open)" : ""); UiText(x, y, b, uitheme::Accent, sc); y += lh * 1.3f;
-        } else { UiText(x, y, "Targets: nothing", uitheme::Muted, sc); y += lh * 1.3f; }
-        float bx = x, bh = lh + 12;
-        auto act = [&](const char* label) { float bw2 = UiTextWidth(label, sc) + 24; if (bx > x && bx + bw2 > x + w) { bx = x; y += bh + 8; } UiCheckReachable(bx, y, bw2, bh); bool r = Button(bx, y, bw2, bh, label, false, sc); bx += bw2 + 8; return r; };
-        if (act("Teleport to it")) Do("teleport", g_selPanel);
-        if (act("Solve (and run target)")) Do("solve", g_selPanel);
-        if (!p.powered && act("Power on")) Do("power", g_selPanel);
-        if (te && act("Run its target")) Do("run", g_selPanel);
-        if (te && !strcmp(tt, "Door") && act("Open target door")) Do("door", g_selPanel);
-        if (te && !strcmp(tt, "Power_Cable") && act("Light cable")) Do("cableon", g_selPanel);
-        if (te && !strcmp(tt, "Power_Cable") && act("Cable off")) Do("cableoff", g_selPanel);
-        if (te && p.target >= 0 && g_pidx.count((unsigned)p.target) && act("Select target panel")) SelectPanel(g_pidx[(unsigned)p.target]);
-        y += bh + 12;
-        auto rv = g_rev.find((int)p.id); size_t nrev = rv == g_rev.end() ? 0 : rv->second.size();
-        const bool old = GetCfg().noDetailFit;
-        if (old) snprintf(b, sizeof b, "Targeted by %zu panel(s)", nrev); else snprintf(b, sizeof b, "Targeted by %zu:", nrev);
-        UiCheckReachable(x, y, UiTextWidth(b, sc), lh + 4); UiText(x, y + (old ? 0 : 2), b, uitheme::Cool, sc);
-        float px = x + (old ? 0 : UiTextWidth(b, sc) + 10); if (old) y += lh * 1.2f; for (size_t k = 0; k < nrev && k < 8; k++) { int i = rv->second[k]; snprintf(b, sizeof b, "%#x", g_pn[i].id); float bw = UiTextWidth(b, sc) + 12; if (!old && px + bw > x + w) { px = x; y += lh + 8; } UiCheckReachable(px, y, bw, lh + 4); if (Button(px, y, bw, lh + 4, b, false, sc)) SelectPanel(i); px += bw + 6; }
-        y += lh + 12;
-        Chain(x, y, w, "Powers on from here:", true, g_selPanel, sc); Chain(x, y, w, "Fed by:", false, g_selPanel, sc);
+    float lh = UiLineHeight(sc); char b[256];
+    if (PanelSelected()) {
+        DetailModel m = PanelDetail(); std::vector<uidetail::Item> items; uidetail::Layout(m.c, x, y, w, sc, UiTextWidth, &items);
+        int sel = g_selPanel;
+        for (const auto& it : items) {
+            const uidetail::Box& r = it.box; UiCheckReachable(r.x, r.y, r.w, r.h);      // every line and button: one cut off by the pane counts in the layout stats
+            switch (it.kind) {
+            case uidetail::Title: UiText(r.x, r.y, it.text.c_str(), uitheme::Text, it.scale); break;
+            case uidetail::Info: UiText(r.x, r.y, it.text.c_str(), uitheme::Muted, it.scale); break;
+            case uidetail::Targets: UiText(r.x, r.y, it.text.c_str(), m.targetColor, it.scale); break;
+            case uidetail::RevTitle: case uidetail::ChainTitle: UiText(r.x, r.y + 2, it.text.c_str(), uitheme::Cool, it.scale); break;
+            case uidetail::Action:
+                if (Button(r.x, r.y, r.w, r.h, it.text.c_str(), false, it.scale)) { const std::string& code = m.codes[it.index]; if (code == "select") SelectPanel(g_pidx[(unsigned)g_pn[sel].target]); else Do(code.c_str(), sel); }
+                break;
+            case uidetail::Rev: if (Button(r.x, r.y, r.w, r.h, it.text.c_str(), false, it.scale)) SelectPanel(m.rev[it.index]); break;
+            case uidetail::ChainItem: if (Button(r.x, r.y, r.w, r.h, it.text.c_str(), false, it.scale)) SelectPanel(m.chain[it.chain][it.index]); break;
+            }
+        }
     } else if (g_selKind == SelPoint) {
         snprintf(b, sizeof b, "Point %.0f %.0f", g_selX, g_selY); UiText(x, y, b, uitheme::Text, sc * 1.15f); y += lh * 1.5f;
         float z; bool ok = GroundNear(g_selX, g_selY, &z);
@@ -320,7 +328,6 @@ void DetailPane(float x, float y, float w, float sc) {
         if (have) { snprintf(b, sizeof b, "at %.1f %.1f %.1f\nseen %lu ms ago", rp.pos[0], rp.pos[1], rp.pos[2], (unsigned long)rp.ageMs); UiText(x, y, b, uitheme::Muted, sc); y += lh * 2.5f; if (Button(x, y, 200 * sc, lh + 12, "Teleport to them", false, sc)) TeleportToPlayer(rp); }
         else UiText(x, y, "Not connected.", uitheme::Danger, sc);
     } else { UiText(x, y, Wrap("Click a dot on the map, a spot in the list, or a panel in the nearby list.", w, sc).c_str(), uitheme::Muted, sc); y += lh * 2.5f; }
-    g_detailNeed = y - top;
 }
 
 void MapPage(float x, float y, float w, float h, float sc) {
@@ -555,35 +562,38 @@ void DevMenuDraw(float W, float H) {
     if (g_cl || g_cr) { char m[100]; snprintf(m, sizeof m, "devmenu: click %s at %.0f %.0f", g_cl ? "left" : "right", g_mx, g_my); Log(m); }
     if (g_keyEsc) { g_open = false; return; }
     if (g_keyTab) g_page = (g_page + 1) % 3;
-    float sc = std::min(W / 1280.f, H / 900.f), pad = 18 * sc; float x0 = pad, y0 = pad, w = W - 2 * pad, h = H - 2 * pad;
+    const uidetail::Frame f = uidetail::MenuFrame(W, H);      // the frame the layout test checks (ui/detail_test.cpp)
+    float sc = f.sc; float x0 = f.x0, y0 = f.y0, w = f.w, h = f.h;
     UiRect(0, 0, W, H, uitheme::Canvas); UiRect(x0, y0, w, h, uitheme::Surface); UiFrame(x0, y0, w, h, uitheme::Border, 1);
     UiRect(x0, y0, 4 * sc, h, uitheme::Accent);
     UiText(x0 + 20 * sc, y0 + 12 * sc, "WITNESS / CO-OP", uitheme::Text, sc * 1.25f);
     UiText(x0 + 21 * sc, y0 + 43 * sc, "FIELD NOTES & SHARED WORLD", uitheme::Muted, sc * 0.72f);
-    float ty = y0 + 12 * sc, th = UiLineHeight(sc) + 10 * sc;
+    float ty = y0 + 12 * sc, th = f.th;
     float mapW = 84 * sc, nearW = 156 * sc, savesW = 88 * sc, tabGap = 8 * sc;
     float tx = x0 + w - mapW - nearW - savesW - 2 * tabGap - 18 * sc;
     if (Button(tx, ty, mapW, th, "Map", g_page == 0, sc)) g_page = 0;
     if (Button(tx + mapW + tabGap, ty, nearW, th, "Nearby puzzles", g_page == 1, sc)) g_page = 1;
     if (Button(tx + mapW + nearW + 2 * tabGap, ty, savesW, th, "Saves", g_page == 2, sc)) { g_page = 2; SaveListRefresh(); }
     { const char* hint = "F8 / Esc close    F4 nearby    Tab page"; float hs = sc * 0.75f; UiText(x0 + w - UiTextWidth(hint, hs) - 20 * sc, y0 + 45 * sc, hint, uitheme::Muted, hs); }
-    float tvY = y0 + 68 * sc, tvW = std::min(250.f * sc, (w - 60 * sc) / 3);
+    float tvY = f.tvY, tvW = std::min(250.f * sc, (w - 60 * sc) / 3);
     if (Button(x0 + 20 * sc, tvY, tvW, th, TvEnabled() ? "Back TV: ON [F10]" : "Back TV: off [F10]", TvEnabled(), sc)) TvEnable(!TvEnabled());
     if (Button(x0 + 30 * sc + tvW, tvY, tvW, th, TvConsent() ? "Share my POV: ON [F11]" : "Share my POV: off [F11]", TvConsent(), sc)) TvAllow(!TvConsent());
     if (Button(x0 + 40 * sc + 2 * tvW, tvY, tvW, th, TvDeploymentTarget() ? "Retract sky TV [J]" : "Deploy aimed sky TV [J]", TvDeploymentTarget() != 0, sc)) TvDeployAction(OverlayTvAim());
-    float cy0 = tvY + th + 12 * sc, ch = h - (cy0 - y0) - UiLineHeight(sc) - 18 * sc, lw = std::max(300 * sc, std::min(380 * sc, w * 0.29f)), gap = 12 * sc;
+    float cy0 = f.cy0, ch = f.ch, lw = f.lw, gap = f.gap;
     if (!g_built) { UiText(x0 + 20 * sc, cy0 + 20 * sc, "The world is not loaded yet.", uitheme::Danger, sc); }
     else {
-        float rx = x0 + 20 * sc + lw + gap, rw = w - 40 * sc - lw - gap, dh = std::min(ch * 0.46f, 440.f * sc);
-        if (g_page == 0 && !GetCfg().noDetailFit) dh = std::min(ch * 0.66f, std::max(dh, g_detailNeed + 24 * sc));      // the selected panel's chains need room: grow the pane (the list above shrinks) rather than cut them off
+        float rx = f.rx, rw = f.rw;
+        uidetail::Content dc; if (PanelSelected()) dc = PanelDetail().c; else dc.legacy = true;      // nothing to fit for a point or a player: the default pane
         if (g_page == 2) SavesPage(x0 + 20 * sc, cy0, w - 40 * sc, ch, sc);
-        else if (g_page == 0) { SpotList(x0 + 20 * sc, cy0, lw, ch - dh - gap, sc); MapPage(rx, cy0, rw, ch, sc); }
-        else if (g_page == 1) { NearbyPage(x0 + 20 * sc, cy0, lw, ch, sc); Pane(rx, cy0, rw, ch); }
-        if (g_page == 0) {
-            float dy = cy0 + ch - dh; Pane(x0 + 20 * sc, dy, lw, dh); UiClip(x0 + 21 * sc, dy + 1, lw - 2 * sc, dh - 2 * sc);
-            DetailPane(x0 + 30 * sc, dy + 10 * sc, lw - 20 * sc, sc * 0.9f); UiClip(0, 0, 0, 0);
+        else if (g_page == 0) {      // the detail pane grows as its content needs (the spot list above shrinks and scrolls), then its text shrinks
+            uidetail::MapDetail md = uidetail::FitMapDetail(f, dc, UiTextWidth); float dy = md.pane.y, dh = md.pane.h;
+            SpotList(x0 + 20 * sc, cy0, lw, ch - dh - gap, sc); MapPage(rx, cy0, rw, ch, sc);
+            Pane(md.pane.x, dy, lw, dh); UiClip(x0 + 21 * sc, dy + 1, lw - 2 * sc, dh - 2 * sc);
+            DetailPane(md.content.x, md.content.y, md.content.w, md.scale); UiClip(0, 0, 0, 0);
         } else if (g_page == 1) {
-            UiClip(rx + 1, cy0 + 1, rw - 2, ch - 2); DetailPane(rx + 16 * sc, cy0 + 12 * sc, rw - 32 * sc, sc); UiClip(0, 0, 0, 0);
+            NearbyPage(x0 + 20 * sc, cy0, lw, ch, sc); Pane(rx, cy0, rw, ch);
+            float dw = rw - 32 * sc, dsc = dc.legacy ? sc : uidetail::FitScale(dc, dw, ch - 24 * sc, sc, UiTextWidth);
+            UiClip(rx + 1, cy0 + 1, rw - 2, ch - 2); DetailPane(rx + 16 * sc, cy0 + 12 * sc, dw, dsc); UiClip(0, 0, 0, 0);
         }
     }
     if (GetTickCount() - g_msgAt < 6000 && g_msg[0]) UiText(x0 + 20 * sc, y0 + h - UiLineHeight(sc) - 8 * sc, g_msg, uitheme::Accent, sc);
