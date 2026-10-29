@@ -378,6 +378,12 @@ class Playthrough:
                     added = self.planner.reroute(solved, self.avoid) if blockers else None
                     if added is not None:
                         self.rec('reroute', avoiding=sorted('%#x' % h for h in self.avoid), added=len(added), route=len(self.planner.targets)); continue
+                    # No detour: before giving up, every blocker gets one more round of tries (what made it fail may have changed since:
+                    # a prerequisite redrawn, another world's progress arrived, a game restarted).
+                    if not getattr(self, '_second_round', False) and blockers:
+                        self._second_round = True; self.avoid -= set(blockers)
+                        for h in blockers: self.planner.tries[h] = 0
+                        self.rec('second round', panels=sorted('%#x' % h for h in blockers)); continue
                     self.rec('blocked', panels=[dict(panel='%#x' % h, name=self.logic.entities[h].name, area=self.logic.entities[h].area,
                                                     tries=self.planner.tries.get(h, 0), no_solver=h in self.no_solver) for h in blockers])
                     break
