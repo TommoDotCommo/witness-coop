@@ -339,8 +339,75 @@ def run_tracer(i0):
     except (OSError, ValueError): done(False, 'the in-game tracer gave no result', traced(), dist)
     stamp('tracer: %d of %d edges' % (r_['done'], len(items)))
     if not r_['ok']: done(False, 'tracer: %s (edge %d)' % (r_['why'], i0 + r_['done']), traced(), dist)
+def last_record():
+    """(index_a, index_b, t) of the edge the line is on (the last traced-edge record), or None."""
+    n_ = traced(); ptr = p.u64(e + 0x230)
+    if not ptr or n_ < 1 or n_ > 500: return None
+    raw = p.rd(ptr + (n_ - 1) * 0x34, 0x14)
+    if not raw: return None
+    a_, b_ = struct.unpack('<2I', raw[:8]); return a_, b_, struct.unpack('<f', raw[16:20])[0]
+STEER = bool(os.environ.get('WDRAW_STEER'))
+def steer_edge(i, guess):
+    """Walk path[i-1] -> path[i] by feedback alone (no projection): nudge, read which edge the line went onto (the traced-edge record),
+    keep a direction that moves it along the right edge, pull back from a wrong one and try the next. For panels the projection gets wrong:
+    tilted, warped, seen at an angle (Monastery Shutters Control). True when the node was reached."""
+    u_, v_ = path[i - 1], path[i]
+    cands = [guess] + [(math.cos(k * math.pi / 4), math.sin(k * math.pi / 4)) for k in range(8)]
+    for dx_, dy_ in cands:
+        last_t = -1.0; flat = 0
+        for _ in range(120):
+            if traced() >= i + 1: steer_dir[0] = (dx_, dy_); return True
+            r_ = last_record()
+            if traced() < i:      # this way ran back along the line drawn so far (the count dropped): push forward again, try the next way
+                for _ in range(80):
+                    if traced() >= i: break
+                    mouse(-dx_, -dy_, 4)
+                break
+            if r_:      # (the record's node numbers are not the panel's: progress is judged by its t and the count only)
+                if r_[2] > last_t + 1e-4: flat = 0; last_t = r_[2]
+                else: flat += 1
+                if flat > 25: break      # this way no longer moves the line: the next one
+            mouse(dx_, dy_, 6)
+    return traced() >= i + 1
+steer_dir = [None]
+def steer_stub():
+    """The end stub by feedback. The traced-edge record's node numbers are not the panel's node indices (on Shutters Control the line on
+    6 -> 9 read (2, 5)), so it is told by what the count does: reaching any grid node steps the count up, the end of the stub does not; an
+    edge run to t >= 0.97 with the count unchanged is the end."""
+    n_end = traced(); first = steer_dir[0]
+    for dx_, dy_ in ([first] if first else []) + [(math.cos(k * math.pi / 4), math.sin(k * math.pi / 4)) for k in range(8)]:
+        last_t = -1.0; flat = 0; last_key = None; moved = False
+        for _ in range(150):
+            r_ = last_record()
+            if traced() > n_end:      # onto another grid node: not the stub; push back to the last node, try the next way
+                for _ in range(80):
+                    if traced() <= n_end: break
+                    mouse(-dx_, -dy_, 4)
+                break
+            if traced() < n_end:      # ran back along the line: forward again, next way
+                for _ in range(80):
+                    if traced() >= n_end: break
+                    mouse(-dx_, -dy_, 4)
+                break
+            if r_ and r_[2] >= 0.97 and moved: return True      # pushed to the end of an edge without a new node: the stub's end
+            if r_:      # stalled = nothing changes (running back along a partly drawn edge first is fine; a new edge starts afresh)
+                key = (r_[0], r_[1])
+                if key != last_key or abs(r_[2] - last_t) > 1e-4: flat = 0; moved = moved or last_key is not None; last_key = key; last_t = r_[2]
+                else: flat += 1
+                if flat > 15: break
+            mouse(dx_, dy_, 6)
+    return False
 for i in range(1, len(path)):
-    if TRACER and i >= 2 and (gain or per_px): run_tracer(i); break
+    if STEER and i == len(path) - 1:
+        if not steer_stub(): done(False, 'steering: the end stub was not reached', traced(), dist)
+        dbg('steered the end stub'); break
+    if STEER and i < len(path) - 1:
+        (x0, y0), (x1, y1) = node_px(path[i - 1]), node_px(path[i]); ux, uy = heading(i); un = math.hypot(ux, uy) or 1.0
+        if not steer_edge(i, (ux / un, uy / un)): done(False, 'steering: stuck before node %d (path index %d)' % (path[i], i), traced(), dist)
+        if traced() > i + 1: done(False, 'steering: overshot node %d' % path[i], traced(), dist)
+        norm = math.hypot(x1 - x0, y1 - y0) or 1.0; vx, vy = steer_dir[0] or (ux / un, uy / un); per_px = per_px or 2.9
+        dbg('steered', path[i - 1], '->', path[i], 'traced', traced()); continue
+    if TRACER and i >= 2 and (gain or per_px) and not STEER: run_tracer(i); break
     (x0, y0), (x1, y1) = node_px(path[i - 1]), node_px(path[i])
     norm = math.hypot(x1 - x0, y1 - y0) or 1.0; ux, uy = heading(i); vx, vy = ux / (math.hypot(ux, uy) or 1.0), uy / (math.hypot(ux, uy) or 1.0)
     vx *= axflip.get('h', 1); vy *= axflip.get('v', 1)      # an axis found reversed on an earlier edge stays reversed
