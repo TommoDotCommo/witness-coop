@@ -37,7 +37,7 @@ static Loaded* g_L = &g_adventurer;
 static volatile LONG g_modelRenderThread;
 static bool g_ready, g_tried;
 static ID3D11Device* g_dev; static ID3D11DeviceContext* g_ctx;
-static ID3D11VertexShader *g_vs, *g_vsFull; static ID3D11PixelShader *g_psDepth, *g_psProbe; static volatile LONG g_probeReq, g_gridReq, g_depthViewCmd;
+static ID3D11VertexShader *g_vs, *g_vsFull; static ID3D11PixelShader *g_psDepth, *g_psProbe; static volatile LONG g_probeReq, g_gridReq, g_depthViewCmd; static float g_gridBox[4] = {0.2f, 0.2f, 0.8f, 0.8f};
 static ID3D11VertexShader* g_vsUnused; static ID3D11PixelShader* g_ps; static ID3D11InputLayout* g_layout;
 static ID3D11Buffer *g_cbFrame, *g_cbBones;
 static ID3D11Buffer* g_vbTv;
@@ -119,7 +119,7 @@ static bool Fail(const char* m) { Log(m); return false; }
 bool ModelGpuReady() { return g_ready; }
 void ModelGpuDepthView(bool on) { InterlockedExchange(&g_depthViewCmd, on); }
 void ModelGpuRequestProbe() { InterlockedExchange(&g_probeReq, 1); }
-void ModelGpuRequestProbeGrid() { InterlockedExchange(&g_gridReq, 1); }
+void ModelGpuRequestProbeGrid(float x0, float y0, float x1, float y1) { g_gridBox[0] = x0; g_gridBox[1] = y0; g_gridBox[2] = x1; g_gridBox[3] = y1; InterlockedExchange(&g_gridReq, 1); }
 ModelDrawStats ModelGpuStats() { return g_stats; }
 
 
@@ -266,7 +266,7 @@ static void RunProbeGrid(UINT w, UINT h, ID3D11ShaderResourceView* sceneSrv, boo
     for (int j = 0; j < 7; j++) {
         std::string line = "probegrid: row " + std::to_string(j) + " of 7:";
         for (int i = 0; i < 11; i++) {
-            float v[8]; if (!ProbeDepth(w, h, sceneSrv, ms, v, 0.2f + 0.6f * i / 10, 0.2f + 0.6f * j / 6)) { Log("probegrid: failed"); return; }
+            float v[8]; if (!ProbeDepth(w, h, sceneSrv, ms, v, g_gridBox[0] + (g_gridBox[2] - g_gridBox[0]) * i / 10, g_gridBox[1] + (g_gridBox[3] - g_gridBox[1]) * j / 6)) { Log("probegrid: failed"); return; }
             snprintf(b, sizeof b, " %.6g", v[0]); line += b;
         }
         Log(line.c_str());

@@ -279,6 +279,60 @@ for attempt, rd_ in enumerate(ROUNDS):
         if (not REDRAW and (traced() >= 1 or state() == 3)) or (REDRAW and traced() >= 1 and (traced() != OLD_TRACED or first_t() < 0.99)): started = (w_, dy_); break
     if started: break
     rclick()
+def depth_grid(box):
+    """The scene depth on an 11 x 7 grid over box (x0, y0, x1, y1 in screen fractions): [(fx, fy, stored depth)], or None."""
+    log = os.path.join(gdir, 'witness_proxy.log')
+    try: n0 = sum(1 for l in open(log, errors='ignore') if l.startswith('probegrid:'))
+    except OSError: return None
+    c.send(['probegrid %.4f %.4f %.4f %.4f' % box], 0.0)
+    for _ in range(30):
+        time.sleep(0.15); ls_ = [l for l in open(log, errors='ignore') if l.startswith('probegrid:')]
+        if len(ls_) >= n0 + 7 or any('failed' in l or 'no scene' in l for l in ls_[n0:]): break
+    rows = ls_[n0:n0 + 7]
+    if len(rows) < 7 or any('failed' in l or 'no scene' in l for l in rows): return None
+    try: v = [float(x) for l in rows for x in l.split(':', 2)[2].split()]
+    except (ValueError, IndexError): return None
+    if len(v) != 77: return None
+    return [(box[0] + (box[2] - box[0]) * (k % 11) / 10, box[1] + (box[3] - box[1]) * (k // 11) / 6, v[k]) for k in range(77)]
+def panel_box():
+    """Where the panel is on the screen (x0, y0, x1, y1 fractions): the depth cells at the panel's distance, a coarse grid then a fine one."""
+    want = 0.0597 / max(0.3, math.dist(p.camera()[0], (px_, py_, pz_)))
+    def hits(g): return [(fx, fy) for fx, fy, v in (g or []) if v > 0 and 0.75 < v / want < 1.35]
+    h1 = hits(depth_grid((0.15, 0.15, 0.85, 0.85)))
+    if len(h1) < 2: return None
+    b = (max(0.0, min(x for x, _ in h1) - 0.07), max(0.0, min(y for _, y in h1) - 0.117), min(1.0, max(x for x, _ in h1) + 0.07), min(1.0, max(y for _, y in h1) + 0.117))
+    h2 = hits(depth_grid(b)) or h1
+    hx, hy = (b[2] - b[0]) / 20, (b[3] - b[1]) / 12      # half a cell of the fine grid
+    return (min(x for x, _ in h2) - hx, min(y for _, y in h2) - hy, max(x for x, _ in h2) + hx, max(y for _, y in h2) + hy)
+def start_from_box():
+    """The start circle placed by where the panel is on the screen (no size model): its panel coordinates mapped into the panel's box, the
+    four mirror readings in turn, a small spiral of clicks round each. True when a line started."""
+    box = panel_box()
+    if not box: stamp('box start: the panel was not found in the depth grid'); return False
+    u, v = dots[2 * path[0]], dots[2 * path[0] + 1]; stamp('box start: panel at %.2f..%.2f x %.2f..%.2f' % box)
+    for fu, fv in ((u, 1 - v), (u, v), (1 - u, 1 - v), (1 - u, v)):
+        sx = box[0] + fu * (box[2] - box[0]); sy = box[1] + fv * (box[3] - box[1])
+        for _ in range(3):
+            c.click(settle=1.0)
+            if not probe_free_look(): break
+            rclick()
+        cur = (0.0, 0.0)
+        for ox, oy in ((0, 0), (10, 0), (-10, 0), (0, 10), (0, -10), (20, 0), (-20, 0), (0, 20), (0, -20)):
+            tx, ty = (sx - 0.5) * 1920 + ox, (sy - 0.5) * 1080 + oy
+            ddx, ddy = (tx - cur[0]) * COUNTS_PER_PX, (ty - cur[1]) * COUNTS_PER_PX; n_ = max(1, int(math.ceil(max(abs(ddx), abs(ddy)) / 14)))
+            if abs(ddx) + abs(ddy) >= 1: c.send(['mouse %d %d' % (round(ddx / n_), round(ddy / n_))] * n_, 1.1 * c.frame * n_ + 0.02)
+            cur = (cur[0] + round(ddx / n_) * n_ / COUNTS_PER_PX, cur[1] + round(ddy / n_) * n_ / COUNTS_PER_PX)
+            c.send(['button L down', 'button L up'], 0.14)
+            if (not REDRAW and (traced() >= 1 or state() == 3)) or (REDRAW and traced() >= 1 and (traced() != OLD_TRACED or first_t() < 0.99)):
+                stamp('box start: line started at %.3f %.3f (reading %.2f %.2f)' % (sx, sy, fu, fv)); return True
+        rclick()
+    return False
+if not started and not os.environ.get('WDRAW_NO_BOX_START'):
+    try:
+        if start_from_box():
+            # The size model did not find the start, so the projection is not to be trusted for the walk: steer it by feedback.
+            started = (W, 0); os.environ['WDRAW_STEER'] = '1'
+    except Exception as e_: stamp('box start failed: %r' % e_)
 if not started: done(False, 'the line did not start with any panel size or offset tried', traced(), dist)
 W = started[0]
 stamp('line started with W %.3f m, vertical offset %d px, width factor %.2f, flips %d %d' % (started + (AX, SX, SY)))

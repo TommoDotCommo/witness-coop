@@ -26,7 +26,7 @@ void ModelGpuDumpPlayers(); // render-thread test bridge: submitted ids, positio
 void ModelGpuRequestDepthAt(float fx, float fy);   // the same for the point (fx, fy) of the screen, 0..1 (free drawing)
 void ModelGpuRequestCenterDepth();     // the next frame measures the distance of the geometry under the middle of the screen
 bool ModelGpuTakeCenterDepth(float* dist);   // true once the answer is there: the distance in metres along the view direction, or -1 (sky / no depth buffer)
-void ModelGpuRequestProbeGrid();     // the next frame logs the scene depth on a grid (witness_cmd.txt: probegrid)
+void ModelGpuRequestProbeGrid(float x0 = 0.2f, float y0 = 0.2f, float x1 = 0.8f, float y1 = 0.8f);     // the next frame logs the scene depth on an 11 x 7 grid over that part of the screen (witness_cmd.txt: probegrid [x0 y0 x1 y1])
 void ModelGpuRequestProbe();      // the next frame logs the scene depth at a few pixels (witness_cmd.txt: probe)
 void ModelGpuLogStats();               // witness_cmd.txt: modelstat -> one log line: pixels of the model that survived the depth test (GPU occlusion query), clip, speed
 void ModelGpuDepthView(bool on);          // witness_cmd.txt: depthview on|off (diagnostic: draw the game's depth buffer instead of the model)
