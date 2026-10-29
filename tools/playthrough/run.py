@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 """Play the game through with N bots in one co-op world, in the game's own order, and record everything.
 
-usage: tools/playthrough.sh [N] [--goal credits|all] [--minutes M] [--fps F] [--drop PCT]
+usage: tools/playthrough.sh [N] [--goal credits|all] [--minutes M] [--fps F] [--drop PCT] [--start SPEC]
        (the wrapper leases N game slots, provisions them, runs this, and always releases them)
 
 Every bot is a real game (a full-mesh group of N players; one game alone for N=1). The planner (planner.py) decides, from the
 solved panels the games report, which available panel each free bot takes: never one the logic says is still locked. A bot moves with
 the dev menu's teleport to its panel (only to panels the logic says are reachable now) and draws the solution with in-process input
-(tools/win/wdraw.py, or wwalk.py for the floor puzzles); the game's own solved flag is the verdict. Nothing is ever forced.
+(tools/win/wdraw.py, or wwalk.py for the floor puzzles); the game's own solved flag is the verdict. Nothing is ever forced during play.
+--start SPEC begins from a prepared state instead of a new game (the mod's start_progress: "preset:three-lasers", "area:Desert;lasers:2", ...):
+a slice. Slices of the game run at once on different slots test the later areas without waiting for the early ones; that set-up is forced (the
+mod marks those panels solved), so a slice's records say where it started, and only a run from a new game proves the whole route.
 
 Co-op is tested on every solve: the panel must turn solved in every other world, and the time it takes is recorded per peer. Every
 few rounds all worlds are compared (solved panels and open doors) and any difference is a recorded divergence.
@@ -59,7 +62,7 @@ class Bot:
             except (OSError, ValueError): time.sleep(.05)
         raise RuntimeError('bot %d: no netstate' % self.id)
 
-    def prepare(self, cfg_lines, fps, drop):
+    def prepare(self, cfg_lines, fps, drop, start=''):
         d = self.dir
         assert digest(d / 'witness64_d3d11.exe') == EXE_HASH, 'unsupported game build'
         if not (d / 'AnselSDK64_real.dll').exists():
@@ -71,6 +74,7 @@ class Bot:
             if asset.suffix in ('.glb', '.txt'): replace_copy(asset, models / asset.name)
         cfg = cfg_lines + 'force_active=1\ncap_fps=%d\ndev_menu=1\nvoice_mode=off\nvoice_mute_output=1\nno_partner_video=1\n' % fps
         if drop: cfg += 'drop_pct=%d\ndrop_seed=%d\n' % (drop, self.id)
+        if start: cfg += 'start_progress=%s\n' % start
         (d / 'witness_coop.cfg').unlink(missing_ok=True); (d / 'witness_coop.cfg').write_text(cfg)
         for name in ('witness_cmd.txt', 'witness_proxy.log', 'witness_net.json'): (d / name).unlink(missing_ok=True)
         saves = d / 'appdata/The Witness'
@@ -111,15 +115,16 @@ class Recorder:
 
 
 class Playthrough:
-    def __init__(self, n, goal, minutes, fps, drop):
+    def __init__(self, n, goal, minutes, fps, drop, start=''):
         self.logic = Logic(); self.n, self.goal_name, self.deadline = n, goal, time.time() + minutes * 60
-        self.fps, self.drop = fps, drop
+        self.fps, self.drop, self.start = fps, drop, start
         self.bots = [Bot(i) for i in range(1, n + 1)]
         self.out = Path(RUN) / 'playthrough' / time.strftime('%Y%m%d-%H%M%S'); self.rec = Recorder(self.out)
         self.manifest = {}; self.paths = {}; self.no_solver = set()
         self.planner = None; self.solved = set(); self.lock = threading.Lock()
         self.prop = []      # (panel, from bot, to bot, seconds)
         self.powered = set(); self.variant = {}; self.stalled_since = {}; self.fixups = []      # see stalls()
+        self.last_why = {}; self.restore = set()      # why a panel's last attempt failed; panels whose redraw was refused (drawn back the first way)
 
     # ---- set-up
     def launch(self):
@@ -127,13 +132,13 @@ class Playthrough:
             roster = [dict(id=b.id, host='127.0.0.1', port=b.port) for b in self.bots]; cfgs = configs(roster)
         else:
             cfgs = {1: 'id=1\nlisten=%d\nsave_dir=instance\nshare_zip=1\n' % self.bots[0].port}
-        for b in self.bots: b.prepare(cfgs[b.id] if cfgs[b.id].endswith('\n') else cfgs[b.id] + '\n', self.fps, self.drop)
+        for b in self.bots: b.prepare(cfgs[b.id] if cfgs[b.id].endswith('\n') else cfgs[b.id] + '\n', self.fps, self.drop, self.start)
         for b in self.bots: b.start()
         if self.n > 1: wait(lambda: all(b.net()['ready'] for b in self.bots), 'every world stable', 300)
         else:      # one game has no co-op core (no peer configured): wait for its picture and a readable world, then let it settle
             b = self.bots[0]
             wait(lambda: 'resources ready' in (b.dir / 'witness_proxy.log').read_text(errors='ignore') and len(b.state()[0]) >= 0, 'the world loaded', 300); time.sleep(20)
-        self.rec('started', bots=self.n, pids=[b.pid for b in self.bots], fps=self.fps, drop=self.drop, goal=self.goal_name)
+        self.rec('started', bots=self.n, pids=[b.pid for b in self.bots], fps=self.fps, drop=self.drop, goal=self.goal_name, start=self.start or 'new game')
 
     def load_manifest(self):
         """The panels' puzzles, from a game before any line is drawn (a drawn line overwrites a stored solution): the master copy made
@@ -173,6 +178,8 @@ class Playthrough:
         # the drawing script's own account (timings and each segment) goes to stderr: kept with a failure, and the time split recorded for every solve
         env = {**os.environ, 'WDRAW_KCACHE': win(sweep.KCACHE), 'WDRAW_TIMING': '1', 'WDRAW_SHOTS': '1', 'WSLENV': os.environ.get('WSLENV', '') + ':WDRAW_KCACHE:WDRAW_TIMING:WDRAW_SHOTS:WDRAW_REDRAW'}
         if redraw: env['WDRAW_REDRAW'] = '1'
+        # A first attempt gets a short search for the start circle, so a hard panel does not hold a bot while easy work waits; later attempts the full one.
+        env['WDRAW_START_BUDGET'] = '75' if self.planner.tries.get(h, 0) == 0 else '230'; env['WSLENV'] += ':WDRAW_START_BUDGET'
         err = ''
         try:
             out, err = pyw(script, bot.pid, win(str(bot.dir)), '%x' % h, ','.join(map(str, path)), timeout=420, env=env, both=True)
@@ -188,6 +195,7 @@ class Playthrough:
             self.rec('solved', bot=bot.id, panel='%#x' % h, name=e.name, area=e.area, seconds=dt, method=script, timing=[l.strip() for l in err.splitlines() if ' s  ' in l][-12:])
             threading.Thread(target=self.propagation, args=(bot, h), daemon=True).start()
             return True
+        self.last_why[h] = r.get('why', '')
         shot = 'fail_%x_b%d' % (h, bot.id); bot.send('shot ' + shot)
         self.rec('failed', bot=bot.id, panel='%#x' % h, name=e.name, area=e.area, seconds=dt, why=r.get('why', ''), shot=str(bot.dir / 'shots' / (shot + '.bmp')), trace=err.splitlines()[-40:])
         return False
@@ -234,16 +242,33 @@ class Playthrough:
                 self.rec('resolve another way', panel='%#x' % q, because='%#x' % h, variant=k + 1, of=len(v), start=v[k + 1][0], end=v[k + 1][-1])
         return moved
 
-    def compare_worlds(self):
-        states = {b.id: b.state()[:2] for b in self.bots}
-        base = states[self.bots[0].id]
-        for i, (panels, doors) in states.items():
-            if (panels, doors) != base:
-                self.rec('divergence', between=[self.bots[0].id, i], panels_only_here=sorted('%#x' % p for p in panels - base[0])[:20],
-                         panels_missing=sorted('%#x' % p for p in base[0] - panels)[:20], doors_differ=sorted('%#x' % d for d in doors ^ base[1])[:20])
+    def compare_worlds(self, settle=5):
+        """Compare every world with bot 1's, twice `settle` seconds apart: what differs both times is recorded as persistent (a real
+        divergence); what differed only the first time was in flight (a door still moving, a solve still travelling) and is recorded as such."""
+        def snap():
+            with cf.ThreadPoolExecutor(max_workers=self.n) as rp: return dict(zip([b.id for b in self.bots], rp.map(lambda b: b.state()[:2], self.bots)))
+        def diff(st):
+            base = st[self.bots[0].id]; out = {}
+            for i, (panels, doors) in st.items():
+                d = (frozenset(panels - base[0]), frozenset(base[0] - panels), frozenset(doors ^ base[1]))
+                if any(d): out[i] = d
+            return out
+        first = diff(snap())
+        if not first: return
+        time.sleep(settle); second = diff(snap())
+        for i, (extra, missing, doors) in first.items():
+            e2, m2, d2 = second.get(i, (frozenset(),) * 3)
+            for persistent, (x, m, d) in ((True, (extra & e2, missing & m2, doors & d2)), (False, (extra - e2, missing - m2, doors - d2))):
+                if x or m or d:
+                    self.rec('divergence', persistent=persistent, between=[self.bots[0].id, i], panels_only_here=sorted('%#x' % p for p in x)[:20],
+                             panels_missing=sorted('%#x' % p for p in m)[:20], doors_differ=sorted('%#x' % q for q in d)[:20])
 
     # ---- the loop
     def run(self):
+        try: self.play()
+        except KeyboardInterrupt: self.rec('stopped', why='interrupted'); self.summary()
+
+    def play(self):
         self.launch(); self.load_manifest()
         # A bot only starts a panel the game has powered: the logic says when it should be, the game says when it is (see stalls()).
         self.planner = Planner(self.logic, self.goal_name, can_solve=lambda h: h in self.manifest and h in self.powered and self.path_for(h) is not None)
@@ -257,20 +282,29 @@ class Playthrough:
                 solved = set().union(*(st[0] for st in states)); self.powered = set().union(*(st[2] for st in states)); self.solved = solved
                 self.stalls(solved, [h for _, h in busy.values()])
                 for i, (fut, h) in list(busy.items()):
-                    if fut.done():
-                        if not fut.result():
-                            self.planner.failed(h)
-                            # The line got stuck on a panel the game has powered: what blocks it may be a prerequisite solved the wrong way
-                            # (the tutorial gate's latches stay shut unless Back Left is solved through its bottom exit). Redraw those another
-                            # way and give this panel its tries back.
-                            if self.other_ways(h, self.solved, [x for _, x in busy.values()]): self.planner.tries[h] = 0
-                        del busy[i]
+                    if not fut.done(): continue
+                    ok = fut.result(); why = self.last_why.get(h, '') if not ok else ''; was_redraw = h in self.restore
+                    self.restore.discard(h); del busy[i]
+                    if ok: continue
+                    self.planner.failed(h)
+                    if was_redraw:
+                        # A redraw the game refused leaves the panel unsolved in that world (the progress is lost there): draw the solution that
+                        # worked back at once, and do not try this panel's other ways again.
+                        k, v = self.variant[h]; self.variant[h] = (len(v), v); self.paths[h] = v[0]; self.fixups.insert(0, h)
+                        self.rec('redraw refused: restoring', panel='%#x' % h, why=why)
+                    elif why.startswith('stuck') or 'did not accept' in why:
+                        # The line got stuck (or was refused) on a panel the game has powered: what blocks it may be a prerequisite solved the
+                        # wrong way (the tutorial gate's latches stay shut unless Back Left ends at its bottom exit). Redraw those another way and
+                        # give this panel its tries back. A start that was not found is the drawing's own problem and changes nothing here.
+                        if self.other_ways(h, self.solved, [x for _, x in busy.values()]): self.planner.tries[h] = 0
                 if self.planner.done(solved): self.rec('goal', goal=self.goal_name, solved=len(solved)); break
                 free = [b.id for b in self.bots if b.id not in busy]
                 while free and self.fixups:      # re-solving a prerequisite another way comes before new work: it unblocks something
                     h = self.fixups.pop(0)
                     if h in [x for _, x in busy.values()]: continue
-                    i = free.pop(0); busy[i] = (pool.submit(self.solve, self.bots[i - 1], h, True), h)
+                    i = free.pop(0); k, v = self.variant.get(h, (0, []))
+                    if k < len(v): self.restore.add(h)      # an experiment (another way): a refusal is undone; a restore (k == len) is not one
+                    busy[i] = (pool.submit(self.solve, self.bots[i - 1], h, True), h)
                 for i, h in self.planner.assign(solved, free, busy=[h for _, h in busy.values()]).items():
                     busy[i] = (pool.submit(self.solve, self.bots[i - 1], h), h)
                 young = [h for h, t0 in self.stalled_since.items() if time.time() - t0 < 150]
@@ -282,7 +316,8 @@ class Playthrough:
                 rounds += 1
                 if rounds % 20 == 0: self.compare_worlds()
                 time.sleep(2)
-        time.sleep(5); self.compare_worlds(); self.summary()
+        try: time.sleep(5); self.compare_worlds()
+        finally: self.summary()
 
     def summary(self):
         ev = [json.loads(l) for l in open(self.out / 'events.jsonl')]
@@ -292,12 +327,12 @@ class Playthrough:
         by_area = {}
         for e in solves: by_area.setdefault(e['area'], 0); by_area[e['area']] += 1
         done, _ = self.logic.derive(self.solved)
-        s = dict(goal=self.goal_name, reached=self.planner.done(self.solved), bots=self.n, minutes=round((time.time() - self.rec.t0) / 60, 1),
+        s = dict(start=self.start or 'new game', goal=self.goal_name, reached=self.planner.done(self.solved), bots=self.n, minutes=round((time.time() - self.rec.t0) / 60, 1),
                  solved_in_world=len(self.solved & set(self.logic.panels)), route=len(self.planner.targets), solves=len(solves), failures=len(fails),
                  lasers=sum(1 for l in self.logic.lasers if l in done), per_bot={b.id: sum(1 for e in solves if e['bot'] == b.id) for b in self.bots},
                  by_area=by_area, median_solve_s=statistics.median([e['seconds'] for e in solves]) if solves else None,
                  propagation_s=dict(p50=pct(props, 50), p95=pct(props, 95), max=round(max(props), 2) if props else None, n=len(props)),
-                 divergences=sum(1 for e in ev if e['kind'] == 'divergence'), crashes=sum(1 for e in ev if e['kind'] == 'crash'),
+                 divergences=sum(1 for e in ev if e['kind'] == 'divergence' and e.get('persistent', True)), transient_differences=sum(1 for e in ev if e['kind'] == 'divergence' and e.get('persistent') is False), crashes=sum(1 for e in ev if e['kind'] == 'crash'),
                  no_solver=sorted('%#x' % h for h in self.no_solver), blocked=[e for e in ev if e['kind'] == 'blocked'][-1:] or None)
         (self.out / 'summary.json').write_text(json.dumps(s, indent=1)); print('SUMMARY', json.dumps(s), flush=True)
 
@@ -307,7 +342,7 @@ def main():
     def opt(name, default, cast=str): return cast(a[a.index(name) + 1]) if name in a else default
     n = int(a[0]) if a and a[0].isdigit() else 2
     before = real_saves()
-    try: Playthrough(n, opt('--goal', 'credits'), opt('--minutes', 600, float), opt('--fps', 60, int), opt('--drop', 0, int)).run()
+    try: Playthrough(n, opt('--goal', 'credits'), opt('--minutes', 600, float), opt('--fps', 60, int), opt('--drop', 0, int), opt('--start', '')).run()
     finally: assert real_saves() == before, 'real saves changed'
 
 

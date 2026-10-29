@@ -196,7 +196,7 @@ if FORCE:
 for attempt, rd_ in enumerate(ROUNDS):
     ax_, sx_, sy_ = rd_[:3]; ROLL = math.radians(rd_[3]) if len(rd_) > 3 else ROLL0
     ROUND_END = (time.time() - T_START) + 70      # each round gets its own budget; the whole search is capped below
-    if time.time() - T_START > 230 and attempt > 2: break      # the whole search for a start circle is capped: a panel without one is reported, not chased
+    if time.time() - T_START > float(os.environ.get('WDRAW_START_BUDGET') or 230) and attempt > 2: break      # the whole search for a start circle is capped: a panel without one is reported, not chased (WDRAW_START_BUDGET seconds)
     AX = cached_ax if (attempt == 0 and cached_ax) else ax_; SX, SY = cached_flip if attempt == 0 else (sx_, sy_)
     for _ in range(3):
         c.click(settle=1.0)                          # enter: the cursor appears at the screen centre
@@ -213,7 +213,7 @@ for attempt, rd_ in enumerate(ROUNDS):
         cur = (cur[0] + round(ddx / n_) * n_ / COUNTS_PER_PX, cur[1] + round(ddy / n_) * n_ / COUNTS_PER_PX)
         if os.environ.get('WDRAW_KSHOTS'): c.send(['shot k_%d_%d' % (round(w_ * 1000), dy_)], 0.4)
         c.send(['button L down', 'button L up'], 0.14)      # press and release on the start circle: the line starts
-        if traced() >= 1 or state() == 3: started = (w_, dy_); break
+        if state() == 3 or (traced() >= 1 and not REDRAW): started = (w_, dy_); break      # a redraw: the old line's count is still there until a new line starts (state 3)
     if started: break
     rclick()
 if not started: done(False, 'the line did not start with any panel size or offset tried', traced(), dist)
