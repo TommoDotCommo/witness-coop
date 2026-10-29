@@ -162,6 +162,12 @@ class Playthrough:
 
     def path_for(self, h):
         if h not in self.paths:
+            if not self.manifest[h].get('nodes'):      # some panels get their puzzle only later in the game (the mountain's pillar room entry): read it now
+                try:
+                    live = json.loads(pyw('wpanels.py', self.bots[0].pid, '--full', '--ids', '%x' % h, timeout=120).strip().splitlines()[-1])
+                    if live and live[0].get('nodes'): self.manifest[h] = live[0]; self.rec('puzzle read live', panel='%#x' % h, nodes=live[0]['nodes'])
+                    else: return None      # not there yet: asked again next time (no path is cached)
+                except (ValueError, IndexError, subprocess.SubprocessError): return None
             q = dict(self.manifest[h]); import sweep
             q['only_edges'] = sweep.floor_edges(h)
             try: v = solver.variants(q); self.variant[h] = (0, v); self.paths[h] = v[0] if v else None

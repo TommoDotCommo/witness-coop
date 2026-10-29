@@ -1,9 +1,10 @@
 """Inventory of every placed panel as one JSON line: id, pose, state, and (with --full) the whole puzzle: graph, decorations, grid.
-Usage: Windows Python wpanels.py <pid> [--full]
+Usage: Windows Python wpanels.py <pid> [--full] [--ids 1983,1987]
 Offsets for build 11370412 (the randomizer's layout B): grid 0x440/0x444, decorations 0x418 (cells), flags 0x420, colours 0x428, count 0x430."""
 import os, sys, json, math, struct
 exec(compile(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'wlib.py')).read(), 'wlib.py', 'exec'))
 p = attach(int(sys.argv[1])); full = '--full' in sys.argv; out = []
+ONLY = {int(v, 16) for v in sys.argv[sys.argv.index('--ids') + 1].split(',')} if '--ids' in sys.argv else None      # just these panels (hex ids)
 base_id = p.u32(p.u64(p.base + GLOBALS) + 8)
 def target_type(e):      # what the panel opens or lights: 'door', 'cable', 'panel', 'laser' or other (the entity at the target id minus the table's base id)
     t = p.u32(e + 0x2b4) - base_id
@@ -17,7 +18,7 @@ def arr(e, off, fmt, count):
     return list(struct.unpack('<%d%s' % (count, fmt), raw)) if raw else []
 
 for i, e in enumerate(p.entity_table()):
-    if not e or p.type_of(e) != TI_PANEL: continue
+    if not e or p.type_of(e) != TI_PANEL or (ONLY is not None and i not in ONLY): continue
     x, y, z = struct.unpack('<3f', p.rd(e + 0x24, 12))
     if abs(x) + abs(y) < 1: continue
     qz, qw = struct.unpack('<2f', p.rd(e + 0x3c, 8)); n, m = p.u32(e + 0x3b4), p.u32(e + 0x3b8)
