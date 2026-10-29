@@ -114,7 +114,7 @@ void SyncCore::tick(uint64_t now) {
             Bytes b; bool built = false, retried = false;      // the datagram is only built when some peer is actually sent to this round (a stalled peer's backlog is long and its budget is spent after 32)
             auto attempt = [&](unsigned peer) {
                 unsigned budgetKey = f_.noIndependentBudget ? 0 : peer;
-                if (budget[budgetKey] >= 32 || (f_.noResend && s.attempted.count(peer))) return;
+                if (budget[budgetKey] >= 32 || (f_.noResend && (s.attempted.count(peer) || s.attempted.count(0)))) return;      // test: never resend; what was sent before any peer was known (the void, peer 0) is not sent again to a peer found later
                 bool first = s.attempted.insert(peer).second;
                 if (!first) retried = true;
                 ++budget[budgetKey];
