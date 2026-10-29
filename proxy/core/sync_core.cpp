@@ -363,7 +363,10 @@ void SyncCore::baseline(bool full) {
     }
 }
 
-bool SyncCore::reloadSeen(uint64_t now) {   // doors do not close and one panel can be redrawn, so those alone are not a load
+// A load takes progress back: solved panels go (and the doors they opened). Doors alone are not a load: the island has doors that shut
+// by themselves (the timed doors of the Shadows, the playthrough bot saw one close and the whole session stall for 10-50 s while it
+// re-gated); one panel alone is not either (it can be redrawn). So: two panels, or a panel and a door.
+bool SyncCore::reloadSeen(uint64_t now) {
     unsigned closed = 0, unsolved = 0;
     for (unsigned id : doors_) {
         auto sp = suppressDoor_.find(id);
@@ -373,7 +376,8 @@ bool SyncCore::reloadSeen(uint64_t now) {   // doors do not close and one panel 
         auto sp = suppressPanel_.find(id);
         if (knownPanel_.count(id) && w_->entityExists(id) && !w_->panelSolved(id) && !(sp != suppressPanel_.end() && now < sp->second)) unsolved++;
     }
-    return closed >= 1 || unsolved >= 2;
+    if (f_.reloadOnDoor) return closed >= 1 || unsolved >= 2;
+    return unsolved >= 2 || (unsolved >= 1 && closed >= 1);
 }
 
 void SyncCore::pollState(uint64_t now) {

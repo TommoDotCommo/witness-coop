@@ -71,6 +71,7 @@ struct Flags {   // all off by default
     bool noGroupCableIntent = false; // twin: glow/echo bookkeeping hides a genuine new cable command
     bool noGroupVersions = false; // twin: use the two-player cable arbiter in a group
     bool noReloadSync = false;  // twin: ignore a same-process save reload (no re-gate, no resync with the peer)
+    bool reloadOnDoor = false;  // twin: one closed door alone counts as a save reload (a timed door shutting by itself stalled sync for 10-50 s)
     bool noPingReply = false;   // twin: this game never answers a ping (the peers cannot measure it)
     bool noPingExpiry = false;  // twin: a ping measured once stays on show for ever, even when the peer is gone
     bool noNameSend = false;    // twin: names are not sent

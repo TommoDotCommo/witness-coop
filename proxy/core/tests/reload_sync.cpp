@@ -66,6 +66,18 @@ bool run(const char* mode, witness::Flags fb) {
     return ok;
 }
 
+// A timed door (A's door 3) shuts by itself while every panel stays solved; A then solves panel 2. That is no load: B must have panel 2
+// within two seconds, as any live solve. (Taken for a load, A re-gates on a stable world and holds every event back for 9 s or more.)
+bool timer(witness::Flags fa) {
+    witness::Flags none; Pair p(none); witness::Hooks ha; ha.send = [&](const witness::Bytes& d) { p.toB.push_back(d); };
+    p.ca = std::make_unique<witness::SyncCore>(1, 1, &p.a, ha, fa);      // A with the flags under test
+    p.advance(30000); p.a.solved[0] = true; p.advance(400); p.a.open[2] = true; p.advance(20000);
+    if (!p.b.solved[0] || !p.b.open[2]) return false;
+    p.a.open[2] = false; p.advance(4000);                    // the timer runs out: the door closes, nothing else changes
+    p.a.solved[1] = true; p.advance(2000);                   // A solves the next panel
+    return p.b.solved[1];
+}
+
 int main() {
     bool all = true;
     for (const char* mode : {"older save", "second reload", "progress only in the save"}) {
@@ -75,5 +87,8 @@ int main() {
         bool caught = !run(mode, twin);
         std::printf("%s  no-reload-sync twin: %s\n", caught ? "PASS" : "FAIL", mode); all &= caught;
     }
+    { bool ok = timer({}); std::printf("%s  a timed door shutting is not a load\n", ok ? "PASS" : "FAIL"); all &= ok;
+      witness::Flags twin; twin.reloadOnDoor = true; bool caught = !timer(twin);
+      std::printf("%s  reload-on-door twin: a timed door stalls sync\n", caught ? "PASS" : "FAIL"); all &= caught; }
     return all ? 0 : 1;
 }
