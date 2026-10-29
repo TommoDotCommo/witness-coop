@@ -193,6 +193,7 @@ if 'r%x' % eid in kcache: ROLL0 = ROLL = math.radians(kcache['r%x' % eid]); cand
 ROUNDS = [(1.0, 1, 1), (1.0, 1, 1), (1.4, -1, -1), (1.0, 1, 1, 45), (1.0, -1, -1, 45)] + [(ax_, sx_, sy_) for ax_ in (1.0, 1.45, 0.7, 2.0, 0.5) for (sx_, sy_) in ((-1, -1), (1, 1), (1, -1), (-1, 1)) if (ax_, sx_, sy_) != (1.0, 1, 1)]
 if FORCE:
     fw, fdy, fax, fsx, fsy = [float(v) for v in FORCE.split(',')]; ROUNDS = [(fax, int(fsx), int(fsy))] * 2; cands = [(fw, int(fdy))]; cached_ax = None
+OLD_TRACED = traced()      # (a redraw: the solved line's count)
 for attempt, rd_ in enumerate(ROUNDS):
     ax_, sx_, sy_ = rd_[:3]; ROLL = math.radians(rd_[3]) if len(rd_) > 3 else ROLL0
     ROUND_END = (time.time() - T_START) + 70      # each round gets its own budget; the whole search is capped below
@@ -213,7 +214,9 @@ for attempt, rd_ in enumerate(ROUNDS):
         cur = (cur[0] + round(ddx / n_) * n_ / COUNTS_PER_PX, cur[1] + round(ddy / n_) * n_ / COUNTS_PER_PX)
         if os.environ.get('WDRAW_KSHOTS'): c.send(['shot k_%d_%d' % (round(w_ * 1000), dy_)], 0.4)
         c.send(['button L down', 'button L up'], 0.14)      # press and release on the start circle: the line starts
-        if state() == 3 or (traced() >= 1 and not REDRAW): started = (w_, dy_); break      # a redraw: the old line's count is still there until a new line starts (state 3)
+        # A redraw: the solved line's count stays until a new line starts, and state 3 shows up just from entering a solved panel, so only the count
+        # changing from what the old line had (a new line counts 1) says the click started it.
+        if (not REDRAW and (traced() >= 1 or state() == 3)) or (REDRAW and traced() >= 1 and traced() != OLD_TRACED): started = (w_, dy_); break
     if started: break
     rclick()
 if not started: done(False, 'the line did not start with any panel size or offset tried', traced(), dist)

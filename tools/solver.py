@@ -38,7 +38,8 @@ def unsupported(p):
     if p.get('refl') and len(p.get('mirror') or []) != p['nodes']: why.add('symmetry without a mirror map')
     if any(p['dec']) and not (p['gx'] > 1 and p['ndec'] == (p['gx'] - 1) * (p['gy'] - 1)) and not pillar(p): why.add('decorations on a panel that is not a grid')
     if pillar(p) and any((v >> 8) & 0xf == 4 and v & 0x2000 for v in p['dec']): why.add('negative polyominoes on a pillar')      # positive ones across the seam: psolve fits them
-    known = 0x700000 | 0x40000 | 0x20 | 0x100 | 0x200 | 0x1000 | 0x10000 | 0x20000 | 0x30000 | 0x8 | 0x3 | 0xe000      # sound dots (0x2000/0x4000/0x8000): met in the panel's own sequence (psolve), plain dots when it has none
+    # 0x80: on one start of each mirrored pair of Glass Factory Back Wall 5, the only panel that has it (the start the player draws from; psolve's line starts there)
+    known = 0x700000 | 0x40000 | 0x20 | 0x100 | 0x200 | 0x1000 | 0x10000 | 0x20000 | 0x30000 | 0x8 | 0x3 | 0xe000 | 0x80      # sound dots (0x2000/0x4000/0x8000): met in the panel's own sequence (psolve), plain dots when it has none
     for f in p['flags']:
         if f & ~known: why.add('node flags %#x' % (f & ~known))
     return sorted(why)
