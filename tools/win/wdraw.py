@@ -100,6 +100,12 @@ def menu_teleport():
 
 stamp('start')
 pos = menu_teleport()
+STAND = os.environ.get('WDRAW_STAND')      # "sideways,distance" in metres: stand there instead (part of the panel was hidden from the menu's spot: the
+if STAND and not FLIP:                     # cursor only reaches what the camera sees, so a line stops at the edge of a wall in front of the panel)
+    lat_, dd_ = (float(v) for v in STAND.split(',')); nx_, ny_ = NORMAL[0], NORMAL[1]; nn_ = math.hypot(nx_, ny_) or 1.0; nx_, ny_ = nx_ / nn_, ny_ / nn_
+    hx_, hy_ = px_ + dd_ * nx_ - lat_ * ny_, py_ + dd_ * ny_ + lat_ * nx_
+    c.send(['hover %.4f %.4f %.4f %.5f 0.0' % (hx_, hy_, pz_ + 0.2, math.atan2(py_ - hy_, px_ - hx_))], 2.4); c.send(['hover off'], 1.5)
+    pos = p.camera()[0]; stamp('stood at %.1f m sideways, %.1f m out' % (lat_, dd_))
 if FLIP:      # the menu's teleport puts us on its side: move to the other one (3 m along the flipped normal), then let the player settle there
     nx_, ny_ = NORMAL[0], NORMAL[1]; nn_ = math.hypot(nx_, ny_) or 1.0; hx_, hy_ = px_ + 3.0 * nx_ / nn_, py_ + 3.0 * ny_ / nn_
     c.send(['hover %.4f %.4f %.4f %.5f 0.0' % (hx_, hy_, pz_ + 0.2, math.atan2(py_ - hy_, px_ - hx_))], 2.4); c.send(['hover off'], 1.5)

@@ -208,7 +208,11 @@ class Playthrough:
         if 'did not start' in self.last_why.get(h, '') and self.planner.tries.get(h, 0) % 2 == 1: env['WDRAW_FLIP_SIDE'] = '1'
         # The in-game tracer (proxy/tracer.cpp) draws the edges after the first at one frame a step, about twice as fast; a panel whose last
         # attempt failed in the tracer is drawn the old way.
-        env['WSLENV'] += ':WDRAW_TRACER'
+        env['WSLENV'] += ':WDRAW_TRACER:WDRAW_STAND'
+        # A line that got stuck may have run into something hiding part of the panel (the cursor only reaches what the camera sees): the next
+        # attempts stand elsewhere, 1.2 m to one side then the other, nearer or further.
+        if self.last_why.get(h, '').startswith('stuck'):
+            env['WDRAW_STAND'] = ('1.2,2.0', '-1.2,2.0', '0,4.0', '1.5,3.5', '-1.5,3.5')[self.planner.tries.get(h, 0) % 5]
         if not self.last_why.get(h, '').startswith(('tracer', 'the in-game tracer')): env['WDRAW_TRACER'] = '1'
         err = ''
         try:
