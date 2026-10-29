@@ -11,9 +11,9 @@ from logic import Logic, CREDITS
 ROUTE_CACHE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'credits_route.json')
 
 
-def finishes(logic, allowed, goal):
-    """Does solving only `allowed` panels (whenever they become available) reach every panel of `goal`?"""
-    solved = set()
+def finishes(logic, allowed, goal, start=frozenset()):
+    """Does solving only `allowed` panels (whenever they become available), from the `start` state, reach every panel of `goal`?"""
+    solved = set(start)
     while True:
         new = [h for h in logic.available(solved) if h in allowed]
         if not new: return goal <= solved
@@ -23,17 +23,17 @@ def finishes(logic, allowed, goal):
 def route(logic, goal=frozenset([CREDITS]), cache=ROUTE_CACHE, avoid=frozenset(), solved=frozenset()):
     """A set of panels that reaches `goal`, pruned: a panel is dropped when the goal can still be reached without it. Greedy (not the
     smallest set in general, but every panel left in it is needed given the others). Cached in data/credits_route.json for the ending."""
-    if avoid: cache = None      # a detour is worked out afresh
+    if avoid or solved: cache = None      # a detour, or a route from a state already part played, is worked out afresh
     if cache and goal == frozenset([CREDITS]) and os.path.exists(cache):
         return set(int(h, 16) for h in json.load(open(cache))['panels'])
     keep = set(logic.panels) - set(avoid)
-    if not finishes(logic, keep, set(goal)):
+    if not finishes(logic, keep, set(goal), solved):
         if avoid: return None      # no way round the avoided panels
         raise AssertionError('the goal cannot be reached at all')
     for h in sorted(logic.panels, key=lambda h: logic.entities[h].location or 0, reverse=True):      # later panels first: they are the likeliest extras
         if h in goal or h in solved: continue      # (what is solved already stays: pruning it would only reshuffle the route)
         keep.discard(h)
-        if not finishes(logic, keep, set(goal)): keep.add(h)
+        if not finishes(logic, keep, set(goal), solved): keep.add(h)
     if cache and goal == frozenset([CREDITS]):
         json.dump({'goal': '%#x' % CREDITS, 'panels': sorted('%#07x' % h for h in keep)}, open(cache, 'w'), indent=0)
     return keep

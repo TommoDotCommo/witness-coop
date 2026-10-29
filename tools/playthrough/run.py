@@ -339,6 +339,11 @@ class Playthrough:
         self.launch(); self.load_manifest()
         # A bot only starts a panel the game has powered: the logic says when it should be, the game says when it is (see stalls()).
         self.planner = Planner(self.logic, self.goal_name, can_solve=lambda h: h in self.manifest and h in self.powered and self.path_for(h) is not None)
+        if self.start:      # a slice: the route from the state it starts in (seven lasers lit: straight to the mountain, not round the island again)
+            from planner import route
+            done0 = set().union(*(st[0] for st in [b.state() for b in self.bots]))
+            r_ = route(self.logic, solved=frozenset(done0))
+            if r_: self.planner.targets = r_; self.rec('route from start', solved=len(done0), route=len(r_), left=len(r_ - done0))
         busy = {}      # bot id -> (future, panel)
         rounds = 0
         with cf.ThreadPoolExecutor(max_workers=self.n) as pool:
