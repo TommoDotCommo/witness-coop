@@ -45,7 +45,7 @@ class P(run.Playthrough):
         self.manifest = {h: {'id': h, 'nodes': 1} for h in L.panels}; self.paths = {}; self.no_solver = set()
         self.planner = None; self.solved = set(); self.lock = threading.Lock(); self.prop = []
         self.powered = set(); self.variant = {}; self.stalled_since = {}; self.fixups = []; self.last_why = {}; self.restore = set()
-        self.start = ''; self.resume = ''; self.avoid = set(); self.candidates_only = set()
+        self.start = ''; self.resume = ''; self.avoid = set(); self.candidates_only = set(); self.attempts = {}
     def launch(self): pass
     def checkpoint(self): pass
     def load_manifest(self): pass

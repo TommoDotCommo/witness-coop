@@ -129,7 +129,7 @@ class Playthrough:
         self.planner = None; self.solved = set(); self.lock = threading.Lock()
         self.prop = []      # (panel, from bot, to bot, seconds)
         self.powered = set(); self.variant = {}; self.stalled_since = {}; self.fixups = []      # see stalls()
-        self.last_why = {}; self.restore = set(); self.candidates_only = set(); self.avoid = set()      # avoid: panels a detour must go round      # panels drawn from relaxed-rule candidates (the game judges)      # why a panel's last attempt failed; panels whose redraw was refused (drawn back the first way)
+        self.last_why = {}; self.restore = set(); self.candidates_only = set(); self.avoid = set(); self.attempts = {}      # avoid: panels a detour must go round      # panels drawn from relaxed-rule candidates (the game judges)      # why a panel's last attempt failed; panels whose redraw was refused (drawn back the first way)
 
     # ---- set-up
     def launch(self):
@@ -362,7 +362,7 @@ class Playthrough:
                 for i, (fut, h) in list(busy.items()):
                     if not fut.done(): continue
                     ok = fut.result(); why = self.last_why.get(h, '') if not ok else ''; was_redraw = h in self.restore
-                    self.restore.discard(h); del busy[i]
+                    self.restore.discard(h); del busy[i]; self.attempts[h] = self.attempts.get(h, 0) + 1      # every attempt, whatever its tries count says
                     if ok: continue
                     self.planner.failed(h)
                     if was_redraw:
@@ -370,7 +370,7 @@ class Playthrough:
                         # worked back at once, and do not try this panel's other ways again.
                         k, v = self.variant[h]; self.variant[h] = (len(v), v); self.paths[h] = v[0]; self.fixups.insert(0, h)
                         self.rec('redraw refused: restoring', panel='%#x' % h, why=why)
-                    elif 'did not accept' in why and h in self.variant and self.variant[h][0] + 1 < len(self.variant[h][1]):
+                    elif 'did not accept' in why and h in self.variant and self.variant[h][0] + 1 < len(self.variant[h][1]) and self.attempts.get(h, 0) < len(self.variant[h][1]) + 3:
                         # The game refused this line: the panel's next solution (another exit, another start: Town's Triple Exit; or the next
                         # relaxed-rule candidate). A refused line on an unsolved panel costs nothing.
                         k, v = self.variant[h]; self.variant[h] = (k + 1, v); self.paths[h] = v[k + 1]; self.planner.tries[h] = 0      # the next candidate line
@@ -409,6 +409,11 @@ class Playthrough:
                     break
                 rounds += 1
                 if rounds % 20 == 0: self.compare_worlds()
+                # Do not wait for a full stop: when panels have used up their tries, look for a route round them while there is still other work.
+                spent = {h for h, n in self.planner.tries.items() if n >= self.planner.max_tries and h not in solved} - self.avoid
+                if rounds % 30 == 0 and spent:
+                    added = self.planner.reroute(solved, self.avoid | spent)
+                    if added is not None: self.avoid |= spent; self.rec('reroute', avoiding=sorted('%#x' % h for h in self.avoid), added=len(added), route=len(self.planner.targets), early=True)
                 time.sleep(2)
         try: time.sleep(5); self.compare_worlds(); self.checkpoint()
         finally: self.summary()

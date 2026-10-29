@@ -102,6 +102,13 @@ def variants(p):
     Back Right: only the bottom exit lights the gate's latch): the caller tries the next one when the right thing did not turn on."""
     out = []; first = solve(dict(p))
     if first: out.append(first)
+    if p.get('mirror') and any(f & 0x20 and f & 0x300 for f in p['flags']):
+        # Symmetry with coloured dots: each line must touch the dots of its colour, and which of the two lines is blue is not in the panel data
+        # (Symmetry Island Left 1 was refused every time). The same panel with blue and yellow swapped gives the line for the other colouring.
+        q = dict(p); q['flags'] = [(f & ~0x300) | (0x200 if f & 0x100 else 0) | (0x100 if f & 0x200 else 0) for f in p['flags']]
+        try: v = solve(q)
+        except Exception: v = None
+        if v and v not in out: out.append(v)
     starts = [i for i, f in enumerate(p['flags']) if f & START and not f & END]; ends = [i for i, f in enumerate(p['flags']) if f & END]
     if len(starts) < 2 and len(ends) < 2: return out
     for s_ in starts:
