@@ -149,6 +149,26 @@ def other_standing_points():
     nx, ny = NORMAL[0], NORMAL[1]; nn = math.hypot(nx, ny) or 1.0; nx, ny = nx / nn, ny / nn
     return [(px_ + d_ * nx, py_ + d_ * ny) for d_ in (2.0, 4.0, 1.6, 5.0, 2.5, 3.5)]
 
+def centre_on_panel():
+    """The panel's middle may not be its entity's origin (Quarry Boat Spawn sits well below where the camera aims): find it on the screen in the
+    scene depth (an 11 x 7 grid over the middle of the screen, cells at about the panel's distance) and turn the camera onto it."""
+    log = os.path.join(gdir, 'witness_proxy.log')
+    try: n0 = sum(1 for l in open(log, errors='ignore') if l.startswith('probegrid:'))
+    except OSError: return
+    c.send(['probegrid'], 0.0); line = None
+    for _ in range(30):
+        time.sleep(0.15)
+        ls_ = [l for l in open(log, errors='ignore') if l.startswith('probegrid:')]
+        if len(ls_) > n0: line = ls_[-1]; break
+    if not line or 'failed' in line or 'no scene' in line: return
+    v_ = [float(x) for x in line.split()[3:]]; cpos, cang = p.camera(); d_ = math.dist(cpos, (px_, py_, pz_)); want = 0.0597 / max(0.3, d_)
+    cells = [(0.2 + 0.6 * (k % 11) / 10, 0.2 + 0.6 * (k // 11) / 6) for k, dv in enumerate(v_) if dv > 0 and 0.75 < dv / want < 1.35]
+    if len(cells) < 2: stamp('panel not found in the depth grid'); return
+    fx = sum(x for x, _ in cells) / len(cells); fy = sum(y for _, y in cells) / len(cells)
+    if abs(fx - 0.5) < 0.04 and abs(fy - 0.5) < 0.04: return
+    dyaw = -math.atan((fx - 0.5) * 1920 / FOCAL); dpitch = -math.atan((fy - 0.5) * 1080 / FOCAL)      # screen right: yaw down; screen down: pitch down
+    c.send(['tp %.4f %.4f %.4f %.5f %.5f' % (cpos[0], cpos[1], cpos[2], cang[0] + dyaw, cang[1] + dpitch)], 0.4)
+    stamp('re-aimed on the panel found in the depth grid (%.2f, %.2f), %d cells' % (fx, fy, len(cells)))
 if FLAT: pos = stand_beside_flat(); dist = math.dist(pos, (px_, py_, pz_)); stamp('stood beside the flat panel')
 r_ = depth_ratio(); stamp('view check: depth ratio %.2f' % r_)
 if not 0.7 < r_ < 1.45:
@@ -168,6 +188,7 @@ if not 0.7 < r_ < 1.45:
             done(False, 'the panel cannot be seen from any of the places tried (something is in the way, or there is nothing to stand on)', 0, dist)
         stamp('depth check failed everywhere; drawing anyway (glass or a thin cover?)')
     dist = math.dist(p.camera()[0], (px_, py_, pz_))
+if not os.environ.get('WDRAW_NO_RECENTRE'): centre_on_panel()
 
 # ---- projection -----------------------------------------------------------------------------------------------------------------------------
 def cam_basis():

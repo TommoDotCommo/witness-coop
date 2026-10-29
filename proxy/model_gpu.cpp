@@ -37,7 +37,7 @@ static Loaded* g_L = &g_adventurer;
 static volatile LONG g_modelRenderThread;
 static bool g_ready, g_tried;
 static ID3D11Device* g_dev; static ID3D11DeviceContext* g_ctx;
-static ID3D11VertexShader *g_vs, *g_vsFull; static ID3D11PixelShader *g_psDepth, *g_psProbe; static volatile LONG g_probeReq, g_depthViewCmd;
+static ID3D11VertexShader *g_vs, *g_vsFull; static ID3D11PixelShader *g_psDepth, *g_psProbe; static volatile LONG g_probeReq, g_gridReq, g_depthViewCmd;
 static ID3D11VertexShader* g_vsUnused; static ID3D11PixelShader* g_ps; static ID3D11InputLayout* g_layout;
 static ID3D11Buffer *g_cbFrame, *g_cbBones;
 static ID3D11Buffer* g_vbTv;
@@ -119,6 +119,7 @@ static bool Fail(const char* m) { Log(m); return false; }
 bool ModelGpuReady() { return g_ready; }
 void ModelGpuDepthView(bool on) { InterlockedExchange(&g_depthViewCmd, on); }
 void ModelGpuRequestProbe() { InterlockedExchange(&g_probeReq, 1); }
+void ModelGpuRequestProbeGrid() { InterlockedExchange(&g_gridReq, 1); }
 ModelDrawStats ModelGpuStats() { return g_stats; }
 
 
@@ -258,6 +259,16 @@ static void RunProbe(UINT w, UINT h, ID3D11ShaderResourceView* sceneSrv, bool ms
     float v[8]; if (!ProbeDepth(w, h, sceneSrv, ms, v)) return; char msg[300];
     snprintf(msg, sizeof msg, "probe: centre samples %.7g %.7g %.7g %.7g | low %.7g high %.7g left %.7g right %.7g (scene depth, %s)", v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], ms ? "multisampled" : "single sample"); Log(msg);
 }
+// The scene depth on an 11 x 7 grid over the middle 60 % of the screen (x 0.2..0.8, y 0.2..0.8), one line: the bot finds where on the screen a
+// panel really is (the cells at the panel's distance) when its middle is not where its entity's origin says (Quarry Boat Spawn).
+static void RunProbeGrid(UINT w, UINT h, ID3D11ShaderResourceView* sceneSrv, bool ms) {
+    std::string line = "probegrid: 11 7"; char b[24];
+    for (int j = 0; j < 7; j++) for (int i = 0; i < 11; i++) {
+        float v[8]; if (!ProbeDepth(w, h, sceneSrv, ms, v, 0.2f + 0.6f * i / 10, 0.2f + 0.6f * j / 6)) { Log("probegrid: failed"); return; }
+        snprintf(b, sizeof b, " %.6g", v[0]); line += b;
+    }
+    Log(line.c_str());
+}
 // The distance (along the view direction) of the game's geometry under the middle of the screen, for location pings and free drawing: asked for, answered by the next frame.
 static volatile LONG g_centerReq, g_centerReady; static float g_centerDist = -1;
 static volatile float g_centerFx = 0.5f, g_centerFy = 0.5f;
@@ -278,6 +289,11 @@ bool ModelGpuDraw(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Cam& ca
     if (!g_ready) return false;
     InterlockedExchange(&g_modelRenderThread, (LONG)GetCurrentThreadId());
     if (first && InterlockedExchange(&g_centerReq, 0)) AnswerCenterDepth(w, h);
+    if (first && (g_probeReq || g_gridReq)) {      // answered here, before anything returns early: with no other player to draw they were never answered
+        ID3D11ShaderResourceView* srv = nullptr; bool ms = false; bool have = !GetCfg().noModelDepth && DepthScene(&srv, &ms);
+        if (InterlockedExchange(&g_probeReq, 0)) { if (have) RunProbe(w, h, srv, ms); else Log("probe: no scene depth buffer found"); }
+        if (InterlockedExchange(&g_gridReq, 0)) { if (have) RunProbeGrid(w, h, srv, ms); else Log("probegrid: no scene depth buffer found"); }
+    }
     static unsigned s_frames; if (first) { g_stats.frames = ++s_frames; g_stats.submittedPlayers = 0; g_playerDraws.clear(); }
     auto& avatar = g_L->avatars[GetCfg().noGroupAvatarState ? 0 : playerId]; if (!avatar) avatar = std::make_unique<wm::Avatar>(g_L->gait);
     wm::Avatar* g_avatar = avatar.get();
@@ -323,6 +339,7 @@ bool ModelGpuDraw(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Cam& ca
     ID3D11ShaderResourceView* sceneSrv = nullptr; bool ms = false;
     bool haveScene = !cfg.noModelDepth && DepthScene(&sceneSrv, &ms);
     if (InterlockedExchange(&g_probeReq, 0)) { if (haveScene) RunProbe(w, h, sceneSrv, ms); else Log("probe: no scene depth buffer found"); }
+    if (InterlockedExchange(&g_gridReq, 0)) { if (haveScene) RunProbeGrid(w, h, sceneSrv, ms); else Log("probegrid: no scene depth buffer found"); }
     fc.screen[0] = (float)w; fc.screen[1] = (float)h;
     fc.depthp[0] = haveScene ? (ms ? 2.0f : 1.0f) : 0.0f; fc.depthp[1] = 4; fc.depthp[2] = cfg.depthBias; fc.depthp[3] = cfg.depthNear;
     g_ctx->UpdateSubresource(g_cbFrame, 0, nullptr, &fc, 0, 0); g_ctx->UpdateSubresource(g_cbBones, 0, nullptr, bones.data(), 0, 0);
