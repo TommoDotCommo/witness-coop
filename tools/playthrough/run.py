@@ -33,7 +33,7 @@ RES = os.environ.get('WITNESS_RESOURCES', '')
 
 def sh(args, timeout=120): return subprocess.run(list(map(str, args)), capture_output=True, text=True, timeout=timeout).stdout.strip()
 def pyw(script, *args, timeout=120, env=None, both=False):
-    r = subprocess.run([PYW, '-I', win(os.path.join(TOOLS, 'win', script)), *map(str, args)], capture_output=True, text=True, timeout=timeout, env=env)
+    r = subprocess.run([PYW, '-I', win(os.path.join(TOOLS, 'win', script)), *map(str, args)], capture_output=True, text=True, errors='replace', timeout=timeout, env=env)
     return (r.stdout, r.stderr) if both else r.stdout
 
 
@@ -201,6 +201,13 @@ class Playthrough:
 
     # ---- one solve by one bot
     def solve(self, bot, h, redraw=False):
+        """One attempt; whatever goes wrong inside it is a failed attempt, never the end of the run."""
+        try: return self._solve(bot, h, redraw)
+        except Exception as e:
+            self.last_why[h] = 'bot error: %r' % e; self.rec('failed', bot=bot.id, panel='%#x' % h, name=self.logic.entities[h].name, area=self.logic.entities[h].area, seconds=0, why=self.last_why[h])
+            return False
+
+    def _solve(self, bot, h, redraw=False):
         import sweep
         e = self.logic.entities[h]; path = self.paths[h]; t0 = time.time()
         script = 'wwalk.py' if str(h) in sweep.floor_panels() else 'wdraw.py'
