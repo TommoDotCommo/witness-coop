@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Play the game through with N bots in one co-op world, in the game's own order, and record everything.
 
-usage: tools/playthrough.sh [N] [--goal credits|all] [--minutes M] [--fps F] [--drop PCT] [--start SPEC]
+usage: tools/playthrough.sh [N] [--goal credits|all] [--minutes M] [--fps F] [--drop PCT] [--start SPEC] [--resume SAVE]
        (the wrapper leases N game slots, provisions them, runs this, and always releases them)
 
 Every bot is a real game (a full-mesh group of N players; one game alone for N=1). The planner (planner.py) decides, from the
@@ -17,7 +17,7 @@ few rounds all worlds are compared (solved panels and open doors) and any differ
 
 Output, in <run folder>/playthrough/<start time>/: events.jsonl (one line per solve, failure, propagation, divergence, blocker),
 summary.json (totals, per-bot and per-area counts, propagation percentiles, what blocked), shots/ (the game's picture after a failure)."""
-import concurrent.futures as cf, json, os, statistics, subprocess, sys, threading, time
+import concurrent.futures as cf, json, os, shutil, statistics, subprocess, sys, threading, time
 from pathlib import Path
 HERE = os.path.dirname(os.path.abspath(__file__)); TOOLS = os.path.dirname(HERE)
 sys.path.insert(0, HERE); sys.path.insert(0, TOOLS)
@@ -86,9 +86,10 @@ class Bot:
             for f in saves.iterdir():
                 if f.suffix in ('.witness_campaign', '.png'): f.unlink()
 
-    def start(self):
+    def start(self, new_game=True):
         if self.pid: sh(['taskkill.exe', '/PID', self.pid, '/F']); time.sleep(2)
-        self.pid = pyw('launch.py', win(str(self.dir)), '-skip_config_dialog', '-windowed', '-new_game', timeout=60).strip().splitlines()[-1]
+        args = ['-skip_config_dialog', '-windowed'] + (['-new_game'] if new_game else [])      # without -new_game the game continues its newest save
+        self.pid = pyw('launch.py', win(str(self.dir)), *args, timeout=60).strip().splitlines()[-1]
         sh([RES, 'register-pid', self.pid])
         rect = sh([RES, 'rect', self.slot]).split()
         wait(lambda: 'placed True' in pyw('wplace.py', self.pid, *rect), 'bot %d window placed' % self.id, 120)
@@ -119,9 +120,9 @@ class Recorder:
 
 
 class Playthrough:
-    def __init__(self, n, goal, minutes, fps, drop, start=''):
+    def __init__(self, n, goal, minutes, fps, drop, start='', resume=''):
         self.logic = Logic(); self.n, self.goal_name, self.deadline = n, goal, time.time() + minutes * 60
-        self.fps, self.drop, self.start = fps, drop, start
+        self.fps, self.drop, self.start, self.resume = fps, drop, start, resume
         self.bots = [Bot(i) for i in range(1, n + 1)]
         self.out = Path(RUN) / 'playthrough' / time.strftime('%Y%m%d-%H%M%S'); self.rec = Recorder(self.out)
         self.manifest = {}; self.paths = {}; self.no_solver = set()
@@ -137,12 +138,16 @@ class Playthrough:
         else:
             cfgs = {1: 'id=1\nlisten=%d\nsave_dir=instance\nshare_zip=1\n' % self.bots[0].port}
         for b in self.bots: b.prepare(cfgs[b.id] if cfgs[b.id].endswith('\n') else cfgs[b.id] + '\n', self.fps, self.drop, self.start)
-        for b in self.bots: b.start()
+        if self.resume:      # every world continues the same save (a checkpoint of an earlier run: the bots' own play, not a forced state)
+            for b in self.bots:
+                saves = b.dir / 'appdata/The Witness'; saves.mkdir(parents=True, exist_ok=True)
+                replace_copy(self.resume, saves / Path(self.resume).name)
+        for b in self.bots: b.start(new_game=not self.resume)
         if self.n > 1: wait(lambda: all(b.net()['ready'] for b in self.bots), 'every world stable', 300)
         else:      # one game has no co-op core (no peer configured): wait for its picture and a readable world, then let it settle
             b = self.bots[0]
             wait(lambda: 'resources ready' in (b.dir / 'witness_proxy.log').read_text(errors='ignore') and len(b.state()[0]) >= 0, 'the world loaded', 300); time.sleep(20)
-        self.rec('started', bots=self.n, pids=[b.pid for b in self.bots], fps=self.fps, drop=self.drop, goal=self.goal_name, start=self.start or 'new game')
+        self.rec('started', bots=self.n, pids=[b.pid for b in self.bots], fps=self.fps, drop=self.drop, goal=self.goal_name, start=self.start or ('resumed from %s' % self.resume if self.resume else 'new game'))
 
     def load_manifest(self):
         """The panels' puzzles, from a game before any line is drawn (a drawn line overwrites a stored solution): the master copy made
@@ -333,7 +338,7 @@ class Playthrough:
     # ---- the loop
     def run(self):
         try: self.play()
-        except KeyboardInterrupt: self.rec('stopped', why='interrupted'); self.summary()
+        except KeyboardInterrupt: self.rec('stopped', why='interrupted'); self.checkpoint(); self.summary()
 
     def play(self):
         self.launch(); self.load_manifest()
@@ -405,8 +410,18 @@ class Playthrough:
                 rounds += 1
                 if rounds % 20 == 0: self.compare_worlds()
                 time.sleep(2)
-        try: time.sleep(5); self.compare_worlds()
+        try: time.sleep(5); self.compare_worlds(); self.checkpoint()
         finally: self.summary()
+
+    def checkpoint(self):
+        """A save point of bot 1's world copied into the run folder (checkpoint.witness_campaign): the next run can --resume from it."""
+        try:
+            b = self.bots[0]; src = b.dir / 'savepoints' / 'checkpoint.witness_campaign'; t0 = src.stat().st_mtime if src.exists() else 0
+            b.send('savepoint checkpoint'); deadline = time.time() + 30
+            while time.time() < deadline and not (src.exists() and src.stat().st_mtime > t0): time.sleep(0.5)
+            if src.exists() and src.stat().st_mtime > t0:
+                time.sleep(1); shutil.copyfile(src, self.out / 'checkpoint.witness_campaign'); self.rec('checkpoint', file=str(self.out / 'checkpoint.witness_campaign'), solved=len(self.solved))
+        except (OSError, RuntimeError) as e: self.rec('checkpoint failed', why=str(e))
 
     def summary(self):
         ev = [json.loads(l) for l in open(self.out / 'events.jsonl')]
@@ -431,7 +446,7 @@ def main():
     def opt(name, default, cast=str): return cast(a[a.index(name) + 1]) if name in a else default
     n = int(a[0]) if a and a[0].isdigit() else 2
     before = real_saves()
-    try: Playthrough(n, opt('--goal', 'credits'), opt('--minutes', 600, float), opt('--fps', 60, int), opt('--drop', 0, int), opt('--start', '')).run()
+    try: Playthrough(n, opt('--goal', 'credits'), opt('--minutes', 600, float), opt('--fps', 60, int), opt('--drop', 0, int), opt('--start', ''), opt('--resume', '')).run()
     finally: assert real_saves() == before, 'real saves changed'
 
 

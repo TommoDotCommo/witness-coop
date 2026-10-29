@@ -22,9 +22,10 @@ GATE, BACK_LEFT, GOOD_END = 0x3629, 0xa3b5, 104
 class World:
     def __init__(self): self.solved = set(); self.ends = {}; self.lock = threading.Lock(); self.drawn = []; self.reads = 0; self.solved_at = {}
     def powered(self):
-        # Power takes a moment to arrive (a cable lights up): Bend (0x182) is powered only three state reads after the first panel was solved.
+        # Power takes a moment to arrive (a cable lights up): Bend (0x182) is powered only half a second after the first panel was solved
+        # (the loop's pauses are off here, so a bot that does not wait for power gets to it well before that).
         out = set(L.available(self.solved)) | self.solved
-        if 0x182 in out and 0x182 not in self.solved and self.reads - self.solved_at.get(0x64, self.reads) < 3: out.discard(0x182)
+        if 0x182 in out and 0x182 not in self.solved and time.time() - self.solved_at.get(0x64, time.time()) < 0.5: out.discard(0x182)
         return out
 W = World()
 
@@ -44,8 +45,9 @@ class P(run.Playthrough):
         self.manifest = {h: {'id': h, 'nodes': 1} for h in L.panels}; self.paths = {}; self.no_solver = set()
         self.planner = None; self.solved = set(); self.lock = threading.Lock(); self.prop = []
         self.powered = set(); self.variant = {}; self.stalled_since = {}; self.fixups = []; self.last_why = {}; self.restore = set()
-        self.start = ''
+        self.start = ''; self.resume = ''; self.avoid = set(); self.candidates_only = set()
     def launch(self): pass
+    def checkpoint(self): pass
     def load_manifest(self): pass
     def compare_worlds(self, settle=5): pass
     def summary(self): pass
@@ -62,7 +64,7 @@ class P(run.Playthrough):
             if h == GATE and W.ends.get(BACK_LEFT) != GOOD_END:
                 self.last_why[h] = 'stuck before node 35 (path index 10)'; return False
             if h in W.solved and not redraw: return True      # already solved: nothing drawn
-            W.solved.add(h); W.ends[h] = path[-1]; W.solved_at.setdefault(h, W.reads); return True
+            W.solved.add(h); W.ends[h] = path[-1]; W.solved_at.setdefault(h, time.time()); return True
 
 p = P(); p.play()
 ok = CREDITS in W.solved
