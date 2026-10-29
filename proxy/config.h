@@ -27,6 +27,7 @@ struct Cfg {
 #define BIND(name, member, key, text, label) unsigned member = key;
 #include "../common/bindings.def"
 #undef BIND
+    bool noSeatTiebreak = false;   // test mutant: two players who take the same audience stool in the same instant both stay seated
     bool noEmoteAnim = false, noEmoteClips = false, noEmoteSend = false;   // test mutants: emotes shown but not animated / never play a model's own clip / emotes not sent
     bool noChatUi = false, noTypingDots = false, noPingMarks = false;      // test mutants: T does nothing; typing is not announced; pings are not drawn
     std::string startProgress;   // start_progress=<spec>: the next new game starts with these parts of the map completed (the launcher arms it; progress/progress.h says how a spec reads); disarmed once applied

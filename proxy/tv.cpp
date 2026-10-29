@@ -83,7 +83,15 @@ void TvTick(const float camera[3],bool captureAllowed){
     bool anglesOk=!IsBadReadPtr(angles,8), exit=seatExit.exchange(false), action=seatRequest.exchange(false);
     if(seated) {
         auto d=s.deployments.screens.find(seat.owner);
-        if(exit || action || !captureAllowed || d==s.deployments.screens.end() || !d->second.active || d->second.sequence!=seat.sequence) {
+        // Two players can press at the same instant: neither sees the other's pose yet, so both sit. The one with the higher id gets up.
+        bool yield=false;
+        if(d!=s.deployments.screens.end() && d->second.active && !GetCfg().noSeatTiebreak) {
+            auto mine=wtv::seatPoint(d->second,seat.index);
+            for(const auto& r:remotes) if(r.valid && r.ageMs<2000 && r.emote==14 && r.id<CoopMyId()) {
+                float dx=r.pos[0]-mine[0],dy=r.pos[1]-mine[1]; if(dx*dx+dy*dy<.5f*.5f) yield=true;
+            }
+        }
+        if(exit || action || yield || !captureAllowed || d==s.deployments.screens.end() || !d->second.active || d->second.sequence!=seat.sequence) {
             GameSeatPose(seat.entry,seat.yaw,seat.pitch); seated=false; SocialCommand("emote 0");
         } else {
             auto p=wtv::seatPoint(d->second,seat.index); p[2]+=wtv::SeatEye;

@@ -57,6 +57,7 @@ const Cfg& GetCfg() {
             else if (sscanf(line, "no_pause_hide=%d", &v) == 1) r.noPauseHide = v != 0;
             else if (sscanf(line, "no_chat_ui=%d", &v) == 1) r.noChatUi = v != 0;
             else if (sscanf(line, "no_emote_anim=%d", &v) == 1) r.noEmoteAnim = v != 0;
+            else if (sscanf(line, "no_seat_tiebreak=%d", &v) == 1) r.noSeatTiebreak = v != 0;
             else if (sscanf(line, "no_emote_clips=%d", &v) == 1) r.noEmoteClips = v != 0;
             else if (sscanf(line, "no_emote_send=%d", &v) == 1) r.noEmoteSend = v != 0;
             else if (sscanf(line, "no_typing_dots=%d", &v) == 1) r.noTypingDots = v != 0;
