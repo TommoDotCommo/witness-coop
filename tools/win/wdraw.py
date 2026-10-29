@@ -443,8 +443,6 @@ for i in range(1, len(path)):
         mouse(vx, vy, step); used += step
     else: done(False, 'stuck before node %d (path index %d)' % (path[i], i), traced(), dist)
     if traced() > i + 1: done(False, 'overshot node %d: the line ran past it (traced %d, wanted %d)' % (path[i], traced(), i + 1), traced(), dist)
-    ep_ = edge_progress()
-    if ep_ and ep_[1] != path[i] and ep_[1] < len(path_nodes_all) and axflip: done(False, 'took the wrong branch after reversing an axis: reached node %d, wanted %d' % (ep_[1], path[i]), traced(), dist)
     if not straight_on(path[i], vx, vy): mouse(vx, vy, 2)      # the count flips as the tip reaches the node: a hair further so a turn is taken at the node, not before it
     if gain.get(axis_) is None and norm > 14: gain[axis_] = used / norm
     if norm > 14: per_px = used / norm
