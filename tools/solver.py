@@ -95,6 +95,23 @@ def solve(p):
         return solve_plain(p)
     return None
 
+def variants(p):
+    """Distinct solutions that differ in where the line starts or ends: the usual one (solve) first, then one per other start/end pair.
+    A panel with two exits (or two starts) can be solved either way, but only one way powers what it is cabled to (the tutorial's
+    Back Right: only the bottom exit lights the gate's latch): the caller tries the next one when the right thing did not turn on."""
+    out = []; first = solve(dict(p))
+    if first: out.append(first)
+    starts = [i for i, f in enumerate(p['flags']) if f & START and not f & END]; ends = [i for i, f in enumerate(p['flags']) if f & END]
+    if len(starts) < 2 and len(ends) < 2: return out
+    for s_ in starts:
+        for e_ in ends:
+            q = dict(p); q['flags'] = [f & ~START if (f & START and i != s_) else f for i, f in enumerate(p['flags'])]
+            q['flags'] = [f & ~END if (f & END and i != e_) else f for i, f in enumerate(q['flags'])]
+            try: v = solve(q)
+            except Exception: v = None
+            if v and v not in out: out.append(v)
+    return out
+
 if __name__ == '__main__':
     import json
     inv = json.load(open(sys.argv[1])); c = collections.Counter()

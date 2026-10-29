@@ -45,7 +45,8 @@ def is_solved(): return p.u32(e + 0x294) == 0x3f800000 and p.u32(e + 0x298) == 1
 def traced(): return p.u32(e + 0x228)
 def state(): return p.u32(e + 0x280)
 if not e or p.type_of(e) != TI_PANEL: done(False, 'not a panel')
-if is_solved(): done(True, 'already solved')
+REDRAW = bool(os.environ.get('WDRAW_REDRAW'))      # draw again over a solved panel (another solution: a panel whose other exit powers something else)
+if is_solved() and not REDRAW: done(True, 'already solved')
 
 # ---- the panel ------------------------------------------------------------------------------------------------------------------------------
 n = p.u32(e + 0x3b4); m_ = p.u32(e + 0x3b8)
@@ -244,9 +245,18 @@ def straight_on(node, vx, vy):      # does an edge leave this node in (about) th
 
 per_px = None      # (kept for the end stub) mouse counts per screen pixel on the last edge walked
 gain = {}          # counts per pixel, learned per direction (h / v): when the panel's width and height are scaled differently from what the projection assumed (the swamp panels), one number overshoots the other direction
+def heading(i):
+    """The screen direction to push in from path[i-1] towards path[i]. Some panels put extra nodes a few millimetres apart on a track (the
+    tutorial gate's diamond lattice: pairs 4 mm apart beside each crossing); between two of them the projected direction is rounding noise, and
+    at a turn it pushed the line the wrong way. So a short step heads for the first node along the path that is far enough to give a direction."""
+    x0_, y0_ = node_px(path[i - 1])
+    for j in range(i, len(path)):
+        x1_, y1_ = node_px(path[j])
+        if math.hypot(x1_ - x0_, y1_ - y0_) >= 6: return x1_ - x0_, y1_ - y0_
+    x1_, y1_ = node_px(path[i]); return x1_ - x0_, y1_ - y0_
 for i in range(1, len(path)):
     (x0, y0), (x1, y1) = node_px(path[i - 1]), node_px(path[i])
-    ux, uy = x1 - x0, y1 - y0; norm = math.hypot(ux, uy) or 1.0; vx, vy = ux / norm, uy / norm
+    norm = math.hypot(x1 - x0, y1 - y0) or 1.0; ux, uy = heading(i); vx, vy = ux / (math.hypot(ux, uy) or 1.0), uy / (math.hypot(ux, uy) or 1.0)
     last = i == len(path) - 1
     if last:      # the end stub: its length by dead reckoning and a little more (a cursor pushed past the panel's edge cancels the line)
         stub_gain = gain.get('h' if abs(vx) >= abs(vy) else 'v') or per_px or 2.9      # the gain of the stub's own axis (swamp panels: 2.4 sideways, 5.5 up)
@@ -276,4 +286,7 @@ c.send(['button L down'], 0.12); c.send(['button L up'], 0.12)
 t_end = time.time()
 while time.time() - t_end < 8 and not is_solved() and state() != 2: time.sleep(0.2)      # solved flags, or the game's verdict "wrong" (state 2)
 stamp('finished (state %d)' % state())
+if REDRAW:      # the panel was solved before; starting a new line cleared that (the walk above saw it traced from the start), so solved again
+    # now means the game accepted this line. (The stored-line field +0x454 is empty after a redraw: not usable as the verdict.)
+    done(is_solved(), '' if is_solved() else 'redrawn, but the game did not accept it (state %d)' % state(), traced(), dist)
 done(is_solved(), '' if is_solved() else 'finished but the game did not accept it (state %d)' % state(), traced(), dist)
