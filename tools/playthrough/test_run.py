@@ -66,6 +66,11 @@ class P(run.Playthrough):
             if h in W.solved and not redraw: return True      # already solved: nothing drawn
             W.solved.add(h); W.ends[h] = path[-1]; W.solved_at.setdefault(h, time.time()); return True
 
+KEYS = ['render_profile', 'fullscreen', 'vsync', 'highdpi', 'resolution', 'multisampling', 'custom_width', 'custom_height', 'shading_quality', 'reflection_quality', 'texture_quality', 'texture_detail', 'geometry_detail']
+for name, text in run.VIDEO.items():      # the game's video options: its own keys in its order, always the 1080p window the drawing is calibrated for
+    if text is None: continue
+    kv = [l.split(' ', 1) for l in text.splitlines()[1:]]
+    if not (text.startswith(':/launcher\n') and [k for k, _ in kv] == KEYS and dict(kv)['resolution'] == '1' and dict(kv)['fullscreen'] == 'false'): print('video options wrong:', name); sys.exit(1)
 p = P(); p.play()
 ok = CREDITS in W.solved
 redrew = [d for d in W.drawn if d[0] == BACK_LEFT and d[1] and d[2] == GOOD_END]
