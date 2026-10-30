@@ -708,7 +708,7 @@ def paint_materials():
         # surface relief (baked to the tangent-space normal map) and roughness / metalness (baked to the material map); bump distances in metres
         bp = node('ShaderNodeBump', (-100, -1500)); bp.inputs['Strength'].default_value = BUMP.get(name, 0.5); bp.inputs['Distance'].default_value = 0.0100; nt.links.new(height, bp.inputs['Height']); nt.links.new(bp.outputs['Normal'], bsdf.inputs['Normal'])
         rough, metal = SURFACE.get(name, (0.85, 0.0))
-        rv = node('ShaderNodeMath', (-300, -1800), operation='MULTIPLY_ADD'); rv.inputs[1].default_value = 0.12; rv.inputs[2].default_value = rough - 0.06; nt.links.new(height if name not in ('eye', 'white', 'iris') else hv.outputs[0], rv.inputs[0])
+        rv = node('ShaderNodeMath', (-300, -1800), operation='MULTIPLY_ADD'); rv.inputs[1].default_value = 0.05; rv.inputs[2].default_value = rough - 0.025; nt.links.new(height if name not in ('eye', 'white', 'iris') else hv.outputs[0], rv.inputs[0])
         cl = node('ShaderNodeClamp', (-100, -1800)); nt.links.new(rv.outputs[0], cl.inputs['Value']); nt.links.new(cl.outputs[0], bsdf.inputs['Roughness'])
         bsdf.inputs['Metallic'].default_value = metal
 
@@ -716,7 +716,7 @@ def paint_materials():
 SURFACE = dict(skin=(0.62, 0.0), nail=(0.45, 0.0), lips=(0.50, 0.0), skin_dark=(0.65, 0.0), mouth=(0.45, 0.0), mouth_dark=(0.5, 0.0), hair=(0.55, 0.0), eye=(0.12, 0.0), white=(0.18, 0.0), iris=(0.14, 0.0),
                coat=(0.92, 0.0), coat_dark=(0.90, 0.0), vest=(0.88, 0.0), shirt=(0.80, 0.0), trousers=(0.90, 0.0), scarf=(0.95, 0.0), scarf_dark=(0.95, 0.0), hat=(0.90, 0.0), band=(0.65, 0.0), feather=(0.55, 0.0), bedroll=(0.92, 0.0), thread=(0.8, 0.0), stitching=(0.8, 0.0),
                boots=(0.42, 0.0), boots_cuff=(0.50, 0.0), sole=(0.70, 0.0), leather=(0.52, 0.0), strap=(0.55, 0.0), brass=(0.32, 1.0), metal=(0.38, 1.0))
-BUMP = dict(coat=0.55, coat_dark=0.55, vest=0.5, shirt=0.4, trousers=0.5, scarf=0.8, scarf_dark=0.8, hat=0.45, band=0.3, boots=0.5, boots_cuff=0.5, leather=0.6, strap=0.5, sole=0.4, skin=0.18, hair=0.7, bedroll=0.5, brass=0.1, metal=0.15)
+BUMP = dict(coat=0.55, coat_dark=0.55, vest=0.5, shirt=0.4, trousers=0.5, scarf=0.8, scarf_dark=0.8, hat=0.45, band=0.3, boots=0.5, boots_cuff=0.5, leather=0.6, strap=0.5, sole=0.4, skin=0.05, hair=0.5, bedroll=0.5, brass=0.1, metal=0.15, nail=0.05, lips=0.05, skin_dark=0.05)
 def bake_texture(body, size, outdir):
     if not FLAT_MATERIALS: paint_materials()
     bpy.ops.object.select_all(action='DESELECT'); body.select_set(True); bpy.context.view_layer.objects.active = body

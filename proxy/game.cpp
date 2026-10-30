@@ -150,6 +150,7 @@ static DWORD WINAPI CmdThread(LPVOID) {
             else if (sscanf(line, "shot %15s", a) == 1) RequestShot(a);
             else if (!strncmp(line, "probe", 5)) ModelGpuRequestProbe();
             else if (!strncmp(line, "depthview ", 10)) ModelGpuDepthView(!strncmp(line + 10, "on", 2));
+            else if (!strncmp(line, "lifeblink", 9)) ModelGpuForceBlink();      // every drawn figure blinks now (pictures and tests)
             else if (!strncmp(line, "fakepose off", 12)) CoopSetFakeRemote(false, nullptr, 0);
             else if (!strncmp(line, "fakepose ", 9)) { float f[4]; if (sscanf(line, "fakepose %f %f %f %f", &f[0], &f[1], &f[2], &f[3]) == 4) CoopSetFakeRemote(true, f, f[3]); }
             else if (sscanf(line, "tvdeploy %u", &id) == 1 || !strncmp(line, "tvdeploy", 8) || !strncmp(line, "tvretract", 9)) {

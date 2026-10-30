@@ -48,7 +48,7 @@ struct LifeState {
     LifePendulum scarfA[3], scarfB[2], canteen, satchel;
     bool glancing = false;
     // state
-    float t = 0, nextBlink = 1.5f, blinkT = -1, glanceGap = 1.0f, glanceLeft = 0, nextSac = 0.4f, sacYaw = 0, sacPitch = 0, breathPhase = 0;
+    float t = 0, nextBlink = 1.5f, blinkT = -1, blinkSlow = 1, glanceGap = 1.0f, glanceLeft = 0, nextSac = 0.4f, sacYaw = 0, sacPitch = 0, breathPhase = 0;      // blinkSlow: a forced blink for pictures runs this many times slower
     float headYawV = 0, headPitchV = 0, eyeYawV = 0, eyePitchV = 0; bool hadViewer = false;
     uint32_t rng = 2463534242u;
 
@@ -87,10 +87,10 @@ struct LifeState {
         nextBlink -= dt;
         if (nextBlink <= 0 && blinkT < 0) { blinkT = 0; nextBlink = Rand() < 0.15f ? 0.35f : 2.0f + 4.0f * Rand(); }
         if (blinkT >= 0) {
-            blinkT += dt; const float close = 0.075f, open = 0.12f;
+            blinkT += dt; const float close = 0.075f * blinkSlow, open = 0.12f * blinkSlow;
             float b = blinkT < close ? blinkT / close : blinkT < close + open ? 1 - (blinkT - close) / open : 0;
             blink = b * b * (3 - 2 * b);
-            if (blinkT >= close + open) { blink = 0; blinkT = -1; }
+            if (blinkT >= close + open) { blink = 0; blinkT = -1; blinkSlow = 1; }
         } else blink = 0;
 #ifdef WM_MUT_NO_BLINK
         blink = 0;

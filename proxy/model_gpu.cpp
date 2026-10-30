@@ -174,6 +174,8 @@ static bool Fail(const char* m) { Log(m); return false; }
 
 bool ModelGpuReady() { return g_ready; }
 void ModelGpuDepthView(bool on) { InterlockedExchange(&g_depthViewCmd, on); }
+static volatile LONG g_forceBlink;
+void ModelGpuForceBlink() { InterlockedExchange(&g_forceBlink, 1); }
 void ModelGpuRequestProbe() { InterlockedExchange(&g_probeReq, 1); }
 ModelDrawStats ModelGpuStats() { return g_stats; }
 
@@ -393,6 +395,7 @@ bool ModelGpuDraw(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Cam& ca
         float cycle = pk.clip >= 0 && pk.clip < (int)g_L->model.clips.size() ? g_L->model.clips[pk.clip].duration : 1.0f;
         li.accel[1] = li.speed > 0.35f ? (2.5f + li.speed) * sinf(4 * 3.14159265f * pk.time / std::max(cycle, 0.2f)) : 0.0f;      // the gait's bounce: two steps a cycle
         for (float& a : li.accel) a = std::max(-15.0f, std::min(15.0f, a));
+        if (first && InterlockedExchange(&g_forceBlink, 0)) for (auto& kv : g_L->life) if (kv.second->state.blinkT < 0) { kv.second->state.blinkT = 0; kv.second->state.blinkSlow = 6; }      // a slow blink (1.2 s) for pictures
         if (!cfg.noModelLife) track.state.Step(li);
         bool closed = track.state.blink > 0.9f; if (closed && !track.wasClosed) track.blinks++; track.wasClosed = closed;
         bool fidgeting = g_avatar->fidgeting(); if (fidgeting && !track.wasFidgeting) track.fidgets++; track.wasFidgeting = fidgeting;
