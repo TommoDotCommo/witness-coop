@@ -649,11 +649,11 @@ def paint_materials():
             nonlocal height
             if not amount: return
             mu = node('ShaderNodeMath', (-400, -1500), operation='MULTIPLY_ADD'); mu.inputs[1].default_value = amount; nt.links.new(fac_out, mu.inputs[0]); nt.links.new(height, mu.inputs[2]); height = mu.outputs[0]
-        def noise_mul(scale, amt, stretch=(1, 1, 1), seed=0.0, bump=0.0):
+        def noise_mul(scale, amt, stretch=(1, 1, 1), seed=0.0, bump=0.0, detail=4.0):
             nonlocal out
             mp = node('ShaderNodeMapping', (-1200, -100 - 200 * seed)); mp.inputs['Scale'].default_value = (scale * stretch[0], scale * stretch[1], scale * stretch[2]); mp.inputs['Location'].default_value = (seed * 7.1, seed * 3.3, seed * 5.9)
             nt.links.new(tc.outputs['Object'], mp.inputs['Vector'])
-            nz = node('ShaderNodeTexNoise', (-1000, -100 - 200 * seed)); nz.inputs['Scale'].default_value = 1.0; nz.inputs['Detail'].default_value = 4.0; nz.inputs['Roughness'].default_value = 0.6; nt.links.new(mp.outputs[0], nz.inputs['Vector'])
+            nz = node('ShaderNodeTexNoise', (-1000, -100 - 200 * seed)); nz.inputs['Scale'].default_value = 1.0; nz.inputs['Detail'].default_value = detail; nz.inputs['Roughness'].default_value = 0.5; nt.links.new(mp.outputs[0], nz.inputs['Vector'])
             rp = node('ShaderNodeValToRGB', (-800, -100 - 200 * seed)); rp.color_ramp.elements[0].color = (1 - amt, 1 - amt, 1 - amt, 1); rp.color_ramp.elements[1].color = (1, 1, 1, 1); nt.links.new(nz.outputs['Fac'], rp.inputs['Fac'])
             mx = node('ShaderNodeMixRGB', (-600, 300 - 200 * seed), blend_type='MULTIPLY'); mx.inputs['Fac'].default_value = 1.0; nt.links.new(out, mx.inputs['Color1']); nt.links.new(rp.outputs['Color'], mx.inputs['Color2']); out = mx.outputs['Color']
             add_height(nz.outputs['Fac'], bump)
@@ -687,13 +687,13 @@ def paint_materials():
             ramp = node('ShaderNodeValToRGB', (-300, -1100)); ramp.color_ramp.elements[0].color = (1-amount, 1-amount, 1-amount, 1); nt.links.new(cross.outputs[0], ramp.inputs[0])
             mix = node('ShaderNodeMixRGB', (-100, 200), blend_type='MULTIPLY'); mix.inputs['Fac'].default_value = 1.0; nt.links.new(out, mix.inputs['Color1']); nt.links.new(ramp.outputs[0], mix.inputs['Color2']); out = mix.outputs[0]
             add_height(cross.outputs[0], bump)
-        if name in ('coat', 'coat_dark'): noise_mul(90, 0.18, (1, 1, 4), 0, 0.25); noise_mul(7, 0.28, (1, 1, 1.6), 1, 1.0); weave(2200, 0.13); noise_mul(28, 0.0, (1, 1, 2.5), 3, 0.3); blend_to((0.02, 0.05, 0.04), z_mask(0.45, 0.85), 0.36)
-        elif name in ('trousers', 'vest', 'bedroll', 'shirt'): noise_mul(80, 0.16, (4, 1, 1), 0, 0.25); noise_mul(7, 0.24, (1, 1, 1), 1, 1.0); weave(1900, 0.12); noise_mul(24, 0.0, (1, 1, 1), 3, 0.25); blend_to((0.05, 0.035, 0.02), z_mask(0.50, 1.10), 0.35)
-        elif name in ('hat', 'band'): noise_mul(80, 0.16, (1, 1, 1), 0, 0.3); noise_mul(6, 0.24, (1, 1, 1), 1, 0.8); weave(1700, 0.10); noise_mul(30, 0.0, (1, 1, 1), 3, 0.2)
-        elif name in ('boots', 'boots_cuff', 'leather', 'strap', 'sole'): noise_mul(140, 0.12, (1, 1, 1), 0, 0.3); noise_mul(6, 0.28, (1, 1, 1), 1, 0.7); weave(2600, 0.07); noise_mul(45, 0.0, (1, 1, 1), 3, 0.45); blend_to((0.04, 0.03, 0.02), z_mask(0.0, 0.40), 0.50)
-        elif name in ('scarf', 'scarf_dark'): noise_mul(90, 0.17, (1, 4, 1), 0, 0.3); noise_mul(8, 0.22, (1, 1, 1), 1, 0.9); weave(1200, 0.20); noise_mul(60, 0.0, (1, 4, 1), 3, 0.5)
+        if name in ('coat', 'coat_dark'): noise_mul(45, 0.09, (1, 1, 4), 0, 0.0, 2); noise_mul(7, 0.28, (1, 1, 1.6), 1, 1.0); weave(260, 0.07); noise_mul(22, 0.0, (1, 1, 2.5), 3, 0.2, 2); blend_to((0.02, 0.05, 0.04), z_mask(0.45, 0.85), 0.36)
+        elif name in ('trousers', 'vest', 'bedroll', 'shirt'): noise_mul(40, 0.08, (4, 1, 1), 0, 0.0, 2); noise_mul(7, 0.24, (1, 1, 1), 1, 1.0); weave(240, 0.06); noise_mul(20, 0.0, (1, 1, 1), 3, 0.15, 2); blend_to((0.05, 0.035, 0.02), z_mask(0.50, 1.10), 0.35)
+        elif name in ('hat', 'band'): noise_mul(40, 0.08, (1, 1, 1), 0, 0.0, 2); noise_mul(6, 0.24, (1, 1, 1), 1, 0.8); weave(220, 0.05); noise_mul(24, 0.0, (1, 1, 1), 3, 0.12, 2)
+        elif name in ('boots', 'boots_cuff', 'leather', 'strap', 'sole'): noise_mul(60, 0.06, (1, 1, 1), 0, 0.0, 2); noise_mul(6, 0.28, (1, 1, 1), 1, 0.7); noise_mul(36, 0.0, (1, 1, 1), 3, 0.3, 2); blend_to((0.04, 0.03, 0.02), z_mask(0.0, 0.40), 0.50)
+        elif name in ('scarf', 'scarf_dark'): noise_mul(45, 0.09, (1, 4, 1), 0, 0.0, 2); noise_mul(8, 0.22, (1, 1, 1), 1, 0.9); weave(180, 0.10); noise_mul(40, 0.0, (1, 4, 1), 3, 0.3, 2)
         elif name == 'skin':
-            noise_mul(65, 0.065, (1, 1, 1), 0, 0.15)
+            noise_mul(30, 0.03, (1, 1, 1), 0, 0.0, 2)
             for sx in (1, -1): spot((0.058*sx, -0.098, 1.620), 0.030, (0.62, 0.25, 0.18), 0.12)
             spot((0, -0.121, 1.644), 0.015, (0.65, 0.25, 0.18), 0.20)
             spot((0, -0.111, 1.603), 0.019, (0.38, 0.11, 0.085), 0.48, (1, 0.25, 3.2))
@@ -701,9 +701,9 @@ def paint_materials():
             spot((0, -0.070, 1.580), 0.073, (0.075, 0.045, 0.028), 0.22, (1.25, 0.65, 0.80))
             spot((0, -0.109, 1.617), 0.023, (0.065, 0.038, 0.024), 0.20, (1, 0.25, 2.4))
             for sx in (1, -1): spot((0.084*sx, -0.025, 1.630), 0.042, (0.070, 0.042, 0.026), 0.38, (0.75, 1.0, 1.4))
-            noise_mul(180, 0.12, (1, 1, 1), 2, 0.1); noise_mul(22, 0.0, (1, 1, 1), 3, 0.25)
-        elif name == 'hair': noise_mul(90, 0.25, (1, 1, 5), 0, 0.6); noise_mul(12, 0.15, (1, 1, 1), 1, 0.5); noise_mul(180, 0.16, (1, 1, 8), 2, 0.3); noise_mul(40, 0.0, (1, 1, 6), 3, 0.5)
-        else: noise_mul(40, 0.08, (1, 1, 1), 0, 0.15)
+            noise_mul(70, 0.035, (1, 1, 1), 2, 0.0, 2); noise_mul(16, 0.0, (1, 1, 1), 3, 0.15, 2)
+        elif name == 'hair': noise_mul(60, 0.18, (1, 1, 5), 0, 0.3, 3); noise_mul(12, 0.15, (1, 1, 1), 1, 0.5); noise_mul(90, 0.08, (1, 1, 8), 2, 0.0, 2); noise_mul(30, 0.0, (1, 1, 6), 3, 0.4, 2)
+        else: noise_mul(30, 0.05, (1, 1, 1), 0, 0.1, 2)
         nt.links.new(out, bsdf.inputs['Base Color'])
         # surface relief (baked to the tangent-space normal map) and roughness / metalness (baked to the material map); bump distances in metres
         bp = node('ShaderNodeBump', (-100, -1500)); bp.inputs['Strength'].default_value = BUMP.get(name, 0.5); bp.inputs['Distance'].default_value = 0.0100; nt.links.new(height, bp.inputs['Height']); nt.links.new(bp.outputs['Normal'], bsdf.inputs['Normal'])
@@ -768,7 +768,7 @@ def bake_texture(body, size, outdir):
     n4 = np.empty(size * size * 4, dtype=np.float32); imgs['NORMAL'].pixels.foreach_get(n4); n4 = n4.reshape(size, size, 4)
     nm = shrink(n4, 2); v = nm[:, :, :3] * 2 - 1; l = np.maximum(1e-6, np.sqrt((v * v).sum(axis=2, keepdims=True))); nm[:, :, :3] = (v / l) * 0.5 + 0.5; nm[:, :, 3] = 1
     flat = np.abs(nm[:, :, :2] - 0.5).mean(); print('REPORT normal map mean tilt %.4f (0 = flat)' % flat)
-    if flat < 0.008: raise ValueError('the normal map is flat: the bump relief was not baked')
+    if flat < 0.005: raise ValueError('the normal map is flat: the bump relief was not baked')
     r4 = np.empty(size * size * 4, dtype=np.float32); imgs['ROUGHNESS'].pixels.foreach_get(r4); r4 = shrink(r4.reshape(size, size, 4), 2)
     m4 = np.empty(size * size * 4, dtype=np.float32); imgs['METAL'].pixels.foreach_get(m4); m4 = shrink(m4.reshape(size, size, 4), 2)
     orm = np.empty_like(r4); orm[:, :, 0] = shrink(np.clip(b[:, :1], 0, 1).reshape(size, size, 1).repeat(4, axis=2), 2)[:, :, 0]; orm[:, :, 1] = np.clip(r4[:, :, 0], 0, 1); orm[:, :, 2] = np.clip(m4[:, :, 0], 0, 1); orm[:, :, 3] = 1

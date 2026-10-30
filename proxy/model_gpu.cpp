@@ -108,8 +108,8 @@ float4 PS(VOut i) : SV_TARGET {
       float3 dp1 = ddx(i.wp), dp2 = ddy(i.wp); float2 duv1 = ddx(i.uv), duv2 = ddy(i.uv);
       float3 dp2perp = cross(dp2, n), dp1perp = cross(n, dp1);
       float3 T = dp2perp * duv1.x + dp1perp * duv2.x, B = dp2perp * duv1.y + dp1perp * duv2.y;
-      float mx = max(dot(T, T), dot(B, B));
-      if (mx > 1e-20) { float invmax = rsqrt(mx); n = normalize(T * invmax * tn.x + B * invmax * tn.y + n * max(tn.z, 0.2)); }
+      float mx = max(dot(T, T), dot(B, B)), mn = min(dot(T, T), dot(B, B));
+      if (mx > 1e-20 && mn > 0.05 * mx) { float invmax = rsqrt(mx); float k = 0.75 * saturate(dot(normalize(i.n), V) * 3); n = normalize(T * invmax * tn.x * k + B * invmax * tn.y * k + n * max(tn.z, 0.2)); }
     }
     uint g = (uint)max(0.0, i.group);
     float NdotL = dot(n, L), NdotV = max(dot(n, V), 1e-4), nl = saturate(NdotL);
@@ -286,7 +286,7 @@ bool ModelGpuInit(ID3D11Device* dev, ID3D11DeviceContext* ctx) {
     D3D11_BUFFER_DESC bd = {};
     bd.ByteWidth = sizeof(FrameCB); bd.BindFlags = D3D11_BIND_CONSTANT_BUFFER; if (FAILED(dev->CreateBuffer(&bd, nullptr, &g_cbFrame))) return Fail("model: cb failed");
     bd.ByteWidth = wm::kMaxJoints * 64; if (FAILED(dev->CreateBuffer(&bd, nullptr, &g_cbBones))) return Fail("model: bone cb failed");
-    D3D11_SAMPLER_DESC ss = {}; ss.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR; ss.AddressU = ss.AddressV = ss.AddressW = D3D11_TEXTURE_ADDRESS_WRAP; ss.MaxLOD = D3D11_FLOAT32_MAX; ss.MaxAnisotropy = 1;
+    D3D11_SAMPLER_DESC ss = {}; ss.Filter = D3D11_FILTER_ANISOTROPIC; ss.AddressU = ss.AddressV = ss.AddressW = D3D11_TEXTURE_ADDRESS_WRAP; ss.MaxLOD = D3D11_FLOAT32_MAX; ss.MaxAnisotropy = 8;
     dev->CreateSamplerState(&ss, &g_samp);
     D3D11_RASTERIZER_DESC rd = {}; rd.FillMode = D3D11_FILL_SOLID; rd.CullMode = D3D11_CULL_NONE; rd.DepthClipEnable = TRUE; dev->CreateRasterizerState(&rd, &g_rs);
     D3D11_DEPTH_STENCIL_DESC dd = {}; dd.DepthEnable = TRUE; dd.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ALL; dd.DepthFunc = D3D11_COMPARISON_LESS; dev->CreateDepthStencilState(&dd, &g_dss);

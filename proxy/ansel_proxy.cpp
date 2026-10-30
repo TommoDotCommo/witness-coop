@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <cstdint>
 #include <cstring>
+#include <cctype>
 
 static const char* kNames[] = {
     "getConfiguration", "getConfigurationSize", "getSessionConfigurationSize", "getVersion", "setConfiguration",
@@ -88,6 +89,12 @@ void StateStart();
 static LONG WINAPI CrashLogger(EXCEPTION_POINTERS* ep) {
     const DWORD code = ep->ExceptionRecord->ExceptionCode;
     if (code != EXCEPTION_ACCESS_VIOLATION && code != EXCEPTION_ILLEGAL_INSTRUCTION && code != EXCEPTION_STACK_OVERFLOW && code != EXCEPTION_INT_DIVIDE_BY_ZERO && code != EXCEPTION_PRIV_INSTRUCTION) return EXCEPTION_CONTINUE_SEARCH;
+    {   // a probe like IsBadReadPtr raises and catches its own access violation (vectored handlers see it first): not a crash
+        HMODULE mod = nullptr; char name[MAX_PATH] = "";
+        if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCSTR)ep->ExceptionRecord->ExceptionAddress, &mod) && mod) GetModuleFileNameA(mod, name, MAX_PATH);
+        for (char* c = name; *c; ++c) *c = (char)tolower((unsigned char)*c);
+        if (strstr(name, "kernel32.dll") || strstr(name, "kernelbase.dll") || strstr(name, "ntdll.dll")) return EXCEPTION_CONTINUE_SEARCH;
+    }
     static volatile LONG once; if (InterlockedExchange(&once, 1)) return EXCEPTION_CONTINUE_SEARCH;
     auto where = [](const void* a, char* out, size_t n) {
         HMODULE mod = nullptr; char name[MAX_PATH] = "?";
