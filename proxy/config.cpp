@@ -118,6 +118,8 @@ const Cfg& GetCfg() {
             else if (sscanf(line, "no_modelstat_queue=%d", &v) == 1) r.noModelStatQueue = v != 0;
             else if (sscanf(line, "no_model_gait=%d", &v) == 1) r.noModelGait = v != 0;
             else if (sscanf(line, "no_model_life=%d", &v) == 1) r.noModelLife = v != 0;
+            else if (sscanf(line, "no_model_normalmap=%d", &v) == 1) r.noModelNormalMap = v != 0;
+            else if (sscanf(line, "no_model_matmap=%d", &v) == 1) r.noModelMaterialMap = v != 0;
             else if (sscanf(line, "model_sun=%f", &fv) == 1) r.modelSun = fv;
             else if (sscanf(line, "model_ambient=%f", &fv) == 1) r.modelAmbient = fv;
             else if (sscanf(line, "model_shadow=%f", &fv) == 1) r.modelShadow = fv;

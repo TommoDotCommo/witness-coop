@@ -81,7 +81,7 @@ VOut VS(VIn v) {
   float4x4 skin = bones[v.j.x] * v.w.x + bones[v.j.y] * v.w.y + bones[v.j.z] * v.w.z + bones[v.j.w] * v.w.w;
   float4 lp = mul(skin, float4(v.p, 1)); float3 ln = mul((float3x3)skin, v.n);
   VOut o; float4 wp = mul(model, lp); o.pos = mul(viewProj, wp); o.dist = o.pos.w; o.n = mul((float3x3)model, ln); o.uv = v.uv; o.c = v.c; o.wp = wp.xyz; o.group = v.group;
-  o.appearance = appearance[min(8u, (uint)max(0.0, v.group))].rgb; return o; }
+  o.appearance = appearance[min(8u, (uint)(max(0.0, v.group) + 0.5))].rgb; return o; }
 float3 ToLin(float3 c) { return lerp(c / 12.92, pow(max(c, 0.0) + 0.055, 2.4) / pow(1.055, 2.4), step(0.04045, c)); }
 float3 ToSrgb(float3 l) { return lerp(l * 12.92, 1.055 * pow(max(l, 0.0), 1.0 / 2.4) - 0.055, step(0.0031308, l)); }
 // how much of this pixel the game's own geometry leaves free: the fraction of the scene's depth samples behind the given view depth (the game stores near / distance)
@@ -101,9 +101,9 @@ float4 PS(VOut i) : SV_TARGET {
     float3 lin = ToLin(base) * i.appearance;      // the palette multiplies in linear light
     float3 V = normalize(camPos.xyz - i.wp); float3 L = normalize(light.xyz);
     if (dot(n, V) < 0) n = -n;      // drawn without culling: a face seen from behind (inside an open coat) lights as it faces us
-    float4 mm = i.c.a > 0.5 ? texM.Sample(smp, i.uv) : float4(1, 0.6, 0, 1);
+    float4 mm = i.c.a > 0.5 && shadow.w < 0.5 ? texM.Sample(smp, i.uv) : float4(1, 0.6, 0, 1);      // shadow.w: 1 ignores the material map (diagnostic)
     float ao = mm.r, rough = clamp(mm.g, 0.08, 1.0), metal = mm.b;
-    if (i.c.a > 0.5) {      // the tangent-space normal map through the derivatives' cotangent frame (the vertices carry no tangents)
+    if (i.c.a > 0.5 && light.w < 0.9) {      // the tangent-space normal map through the derivatives' cotangent frame (the vertices carry no tangents); light.w: 1 ignores it (diagnostic)
       float3 tn = texN.Sample(smp, i.uv).xyz * 2 - 1; tn.y = -tn.y;      // glTF: +Y points up the image; our bitangent follows v, which runs down it
       float3 dp1 = ddx(i.wp), dp2 = ddy(i.wp); float2 duv1 = ddx(i.uv), duv2 = ddy(i.uv);
       float3 dp2perp = cross(dp2, n), dp1perp = cross(n, dp1);
@@ -111,7 +111,7 @@ float4 PS(VOut i) : SV_TARGET {
       float mx = max(dot(T, T), dot(B, B)), mn = min(dot(T, T), dot(B, B));
       if (mx > 1e-20 && mn > 0.05 * mx) { float invmax = rsqrt(mx); float k = 0.75 * saturate(dot(normalize(i.n), V) * 3); n = normalize(T * invmax * tn.x * k + B * invmax * tn.y * k + n * max(tn.z, 0.2)); }
     }
-    uint g = (uint)max(0.0, i.group);
+    uint g = (uint)(max(0.0, i.group) + 0.5);      // the group is one value per vertex; interpolation lands a hair under it, and truncating flipped pixels between two materials' shading (a speckle)
     float NdotL = dot(n, L), NdotV = max(dot(n, V), 1e-4), nl = saturate(NdotL);
     float wrap = g == 1 ? 0.45 : 0.12;      // skin is lit a little round the terminator (light that goes through it)
     float diff = saturate((NdotL + wrap) / (1 + wrap));
@@ -466,6 +466,7 @@ bool ModelGpuDraw(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Cam& ca
         float th = cam.theta, ph = cam.phi; float fwd[3] = {cosf(ph) * cosf(th), cosf(ph) * sinf(th), sinf(ph)}, right[3] = {sinf(th), -cosf(th), 0}, up[3] = {-sinf(ph) * cosf(th), -sinf(ph) * sinf(th), cosf(ph)};
         float tv = tanf(cam.vfovDeg * 3.14159265f / 360.0f); memcpy(fc.camPos, cam.pos, 12); memcpy(fc.camFwd, fwd, 12); memcpy(fc.camRight, right, 12); memcpy(fc.camUp, up, 12); fc.camRight[3] = tv * cam.aspect; fc.camUp[3] = tv;
         fc.look[0] = cfg.modelSun; fc.look[1] = cfg.modelAmbient; fc.look[2] = cfg.modelShading ? 1.0f : 0.0f; fc.look[3] = cfg.modelShadow;
+        fc.shadow[3] = cfg.noModelMaterialMap ? 1.0f : 0.0f;
         float n = cam.nearZ, f = cam.farZ; fc.shadow[1] = f / (f - n); fc.shadow[2] = -f * n / (f - n);
     }
     for (unsigned group = 0; group <= witness::kAppearanceFeatures; ++group)
@@ -475,7 +476,7 @@ bool ModelGpuDraw(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Cam& ca
     wm::ModelMatrix(feet, g_avatar->yaw(), g_L->fit, g_L->yaw, fc.model); fc.shadow[0] = feet[2] + 0.01f;
 
     g_stats.emote = extra ? extra->emote : 0; g_stats.lift = g_stats.lean = g_stats.roll = g_stats.dyaw = 0;
-    float L[4] = {0.35f, 0.25f, 0.9f, 0.55f}, T[4] = {1, 1, 1, 1}; memcpy(fc.light, L, 16);
+    float L[4] = {0.35f, 0.25f, 0.9f, cfg.modelShading && cfg.noModelNormalMap ? 1.0f : 0.55f}, T[4] = {1, 1, 1, 1}; memcpy(fc.light, L, 16);      // light.w: the old shading's ambient share; in the lit shading 1 means 'no normal map' (diagnostic)
     {      // see through a player who is in the way of a puzzle (or in your face): the alpha moves to its target a step at a time
         GhostState& gs = g_ghost[playerId]; ULONGLONG nowT = GetTickCount64(); float dt = gs.t ? std::min(0.25f, float(nowT - gs.t) / 1000.0f) : 1.0f; gs.t = nowT;
         if (!cfg.noSeeThrough) {

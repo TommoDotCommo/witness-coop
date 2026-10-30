@@ -731,7 +731,7 @@ def bake_texture(body, size, outdir):
         for m in MATS.values():
             n = m.node_tree.nodes.new('ShaderNodeTexImage'); n.image = im; n.select = True; m.node_tree.nodes.active = n
         if kind == 'DIFFUSE': bpy.ops.object.bake(type='DIFFUSE', pass_filter={'COLOR'}, margin=10, margin_type='EXTEND', use_clear=True)
-        elif kind == 'AO': bpy.ops.object.bake(type='AO', margin=10, margin_type='EXTEND', use_clear=True)
+        elif kind == 'AO': scene.cycles.samples = 160; bpy.ops.object.bake(type='AO', margin=10, margin_type='EXTEND', use_clear=True); scene.cycles.samples = 24      # occlusion is the one Monte Carlo pass: at 24 samples its noise was baked into every texel as a speckle
         elif kind == 'NORMAL': bpy.ops.object.bake(type='NORMAL', normal_space='TANGENT', margin=10, margin_type='EXTEND', use_clear=True)
         elif kind == 'ROUGHNESS': bpy.ops.object.bake(type='ROUGHNESS', margin=10, margin_type='EXTEND', use_clear=True)
         else:      # metalness: no bake pass of its own; emit it as the colour of an emission pass
@@ -758,6 +758,12 @@ def bake_texture(body, size, outdir):
     if len(coat_samples) < 100: raise ValueError('too few coat texture samples')
     spread = float(np.percentile(coat_samples, 90) - np.percentile(coat_samples, 10))
     print('REPORT coat diffuse spread %.6f from %d samples' % (spread, len(coat_samples)))
+    # the remaining sampling noise is blurred away (occlusion is smooth by nature): a 5 x 5 box over the image, then the occlusion is applied
+    ao_img = np.clip(b[:, 0], 0, 1).reshape(size, size); acc = np.zeros_like(ao_img); cnt = np.zeros_like(ao_img)
+    for dy in range(-2, 3):
+        for dx in range(-2, 3):
+            acc[max(0, dy):size + min(0, dy), max(0, dx):size + min(0, dx)] += ao_img[max(0, -dy):size + min(0, -dy), max(0, -dx):size + min(0, -dx)]; cnt[max(0, dy):size + min(0, dy), max(0, dx):size + min(0, dx)] += 1
+    ao_img = acc / cnt; b[:, 0] = ao_img.reshape(-1)
     ao = np.clip(b[:, :1], 0, 1) ** 1.25; lin = np.clip(a[:, :3] * (0.50 + 0.50 * ao), 0, 1); a[:, :3] = np.where(lin <= 0.0031308, lin * 12.92, 1.055 * np.power(lin, 1 / 2.4) - 0.055); a[:, 3] = 1.0      # (the image holds display values: the linear colour is encoded here)
     final = bpy.data.images.new('adventurer_tex', size, size, alpha=False); final.colorspace_settings.name = 'sRGB'; final.pixels.foreach_set(a.reshape(-1))
     os.makedirs(outdir, exist_ok=True); path = os.path.join(outdir, 'adventurer_tex.jpg'); final.filepath_raw = path; final.file_format = 'JPEG'; scene.render.image_settings.quality = 93; final.save()
