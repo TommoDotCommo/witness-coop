@@ -223,7 +223,8 @@ class Playthrough:
         if 'did not start' in self.last_why.get(h, '') and self.planner.tries.get(h, 0) % 2 == 1: env['WDRAW_FLIP_SIDE'] = '1'
         # The in-game tracer (proxy/tracer.cpp) draws the edges after the first at one frame a step, about twice as fast; a panel whose last
         # attempt failed in the tracer is drawn the old way.
-        env['WSLENV'] += ':WDRAW_TRACER:WDRAW_STAND:WDRAW_STUB_EXTRA:WDRAW_STEER'
+        env['WSLENV'] += ':WDRAW_TRACER:WDRAW_STAND:WDRAW_STUB_EXTRA:WDRAW_STEER:WDRAW_RECENTRE'
+        if 'cannot be seen' in self.last_why.get(h, ''): env['WDRAW_RECENTRE'] = '1'      # (the panel's middle may be far from where the camera faces)
         # The line went wrong on the way (stuck, a wrong branch, short of the end): steer it by feedback instead of the projection
         # (Monastery Shutters Control was drawn that way after every projected attempt failed).
         lw = self.last_why.get(h, '')

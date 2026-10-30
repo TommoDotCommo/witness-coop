@@ -8,7 +8,7 @@ did not get there (WDRAW_WALK=0: teleport straight away, the old way).
 Environment: WDRAW_KCACHE (a json file that remembers what a panel needed), WDRAW_TIMING, WDRAW_SHOTS (debug output on stderr).
 
 What it does, and what was measured (build 11370412, 1920x1080, see NOTES.md of the hub):
- 1. walk to 2.5 m in front of the panel (else teleport with the dev menu: it holds the player 2 s so it settles on the ground), then aim the camera at the middle of the panel;
+ 1. walk to 3 m straight out from the panel (else teleport with the dev menu: it holds the player 2 s so it settles on the ground), then aim the camera at the middle of the panel;
  2. enter the puzzle with a click; the cursor appears at the screen centre, i.e. on the middle of the panel; a 4-count mouse move that does not turn the
     view proves it was entered;
  3. find the start circle: node positions are projected with a pinhole camera (1033 px at 1 m, the panel's full rotation, its size in metres W unknown), and
@@ -37,9 +37,17 @@ def sequence():      # the solution line the game ships (panel +0x454 length, +0
 
 def rclick(): c.send(['button R down'], 0.12); c.send(['button R up'], 0.7)
 
+def leave_puzzle():
+    """Right click until the mouse turns the camera again: with a line on the panel the first click only takes the line back, and a game
+    left in the puzzle cannot walk or turn (the next panel's walk and aim then did nothing)."""
+    for _ in range(4):
+        y0 = p.camera()[1][0]; c.send(['mouse 8 0'], 0.15)
+        if abs(p.camera()[1][0] - y0) > 0.005: c.send(['mouse -8 0'], 0.1); return
+        rclick()
+MOVES = []      # how the player got to each place it stood (in the result)
 def done(solved, why, traced=0, dist=0.0):
     if not solved: c.send(['shot fail_%x' % eid], 0.8)      # what the game showed, taken while still there
-    rclick()                                                 # leave the puzzle if it is still entered (nothing happens otherwise)
+    leave_puzzle()                                           # leave the puzzle if it is still entered (nothing happens otherwise)
     c.send(['hover off'], 0.2)
     print(json.dumps({'id': eid, 'solved': solved, 'why': why, 'traced': traced, 'dist': round(dist, 2), 'seq': sequence(), 'want': path, 'moves': MOVES}), flush=True); sys.exit(0 if solved else 1)
 
@@ -83,7 +91,6 @@ def standing(pos):      # distance along the (horizontal part of the) panel's no
 
 # ---- getting there: walk, teleport only when that fails -------------------------------------------------------------------------------------
 WALK = os.environ.get('WDRAW_WALK', '1') != '0'
-MOVES = []      # how the player got to each place it stood (in the result)
 walker = None
 def walk_to(hx, hy, hz, tol=1.0):
     """Walk to (hx, hy) with the eye near hz. True when there."""
@@ -93,7 +100,8 @@ def walk_to(hx, hy, hz, tol=1.0):
     if walker is None: walker = wnav.Walker(p, c, gdir, log=dbg)
     d = math.dist(p.camera()[0][:2], (hx, hy))
     r = walker.go((hx, hy, hz), tol, min(300.0, 60.0 + 2.0 * d), ztol=1.8)
-    MOVES.append({'how': 'walk', 'ok': r['ok'], 'why': r['why'], 'seconds': r['seconds'], 'walked': r['walked'], 'stuck': r['stuck']})
+    if r['ok'] and tol < 0.5: r['settled'] = round(walker.settle((hx, hy)), 2)      # onto the exact spot
+    MOVES.append({'how': 'walk', 'ok': r['ok'], 'why': r['why'], 'seconds': r['seconds'], 'walked': r['walked'], 'stuck': r['stuck'], 'settled': r.get('settled')})
     stamp('walked %.0f m in %.0f s: %s' % (r['walked'], r['seconds'], 'there' if r['ok'] else r['why']))
     return r['ok']
 def teleported(why): MOVES.append({'how': 'teleport', 'why': why}); stamp('TELEPORT (last resort): %s' % why)
@@ -103,13 +111,19 @@ def hover_to(hx, hy, hz, yaw, why):
     teleported(why); c.send(['hover %.4f %.4f %.4f %.5f 0.0' % (hx, hy, hz, yaw)], 2.4); c.send(['hover off'], 1.5)
 
 def menu_teleport():
-    """Walk to 2.5 m in front of the panel; when that fails, the dev menu's teleport: 3 m in front, held 2 s while the player settles there."""
+    """Walk to 3 m straight out from the panel; when that fails, the dev menu's teleport: 3 m in front, held 2 s while the player settles there."""
     if os.environ.get('WDRAW_NO_TELEPORT'): return p.camera()[0]      # a human is standing in front of the panel: draw from where they are (the menu teleport may land off the platform they are on)
     nx, ny = NORMAL[0], NORMAL[1]; nn = math.hypot(nx, ny) or 1.0
-    if walk_to(px_ + 2.5 * nx / nn, py_ + 2.5 * ny / nn, pz_):
+    # the spot the menu's teleport uses, 3 m straight out: where the line is drawn from matters (Tutorial Center Left 0x295 started at once
+    # from there and never from 2.6 m out at an angle)
+    hx_, hy_ = px_ + 3.0 * nx / nn, py_ + 3.0 * ny / nn
+    for _ in range(2):
+        if not walk_to(hx_, hy_, pz_, tol=0.4): break
         pos = p.camera()[0]; dn_, lat_ = standing(pos)
-        if 1.0 < dn_ < 8 and abs(lat_) < 2.0 and abs(pos[2] - pz_) < 2.0: return pos
-        MOVES[-1]['ok'] = False; MOVES[-1]['why'] = 'arrived, but not in front of the panel (%.1f m out, %.1f m aside, %.1f m in height)' % (dn_, lat_, pos[2] - pz_)
+        if abs(dn_ - 3.0) < 0.6 and abs(lat_) < 0.5 and abs(pos[2] - pz_) < 2.0: return pos
+    if MOVES and MOVES[-1]['how'] == 'walk' and MOVES[-1].get('ok'):
+        pos = p.camera()[0]; dn_, lat_ = standing(pos)
+        MOVES[-1]['ok'] = False; MOVES[-1]['why'] = 'arrived, but not 3 m straight out from the panel (%.1f m out, %.1f m aside, %.1f m in height)' % (dn_, lat_, pos[2] - pz_)
     teleported('the walk did not get in front of the panel' if WALK else 'walking is off (WDRAW_WALK=0)')
     for attempt in range(3):
         c.send(['menusel %x' % eid, 'menudo teleport'], 3.2)
@@ -160,9 +174,12 @@ def look(yaw, pitch):
         c.send(['mouse %d %d' % (max(-1500, min(1500, round(-ey / 0.0025))), max(-1500, min(1500, round(-ep / 0.0025))))], 0.08)
     time.sleep(0.3)
 def aim():
-    """Point the camera at the middle of the panel."""
+    """Face the panel square on: along its normal, level unless the panel is well above or below the eye. The start search below was worked
+    out on that view (the menu's teleport left the camera so): aimed at the panel's middle from 0.1 m to the side instead, Tutorial Center
+    Left 0x295 never started properly; square on it started in 5.6 s and was solved."""
     cx, cy, cz = p.camera()[0]; hd = math.hypot(px_ - cx, py_ - cy) or 1.0
-    look(math.atan2(py_ - cy, px_ - cx), math.atan2(pz_ - cz, hd))
+    pitch = math.atan2(pz_ - cz, hd)
+    look(math.atan2(-NORMAL[1], -NORMAL[0]), pitch if abs(pitch) > 0.35 else 0.0)
 aim()
 
 def depth_ratio():
@@ -201,7 +218,7 @@ def centre_on_panel():
     except (ValueError, IndexError): return      # a garbled line: no correction
     if len(v_) != 77: return
     cpos, cang = p.camera(); d_ = math.dist(cpos, (px_, py_, pz_)); want = 0.0597 / max(0.3, d_)
-    cells = [(0.2 + 0.6 * (k % 11) / 10, 0.2 + 0.6 * (k // 11) / 6) for k, dv in enumerate(v_) if dv > 0 and 0.75 < dv / want < 1.35]
+    cells = [(0.2 + 0.6 * (k % 11) / 10, 0.2 + 0.6 * (k // 11) / 6) for k, dv in enumerate(v_) if dv > 0 and 0.9 < dv / want < 1.1]      # (the panel alone: 0.75..1.35 took a wall just behind it too and re-aimed off the panel)
     if len(cells) < 2: stamp('panel not found in the depth grid'); return
     fx = sum(x for x, _ in cells) / len(cells); fy = sum(y for _, y in cells) / len(cells)
     if abs(fx - 0.5) < 0.04 and abs(fy - 0.5) < 0.04: return
@@ -226,7 +243,7 @@ if not 0.7 < r_ < 1.45:
             done(False, 'the panel cannot be seen from any of the places tried (something is in the way, or there is nothing to stand on)', 0, dist)
         stamp('depth check failed everywhere; drawing anyway (glass or a thin cover?)')
     dist = math.dist(p.camera()[0], (px_, py_, pz_))
-if not os.environ.get('WDRAW_NO_RECENTRE'):
+if os.environ.get('WDRAW_RECENTRE'):      # (off by default: it turns the view off square; for a panel whose middle is far from its origin)
     try: centre_on_panel()
     except Exception as e_: stamp('re-centring skipped: %r' % e_)      # a help, never a reason to fail
 
@@ -332,7 +349,7 @@ def depth_grid(box):
 def panel_box():
     """Where the panel is on the screen (x0, y0, x1, y1 fractions): the depth cells at the panel's distance, a coarse grid then a fine one."""
     want = 0.0597 / max(0.3, math.dist(p.camera()[0], (px_, py_, pz_)))
-    def hits(g): return [(fx, fy) for fx, fy, v in (g or []) if v > 0 and 0.75 < v / want < 1.35]
+    def hits(g): return [(fx, fy) for fx, fy, v in (g or []) if v > 0 and 0.9 < v / want < 1.1]      # (0.75..1.35 took the wall half a metre behind a panel 3 m away for the panel: the box was the whole screen; a panel's own edges are within 2 %)
     h1 = hits(depth_grid((0.15, 0.15, 0.85, 0.85)))
     if len(h1) < 2: return None
     b = (max(0.0, min(x for x, _ in h1) - 0.07), max(0.0, min(y for _, y in h1) - 0.117), min(1.0, max(x for x, _ in h1) + 0.07), min(1.0, max(y for _, y in h1) + 0.117))
@@ -344,7 +361,7 @@ def start_from_box():
     four mirror readings in turn, a small spiral of clicks round each. True when a line started."""
     box = panel_box()
     if not box: stamp('box start: the panel was not found in the depth grid'); return False
-    u, v = dots[2 * path[0]], dots[2 * path[0] + 1]; stamp('box start: panel at %.2f..%.2f x %.2f..%.2f' % box)
+    u, v = dots[2 * path[0]], dots[2 * path[0] + 1]; stamp('box start: panel at x %.2f..%.2f, y %.2f..%.2f' % (box[0], box[2], box[1], box[3]))
     for fu, fv in ((u, 1 - v), (u, v), (1 - u, 1 - v), (1 - u, v)):
         sx = box[0] + fu * (box[2] - box[0]); sy = box[1] + fv * (box[3] - box[1])
         for _ in range(3):

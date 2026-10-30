@@ -304,7 +304,8 @@ class Walker:
         q = self.pos(); cells = self.map.plan(q, target, avoid=self.avoid)
         if cells is None: return None
         self.replans += 1; self.cells, self.ci = cells, 0
-        way = simplify(cells, target[2]); self.note(plan=[[round(w[0], 1), round(w[1], 1)] for w in way], at=[round(v, 2) for v in q]); return way
+        way = simplify(cells, target[2]) or [tuple(target)]      # (a plan of one cell: the target is next to the player)
+        self.note(plan=[[round(w[0], 1), round(w[1], 1)] for w in way], at=[round(v, 2) for v in q]); return way
 
     def ahead_blocked(self, dist=8.0):
         """Is the plan's way ahead (its own cells, from the one nearest the player) no longer walkable?"""
@@ -313,10 +314,32 @@ class Walker:
         near = min(range(self.ci, min(len(cells), self.ci + 16)), key=lambda i: math.dist(centre(cells[i]), q[:2]))
         self.ci = near; return self.map.blocked_along(q, cells[near:], dist)
 
+    def settle(self, target, tol=0.12, seconds=8.0):
+        """Shuffle onto an exact spot after a walk (where a line is drawn from matters to within a few tens of cm): face it, tap W for a
+        moment, again, until within `tol`. Returns the distance left."""
+        t0 = time.monotonic()
+        while time.monotonic() - t0 < seconds:
+            q = self.pos(); d = math.dist(q[:2], target[:2])
+            if d < tol: break
+            self.turn(wrap(math.atan2(target[1] - q[1], target[0] - q[0]) - self.yaw())); time.sleep(0.05)
+            self.c.send(['key W down'], min(0.25, max(0.03, d / 1.8 * 0.6))); self.c.send(['key W up'], 0.15)
+        return math.dist(self.pos()[:2], target[:2])
+
+    def free_look(self):
+        """Out of a puzzle: in one the mouse moves the cursor and W does nothing (a failed line left the game there: the first right click
+        only took the line back, the second left the puzzle). True when the mouse turns the camera."""
+        for _ in range(4):
+            y0 = self.yaw(); self.c.send(['mouse 8 0'], 0.15); moved = abs(wrap(self.yaw() - y0)) > 0.005
+            if moved: self.c.send(['mouse -8 0'], 0.1); return True
+            self.c.send(['button R down'], 0.12); self.c.send(['button R up'], 0.6)
+        return False
+
     def go(self, target, tol=0.8, seconds=240, ztol=2.0):
         """Walk to `target` (x, y, z: the eye there) until within `tol` across and `ztol` in height. Returns a dict like the JSON line."""
         t0 = time.monotonic(); deadline = t0 + seconds
-        self.c.send(['hover off']); self.pitch_to(-0.25)
+        self.c.send(['hover off'])
+        if not self.free_look(): return {'ok': False, 'why': 'stuck in a puzzle: the mouse does not turn the camera', 'seconds': round(time.monotonic() - t0, 1), 'walked': 0.0, 'stuck': 0, 'replans': 0, 'looks': 0, 'from': list(self.pos()), 'to': list(self.pos())}
+        self.pitch_to(-0.25)
         start = self.pos(); last = noted = start; self.note(go=list(target), at=list(start)); self.look_around()
         stucks = int(os.environ.get('WNAV_STUCKS') or 12)
         ok, why, way, k = False, 'out of time', None, 0
