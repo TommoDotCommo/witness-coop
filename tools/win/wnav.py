@@ -37,7 +37,7 @@ How it finds the way (a robot with a depth camera, as a person uses their eyes):
    at the shore and on steep slopes): the cells just ahead are marked bumped (dear, not forbidden: a door may open later), it steps aside
    (A, else D; else back with S) and plans again;
  - a pocket (stuck a third time within 3 m, or no way on the map from here): it walks back out along its own trail (10 m), keeps out of the
-   cells round that place for this walk, unbumps the cells near doors the game says are open, and plans again (3 times at most); only then
+   cells round that place for this walk (and makes all within POCKET 5 m of it dear: a U of unseen walls is wider than one bump), unbumps the cells near doors the game says are open, and plans again (3 times at most); only then
    does it give up, and the caller may teleport (the last resort).
 The map is kept in <game folder>/wnav_map.bin and read with the maps in WNAV_MAPS (the other bots' and the shared one): it is learnt once
 and shared (the orchestrator merges the bots' maps). Doors open and close: a cell whose floor is seen with the band above it empty takes
@@ -57,6 +57,7 @@ SOFT = 25.0                    # cost factor of a cell whose band is filled at a
 WALKED, BUMPED = 1, 2          # cell flags
 WINDOW = 64 * BIN              # a cell describes 16 m above its floor (its 64-bit mask): a level higher than that is not in the cell
 STAIR = UP + BIN               # a rise up to this is a stair step when the step before or after it climbs too (surfaces are bin starts: up to 0.25 m low)
+POCKET = 5.0                   # after backing out of a pocket, the cells this near it (m) cost as much as bumped ones for the rest of the walk
 DROP = 16.0                    # (8 m of walking) extra cost of a step down that cannot be stepped back up (more than UP): a one-way drop leads into pockets
 REC = struct.Struct('<hhfQB')  # cell x, cell y, floor z, height mask, flags
 DOOR_TYPE = 0x62DE70           # the door entities' type descriptor (module-relative, as TI_DOOR in wlib.py; build 11370412)
@@ -180,9 +181,9 @@ class Map:
         if -DOWN <= r[0] - fu <= UP and r[0] > SEA: return [(r[0], SOFT)]
         return []
 
-    def plan(self, a, b, limit=120000, margin=40.0, avoid=frozenset()):
+    def plan(self, a, b, limit=120000, margin=40.0, avoid=frozenset(), dear=frozenset()):
         """Cells from a's to b's along walkable ground (A* over cell and level), else to the reachable cell nearest b, or None.
-        a, b: (x, y, z of the eye). `avoid`: cells not to enter (bumped on this walk)."""
+        a, b: (x, y, z of the eye). `avoid`: cells not to enter (bumped on this walk); `dear`: cells round a pocket, cost 40."""
         sa, sb = cell_of(a[0], a[1]), cell_of(b[0], b[1]); fb = b[2] - EYE
         lo = (min(sa[0], sb[0]) - margin / CELL, min(sa[1], sb[1]) - margin / CELL); hi = (max(sa[0], sb[0]) + margin / CELL, max(sa[1], sb[1]) + margin / CELL)
         def key(c, z): return (c[0], c[1], int(round(z / BIN)))
@@ -228,6 +229,7 @@ class Map:
                         r = self.cells[v]
                         opts = [(z, 40.0 if r[2] & BUMPED else (0.8 if r[2] & WALKED else k)) for z, k in st if z is None or z - fu <= UP or stair(u, fu, v, dx, dy, z)]
                     for fv, cost in opts:
+                        if v in dear: cost = max(cost, 40.0)
                         kv = key(v, fv); nd = g[u] + step * cost + (DROP if fu - fv > UP else 0.0)
                         if nd < g.get(kv, 1e18):
                             g[kv] = nd; prev[kv] = u; floor[kv] = fv
@@ -369,7 +371,7 @@ class Walker:
         self.recorded = 0      # cells known-good from a person's recorded walks (WNAV_RECORDINGS: ';' separated session.jsonl files)
         for q in [q for q in (os.environ.get('WNAV_RECORDINGS') or '').split(';') if q]:
             for w in walks(load_recording(q)): self.recorded += self.map.walk_line(w)
-        self.trail = []; self.backouts = 0; self.sidesteps = 0; self.doors = None; self.blurred = 0      # where this walker has been (newest last); open doors, read once
+        self.trail = []; self.dear = set(); self.backouts = 0; self.sidesteps = 0; self.doors = None; self.blurred = 0      # where this walker has been (newest last); open doors, read once
 
     def pos(self): return self.p.camera()[0]
     def yaw(self): return self.p.camera()[1][0]
@@ -451,6 +453,8 @@ class Walker:
         for dx in range(-3, 4):
             for dy in range(-3, 4):
                 if dx * dx + dy * dy <= 9: c_ = cell_of(q[0] + dx * CELL, q[1] + dy * CELL); self.avoid.add(c_); self.map.bump(*centre(c_))
+        r_ = int(POCKET / CELL)      # and the whole pocket round it dear (a U of unseen walls is 6 m wide: one disc of bumps only moved the next try aside)
+        self.dear |= {(c0[0] + dx, c0[1] + dy) for c0 in [cell_of(q[0], q[1])] for dx in range(-r_, r_ + 1) for dy in range(-r_, r_ + 1) if dx * dx + dy * dy <= r_ * r_}
         self.map.unbump_near(self.open_doors())
         self.follow(back); self.trail = self.trail[:max(1, len(self.trail) - len(back))]; self.look_around(); return True
 
@@ -462,7 +466,7 @@ class Walker:
         if self.trace: self.trace.write(json.dumps(dict(t=round(time.monotonic(), 2), **kv)) + '\n'); self.trace.flush()
 
     def plan(self, target):
-        q = self.pos(); cells = self.map.plan(q, target, avoid=self.avoid)
+        q = self.pos(); cells = self.map.plan(q, target, avoid=self.avoid, dear=self.dear)
         if cells is None: return None
         self.replans += 1; self.cells, self.ci = cells, 0
         way = simplify(cells, target[2]) or [tuple(target)]      # (a plan of one cell: the target is next to the player)
