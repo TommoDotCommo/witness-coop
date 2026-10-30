@@ -84,7 +84,7 @@ replacing the bundled asset. The old asset remains loadable for the default look
 | Seed before appearance labels | 57,615 | 80,668 | one 2048×2048 JPEG | 4,503,988 |
 | Regenerated labelled baseline | 57,615 | 80,668 | one 2048×2048 JPEG | 4,739,328 |
 | Refined asset | 59,750 | 82,780 | one 2048×2048 JPEG | 4,903,964 |
-| Living asset (eyelids, eye pivots, scarf and gear bones, fidgets, normal and material maps) | 59,974 | 82,356 | 2048 JPEG colour + 1024 PNG normal + 1024 PNG material | 7,982,708 |
+| Living asset (eyelids, eye pivots, scarf and gear bones, fidgets, normal and material maps) | 59,740 | 82,356 | 2048 JPEG colour + 1024 PNG normal + 1024 PNG material | 7,894,920 |
 
 The refinement adds modeled cheek/nose detail and nostrils, six hair locks,
 satchel strap holes and boot welts, with finer original hair and leather surface
