@@ -31,13 +31,14 @@ def reason(why):
     return why[:40] or '?'
 
 
-KINDS = ('did not start', 'cannot be seen', 'psolve no path', 'wrong line', 'unpowered', 'movement', 'other')
+KINDS = ('did not start', 'cannot be seen', 'psolve no path', 'turned panel', 'wrong line', 'unpowered', 'movement', 'other')
 
 
 def kind(why):
     """What went wrong in one failed attempt, as the owner's recording list groups it."""
     if 'did not start' in why: return 'did not start'
     if 'cannot be seen' in why: return 'cannot be seen'
+    if 'another edge' in why: return 'turned panel'      # the line ran along another edge than the path's first (wdraw: the screen orientation of the panel was guessed wrong)
     if why.startswith('NO SOLVER') or 'no path found' in why: return 'psolve no path'
     if why.startswith('UNPOWERED'): return 'unpowered'
     if any(k in why for k in ('teleport refused', 'could not be held', 'walk', 'could not get')): return 'movement'
