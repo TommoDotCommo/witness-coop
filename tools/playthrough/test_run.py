@@ -73,6 +73,11 @@ checks = [(E('', 0).get('WDRAW_START_BUDGET') == '75' and E('', 0).get('WDRAW_TR
           (E(NS, 2).get('WDRAW_STAND') == '0,1.4' and 'WDRAW_FLIP_SIDE' not in E(NS, 2), 'did not start, try 2: close in front'),
           (E('stuck before node 1 (path index 1)', 1).get('WDRAW_STAND') == '-1.2,2.0' and E('stuck before node 1', 1).get('WDRAW_STEER') == '1', 'stuck: aside, steered'),
           ('WDRAW_TRACER' not in E('tracer: stuck before traced 11', 1), 'tracer failure: drawn the old way')]
+KEYS = ['render_profile', 'fullscreen', 'vsync', 'highdpi', 'resolution', 'multisampling', 'custom_width', 'custom_height', 'shading_quality', 'reflection_quality', 'texture_quality', 'texture_detail', 'geometry_detail']
+for name, text in run.VIDEO.items():      # the game's video options: its own keys in its order, and always the 1080p window the drawing is calibrated for
+    if text is None: continue
+    kv = [l.split(' ', 1) for l in text.splitlines()[1:]]
+    checks.append((text.startswith(':/launcher\n') and [k for k, _ in kv] == KEYS and dict(kv)['resolution'] == '1' and dict(kv)['fullscreen'] == 'false', 'video %s' % name))
 for ok_, what in checks:
     if not ok_: print('attempt settings wrong:', what); sys.exit(1)
 p = P(); p.play()
@@ -89,6 +94,7 @@ MUTANTS = [
     ("can_solve=lambda h: h in self.manifest and h in self.powered and self.path_for(h) is not None", "can_solve=lambda h: h in self.manifest and self.path_for(h) is not None"),   # no power gating
     ("self.checkpointed = len(self.solved); self.last_checkpoint = time.time(); self.checkpoint()", "self.checkpointed = len(self.solved); self.last_checkpoint = time.time()"),      # no save points during play
     ("        else: env['WDRAW_STAND'] = '0,1.4'", "        else: pass"),      # a start never found is never tried from close in front
+    ("highdpi false\\nresolution 1\\nmultisampling", "highdpi false\\nresolution 2\\nmultisampling"),      # the video options ask for 720p
     ("busy[i] = (pool.submit(self.solve, self.bots[i - 1], h, True), h)", "busy[i] = (pool.submit(self.solve, self.bots[i - 1], h), h)"),    # a redraw sent as a plain solve
 ]
 

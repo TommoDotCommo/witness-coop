@@ -40,6 +40,15 @@ def pyw(script, *args, timeout=120, env=None, both=False):
     return (r.stdout, r.stderr) if both else r.stdout
 
 
+def video_options(profile=2, msaa=2, shading=2, reflection=2, texture=2, texture_detail=2, geometry=2):
+    """Launcher.variables in the game's own format (launcher/core.cpp writes the same): 1080p in a window, no vsync (the mod caps the frames).
+    profile 0..3 low..ultra; msaa 0 off, 1 2x, 2 4x, ...; the qualities 0 low, 1 medium, 2 high."""
+    return (':/launcher\nrender_profile %d\nfullscreen false\nvsync false\nhighdpi false\nresolution 1\nmultisampling %d\ncustom_width 1920\ncustom_height 1080\n'
+            'shading_quality %d\nreflection_quality %d\ntexture_quality %d\ntexture_detail %d\ngeometry_detail %d\n') % (profile, msaa, shading, reflection, texture, texture_detail, geometry)
+VIDEO = {'': None, 'high': video_options(),
+         'lowmem': video_options(profile=0, msaa=0, reflection=0, texture=0, texture_detail=0)}      # less memory: textures, reflections, no MSAA (geometry and shading as 'high')
+
+
 class Bot:
     """One game and the bot playing it."""
     def __init__(self, index):
@@ -88,6 +97,10 @@ class Bot:
         if saves.exists():
             for f in saves.iterdir():
                 if f.suffix in ('.witness_campaign', '.png'): f.unlink()
+        # The game's own video options (Launcher.variables in its save folder). Without the file it picks its automatic profile ('high': 4x MSAA,
+        # high textures). WITNESS_VIDEO picks one of VIDEO; every one keeps the 1920x1080 window the drawing is calibrated for.
+        video = saves / 'Launcher.variables'; video.unlink(missing_ok=True)
+        if VIDEO.get(os.environ.get('WITNESS_VIDEO', '')): saves.mkdir(parents=True, exist_ok=True); video.write_text(VIDEO[os.environ['WITNESS_VIDEO']])
 
     def start(self, new_game=True):
         if self.pid: sh(['taskkill.exe', '/PID', self.pid, '/F']); time.sleep(2)
