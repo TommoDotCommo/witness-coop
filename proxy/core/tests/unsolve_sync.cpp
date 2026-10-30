@@ -8,7 +8,7 @@
 
 struct UndoWorld : witness::World {
     bool solved[3] = {false, false, false}, open[2] = {false, false}, request[2] = {false, false};
-    bool refuse = false; uint64_t gen = 1;
+    bool refuse = false, slowClose = false; uint64_t gen = 1;
     unsigned unsolveCalls = 0, closeCalls = 0;
     bool cameraValid() override { return true; }
     bool scan(std::vector<unsigned>& p, std::vector<unsigned>& d, uint64_t* t) override { p = {1, 2}; d = {10}; *t = 1; return true; }
@@ -22,7 +22,7 @@ struct UndoWorld : witness::World {
     void applyPanelSolved(unsigned id) override { solved[id] = true; }
     bool applyDoorOpen(unsigned) override { open[0] = request[0] = true; return true; }
     bool applyPanelUnsolved(unsigned id) override { ++unsolveCalls; if (refuse) return false; solved[id] = false; return true; }
-    bool applyDoorClose(unsigned) override { ++closeCalls; if (refuse) return false; open[0] = request[0] = false; return true; }
+    bool applyDoorClose(unsigned) override { ++closeCalls; if (refuse) return false; request[0] = false; if (!slowClose) open[0] = false; return true; }      // (slowClose: the door is told to shut and still stands open where it is, as in the game)
     bool pose(float p[3], float a[2]) override { p[0] = p[1] = p[2] = 1; a[0] = a[1] = 0; return true; }
     void openDoor() { open[0] = request[0] = true; }
     void shutDoor() { open[0] = request[0] = false; }
@@ -102,6 +102,20 @@ bool doorOrder(witness::Flags fb = {}) {
     return p.a.open[0] && p.b.open[0] && p.cb->queuedRemote() == 0;
 }
 
+// A door shuts and opens again within a moment on A. B's close call is accepted but the door has not moved yet (open where it stands, going
+// to shut), so the open that follows must not be dropped as 'already open'. Both worlds end with the door open once B's door has moved.
+// (Seen in a 2-bot playthrough: Quarry Barrier open on one world and shut on the other for good.)
+bool doorOpenAfterClose(witness::Flags fb = {}) {
+    Pair p({}, fb); p.advance(30000);
+    p.a.openDoor(); p.advance(3000);
+    if (!p.b.open[0]) return false;
+    p.b.slowClose = true;
+    p.a.shutDoor(); p.advance(50); p.a.openDoor(); p.advance(2000);
+    p.b.open[0] = p.b.request[0];      // the door finishes moving toward where it was last told to go
+    p.advance(3000);
+    return p.a.open[0] && p.b.open[0] && p.cb->queuedRemote() == 0;
+}
+
 // A save loaded again: the generation changes and the progress is gone at once. That is a load (the peer is asked for its state again),
 // not a run of un-solves to share.
 bool reload(witness::Flags fa = {}) {
@@ -112,20 +126,23 @@ bool reload(witness::Flags fa = {}) {
 }
 
 int main() {
-    bool a = timer(), b = door(), c = timedDoor(), d = reload(), o = doorOrder();
+    bool a = timer(), b = door(), c = timedDoor(), d = reload(), o = doorOrder(), q = doorOpenAfterClose();
     std::printf("%s  timer panels reset on one game: reset on the other (loss, refused call, no echo)\n", a ? "PASS" : "FAIL");
     std::printf("%s  a door that shuts on one game shuts on the other\n", b ? "PASS" : "FAIL");
     std::printf("%s  a timed door shutting in both games at once: no call, no bounce\n", c ? "PASS" : "FAIL");
     std::printf("%s  a save loaded again is not shared as un-solves\n", d ? "PASS" : "FAIL");
     std::printf("%s  a close kept for a retry is not overtaken by the open that followed it\n", o ? "PASS" : "FAIL");
+    std::printf("%s  an open right after an accepted close (door not moved yet) is not dropped as already open\n", q ? "PASS" : "FAIL");
     witness::Flags noUnsolve, noClose, noRetry, noReload;
     noUnsolve.noUnsolveSync = true; noClose.noDoorCloseSync = true; noRetry.noApplyRetry = true; noReload.noReloadSync = true;
     witness::Flags noOrder; noOrder.noEntityOrder = true;
-    bool e = !timer(noUnsolve), f = !door(noClose), g = !timer({}, noRetry), h = !reload(noReload), k = !doorOrder(noOrder);
+    witness::Flags byPos; byPos.openDedupeByPosition = true;
+    bool e = !timer(noUnsolve), f = !door(noClose), g = !timer({}, noRetry), h = !reload(noReload), k = !doorOrder(noOrder), m = !doorOpenAfterClose(byPos);
     std::printf("%s  no-unsolve-sync twin caught\n", e ? "PASS" : "FAIL");
     std::printf("%s  no-door-close-sync twin caught\n", f ? "PASS" : "FAIL");
     std::printf("%s  no-apply-retry twin caught for un-solves\n", g ? "PASS" : "FAIL");
     std::printf("%s  no-reload-sync twin caught: a load goes out as un-solves\n", h ? "PASS" : "FAIL");
     std::printf("%s  no-entity-order twin caught: the retried close lands after the open\n", k ? "PASS" : "FAIL");
-    return o && k && a && b && c && d && e && f && g && h ? 0 : 1;
+    std::printf("%s  open-dedupe-by-position twin caught: the open after a close is dropped\n", m ? "PASS" : "FAIL");
+    return o && k && q && m && a && b && c && d && e && f && g && h ? 0 : 1;
 }

@@ -592,7 +592,9 @@ void SyncCore::applyRemote(uint64_t now) {
             if (h_.onApplied) h_.onApplied(r.kind, r.entity, r.epoch, r.seq);
             std::snprintf(l, sizeof l, "state: remote cable %#x dark", r.entity); log(l);
         } else if (r.kind == EV_DOOR_OPENED && w_->isDoor(r.entity)) {
-            if (w_->doorOpen(r.entity) && !f_.noDedupe) {
+            // Already open means open and still going to be: a door that was just told to close is still open where it stands, and an open that
+            // follows that close must go through (judged by where the door is, it was dropped and the door finished shutting in this world only).
+            if (w_->doorOpen(r.entity) && (f_.openDedupeByPosition || w_->doorRequested(r.entity)) && !f_.noDedupe) {
                 knownDoor_.insert(r.entity);
                 if (h_.onRejected) h_.onRejected(r.kind, r.entity, r.epoch, r.seq, "already open");
                 continue;
