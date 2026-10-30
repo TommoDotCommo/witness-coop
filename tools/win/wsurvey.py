@@ -51,15 +51,15 @@ def look():
 
 
 t0 = time.monotonic(); looks = moved_back = 0
-for k, (x, y, z) in enumerate(points):
+for idx, (x, y, z) in enumerate(points):
     for hz, pitch in ((z + 25.0, -0.93), (z, -0.3)):
         for yaw in (0.0, math.pi / 2, math.pi, -math.pi / 2):
             c.send(['hover %.3f %.3f %.3f %.4f %.3f' % (x, y, hz, yaw, pitch)], 0.3)
             cam = p.camera()[0]
             if math.hypot(cam[0] - x, cam[1] - y) > 5: moved_back += 1; continue      # the game put the player back somewhere: not this point's view
             looks += 1 if look() else 0
-    if k % 20 == 19 or k == len(points) - 1:
+    if idx % 20 == 19 or idx == len(points) - 1:
         m.save(out)
-        print('%d/%d points, %d looks, %d cells, %.0f s' % (k + 1, len(points), looks, len(m.cells), time.monotonic() - t0), file=sys.stderr, flush=True)
+        print('%d/%d points, %d looks, %d cells, %.0f s' % (idx + 1, len(points), looks, len(m.cells), time.monotonic() - t0), file=sys.stderr, flush=True)
 c.send(['hover off'])
 print(json.dumps({'points': len(points), 'looks': looks, 'moved_back': moved_back, 'cells': len(m.cells), 'seconds': round(time.monotonic() - t0)}), flush=True)

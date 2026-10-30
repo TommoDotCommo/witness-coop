@@ -125,7 +125,7 @@ class Playthrough:
         self.fps, self.drop, self.start, self.resume = fps, drop, start, resume
         self.bots = [Bot(i) for i in range(1, n + 1)]
         self.out = Path(RUN) / 'playthrough' / time.strftime('%Y%m%d-%H%M%S'); self.rec = Recorder(self.out)
-        self.nav_map = Path(RUN) / 'playthrough' / 'nav_map.bin'      # the walking map every run adds to (see merge_maps)
+        self.nav_map = Path(ROOT) / 'local' / 'nav_map.bin'      # the walking map every run (and the survey) adds to, whoever runs it (see merge_maps)
         self.manifest = {}; self.paths = {}; self.no_solver = set()
         self.planner = None; self.solved = set(); self.lock = threading.Lock()
         self.prop = []      # (panel, from bot, to bot, seconds)
