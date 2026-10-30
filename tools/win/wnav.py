@@ -54,7 +54,7 @@ class Map:
             k = int((rec[0] - z) / BIN)
             rec[1] = ((rec[1] << k) | 1) & 0xFFFFFFFFFFFFFFFF; rec[0] = rec[0] - k * BIN
         else:
-            b = int((z - rec[0]) / BIN)
+            b = max(0, int((z - rec[0]) / BIN))      # (a point exactly one bin under the floor came out as -1)
             if b < 64: rec[1] |= 1 << b
         return rec
 
