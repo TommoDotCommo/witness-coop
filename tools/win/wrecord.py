@@ -43,6 +43,31 @@ def pose():
     (x, y, z), (yaw, pitch) = p.camera(); return [round(x, 3), round(y, 3), round(z, 3), round(yaw, 4), round(pitch, 4)]
 
 
+def place(h, e, px, py, pz):
+    """The menu's teleport leaves the player in a wall or under the ground at some panels (Quarry Intro Left, the boat spawn; owner,
+    2026-10-30): stand 1.4 m straight out from the panel's face instead, a little above the floor (the player drops onto it), facing it.
+    The floor's height comes from the walking map (the surface nearest 1.3 m under the panel); with none known, from where the menu's
+    teleport left the eye, else 1.5 m under the panel (Quarry Lower Ramp Control sits at floor level: that guess put the player under the
+    ground and the game threw them out). Other distances are tried when the game does not keep the player there; True when one held."""
+    qx, qy, qz, qw = struct.unpack('<4f', p.rd(e + 0x34, 16))
+    tx, ty, tz = 0.0, 2 * qz, -2 * qy      # the panel's local +x (its face) rotated by its quaternion, as in wdraw.py
+    nx, ny = 1.0 + qw * tx + (qy * tz - qz * ty), qw * ty + (qz * tx - qx * tz)
+    nn = math.hypot(nx, ny) or 1.0; nx, ny = nx / nn, ny / nn
+    land = p.camera()[0]
+    for d in (1.4, 2.0, 1.0, 2.8):
+        sx, sy = px + d * nx, py + d * ny
+        floors = [f for f in (nav.surfaces(wnav.cell_of(sx, sy)) or []) if f is not None and pz - 2.4 < f < pz + 0.3]
+        if floors: feet = min(floors, key=lambda f: abs(f - (pz - 1.3)))
+        elif math.dist(land[:2], (px, py)) < 6: feet = land[2] - wnav.EYE
+        else: feet = pz - 1.5
+        feet += 0.15      # a little above it: the player drops onto the floor
+        c.send(['tp %.4f %.4f %.4f %.5f %.5f' % (sx, sy, feet, math.atan2(-ny, -nx), math.atan2(pz - feet - wnav.EYE, d))], 2.0)
+        cam = p.camera()[0]
+        if math.dist(cam[:2], (sx, sy)) < 1.0 and abs(cam[2] - (feet + wnav.EYE)) < 1.0: return True
+    c.send(['menusel %x' % h, 'menudo teleport'], 3.2)
+    return math.dist(p.camera()[0][:2], (px, py)) < 6
+
+
 write(event='start', tasks=['%#x' % h for h in tasks])
 for idx, h in enumerate(tasks):      # (not k: wlib keeps the kernel handle in k)
     e = p.entity(h); name = NAMES.get('%#x' % h, '%#x' % h)
@@ -53,6 +78,10 @@ for idx, h in enumerate(tasks):      # (not k: wlib keeps the kernel handle in k
         write(event='skip', panel='%#x' % h, why=why); print(json.dumps({'panel': '%#x' % h, 'name': name, 'result': why}), flush=True); continue
     c.send(['menusel %x' % h, 'menudo teleport'], 3.2)
     px, py, pz = struct.unpack('<3f', p.rd(e + 0x24, 12))
+    if not place(h, e, px, py, pz):
+        write(event='skip', panel='%#x' % h, why='could not be placed in front of it', pose=pose())
+        print(json.dumps({'panel': '%#x' % h, 'name': name, 'result': 'could not be placed in front of it'}), flush=True)
+        say('Could not put you at %s - skipping it.' % name); time.sleep(3); continue
     write(event='task', panel='%#x' % h, name=name, panel_pos=[px, py, pz], pose=pose())
     msg = 'RECORDING %d/%d: solve %s (in front of you). Walk 15 m away to skip it.' % (idx + 1, len(tasks), name)
     t0 = time.time(); said = 0; last = None; result = 'skipped'; trail = []

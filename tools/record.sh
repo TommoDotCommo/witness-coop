@@ -22,7 +22,8 @@ make -C proxy >/dev/null
 read -r x y w h <<< "${WITNESS_RECT_A:-320 180 1920 1080}"
 cd tools/playthrough
 SAVE="$SAVE" OUT="$OUT" TASKS="$TASKS" RX="$x" RY="$y" RW="$w" RH="$h" python3 - <<'EOF'
-import json, os, subprocess, time
+import json, os, shutil, subprocess, time
+from pathlib import Path
 import run
 from logic import Logic
 from witness import win, PYW
@@ -31,6 +32,8 @@ b = run.Bot(1); b.prepare('id=1\nlisten=%d\nsave_dir=instance\nshare_zip=1\n' % 
 cfg = b.dir / 'witness_coop.cfg'; cfg.write_text(cfg.read_text() + 'force_active=0\nrun_unfocused=1\n')      # a person plays: real input
 save = os.environ['SAVE']; saves = b.dir / 'appdata' / 'The Witness'; saves.mkdir(parents=True, exist_ok=True)
 replace_copy(save, saves / os.path.basename(save))
+shared = Path(run.ROOT) / 'local' / 'nav_map.bin'      # the island's walking map: where the floor is, for placing the player
+if shared.exists(): shutil.copyfile(shared, b.dir / 'wnav_map.bin')
 b.start(new_game=False)
 run.wait(lambda: 'resources ready' in (b.dir / 'witness_proxy.log').read_text(errors='ignore'), 'the game loaded', 400); time.sleep(8)
 subprocess.run([PYW, '-I', win(os.path.join(run.TOOLS, 'win', 'wplace.py')), b.pid, os.environ['RX'], os.environ['RY'], os.environ['RW'], os.environ['RH']], capture_output=True)
