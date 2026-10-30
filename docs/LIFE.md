@@ -25,6 +25,7 @@ implemented in the proxy (`proxy/model/life.h`, applied in `proxy/model/model.cp
 | Swings its scarf and gear | The scarf tails hang from chains of bones (`scarf_a.1-3`, `scarf_b.1-2`), the canteen and satchel from one each. Each segment is a damped pendulum driven by the body's acceleration (from the smoothed position), the gait's bounce (two steps a cycle), the air at speed (it lays hanging things back) and a little wind. Angles are clamped so the tails never swing into the coat. | Position, speed, the clip's phase |
 | Fidgets | After 6 to 16 s of standing still a clip named `fidget_*` plays once, then the next is due 8 to 22 s later. Three are bundled: a weight shift onto the left leg (the right heel lifts), a look round, and settling the hat with the right hand (the arm angles are solved on the real rig at build time, and the hand is checked to reach the brim without entering the head). Walking off or an emote ends a fidget at once (with the usual 200 ms cross-fade); a seated or emoting player never starts one. | `wm::Avatar`'s scheduler, seeded by the player id |
 | Lets an emote have the head | While a gesture owns the head or neck, the glance fades out over 250 ms and comes back after. | The gesture layer's weights |
+| Acts with its face | The brows sit on bones of their own (`brow.L`, `brow.R`, inner end to outer). Sad and Thinking draw the inner ends up (Thinking lifts the right brow alone), Laugh, Celebrate, Cheer and Panic raise both, Facepalm and No knit them, Shrug lifts them a little; 120 ms response, back to rest when the emote ends. | The emote id from the social layer |
 | Turns head first | The body's heading lags the player's view (a first-order lag, 12/s: a 90 degree turn is 95 % done in 250 ms) and the head turns ahead of it toward the view, up to 57 degrees, the eyes completing the look. | `wm::Avatar` keeps the view and the body apart |
 | Walks sideways and backwards | A player walking more than 60 degrees off their view turns the body half way toward where they are going; beyond 110 degrees (70 to come back) the body keeps facing the view and the walk cycle runs in reverse: backing away from a panel looks like backing away. | The heading of the last datagram's step |
 
@@ -88,7 +89,7 @@ than a real blink (1.2 s), so a picture can catch the eyes closed.
 Game-free (seconds, no slot):
 
 ```sh
-make -C proxy/model test          # model-test (254 checks, 15 mutants) and life-test (802 checks, 10 mutants)
+make -C proxy/model test          # model-test (254 checks, 15 mutants) and life-test (809 checks, 11 mutants)
 python3 tools/test_gestures.py
 python3 tools/check_model.py assets/models/adventurer.glb
 python3 tools/check_appearance_asset.py assets/models/adventurer.glb
@@ -105,8 +106,10 @@ prevents one, and every fidget clip returns to its own first frame close to the 
 It also checks that one frame after a 90 degree turn of the view the body has turned only a little and the head has the rest
 to do, that a second later the body faces the view, that a forward walk runs the cycle forward with the body on the view, that a
 backward walk keeps the body on the view and runs the cycle in reverse, and that a sideways walk turns the body about 45 degrees
-and the head back toward the view. Mutants: `NO_BLINK`, `NO_LOOK`, `LOOK_UNCLAMPED`, `NO_BREATH`, `NO_CLOTH`, `CLOTH_UNDAMPED`,
-`NO_FIDGET`, `FIDGET_MOVING`, `NO_BODY_LAG`, `NO_BACKWALK`.
+and the head back toward the view. It also measures the brows on the skinned vertices: Sad lifts the inner ends 2.5 to 12 mm above the outer ones on both sides,
+Laugh raises both brows 3.5 to 12 mm evenly, Facepalm lowers them with the inner ends below the outer, Thinking lifts the right
+above the left, and the face is back within half a millimetre after the emote. Mutants: `NO_BLINK`, `NO_LOOK`, `LOOK_UNCLAMPED`,
+`NO_BREATH`, `NO_CLOTH`, `CLOTH_UNDAMPED`, `NO_FIDGET`, `FIDGET_MOVING`, `NO_BODY_LAG`, `NO_BACKWALK`, `NO_BROWS`.
 
 With Blender, `models/build.sh adventurer` rebuilds the asset (the generator checks the lid stretch, the hat-touch reach,
 that every fidget returns to its start, and that the normal map is not flat) and writes previews including `blink_front`,

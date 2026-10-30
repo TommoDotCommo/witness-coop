@@ -278,19 +278,34 @@ static void BindChain(const Model& m, LifeChain& c, const char* prefix, int coun
 void LifeRig::Bind(const Model& m, float lidCloseScale) {
     const float fwd[3] = {0, 0, 1}, left[3] = {1, 0, 0}, up[3] = {0, 1, 0};
     head = NodeNamed(m, "head"); neck = NodeNamed(m, "neck"); chest = NodeNamed(m, "chest"); eye[0] = NodeNamed(m, "eye.L"); eye[1] = NodeNamed(m, "eye.R"); lid[0] = NodeNamed(m, "lid.L"); lid[1] = NodeNamed(m, "lid.R");
+    brow[0] = NodeNamed(m, "brow.L"); brow[1] = NodeNamed(m, "brow.R");
     lidClose = lidCloseScale > 1.0f && lidCloseScale < 4.0f ? lidCloseScale : 1.0f; ok = head >= 0;
     float G[16];
     if (head >= 0) { BindGlobal(m, head, G); headYaw = ProbeAxis(G, fwd, left); headPitch = ProbeAxis(G, fwd, up); }
     if (neck >= 0) { BindGlobal(m, neck, G); neckYaw = ProbeAxis(G, fwd, left); neckPitch = ProbeAxis(G, fwd, up); }
     if (chest >= 0) { BindGlobal(m, chest, G); chestPitch = ProbeAxis(G, fwd, up); }
     for (int e = 0; e < 2; e++) if (eye[e] >= 0) { BindGlobal(m, eye[e], G); eyeYaw[e] = ProbeAxis(G, fwd, left); eyePitch[e] = ProbeAxis(G, fwd, up); }
+    for (int e = 0; e < 2; e++) if (brow[e] >= 0) {
+        BindGlobal(m, brow[e], G); float axis[3] = {0, 1, 0}, along[3]; Rot3(G, axis, along);      // the bone runs along its local Y, inner end to outer
+        float outward[3] = {e == 0 ? 1.0f : -1.0f, 0, 0}; if (along[0] * outward[0] < 0) for (float& v : along) v = -v;
+        browTilt[e] = ProbeAxis(G, along, up); browTilt[e].sign = -browTilt[e].sign;      // the probe lifts the outer end; negated, a positive tilt lifts the inner end (both sides: `along` points outward on each)
+        // the brow's translation is expressed in its parent's (the head's) frame: the parent's local axis with the largest 'up' component lifts the brow
+        float GP[16]; if (m.nodes[brow[e]].parent >= 0) BindGlobal(m, m.nodes[brow[e]].parent, GP); else Identity(GP);
+        float best = 0; for (int k = 0; k < 3; k++) { float e3[3] = {0, 0, 0}; e3[k] = 1; float d[3]; Rot3(GP, e3, d); float l = sqrtf(d[0]*d[0] + d[1]*d[1] + d[2]*d[2]); if (l > 1e-9f && fabsf(d[1] / l) > fabsf(best)) { best = d[1] / l; browUp[e] = k; browUpSign[e] = (d[1] > 0 ? 1.0f : -1.0f) / l; } }
+    }
     BindChain(m, scarfA, "scarf_a", 3); BindChain(m, scarfB, "scarf_b", 2); BindChain(m, canteen, "canteen", 1); BindChain(m, satchel, "satchel", 1);
 }
 static void RotLocal(float* q, const LifeAxis& ax, float angle) {
     if (ax.axis < 0 || angle == 0) return;
     float r[4] = {0, 0, 0, 1}; r[ax.axis] = sinf(ax.sign * angle * 0.5f); r[3] = cosf(ax.sign * angle * 0.5f); QMul(q, r, q);
 }
-static void ApplyLife(const LifeRig& rig, const LifeState& L, float* R, float* S) {
+static void ApplyLife(const LifeRig& rig, const LifeState& L, float* T, float* R, float* S) {
+    for (int e = 0; e < 2; e++) if (rig.brow[e] >= 0) {
+        float share = e == 1 ? 1.0f : 1.0f - L.browAsym;      // 'thinking' lifts the right brow alone
+        RotLocal(&R[rig.brow[e] * 4], rig.browTilt[e], L.browTilt * share);
+        // a translation along the bone's 'up' axis, in the parent's (head's) frame: small, so the local axis is used as the direction
+        T[rig.brow[e] * 3 + rig.browUp[e]] += rig.browUpSign[e] * L.browLift * share;
+    }
     const float hw = L.headWeight;
     if (rig.head >= 0) { RotLocal(&R[rig.head * 4], rig.headYaw, 0.65f * L.headYaw * hw); RotLocal(&R[rig.head * 4], rig.headPitch, 0.65f * L.headPitch * hw - 0.004f * L.breath); }
     if (rig.neck >= 0) { RotLocal(&R[rig.neck * 4], rig.neckYaw, 0.35f * L.headYaw * hw); RotLocal(&R[rig.neck * 4], rig.neckPitch, 0.35f * L.headPitch * hw - 0.006f * L.breath); }
@@ -358,7 +373,7 @@ void JointMatricesBlendEx(const Model& m, int from, float tFrom, int to, float t
         float blended[4]; Slerp(&R[i*4],target,std::min(1.0f,radioRaise),blended); memcpy(&R[i*4],blended,16);
 #endif
     }
-    if (layers.life && layers.rig && layers.rig->ok) ApplyLife(*layers.rig, *layers.life, R.data(), S.data());
+    if (layers.life && layers.rig && layers.rig->ok) ApplyLife(*layers.rig, *layers.life, T.data(), R.data(), S.data());
     std::vector<float> G(nn * 16); std::vector<char> done(nn, 0);
     struct Rec { static void Go(const Model& m, size_t i, const float* T, const float* R, const float* S, float* G, char* done) {
         if (done[i]) return;

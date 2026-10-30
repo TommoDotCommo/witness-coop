@@ -162,6 +162,31 @@ int main(int argc, char** argv) {
         }
         CHECK(nf >= 3, "%d fidget clips", nf);
     }
+    // ---- the brows act with an emote: sad lifts the inner ends, laughter raises both brows, a facepalm knits them, and the face returns to rest after
+    {
+        CHECK(rig.brow[0] >= 0 && rig.brow[1] >= 0 && rig.browTilt[0].axis >= 0, "brow bones %d %d, tilt axis %d", rig.brow[0], rig.brow[1], rig.browTilt[0].axis);
+        int jL = JointOf(m, rig.brow[0]), jR = JointOf(m, rig.brow[1]); std::vector<size_t> browL, browR;
+        for (size_t i = 0; i < m.verts.size(); i++) for (int k = 0; k < 4; k++) { if (m.verts[i].joints[k] == jL && m.verts[i].weights[k] > 0.9f) browL.push_back(i); if (m.verts[i].joints[k] == jR && m.verts[i].weights[k] > 0.9f) browR.push_back(i); }
+        CHECK(browL.size() > 20 && browR.size() > 20, "%zu and %zu brow vertices", browL.size(), browR.size());
+        auto measure = [&](const std::vector<size_t>& verts, float* innerDy, float* outerDy, float* meanDy) {      // the inner end is the one nearest the face's middle (x near 0)
+            float inX = 1e9f, outX = -1e9f; size_t in = 0, out = 0; double sum = 0;
+            for (size_t i : verts) { float ax = fabsf(m.verts[i].pos[0]); if (ax < inX) { inX = ax; in = i; } if (ax > outX) { outX = ax; out = i; } }
+            auto dy = [&](size_t i) { float a[3], b[3]; wm::SkinPosition(m, bind.data(), m.verts[i], a); wm::SkinPosition(m, posed.data(), m.verts[i], b); return b[1] - a[1]; };
+            for (size_t i : verts) sum += dy(i);
+            *innerDy = dy(in); *outerDy = dy(out); *meanDy = (float)(sum / verts.size());
+        };
+        wm::LifeState L(2); wm::LifeInput in; in.dt = 1.0f / 60; in.emote = 19; for (int fr = 0; fr < 60; fr++) L.Step(in);
+        pose(L); float inL, outL, meanL, inR, outR, meanR; measure(browL, &inL, &outL, &meanL); measure(browR, &inR, &outR, &meanR);
+        CHECK(inL > 0.0025f && inR > 0.0025f && inL - outL > 0.003f && inR - outR > 0.003f && inL < 0.012f, "sad: inner ends up %.1f / %.1f mm, outer %.1f / %.1f mm", inL * 1000, inR * 1000, outL * 1000, outR * 1000);
+        in.emote = 20; for (int fr = 0; fr < 60; fr++) L.Step(in); pose(L); measure(browL, &inL, &outL, &meanL); measure(browR, &inR, &outR, &meanR);
+        CHECK(meanL > 0.0035f && meanR > 0.0035f && meanL < 0.012f && fabsf(inL - outL) < 0.002f, "laugh: brows up %.1f / %.1f mm (inner-outer %.1f mm)", meanL * 1000, meanR * 1000, (inL - outL) * 1000);
+        in.emote = 11; for (int fr = 0; fr < 60; fr++) L.Step(in); pose(L); measure(browL, &inL, &outL, &meanL); measure(browR, &inR, &outR, &meanR);
+        CHECK(meanL < -0.0015f && inL < outL, "facepalm: brows down %.1f mm, inner below outer by %.1f mm", meanL * 1000, (outL - inL) * 1000);
+        in.emote = 13; for (int fr = 0; fr < 60; fr++) L.Step(in); pose(L); measure(browL, &inL, &outL, &meanL); measure(browR, &inR, &outR, &meanR);
+        CHECK(meanR > meanL + 0.002f, "thinking: the right brow (%.1f mm) above the left (%.1f mm)", meanR * 1000, meanL * 1000);
+        in.emote = 0; for (int fr = 0; fr < 90; fr++) L.Step(in); pose(L); measure(browL, &inL, &outL, &meanL);
+        CHECK(fabsf(meanL) < 0.0005f && fabsf(inL - outL) < 0.0005f, "at rest again: %.2f mm", meanL * 1000);
+    }
     // ---- the body lags behind a turn of the view (the head leads), turns half way toward a sideways walk, and walks backwards in reverse
     {
         auto feedYaw = [&](wm::Avatar& a, uint64_t& t, unsigned& seq, float* p, float vx, float vy, float yaw, int frames) { for (int fr = 0; fr < frames; fr++, t += 17) { if (fr % 2 == 0) { seq++; p[0] += vx / 30; p[1] += vy / 30; } a.Update(t, true, seq, p, yaw); } };

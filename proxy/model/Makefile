@@ -7,7 +7,7 @@ LIFESRC = model.cpp tests/life_test.cpp
 HDR = model.h gestures.h life.h ../core/emotes.h
 MUTANTS = IBM_ORDER NO_LOOP NO_NORMALIZE MIRROR NO_TELEPORT_GUARD NO_RUN MAX_JOINTS NO_BLEND NO_RUNREF EYE_IBM EYE_BIND EYE_NEG ONE_SKIN NO_FLAT_COLOR EMOTE_SUBSTRING
 # the life layer (life.h) and the fidget scheduler: each mutant breaks one protection the life test must catch
-LIFE_MUTANTS = NO_BLINK NO_LOOK LOOK_UNCLAMPED NO_BREATH NO_CLOTH CLOTH_UNDAMPED NO_FIDGET FIDGET_MOVING NO_BODY_LAG NO_BACKWALK
+LIFE_MUTANTS = NO_BLINK NO_LOOK LOOK_UNCLAMPED NO_BREATH NO_CLOTH CLOTH_UNDAMPED NO_FIDGET FIDGET_MOVING NO_BODY_LAG NO_BACKWALK NO_BROWS
 $(BUILD)/model-test: $(SRC) $(HDR) ../third_party/cgltf.h
 	mkdir -p $(BUILD)
 	g++ -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter -o $@ $(SRC)

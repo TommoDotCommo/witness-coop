@@ -17,8 +17,9 @@ struct Model;
 struct LifeAxis { int axis = -1; float sign = 1; };
 struct LifeChain { int node[3] = {-1, -1, -1}; int count = 0; float length[3] = {0.1f, 0.1f, 0.1f}; LifeAxis swing[3], sway[3]; };   // swing: the tail toward +z; sway: toward +x
 struct LifeRig {
-    int head = -1, neck = -1, chest = -1, eye[2] = {-1, -1}, lid[2] = {-1, -1};
-    LifeAxis headYaw, headPitch, neckYaw, neckPitch, chestPitch, eyeYaw[2], eyePitch[2];
+    int head = -1, neck = -1, chest = -1, eye[2] = {-1, -1}, lid[2] = {-1, -1}, brow[2] = {-1, -1};
+    LifeAxis headYaw, headPitch, neckYaw, neckPitch, chestPitch, eyeYaw[2], eyePitch[2], browTilt[2];   // browTilt: a roll that lifts the brow's inner end (the bone runs inner to outer)
+    int browUp[2] = {1, 1}; float browUpSign[2] = {1, 1};      // the bone's local axis (and sign) that is 'up' in model space, for lifting the brow
     LifeChain scarfA, scarfB, canteen, satchel;
     float lidClose = 1.0f;          // the lid bone's scale along its length that closes the eye (the model's .glb.txt: lid_close=); 1: no lids
     bool ok = false;                // the head was found: the layer does something
@@ -33,6 +34,7 @@ struct LifeInput {
     float viewerDir[3] = {0, 0, 1}; // unit vector from the puppet's head to that camera, model space
     float viewerDist = 100;         // metres
     bool headBusy = false;          // an emote owns the head: the layer lets go of it
+    int emote = 0;                  // the emote playing (1..24, 0 none): the brows act with it
     float viewYawOffset = 0;        // where the player looks minus where the body faces (radians, left positive): the head turns there ahead of the body
     float accel[3] = {0, 0, 0};     // the puppet's acceleration, model space, m/s^2 (y: the gait's bounce)
 };
@@ -43,6 +45,7 @@ struct LifeState {
     // outputs, read by the pose code
     float blink = 0;                // 0 open .. 1 closed
     float headYaw = 0, headPitch = 0, headWeight = 1;   // radians, model space: yaw > 0 looks left, pitch > 0 up
+    float browLift = 0, browTilt = 0, browAsym = 0;      // the face acting with an emote: lift in metres (up), tilt in radians (inner ends up), asym: the right brow's share of the lift (thinking)
     float eyeYaw = 0, eyePitch = 0;
     float breath = 0;               // -1 .. 1 (times the exertion gain)
     float exertion = 0;             // 0 rested .. 1 just after a run
@@ -124,6 +127,20 @@ struct LifeState {
         Spring(headYaw, headYawV, headYawT, 5.5f, dt); Spring(headPitch, headPitchV, headPitchT, 5.5f, dt);
         Spring(eyeYaw, eyeYawV, eyeYawT, 20.0f, dt); Spring(eyePitch, eyePitchV, eyePitchT, 20.0f, dt);
         float wT = in.headBusy ? 0.0f : 1.0f; headWeight += (wT - headWeight) * (dt > 0 ? 1 - expf(-dt / 0.25f) : 0);
+        // ---- the face acts with the emote: sad and thinking draw the inner brows up, laughter and panic and a cheer raise them, a facepalm or a 'no' knits them
+        float liftT = 0, tiltT = 0, asymT = 0;
+        switch (in.emote) {
+        case 19: liftT = 0.002f; tiltT = 0.14f; break;                 // sad
+        case 13: liftT = 0.004f; tiltT = 0.06f; asymT = 1.0f; break;  // thinking: one brow up
+        case 20: case 18: case 3: case 21: liftT = 0.005f; break;      // laugh, celebrate, cheer, panic: raised
+        case 11: case 5: liftT = -0.003f; tiltT = -0.12f; break;       // facepalm, no: knitted
+        case 8: liftT = 0.003f; tiltT = 0.08f; break;                  // shrug
+        default: break;
+        }
+#ifdef WM_MUT_NO_BROWS
+        liftT = tiltT = asymT = 0;
+#endif
+        float kb = dt > 0 ? 1 - expf(-dt / 0.12f) : 0; browLift += (liftT - browLift) * kb; browTilt += (tiltT - browTilt) * kb; browAsym += (asymT - browAsym) * kb;
         // ---- breathing: 13 breaths a minute at rest, up to 46 after a run, deeper too; the exertion builds over a run and fades over half a minute
         float exT = in.speed > 2.2f ? 1.0f : 0.0f; exertion += (exT - exertion) * (dt > 0 ? 1 - expf(-dt / (exT > exertion ? 6.0f : 18.0f)) : 0);
         breathPhase += 6.2831853f * (0.22f + 0.55f * exertion) * dt; if (breathPhase > 6.2831853f) breathPhase -= 6.2831853f;

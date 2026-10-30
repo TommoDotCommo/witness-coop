@@ -389,7 +389,10 @@ for s, x in (('L', 1), ('R', -1)):
         width = 0.0002 + 0.00145*math.sin(math.pi*t)**0.8
         rows.append([bm.verts.new((xx, face_y(xx, zz)-0.00045, zz)) for zz in (z-width, z+width)])
     for a, b in zip(rows, rows[1:]): bm.faces.new((a[0], b[0], b[1], a[1]))
-    part(face_finish('brow.'+s, bm, 'hair', True), ['head'])
+    # the brow bone runs from the inner end to the outer, 3 mm in front of the face: the proxy lifts the brow (translation), lowers it, or tilts it about its middle
+    b0, b1 = V(x*0.018, face_y(x*0.018, 1.696) - 0.003, 1.696), V(x*0.064, face_y(x*0.064, 1.700) - 0.003, 1.700)
+    B['brow.'+s] = ((b0 + b1) * 0.5, (b0 + b1) * 0.5 + (b1 - b0) * 0.5, 'head')
+    part(face_finish('brow.'+s, bm, 'hair', True), ['brow.'+s])
     part(ellipsoid('ear.'+s, (0.098*x, 0.006, 1.657), (0.011, 0.017, 0.027), 'skin', 20, 12), ['head'])
     part(ellipsoid('ear_inner.'+s, (0.104*x, 0.002, 1.657), (0.0025, 0.009, 0.016), 'skin_dark', 16, 10), ['head'])
 for upper in (False, True):
@@ -1036,4 +1039,9 @@ if PREVIEW:
         for sd in ('L', 'R'): pb['eye.' + sd].rotation_euler = (math.radians(-6), math.radians(14), 0)
     face_shot('blink_front', 0, blink); face_shot('blink_threequarter', 38, blink); face_shot('halfblink_front', 0, half_blink); face_shot('look_front', 0, look)
     for sd in ('L', 'R'): pb['lid.' + sd].scale = (1, 1, 1); pb['eye.' + sd].rotation_euler = (0, 0, 0)
+    def brows(lift, tilt):      # lift: metres up; tilt: radians, inner end up when positive (the bone points outward: a roll about the face normal)
+        for sd, x in (('L', 1), ('R', -1)):
+            pb['brow.' + sd].location = (0, lift, 0); pb['brow.' + sd].rotation_euler = (0, 0, -tilt * SIDE['brow.' + sd] * x)      # (the proxy's own sign comes from a probe at load time; this is only the preview)
+    face_shot('brows_sad', 0, lambda: brows(0.002, 0.30)); face_shot('brows_raised', 0, lambda: brows(0.006, 0.0)); face_shot('brows_frown', 0, lambda: brows(-0.003, -0.22))
+    for sd in ('L', 'R'): pb['brow.' + sd].location = (0, 0, 0); pb['brow.' + sd].rotation_euler = (0, 0, 0)
     print('REPORT previews in', PREVIEW)
