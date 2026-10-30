@@ -62,7 +62,7 @@ class P(run.Playthrough):
             W.drawn.append((h, redraw, path[-1]))
             if h not in W.powered(): raise RuntimeError('%#x drawn while the game had it off' % h)      # the game: an unpowered panel cannot be started
             if h == GATE and W.ends.get(BACK_LEFT) != GOOD_END:
-                self.last_why[h] = 'stuck before node 35 (path index 10)'; return False
+                self.last_why[h] = 'tracer: stuck before traced 11 (at 10) (edge 10)'; return False
             if h in W.solved and not redraw: return True      # already solved: nothing drawn
             W.solved.add(h); W.ends[h] = path[-1]; W.solved_at.setdefault(h, time.time()); return True
 
@@ -74,7 +74,7 @@ sys.exit(0 if ok and redrew else 1)
 '''
 
 MUTANTS = [
-    ("elif why.startswith('stuck') or 'did not accept' in why:", "elif False:"),                                    # a stuck line never redraws a prerequisite
+    ("elif any(k in why for k in ('stuck', 'overshot', 'wrong branch', 'did not accept')) and 'did not start' not in why:", "elif False:"),                                    # a stuck line never redraws a prerequisite
     ("can_solve=lambda h: h in self.manifest and h in self.powered and self.path_for(h) is not None", "can_solve=lambda h: h in self.manifest and self.path_for(h) is not None"),   # no power gating
     ("busy[i] = (pool.submit(self.solve, self.bots[i - 1], h, True), h)", "busy[i] = (pool.submit(self.solve, self.bots[i - 1], h), h)"),    # a redraw sent as a plain solve
 ]

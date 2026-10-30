@@ -397,7 +397,7 @@ class Playthrough:
                         # relaxed-rule candidate). A refused line on an unsolved panel costs nothing.
                         k, v = self.variant[h]; self.variant[h] = (k + 1, v); self.paths[h] = v[k + 1]; self.planner.tries[h] = 0      # the next candidate line
                         self.rec('next candidate', panel='%#x' % h, candidate=k + 1, of=len(v))
-                    elif why.startswith('stuck') or 'did not accept' in why:
+                    elif any(k in why for k in ('stuck', 'overshot', 'wrong branch', 'did not accept')) and 'did not start' not in why:      # (the tracer and steering say 'tracer: stuck ...', 'steering: overshot ...': the tutorial gate sat blocked on those)
                         # The line got stuck (or was refused) on a panel the game has powered: what blocks it may be a prerequisite solved the
                         # wrong way (the tutorial gate's latches stay shut unless Back Left ends at its bottom exit). Redraw those another way and
                         # give this panel its tries back. A start that was not found is the drawing's own problem and changes nothing here.
