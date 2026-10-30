@@ -101,12 +101,12 @@ def nearest_reached(reached, p, rmax=80.0, height=8.0):
     """The reached (cell centre x, y, floor) nearest to point p (horizontally, within `height` m in z), searching rings outward, else None."""
     cx, cy = cell_of(p[0], p[1]); best = None
     for r in range(0, int(rmax / CELL) + 1):
-        if best and r * CELL > best[0] + CELL: break
+        if best and r * CELL > best[0] + CELL: break      # (best[0] is the weighted distance, at least the horizontal one)
         ring = [(x, y) for x in range(cx - r, cx + r + 1) for y in (cy - r, cy + r)] + [(x, y) for y in range(cy - r + 1, cy + r) for x in (cx - r, cx + r)]
         for c in ring:
             for z in reached.get(c, ()):
                 if abs(z - p[2]) > height: continue
-                d = math.dist(wnav.centre(c), p[:2])
+                d = math.dist(wnav.centre(c), p[:2]) + 2.0 * abs(z - p[2])      # (a level 3 m off is 6 m away: there is a wall or a cliff between)
                 if best is None or d < best[0]: best = (d, wnav.centre(c)[0], wnav.centre(c)[1], z)
     return best and best[1:]
 
@@ -121,7 +121,7 @@ def plan_legs(reached, cut, pts, cluster=8.0):
         if any(math.dist(p[:2], pts[l['panel']][:2]) < cluster and abs(p[2] - pts[l['panel']][2]) < 4.0 for l in legs):
             next(l for l in legs if math.dist(p[:2], pts[l['panel']][:2]) < cluster)['near'].append(h); continue
         f = nearest_reached(reached, p)
-        legs.append({'panel': h, 'near': [h], 'from': list(f) if f else None, 'to': list(p[:3]), 'gap': round(math.dist(f[:2], p[:2]), 1) if f else None})
+        legs.append({'panel': h, 'near': [h], 'from': list(f) if f else None, 'to': list(p[:3]), 'gap': round(math.dist(f[:2], p[:2]) + 2.0 * abs(f[2] - p[2]), 1) if f else None})
     legs.sort(key=lambda l: (l['gap'] is None, l['gap'] or 0)); return legs
 
 
