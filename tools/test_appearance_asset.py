@@ -27,7 +27,7 @@ def missinggroup(j,b):
 def count(j,b): j['accessors'][label]['count']=26
 def vectype(j,b): j['accessors'][label]['type']='VEC2'
 def images(j,b): j['images'].extend([j['images'][0]]*3)      # four images: more than the colour atlas plus a normal and a material map
-def huge(j,b): b.extend(bytes(6*1024*1024))
+def huge(j,b): b.extend(bytes(9*1024*1024))      # past the 9 MiB budget
 def triangles(j,b):
     off=len(b); rows=list(range(27))*11112; b.extend(struct.pack('<%dI'%len(rows),*rows))
     j['bufferViews'][j['accessors'][indices]['bufferView']].update(byteOffset=off,byteLength=len(rows)*4)
