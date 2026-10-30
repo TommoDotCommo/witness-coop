@@ -111,6 +111,32 @@ def wait(predicate, what, timeout=180):
     raise RuntimeError('timed out: ' + what)
 
 
+def attempt_env(lw, tries):
+    """The drawing script's settings for the next attempt at a panel, from why its last attempt failed (lw) and how many it has had."""
+    env = {}
+    # A first attempt gets a short search for the start circle, so a hard panel does not hold a bot while easy work waits; later attempts the full one.
+    env['WDRAW_START_BUDGET'] = '75' if tries == 0 else '230'
+    if 'did not start' in lw:
+        # The start was not found from the front last time: this time stand on the other side (a panel seen from behind or through a cage),
+        # and the time after that close in front of it, 1.4 m out, where the person stood for the panels they were asked to solve (the
+        # recordings of 2026-10-30: 1.1 to 2.3 m out; the bot's usual spot is 3 m out, where a small start circle is a few pixels).
+        if tries % 2 == 1: env['WDRAW_FLIP_SIDE'] = '1'
+        else: env['WDRAW_STAND'] = '0,1.4'
+    if 'cannot be seen' in lw: env['WDRAW_RECENTRE'] = '1'      # (the panel's middle may be far from where the camera faces)
+    # The line went wrong on the way (stuck, a wrong branch, short of the end): steer it by feedback instead of the projection
+    # (Monastery Shutters Control was drawn that way after every projected attempt failed).
+    if lw.startswith(('stuck', 'tracer', 'took the wrong branch')) or '(state 0)' in lw: env['WDRAW_STEER'] = '1'
+    # The line was finished short of the end (state 0: a long end stub, as on the redirect control's radial lines): push the stub further.
+    if '(state 0)' in lw: env['WDRAW_STUB_EXTRA'] = '200'
+    # A line that got stuck may have run into something hiding part of the panel (the cursor only reaches what the camera sees): the next
+    # attempts stand elsewhere, 1.2 m to one side then the other, nearer or further.
+    if lw.startswith('stuck'): env['WDRAW_STAND'] = ('1.2,2.0', '-1.2,2.0', '0,4.0', '1.5,3.5', '-1.5,3.5')[tries % 5]
+    # The in-game tracer (proxy/tracer.cpp) draws the edges after the first at one frame a step, about twice as fast; a panel whose last
+    # attempt failed in the tracer is drawn the old way.
+    if not lw.startswith(('tracer', 'the in-game tracer')): env['WDRAW_TRACER'] = '1'
+    return env
+
+
 class Recorder:
     def __init__(self, folder):
         self.folder = folder; folder.mkdir(parents=True, exist_ok=True); (folder / 'shots').mkdir(exist_ok=True)
@@ -226,25 +252,8 @@ class Playthrough:
         env['WNAV_MAPS'] = ';'.join(win(str(p)) for p in [self.nav_map] + [b.dir / 'wnav_map.bin' for b in self.bots if b is not bot] if p.exists())
         if redraw: env['WDRAW_REDRAW'] = '1'
         if '%#x' % h in TAUGHT: env['WDRAW_TAUGHT'] = win(TAUGHT_FILE); env['WSLENV'] += ':WDRAW_TAUGHT'      # stand, look and start as the person did
-        # A first attempt gets a short search for the start circle, so a hard panel does not hold a bot while easy work waits; later attempts the full one.
-        env['WDRAW_START_BUDGET'] = '75' if self.planner.tries.get(h, 0) == 0 else '230'; env['WSLENV'] += ':WDRAW_START_BUDGET:WDRAW_FLIP_SIDE'
-        # The start was not found from the front last time: this time stand on the other side (a panel seen from behind or through a cage).
-        if 'did not start' in self.last_why.get(h, '') and self.planner.tries.get(h, 0) % 2 == 1: env['WDRAW_FLIP_SIDE'] = '1'
-        # The in-game tracer (proxy/tracer.cpp) draws the edges after the first at one frame a step, about twice as fast; a panel whose last
-        # attempt failed in the tracer is drawn the old way.
-        env['WSLENV'] += ':WDRAW_TRACER:WDRAW_STAND:WDRAW_STUB_EXTRA:WDRAW_STEER:WDRAW_RECENTRE'
-        if 'cannot be seen' in self.last_why.get(h, ''): env['WDRAW_RECENTRE'] = '1'      # (the panel's middle may be far from where the camera faces)
-        # The line went wrong on the way (stuck, a wrong branch, short of the end): steer it by feedback instead of the projection
-        # (Monastery Shutters Control was drawn that way after every projected attempt failed).
-        lw = self.last_why.get(h, '')
-        if lw.startswith(('stuck', 'tracer', 'took the wrong branch')) or '(state 0)' in lw: env['WDRAW_STEER'] = '1'
-        # The line was finished short of the end (state 0: a long end stub, as on the redirect control's radial lines): push the stub further.
-        if '(state 0)' in self.last_why.get(h, ''): env['WDRAW_STUB_EXTRA'] = '200'
-        # A line that got stuck may have run into something hiding part of the panel (the cursor only reaches what the camera sees): the next
-        # attempts stand elsewhere, 1.2 m to one side then the other, nearer or further.
-        if self.last_why.get(h, '').startswith('stuck'):
-            env['WDRAW_STAND'] = ('1.2,2.0', '-1.2,2.0', '0,4.0', '1.5,3.5', '-1.5,3.5')[self.planner.tries.get(h, 0) % 5]
-        if not self.last_why.get(h, '').startswith(('tracer', 'the in-game tracer')): env['WDRAW_TRACER'] = '1'
+        env.update(attempt_env(self.last_why.get(h, ''), self.planner.tries.get(h, 0)))
+        env['WSLENV'] += ':WDRAW_START_BUDGET:WDRAW_FLIP_SIDE:WDRAW_TRACER:WDRAW_STAND:WDRAW_STUB_EXTRA:WDRAW_STEER:WDRAW_RECENTRE'
         err = ''
         try:
             out, err = pyw(script, bot.pid, win(str(bot.dir)), '%x' % h, ','.join(map(str, path)), timeout=780, env=env, both=True)      # (a walk may take 5 minutes)
