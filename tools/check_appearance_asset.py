@@ -10,9 +10,9 @@ import sys
 from pathlib import Path
 from glbtools import read_glb, read_acc
 
-def texture_size(j, b):
-    assert len(j.get('images', [])) == 1, 'expected one shared atlas'
-    view = j['bufferViews'][j['images'][0]['bufferView']]
+def texture_size(j, b, index=0):
+    assert 1 <= len(j.get('images', [])) <= 3, 'expected the colour atlas, with at most a normal and a material map beside it'
+    view = j['bufferViews'][j['images'][index]['bufferView']]
     data = b[view.get('byteOffset', 0):view.get('byteOffset', 0)+view['byteLength']]
     if data[:8] == b'\x89PNG\r\n\x1a\n': return struct.unpack_from('>II', data, 16)
     assert data[:2] == b'\xff\xd8', 'atlas is not JPEG or PNG'
@@ -49,9 +49,17 @@ def check(path):
             triangles += len(indices)//3
     assert groups == set(range(9)), 'missing appearance region'
     assert triangles <= 100000, 'triangle budget exceeded'
-    w,h = texture_size(j,b)
+    colour = 0      # the colour atlas is the base colour texture's image; the normal and material maps are the others
+    for m in j.get('materials', []):
+        t = m.get('pbrMetallicRoughness', {}).get('baseColorTexture', {}).get('index')
+        if t is not None: colour = j['textures'][t]['source']
+    w,h = texture_size(j,b,colour)
     assert 0 < w <= 2048 and 0 < h <= 2048, 'atlas exceeds 2048 square budget'
-    assert Path(path).stat().st_size <= 6*1024*1024, 'GLB budget exceeded'
-    print(f'appearance asset: 9 regions, {triangles} triangles, {w}x{h} atlas, {Path(path).stat().st_size} bytes; labels and budgets passed')
+    extra = []
+    for k in range(len(j['images'])):
+        if k == colour: continue
+        ew, eh = texture_size(j, b, k); assert 0 < ew <= 2048 and 0 < eh <= 2048, 'a map exceeds the 2048 square budget'; extra.append(f'{ew}x{eh}')
+    assert Path(path).stat().st_size <= 9*1024*1024, 'GLB budget exceeded (9 MiB: the colour atlas plus the normal and material maps)'
+    print(f'appearance asset: 9 regions, {triangles} triangles, {w}x{h} atlas' + (' + maps ' + ', '.join(extra) if extra else '') + f', {Path(path).stat().st_size} bytes; labels and budgets passed')
 
 if __name__ == '__main__': check(sys.argv[1] if len(sys.argv)>1 else 'assets/models/adventurer.glb')

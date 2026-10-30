@@ -234,7 +234,13 @@ static void DrawMarkers(IDXGISwapChain* sc) {
         wm::Cam wc = {{cam[0], cam[1], cam[2]}, ang[0], ang[1], vfov, aspect, 0.1f, 2000.0f};
         bool first = true;
         for (const auto& rp : remotes) if (rp.ageMs < 2000) {
-            ModelExtra ex; ex.seated=rp.emote==14 && TvSeatedPose(rp.pos); ex.appearance = rp.appearance; ex.proximitySpeaking = rp.proximitySpeaking; ex.radioEquipped = rp.radioEquipped; ex.radioTx = rp.radioTx; { int e = 0; float t = 0; if (SocialEmoteOf(rp.id, &e, &t)) { ex.emote = e; ex.emoteT = t; } }
+            ModelExtra ex; ex.seated=rp.emote==14 && TvSeatedPose(rp.pos);
+            for (const auto& r : CoopGetRemoteLines()) if (r.from == rp.id && !r.final && r.ageMs < 1500 && !r.pts.empty()) {      // tracing a panel: the hand goes to the line's tip
+                uintptr_t e = r.panel < 0x40000 ? GameEntity(r.panel) : 0; if (!e || !Readable((void*)(e + 0x24), 12) || !Readable((void*)(e + 0x34), 16)) continue;
+                const float* pp = (const float*)(e + 0x24); const float* qp = (const float*)(e + 0x34); wframe::Q pq = {qp[0], qp[1], qp[2], qp[3]};
+                float l[3]; for (int k = 0; k < 3; ++k) l[k] = r.pts.back().d[k] * witness::LineUnit(r.fine);
+                wframe::ToWorld(pp, pq, l, ex.reachAt); ex.reaching = true; break;
+            } ex.appearance = rp.appearance; ex.proximitySpeaking = rp.proximitySpeaking; ex.radioEquipped = rp.radioEquipped; ex.radioTx = rp.radioTx; ex.viewPitch = rp.ang[1]; { int e = 0; float t = 0; if (SocialEmoteOf(rp.id, &e, &t)) { ex.emote = e; ex.emoteT = t; } }
             ModelGpuDraw(rtv, td.Width, td.Height, wc, true, rp.seq, rp.pos, rp.ang[0], rp.id, first, &ex); first = false;
         }
         if (first) { float p[3] = {}; ModelGpuDraw(rtv, td.Width, td.Height, wc, false, 0, p, 0); }

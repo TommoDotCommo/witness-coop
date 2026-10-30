@@ -6,3 +6,4 @@
 void DepthInstall(ID3D11DeviceContext* ctx, ID3D11Device* dev, UINT bbW, UINT bbH);   // patches the context's shared vtable (once)
 void DepthDiagFrame(unsigned frame);                                                   // debug_depth=1: logs what the game did with depth this frame
 bool DepthScene(ID3D11ShaderResourceView** srv, bool* multisampled);   // a view of the game's scene depth buffer (valid for the frame); false: not found yet
+void DepthIgnore(ID3D11Texture2D* own);                                 // our own depth buffer: full size and typeless like the game's (the shadow reads it back), never taken for the scene

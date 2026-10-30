@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 #include "voice/voice.h"
+#include "voice/footsteps.h"
 #include "voice/gesture.h"
 #include "radio/radio.h"
 #include "coop.h"
@@ -22,7 +23,7 @@ void Log(const char* msg);
 namespace {
 CRITICAL_SECTION g_lk; bool g_lkInit;
 struct Lock { Lock() { EnterCriticalSection(&g_lk); } ~Lock() { LeaveCriticalSection(&g_lk); } };
-wvoice::Mixer g_mixer; volatile LONG g_proximityGesture = 0, g_ptt = 0, g_transmitting = 0, g_started = 0; volatile LONG g_sent = 0, g_captured = 0, g_received = 0, g_played = 0, g_micLevel = 0;
+wvoice::Mixer g_mixer; wvoice::Foley g_foley; volatile LONG g_proximityGesture = 0, g_ptt = 0, g_transmitting = 0, g_started = 0; volatile LONG g_sent = 0, g_captured = 0, g_received = 0, g_played = 0, g_micLevel = 0;
 volatile LONG g_radioHeld = 0, g_txChannel = 0;
 std::map<unsigned, float> g_playerVolume;
 wvoice::Channel g_channel = wvoice::kProximity; unsigned g_to = 0;      // what this player says goes where (the cfg sets it, the channel key and the voicechannel command change it)
@@ -109,7 +110,7 @@ DWORD WINAPI PlayThread(LPVOID) {
     else if (!cfg.voiceMuteOutput) Log("voice: no playback device could be opened");
     ULONGLONG next = GetTickCount64(); int cur = 0;
     for (;;) {
-        float st[wvoice::kFrame * 2]; { Lock l; g_mixer.Configure(MixSettings()); g_mixer.Render(Speakers(), st); }
+        float st[wvoice::kFrame * 2]; { Lock l; g_mixer.Configure(MixSettings()); g_mixer.Render(Speakers(), st); g_foley.volume = cfg.footstepVolume / 100.0f; g_foley.Render(st, wvoice::kFrame); }      // the other players' footsteps go in with their voices
         if (device) {
             while (!(hdr[cur].dwFlags & WHDR_DONE)) Sleep(2);
             for (int i = 0; i < wvoice::kFrame * 2; ++i) bufs[cur][i] = (int16_t)(st[i] * 32767.0f);
@@ -167,6 +168,15 @@ void VoiceStart() {
     { HANDLE t = CreateThread(nullptr, 0, PlayThread, nullptr, 0, nullptr); if (t) CloseHandle(t); }
     if (c.gameVolume < 100 && !c.noGameVolume) { HANDLE t = CreateThread(nullptr, 0, VolumeThread, nullptr, 0, nullptr); if (t) CloseHandle(t); }
 }
+// A footfall of player `id` at `pos` (its camera, as the pose packets carry it), at `speed` m/s (render thread): placed like a proximity voice.
+void VoiceFootstep(unsigned id, const float pos[3], float speed, bool run) {
+    (void)id; if (!g_lkInit || !GetCfg().footsteps) return;
+    float lp[3], yaw = 0; if (!ListenerPose(lp, &yaw)) return;
+    float dx = pos[0] - lp[0], dy = pos[1] - lp[1], dz = pos[2] - lp[2]; float dist = std::sqrt(dx * dx + dy * dy + dz * dz);
+    float fx = std::cos(yaw), fy = std::sin(yaw), rx = std::sin(yaw), ry = -std::cos(yaw); float bearing = std::atan2(dx * rx + dy * ry, dx * fx + dy * fy);
+    Lock l; g_foley.Plant(dist, bearing, speed, run, MixSettings());
+}
+unsigned VoiceFootstepsPlayed() { Lock l; return g_foley.played; }
 void VoiceOnPacket(const uint8_t* data, size_t n) {      // network thread
     if (!g_lkInit) return; wvoice::Packet p; if (!wvoice::ParsePacket(data, n, &p)) return; InterlockedIncrement(&g_received);
     if (GetCfg().noVoicePlay) return; Lock l; g_mixer.Push(p);
@@ -185,7 +195,8 @@ bool VoiceSpeaking() { return g_transmitting != 0 && !GetCfg().noSpeakingFlag; }
 int VoiceMicLevel() { return (int)g_micLevel; }
 void VoiceStat() {
     char m[300]; const Cfg& c = GetCfg();
-    snprintf(m, sizeof m, "voicestat: mode %d ptt %ld transmitting %ld sent %ld captured %ld received %ld played %ld game_volume %.2f hud_speakers %u hud_mic %d channel %s to %u", c.voiceMode, g_ptt, g_transmitting, g_sent, g_captured, g_received, g_played, g_gameVolumeRead, SocialSpeakDrawn(), SocialMicHudDrawn() ? 1 : 0, wvoice::ChannelName(g_channel), g_to); Log(m);
+    unsigned steps = 0, stepsDropped = 0; { Lock l; steps = g_foley.played; stepsDropped = g_foley.dropped; }
+    snprintf(m, sizeof m, "voicestat: mode %d ptt %ld transmitting %ld sent %ld captured %ld received %ld played %ld game_volume %.2f hud_speakers %u hud_mic %d channel %s to %u footsteps %u footsteps_dropped %u", c.voiceMode, g_ptt, g_transmitting, g_sent, g_captured, g_received, g_played, g_gameVolumeRead, SocialSpeakDrawn(), SocialMicHudDrawn() ? 1 : 0, wvoice::ChannelName(g_channel), g_to, steps, stepsDropped); Log(m);
     if (!g_lkInit) return; Lock l;
     for (const auto& s : g_mixer.Stats()) { snprintf(m, sizeof m, "voicestat: speaker %u talking %d prox %.3f radio %.3f pan %.3f rms %.4f tone %.4f %.4f %.4f packets %u concealed %u dropped %u channel %u", s.id, s.talking ? 1 : 0, s.prox, s.radio, s.pan, s.rms, s.tone[0], s.tone[1], s.tone[2], s.packets, s.concealed, s.dropped, (unsigned)s.channel); Log(m); }
 }

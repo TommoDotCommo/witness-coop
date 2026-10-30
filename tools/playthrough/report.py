@@ -3,13 +3,15 @@
 
 usage: report.py [run folder ...]      (default: every run under <run folders>/*/playthrough/)
        report.py --panels [folders]     the best result per panel across runs (data/panel_status.json is written beside this file)
+       report.py --blockers [folders]   panels that failed twice or more and were never solved: why (one of KINDS), and the save to record them from
 
 Per run: where it started, how far along the credits route it got (per area), solve speed, failures grouped by reason, co-op propagation
-(percentiles, the slowest), persistent divergences, redraws, and what blocked it."""
+(percentiles, the slowest), persistent divergences and the divergence check (divergence.py), redraws, and what blocked it."""
 import glob, json, os, statistics, sys, collections
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE); sys.path.insert(0, os.path.dirname(HERE))
 from logic import Logic
 from planner import route
+import divergence
 from witness import RUN
 
 
@@ -28,6 +30,46 @@ def reason(why):
     for key in ('stuck before', 'did not start', 'cannot be seen', 'did not accept', 'timed out', 'redrawn', 'overshot', 'no result'):
         if key in why: return key
     return why[:40] or '?'
+
+
+KINDS = ('did not start', 'cannot be seen', 'psolve no path', 'wrong line', 'unpowered', 'movement', 'other')
+
+
+def kind(why):
+    """What went wrong in one failed attempt, as the owner's recording list groups it."""
+    if 'did not start' in why: return 'did not start'
+    if 'cannot be seen' in why: return 'cannot be seen'
+    if why.startswith('NO SOLVER') or 'no path found' in why: return 'psolve no path'
+    if why.startswith('UNPOWERED'): return 'unpowered'
+    if any(k in why for k in ('teleport refused', 'could not be held', 'walk', 'could not get')): return 'movement'
+    if any(k in why for k in ('did not accept', 'stuck', 'overshot', 'wrong branch')): return 'wrong line'
+    return 'other'
+
+
+def blockers(folders, L, R=None):
+    """[{panel, name, area, kind, why, fails, on_route, checkpoint}] for every panel that failed at least twice in these runs and was
+    solved in none of them. checkpoint: the newest save of a run in which it failed (its own checkpoint, else the save it resumed from):
+    the panel was reachable there, so a person can record it from it (tools/record.sh <checkpoint> <panel>)."""
+    solved, fails, saves = set(), collections.defaultdict(list), {}
+    for f in folders:
+        ev = load(f); start = next((e for e in ev if e['kind'] == 'started'), {}).get('start', '')
+        own = os.path.join(f, 'checkpoint.witness_campaign')
+        save = own if os.path.exists(own) else (start[len('resumed from '):] if start.startswith('resumed from ') else '')
+        for e in ev:
+            if e['kind'] in ('solved', 'already solved'): solved.add(e['panel'])
+            elif e['kind'] in ('failed', 'no solver', 'unpowered'):
+                why = e.get('why', '') if e['kind'] == 'failed' else ('NO SOLVER ' + e.get('why', '') if e['kind'] == 'no solver' else 'UNPOWERED after %ss' % e.get('seconds'))
+                n = 2 if e['kind'] != 'failed' else 1      # (no solver, unpowered: logged once, they block at once)
+                fails[e['panel']] += [why] * n
+                if save: saves[e['panel']] = save
+    out = []
+    for h, whys in fails.items():
+        if h in solved or len(whys) < 2: continue
+        c = collections.Counter(kind(w) for w in whys); k = c.most_common(1)[0][0]
+        ent = L.entities.get(int(h, 16))
+        out.append(dict(panel=h, name=ent.name if ent else h, area=ent.area if ent else '?', kind=k, why=next(w for w in reversed(whys) if kind(w) == k)[:160],
+                        fails=len(whys), kinds=dict(c), on_route=(R is not None and int(h, 16) in R), checkpoint=saves.get(h, '')))
+    return sorted(out, key=lambda b: (not b['on_route'], b['area'], b['panel']))
 
 
 def one(folder, L, R):
@@ -57,6 +99,8 @@ def one(folder, L, R):
     if div:
         doors = collections.Counter(d for e in div for d in e.get('doors_differ', [])); panels = collections.Counter(x for e in div for x in e.get('panels_only_here', []) + e.get('panels_missing', []))
         print('  persistent divergences: %d (doors %s; panels %s)' % (len(div), dict(doors.most_common(6)), dict(panels.most_common(6))))
+    dc = divergence.summary(ev)      # persistent and not explained by the allow-list (data/divergence_allow.json): a co-op bug to look at
+    if dc['unknown'] or dc['known']: print('  divergence check: unknown %s, known %s, resolved %s' % (dc['unknown'] or '-', dc['known'] or '-', dc['resolved'] or '-'))
     for k in ('resolve another way', 'redraw refused: restoring', 'crash', 'no solver'):
         n = [e for e in ev if e['kind'] == k]
         if n: print('  %s: %s' % (k, ', '.join(e['panel'] for e in n[:10])))
@@ -80,5 +124,7 @@ def panels(folders, L):
 if __name__ == '__main__':
     a = sys.argv[1:]; L = Logic(); R = route(L)
     if a and a[0] == '--panels': panels(runs(a[1:]), L)
+    elif a and a[0] == '--blockers':
+        for b in blockers(runs(a[1:]), L, R): print(json.dumps(b))
     else:
         for f in runs(a): one(f, L, R)

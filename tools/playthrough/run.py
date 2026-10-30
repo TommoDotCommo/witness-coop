@@ -23,6 +23,7 @@ HERE = os.path.dirname(os.path.abspath(__file__)); TOOLS = os.path.dirname(HERE)
 sys.path.insert(0, HERE); sys.path.insert(0, TOOLS)
 from logic import Logic, CREDITS
 from planner import Planner
+import divergence
 from witness import ROOT, RUN, PYW, win, real_saves
 import solver
 TAUGHT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'taught.json')      # learned from recordings of a person (teach.py)
@@ -125,6 +126,32 @@ def wait(predicate, what, timeout=180):
     raise RuntimeError('timed out: ' + what)
 
 
+def attempt_env(lw, tries):
+    """The drawing script's settings for the next attempt at a panel, from why its last attempt failed (lw) and how many it has had."""
+    env = {}
+    # A first attempt gets a short search for the start circle, so a hard panel does not hold a bot while easy work waits; later attempts the full one.
+    env['WDRAW_START_BUDGET'] = '75' if tries == 0 else '230'
+    if 'did not start' in lw:
+        # The start was not found from the front last time: this time stand on the other side (a panel seen from behind or through a cage),
+        # and the time after that close in front of it, 1.4 m out, where the person stood for the panels they were asked to solve (the
+        # recordings of 2026-10-30: 1.1 to 2.3 m out; the bot's usual spot is 3 m out, where a small start circle is a few pixels).
+        if tries % 2 == 1: env['WDRAW_FLIP_SIDE'] = '1'
+        else: env['WDRAW_STAND'] = '0,1.4'
+    if 'cannot be seen' in lw: env['WDRAW_RECENTRE'] = '1'      # (the panel's middle may be far from where the camera faces)
+    # The line went wrong on the way (stuck, a wrong branch, short of the end): steer it by feedback instead of the projection
+    # (Monastery Shutters Control was drawn that way after every projected attempt failed).
+    if lw.startswith(('stuck', 'tracer', 'took the wrong branch')) or '(state 0)' in lw: env['WDRAW_STEER'] = '1'
+    # The line was finished short of the end (state 0: a long end stub, as on the redirect control's radial lines): push the stub further.
+    if '(state 0)' in lw: env['WDRAW_STUB_EXTRA'] = '200'
+    # A line that got stuck may have run into something hiding part of the panel (the cursor only reaches what the camera sees): the next
+    # attempts stand elsewhere, 1.2 m to one side then the other, nearer or further.
+    if lw.startswith('stuck'): env['WDRAW_STAND'] = ('1.2,2.0', '-1.2,2.0', '0,4.0', '1.5,3.5', '-1.5,3.5')[tries % 5]
+    # The in-game tracer (proxy/tracer.cpp) draws the edges after the first at one frame a step, about twice as fast; a panel whose last
+    # attempt failed in the tracer is drawn the old way.
+    if not lw.startswith(('tracer', 'the in-game tracer')): env['WDRAW_TRACER'] = '1'
+    return env
+
+
 class Recorder:
     def __init__(self, folder):
         self.folder = folder; folder.mkdir(parents=True, exist_ok=True); (folder / 'shots').mkdir(exist_ok=True)
@@ -137,6 +164,9 @@ class Recorder:
 
 
 class Playthrough:
+    CHECKPOINT_S = 900      # seconds between the save points taken during play (only when something new was solved)
+    last_checkpoint = 0; checkpointed = 0
+
     def __init__(self, n, goal, minutes, fps, drop, start='', resume=''):
         self.logic = Logic(); self.n, self.goal_name, self.deadline = n, goal, time.time() + minutes * 60
         self.fps, self.drop, self.start, self.resume = fps, drop, start, resume
@@ -237,25 +267,8 @@ class Playthrough:
         env['WNAV_MAPS'] = ';'.join(win(str(p)) for p in [self.nav_map] + [b.dir / 'wnav_map.bin' for b in self.bots if b is not bot] if p.exists())
         if redraw: env['WDRAW_REDRAW'] = '1'
         if '%#x' % h in TAUGHT: env['WDRAW_TAUGHT'] = win(TAUGHT_FILE); env['WSLENV'] += ':WDRAW_TAUGHT'      # stand, look and start as the person did
-        # A first attempt gets a short search for the start circle, so a hard panel does not hold a bot while easy work waits; later attempts the full one.
-        env['WDRAW_START_BUDGET'] = '75' if self.planner.tries.get(h, 0) == 0 else '230'; env['WSLENV'] += ':WDRAW_START_BUDGET:WDRAW_FLIP_SIDE'
-        # The start was not found from the front last time: this time stand on the other side (a panel seen from behind or through a cage).
-        if 'did not start' in self.last_why.get(h, '') and self.planner.tries.get(h, 0) % 2 == 1: env['WDRAW_FLIP_SIDE'] = '1'
-        # The in-game tracer (proxy/tracer.cpp) draws the edges after the first at one frame a step, about twice as fast; a panel whose last
-        # attempt failed in the tracer is drawn the old way.
-        env['WSLENV'] += ':WDRAW_TRACER:WDRAW_STAND:WDRAW_STUB_EXTRA:WDRAW_STEER:WDRAW_RECENTRE'
-        if 'cannot be seen' in self.last_why.get(h, ''): env['WDRAW_RECENTRE'] = '1'      # (the panel's middle may be far from where the camera faces)
-        # The line went wrong on the way (stuck, a wrong branch, short of the end): steer it by feedback instead of the projection
-        # (Monastery Shutters Control was drawn that way after every projected attempt failed).
-        lw = self.last_why.get(h, '')
-        if lw.startswith(('stuck', 'tracer', 'took the wrong branch')) or '(state 0)' in lw: env['WDRAW_STEER'] = '1'
-        # The line was finished short of the end (state 0: a long end stub, as on the redirect control's radial lines): push the stub further.
-        if '(state 0)' in self.last_why.get(h, ''): env['WDRAW_STUB_EXTRA'] = '200'
-        # A line that got stuck may have run into something hiding part of the panel (the cursor only reaches what the camera sees): the next
-        # attempts stand elsewhere, 1.2 m to one side then the other, nearer or further.
-        if self.last_why.get(h, '').startswith('stuck'):
-            env['WDRAW_STAND'] = ('1.2,2.0', '-1.2,2.0', '0,4.0', '1.5,3.5', '-1.5,3.5')[self.planner.tries.get(h, 0) % 5]
-        if not self.last_why.get(h, '').startswith(('tracer', 'the in-game tracer')): env['WDRAW_TRACER'] = '1'
+        env.update(attempt_env(self.last_why.get(h, ''), self.planner.tries.get(h, 0)))
+        env['WSLENV'] += ':WDRAW_START_BUDGET:WDRAW_FLIP_SIDE:WDRAW_TRACER:WDRAW_STAND:WDRAW_STUB_EXTRA:WDRAW_STEER:WDRAW_RECENTRE'
         err = ''
         try:
             out, err = pyw(script, bot.pid, win(str(bot.dir)), '%x' % h, ','.join(map(str, path)), timeout=780, env=env, both=True)      # (a walk may take 5 minutes)
@@ -366,10 +379,12 @@ class Playthrough:
         a = snap()
         if not a: return      # a world could not be read: compare next time
         first = diff(a)
-        if not first: return
+        # every comparison is recorded, with what still differs both times: divergence.py tells a divergence that resolved from one that stayed
+        if not first: self.rec('worlds compared', differing=[]); return
         time.sleep(settle); b2 = snap()
         if not b2: return
         second = diff(b2)
+        self.rec('worlds compared', differing=sorted({'%#x' % h for i, d in first.items() for part, p2 in zip(d, second.get(i, (frozenset(),) * 3)) for h in part & p2}))
         for i, (extra, missing, doors) in first.items():
             e2, m2, d2 = second.get(i, (frozenset(),) * 3)
             for persistent, (x, m, d) in ((True, (extra & e2, missing & m2, doors & d2)), (False, (extra - e2, missing - m2, doors - d2))):
@@ -385,6 +400,7 @@ class Playthrough:
     def play(self):
         self.launch(); self.load_manifest()
         # A bot only starts a panel the game has powered: the logic says when it should be, the game says when it is (see stalls()).
+        self.last_checkpoint = time.time()
         self.planner = Planner(self.logic, self.goal_name, can_solve=lambda h: h in self.manifest and h in self.powered and self.path_for(h) is not None)
         if self.start:      # a slice: the route from the state it starts in (seven lasers lit: straight to the mountain, not round the island again)
             from planner import route
@@ -456,6 +472,8 @@ class Playthrough:
                 if rounds % 30 == 0 and spent:
                     added = self.planner.reroute(solved, self.avoid | spent)
                     if added is not None: self.avoid |= spent; self.rec('reroute', avoiding=sorted('%#x' % h for h in self.avoid), added=len(added), route=len(self.planner.targets), early=True)
+                # A save point every few minutes while it plays, so a crash or a stop part-way resumes from near where it was (--resume).
+                if time.time() - self.last_checkpoint >= self.CHECKPOINT_S and len(self.solved) > self.checkpointed: self.checkpointed = len(self.solved); self.last_checkpoint = time.time(); self.checkpoint()
                 time.sleep(2)
         try: time.sleep(5); self.compare_worlds(); self.checkpoint()
         finally: self.summary()
@@ -494,7 +512,7 @@ class Playthrough:
                  lasers=sum(1 for l in self.logic.lasers if l in done), per_bot={b.id: sum(1 for e in solves if e['bot'] == b.id) for b in self.bots},
                  by_area=by_area, median_solve_s=statistics.median([e['seconds'] for e in solves]) if solves else None,
                  propagation_s=dict(p50=pct(props, 50), p95=pct(props, 95), max=round(max(props), 2) if props else None, n=len(props)),
-                 divergences=sum(1 for e in ev if e['kind'] == 'divergence' and e.get('persistent', True)), transient_differences=sum(1 for e in ev if e['kind'] == 'divergence' and e.get('persistent') is False), crashes=sum(1 for e in ev if e['kind'] == 'crash'),
+                 divergences=sum(1 for e in ev if e['kind'] == 'divergence' and e.get('persistent', True)), divergence_check=divergence.summary(ev), transient_differences=sum(1 for e in ev if e['kind'] == 'divergence' and e.get('persistent') is False), crashes=sum(1 for e in ev if e['kind'] == 'crash'),
                  no_solver=sorted('%#x' % h for h in self.no_solver), blocked=[e for e in ev if e['kind'] == 'blocked'][-1:] or None,
                  movement=dict(walks=sum(1 for m in moves if m['how'] == 'walk' and m.get('ok')), walks_failed=sum(1 for m in moves if m['how'] == 'walk' and not m.get('ok')),
                                teleports=sum(1 for m in moves if m['how'] == 'teleport'), metres_walked=round(sum(m.get('walked', 0) for m in moves))))

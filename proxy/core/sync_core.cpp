@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <set>
 
 namespace witness {
 namespace {
@@ -498,9 +499,16 @@ void SyncCore::applyRemote(uint64_t now) {
     if (!ready_) return;   // events stay queued until this world is stable
     // One attempt per queued event per frame. Keep temporarily unavailable entities and refused calls: the transport already
     // ACKed these events, so the sender will not send them again. Other independent, monotonic changes can still make progress.
+    // An event kept for a later frame holds back every later event about the same entity in this pass: a refused door close that is retried behind
+    // the door open that followed it would be applied last, and the worlds would end with the door in different states.
     size_t attempts = recvQ_.size();
+    std::set<unsigned> held;
+    bool pending = false; unsigned pendingEntity = 0; size_t pendingSize = 0;
     while (attempts--) {
+        if (pending && recvQ_.size() > pendingSize) held.insert(pendingEntity);      // the previous event put itself back at the end of the queue
         Recv r = recvQ_.front(); recvQ_.erase(recvQ_.begin());
+        pending = true; pendingEntity = r.entity; pendingSize = recvQ_.size();
+        if (!f_.noEntityOrder && held.count(r.entity)) { recvQ_.push_back(r); continue; }
         char l[140];
         if (r.entity >= kMaxEntityId || !w_->entityExists(r.entity)) {
             if (!f_.noApplyRetry) recvQ_.push_back(r);
@@ -584,7 +592,9 @@ void SyncCore::applyRemote(uint64_t now) {
             if (h_.onApplied) h_.onApplied(r.kind, r.entity, r.epoch, r.seq);
             std::snprintf(l, sizeof l, "state: remote cable %#x dark", r.entity); log(l);
         } else if (r.kind == EV_DOOR_OPENED && w_->isDoor(r.entity)) {
-            if (w_->doorOpen(r.entity) && !f_.noDedupe) {
+            // Judged by where the door is going, as a close is: a close applied in this frame leaves the door standing open until the game
+            // moves it, and an open that came right behind it (the peer's door shut and opened again within 100 ms) must still be applied.
+            if ((f_.openDedupeByPosition ? w_->doorOpen(r.entity) : w_->doorRequested(r.entity)) && !f_.noDedupe) {
                 knownDoor_.insert(r.entity);
                 if (h_.onRejected) h_.onRejected(r.kind, r.entity, r.epoch, r.seq, "already open");
                 continue;

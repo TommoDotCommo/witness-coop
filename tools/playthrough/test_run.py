@@ -47,7 +47,8 @@ class P(run.Playthrough):
         self.powered = set(); self.variant = {}; self.stalled_since = {}; self.fixups = []; self.last_why = {}; self.restore = set()
         self.start = ''; self.resume = ''; self.avoid = set(); self.candidates_only = set(); self.attempts = {}; self.redrawn = set()
     def launch(self): pass
-    def checkpoint(self): pass
+    CHECKPOINT_S = 0
+    def checkpoint(self): self.events.append(dict(kind='checkpoint', solved=len(self.solved)))
     def load_manifest(self): pass
     def compare_worlds(self, settle=5): pass
     def summary(self): pass
@@ -66,13 +67,23 @@ class P(run.Playthrough):
             if h in W.solved and not redraw: return True      # already solved: nothing drawn
             W.solved.add(h); W.ends[h] = path[-1]; W.solved_at.setdefault(h, time.time()); return True
 
+E = run.attempt_env; NS = 'the line did not start with any panel size or offset tried'
+checks = [(E('', 0).get('WDRAW_START_BUDGET') == '75' and E('', 0).get('WDRAW_TRACER') == '1', 'first attempt'),
+          (E(NS, 1).get('WDRAW_FLIP_SIDE') == '1' and 'WDRAW_STAND' not in E(NS, 1), 'did not start, try 1: the other side'),
+          (E(NS, 2).get('WDRAW_STAND') == '0,1.4' and 'WDRAW_FLIP_SIDE' not in E(NS, 2), 'did not start, try 2: close in front'),
+          (E('stuck before node 1 (path index 1)', 1).get('WDRAW_STAND') == '-1.2,2.0' and E('stuck before node 1', 1).get('WDRAW_STEER') == '1', 'stuck: aside, steered'),
+          ('WDRAW_TRACER' not in E('tracer: stuck before traced 11', 1), 'tracer failure: drawn the old way')]
 KEYS = ['render_profile', 'fullscreen', 'vsync', 'highdpi', 'resolution', 'multisampling', 'custom_width', 'custom_height', 'shading_quality', 'reflection_quality', 'texture_quality', 'texture_detail', 'geometry_detail']
-for name, text in run.VIDEO.items():      # the game's video options: its own keys in its order, always the 1080p window the drawing is calibrated for
+for name, text in run.VIDEO.items():      # the game's video options: its own keys in its order, and always the 1080p window the drawing is calibrated for
     if text is None: continue
     kv = [l.split(' ', 1) for l in text.splitlines()[1:]]
-    if not (text.startswith(':/launcher\n') and [k for k, _ in kv] == KEYS and dict(kv)['resolution'] == '1' and dict(kv)['fullscreen'] == 'false'): print('video options wrong:', name); sys.exit(1)
+    checks.append((text.startswith(':/launcher\n') and [k for k, _ in kv] == KEYS and dict(kv)['resolution'] == '1' and dict(kv)['fullscreen'] == 'false', 'video %s' % name))
+for ok_, what in checks:
+    if not ok_: print('attempt settings wrong:', what); sys.exit(1)
 p = P(); p.play()
 ok = CREDITS in W.solved
+ckpts = [e for e in p.events if e['kind'] == 'checkpoint']
+if len(ckpts) < 2: print('no save points taken during play:', len(ckpts)); sys.exit(1)      # (one more comes at the end of play)
 redrew = [d for d in W.drawn if d[0] == BACK_LEFT and d[1] and d[2] == GOOD_END]
 print('credits reached' if ok else 'credits NOT reached', '| Back Left redrawn through 104:', bool(redrew), '| solves', len(W.solved))
 sys.exit(0 if ok and redrew else 1)
@@ -81,6 +92,9 @@ sys.exit(0 if ok and redrew else 1)
 MUTANTS = [
     ("elif any(k in why for k in ('stuck', 'overshot', 'wrong branch', 'did not accept')) and 'did not start' not in why:", "elif False:"),                                    # a stuck line never redraws a prerequisite
     ("can_solve=lambda h: h in self.manifest and h in self.powered and self.path_for(h) is not None", "can_solve=lambda h: h in self.manifest and self.path_for(h) is not None"),   # no power gating
+    ("self.checkpointed = len(self.solved); self.last_checkpoint = time.time(); self.checkpoint()", "self.checkpointed = len(self.solved); self.last_checkpoint = time.time()"),      # no save points during play
+    ("        else: env['WDRAW_STAND'] = '0,1.4'", "        else: pass"),      # a start never found is never tried from close in front
+    ("highdpi false\\nresolution 1\\nmultisampling", "highdpi false\\nresolution 2\\nmultisampling"),      # the video options ask for 720p
     ("busy[i] = (pool.submit(self.solve, self.bots[i - 1], h, True), h)", "busy[i] = (pool.submit(self.solve, self.bots[i - 1], h), h)"),    # a redraw sent as a plain solve
 ]
 

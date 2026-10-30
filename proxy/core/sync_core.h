@@ -66,12 +66,14 @@ struct Flags {   // all off by default
     bool noDedupe = false, noEpochReset = false, noResyncOnRestart = false, noGate = false, noSettle = false;
     bool wrongAckEpoch = false, applyOutOfOrder = false, noChecksum = false;
     bool countSkippedResends = false; // twin: an event the 32-per-round budget skipped is counted as resent (a startup burst of 248 events reads as 840 resends)
+    bool noEntityOrder = false; // twin: an event retried later is overtaken by a later event about the same entity (a door close lands after the open that followed it)
     bool noApplyRetry = false;  // twin: discard ACKed events when the game cannot apply them yet
     bool noPanelPower = false;  // twin: omit panel power-on progression from live sync and snapshots
     bool noCableSync = false;   // twin: omit cable lighting from live sync and snapshots
     bool noCableOff = false;    // twin: a cable that goes dark stays lit on the peer
     bool noUnsolveSync = false; // twin: a panel that un-solves (a timer ran out) stays solved on the peer
     bool noDoorCloseSync = false; // twin: a door that shuts stays open on the peer
+    bool openDedupeByPosition = false; // twin: a door told to shut but still standing open counts as open, so an open right after the close is dropped (one world kept 0x14724 shut)
     bool noOffSnapshot = false; // twin: snapshots do not tell a fresh peer about cables that were switched off
     bool noSnapReassert = false; // twin: a peer's snapshot that relights a cable this player switched off is ignored but not corrected
     bool noCableArbiter = false; // twin: no tie-break when both players switch the same cable at the same moment

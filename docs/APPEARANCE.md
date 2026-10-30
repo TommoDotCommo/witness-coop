@@ -74,8 +74,9 @@ This avoids guessing region identity from texture colours. The loader validates
 labels; the renderer uses per-draw constants so players share one mesh and texture.
 
 The budget gate requires all nine regions, whole triangles within one region,
-matching scalar/position counts, one atlas at most 2048×2048, at most 100,000
-triangles and at most 6 MiB per GLB. `models/build.sh adventurer` checks this before
+matching scalar/position counts, a colour atlas at most 2048×2048 (with at most a
+normal map and a material map beside it, each at most 2048×2048), at most 100,000
+triangles and at most 9 MiB per GLB. `models/build.sh adventurer` checks this before
 replacing the bundled asset. The old asset remains loadable for the default look.
 
 | Measured asset | Vertices | Triangles | Texture | GLB bytes |
@@ -83,15 +84,18 @@ replacing the bundled asset. The old asset remains loadable for the default look
 | Seed before appearance labels | 57,615 | 80,668 | one 2048×2048 JPEG | 4,503,988 |
 | Regenerated labelled baseline | 57,615 | 80,668 | one 2048×2048 JPEG | 4,739,328 |
 | Refined asset | 59,750 | 82,780 | one 2048×2048 JPEG | 4,903,964 |
+| Living asset (eyelids, eye pivots, scarf and gear bones, fidgets, normal and material maps) | 59,740 | 82,356 | 2048 JPEG colour + 1024 PNG normal + 1024 PNG material | 7,894,920 |
 
 The refinement adds modeled cheek/nose detail and nostrils, six hair locks,
 satchel strap holes and boot welts, with finer original hair and leather surface
 detail. It stays within the loader's 60,000-vertex limit and adds 2,112 triangles
 and 164,636 GLB bytes over the labelled baseline, without another atlas or draw.
 No frame-rate improvement is claimed. The native vertex structure grows from 56
-to 60 bytes, and per-frame constants from 192 to 336 bytes; no extra animation
-state or texture is required for palettes. Before/after front, three-quarter,
-face, hand, back and walking previews have been inspected.
+to 60 bytes, and per-frame constants from 192 to 432 bytes (the camera, the
+lighting and the shadow plane); no extra animation state or texture is required for
+palettes. The palette tints are applied in linear light before the lit shading
+([docs/LIFE.md](LIFE.md)). Before/after front, three-quarter, face, hand, back and
+walking previews have been inspected.
 
 ## Verification
 
