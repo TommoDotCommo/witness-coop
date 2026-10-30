@@ -24,6 +24,9 @@ prepare a reviewable diff before asking to publish. Never force-push.
   `tools/psolve/` (the rule solver, C++, `make -C tools/psolve test`), `tools/win/wdraw.py` (walk there, enter, find the start, draw), `tools/win/wpanels.py` (manifest).
 - Walking: `tools/win/wnav.py` (the player walks with mouse and keys; it maps the island from the proxy's `depthdump` and plans with A*;
   teleport only when a walk fails, and every move is recorded), `tools/navmap.py` (picture of a map), `python3 tools/test_wnav.py` (game-free, with mutants).
+- Teaching by a person: `tools/record.sh` (one game, a person solves the panels the bot cannot; `tools/win/wrecord.py` records),
+  `tools/playthrough/teach.py` (recordings -> `data/taught.json`: line, node world positions, where they stood), used by `run.py` and
+  `wdraw.py` (`WDRAW_TAUGHT`); `python3 tools/playthrough/test_teach.py` (game-free, with mutants).
 - `local/`: ignored private configuration, disposable test copies and QA evidence.
 
 ## Build and validation

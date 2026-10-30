@@ -257,6 +257,14 @@ Some panels have two exits or two starts and only one of them powers what the pa
 other exit). For those, `solver.variants()` lists one solution per start/end pair. When a line gets stuck on a panel whose prerequisite could
 have been solved another way, the bot redraws the prerequisite the next way (`WDRAW_REDRAW=1`) and tries again.
 
+Panels the bot cannot do are taught by a person. `tools/record.sh` starts one game from a save on the first monitor. It puts the player
+1.4 m in front of each panel in turn, with a message on the screen, and records what they do (`tools/win/wrecord.py`). The recording keeps
+the pose, the panel's state and the traced line twenty times a second. `python3 tools/playthrough/teach.py` turns the recordings into
+`tools/playthrough/data/taught.json`: per panel, the line the game accepted, each node's world position (from the traced-edge records),
+and where the person stood. For a taught panel, `run.py` draws that line instead of the solver's. `wdraw.py` (`WDRAW_TAUGHT`) stands there
+and looks at the start circle. After entering the puzzle (which turns the camera to the panel), it projects the taught positions from the
+new view and clicks the start, with no size search. `python3 tools/playthrough/test_teach.py` is game-free, with 3 mutants.
+
 Co-op is checked on every solve: the panel must turn solved in every other world, and the time each peer took is recorded. The worlds are
 compared every few rounds; a difference still there 5 s later is a persistent divergence, otherwise in flight (a door moving).
 Output in `<run folder>/playthrough/<start>/`: `events.jsonl` (solves with the time split, failures with the drawing trace and a shot,

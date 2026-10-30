@@ -152,14 +152,40 @@ def stand_beside_flat():
         aim(); r_ = depth_ratio(); stamp('flat panel: beside it at (%.1f, %.1f), depth ratio %.2f' % (hx_, hy_, r_))
         if 0.7 < r_ < 1.45: return p.camera()[0]
     return p.camera()[0]
-pos = p.camera()[0] if FLAT else menu_teleport()      # (a flat panel: stood beside it below, once aim and the depth check exist)
+# Taught by a person (tools/playthrough/teach.py from a recording): where they stood and looked when their line started, and where each node of
+# their line is in the world. The bot stands and looks the same way and clicks on the start's own position (no size search).
+TAUGHT = None
+if os.environ.get('WDRAW_TAUGHT'):
+    try: TAUGHT = json.load(open(os.environ['WDRAW_TAUGHT'])).get('%#x' % eid)
+    except (OSError, ValueError): TAUGHT = None
+    if TAUGHT and not all(str(i) in TAUGHT['nodes'] for i in path): TAUGHT = None      # another line than the one taught: the usual way
+def taught_stand():
+    """Walk to where the person stood (teleport there only when the walk does not get there), then turn to where they looked."""
+    x_, y_, z_, yaw_, pitch_ = TAUGHT['stand']
+    # there = the same spot and the same floor (Quarry Intro Right is under Front Row 1's floor: a teleport from up there kept the player on it)
+    there = lambda: math.dist(p.camera()[0][:2], (x_, y_)) < 0.6 and abs(p.camera()[0][2] - z_) < 0.8
+    if not walk_to(x_, y_, z_, tol=0.4) or not there():
+        teleported('the walk did not get to where the person stood')
+        for _ in range(3):      # straight from far away the game puts the player back at the spawn (the place is not loaded yet): the menu's teleport first
+            c.send(['tp %.4f %.4f %.4f %.5f %.5f' % (x_, y_, z_ - 1.65, yaw_, pitch_)], 2.0)
+            if there(): break
+            c.send(['menusel %x' % eid, 'menudo teleport'], 3.2)
+    off = math.dist(p.camera()[0], (x_, y_, z_))
+    if off > 3: done(False, 'could not stand where the person stood (%.1f m from it)' % off)
+    # Look straight at the start circle (the cursor appears at the screen centre, so on it). Not the person's own view when their line started:
+    # the game pans the camera after the cursor, so that view can leave the panel off to a side (Town Boat Spawn: looking down past it, no start).
+    (cx_, cy_, cz_), _ = p.camera(); sx_, sy_, sz_ = TAUGHT['nodes'][str(path[0])]
+    look(math.atan2(sy_ - cy_, sx_ - cx_), math.atan2(sz_ - cz_, math.hypot(sx_ - cx_, sy_ - cy_)))
+    stamp('stood where the person did (%.2f m from their spot), looking at the start' % off)
+    if os.environ.get('WDRAW_KSHOTS'): c.send(['shot taught_view'], 0.5)
+pos = p.camera()[0] if FLAT or TAUGHT else menu_teleport()      # (a flat panel: stood beside it below, once aim and the depth check exist)
 STAND = os.environ.get('WDRAW_STAND')      # "sideways,distance" in metres: stand there instead (part of the panel was hidden from the menu's spot: the
-if STAND and not FLIP:                     # cursor only reaches what the camera sees, so a line stops at the edge of a wall in front of the panel)
+if STAND and not FLIP and not TAUGHT:                     # cursor only reaches what the camera sees, so a line stops at the edge of a wall in front of the panel)
     lat_, dd_ = (float(v) for v in STAND.split(',')); nx_, ny_ = NORMAL[0], NORMAL[1]; nn_ = math.hypot(nx_, ny_) or 1.0; nx_, ny_ = nx_ / nn_, ny_ / nn_
     hx_, hy_ = px_ + dd_ * nx_ - lat_ * ny_, py_ + dd_ * ny_ + lat_ * nx_
     hover_to(hx_, hy_, pz_ + 0.2, math.atan2(py_ - hy_, px_ - hx_), 'the walk did not get to the standing spot asked for')
     pos = p.camera()[0]; stamp('stood at %.1f m sideways, %.1f m out' % (lat_, dd_))
-if FLIP:      # the menu's teleport puts us on its side: move to the other one (3 m along the flipped normal), then let the player settle there
+if FLIP and not TAUGHT:      # the menu's teleport puts us on its side: move to the other one (3 m along the flipped normal), then let the player settle there
     nx_, ny_ = NORMAL[0], NORMAL[1]; nn_ = math.hypot(nx_, ny_) or 1.0; hx_, hy_ = px_ + 3.0 * nx_ / nn_, py_ + 3.0 * ny_ / nn_
     hover_to(hx_, hy_, pz_ + 0.2, math.atan2(py_ - hy_, px_ - hx_), 'the walk did not get to the other side of the panel')
     pos = p.camera()[0]; stamp('moved to the other side of the panel')
@@ -180,7 +206,8 @@ def aim():
     cx, cy, cz = p.camera()[0]; hd = math.hypot(px_ - cx, py_ - cy) or 1.0
     pitch = math.atan2(pz_ - cz, hd)
     look(math.atan2(-NORMAL[1], -NORMAL[0]), pitch if abs(pitch) > 0.35 else 0.0)
-aim()
+if TAUGHT: taught_stand(); dist = math.dist(p.camera()[0], (px_, py_, pz_))
+else: aim()
 
 def depth_ratio():
     """The game's scene depth at the screen centre against what an unobstructed panel at this distance gives (stored depth = 0.0597 / metres, measured):
@@ -225,8 +252,8 @@ def centre_on_panel():
     dyaw = -math.atan((fx - 0.5) * 1920 / FOCAL); dpitch = -math.atan((fy - 0.5) * 1080 / FOCAL)      # screen right: yaw down; screen down: pitch down
     look(cang[0] + dyaw, cang[1] + dpitch)
     stamp('re-aimed on the panel found in the depth grid (%.2f, %.2f), %d cells' % (fx, fy, len(cells)))
-if FLAT: pos = stand_beside_flat(); dist = math.dist(pos, (px_, py_, pz_)); stamp('stood beside the flat panel')
-r_ = depth_ratio(); stamp('view check: depth ratio %.2f' % r_)
+if FLAT and not TAUGHT: pos = stand_beside_flat(); dist = math.dist(pos, (px_, py_, pz_)); stamp('stood beside the flat panel')
+r_ = 1.0 if TAUGHT else depth_ratio(); stamp('view check: depth ratio %.2f' % r_)
 if not 0.7 < r_ < 1.45:
     ok_view = False
     for (hx, hy) in other_standing_points():
@@ -269,7 +296,43 @@ def node_world(i):
     if ROLL: lx, ly = lx * math.cos(ROLL) - ly * math.sin(ROLL), lx * math.sin(ROLL) + ly * math.cos(ROLL)
     loc = quat_rot((0.0, lx, ly))
     return (px_ + loc[0], py_ + loc[1], pz_ + loc[2])
+def taught_fit():
+    """The panel's grid in the world from the taught nodes: world = O + u * A + v * B (least squares over the nodes' panel coordinates), for the
+    nodes the person's line did not pass (the turn check looks at a node's neighbours). None when the taught nodes are all in a row."""
+    pts = [(dots[2 * int(k)], dots[2 * int(k) + 1], w_) for k, w_ in TAUGHT['nodes'].items() if int(k) < n]
+    if len(pts) < 3: return None
+    m = [[0.0] * 3 for _ in range(3)]; rhs = [[0.0] * 3 for _ in range(3)]
+    for u_, v_, w_ in pts:
+        row = (u_, v_, 1.0)
+        for a_ in range(3):
+            for b_ in range(3): m[a_][b_] += row[a_] * row[b_]
+            for d_ in range(3): rhs[a_][d_] += row[a_] * w_[d_]
+    det = lambda q: q[0][0] * (q[1][1] * q[2][2] - q[1][2] * q[2][1]) - q[0][1] * (q[1][0] * q[2][2] - q[1][2] * q[2][0]) + q[0][2] * (q[1][0] * q[2][1] - q[1][1] * q[2][0])
+    d0 = det(m)
+    if abs(d0) < 1e-9: return None
+    sol = []      # Cramer's rule for each world axis: (A, B, O) components
+    for d_ in range(3):
+        col = []
+        for a_ in range(3):
+            q = [r_[:] for r_ in m]
+            for r_ in range(3): q[r_][a_] = rhs[r_][d_]
+            col.append(det(q) / d0)
+        sol.append(col)
+    return lambda u_, v_: tuple(sol[d_][0] * u_ + sol[d_][1] * v_ + sol[d_][2] for d_ in range(3))
+TFIT = taught_fit() if TAUGHT else None
+TANCHOR = 0      # where the cursor appears on entering, which the taught positions are measured from: 0 the screen centre, 1 the middle of
+                 # the panel's grid, 2 the panel's origin (tried in turn by the start search; Quarry Boat Spawn's start is 0.29 m from its origin)
+def taught_px(w_):
+    x_, y_ = to_screen(w_)
+    if TANCHOR == 0: return x_, y_
+    if TANCHOR == 1:
+        mid = TFIT(0.5, 0.5) if TFIT else tuple(sum(v[d_] for v in TAUGHT['nodes'].values()) / len(TAUGHT['nodes']) for d_ in range(3))
+        ox_, oy_ = to_screen(mid)
+    else: ox_, oy_ = to_screen((px_, py_, pz_))
+    return x_ - ox_, y_ - oy_
 def node_px(i):
+    if TAUGHT and str(i) in TAUGHT['nodes']: return taught_px(TAUGHT['nodes'][str(i)])      # where the person's line ran
+    if TAUGHT and TFIT: return taught_px(TFIT(dots[2 * i], dots[2 * i + 1]))
     ox, oy = to_screen((px_, py_, pz_)); x, y = to_screen(node_world(i)); return (x - ox) * AX * SX, (y - oy) * SY      # relative to the panel's middle (which is at the screen centre); AX: some panels are not square
 
 # ---- entering and finding the start circle --------------------------------------------------------------------------------------------------
@@ -306,8 +369,10 @@ ROUNDS = [(1.0, 1, 1), (1.0, 1, 1), (1.4, -1, -1), (1.0, 1, 1, 45), (1.0, -1, -1
 if FORCE:
     fw, fdy, fax, fsx, fsy = [float(v) for v in FORCE.split(',')]; ROUNDS = [(fax, int(fsx), int(fsy))] * 2; cands = [(fw, int(fdy))]; cached_ax = None
 OLD_TRACED = traced()      # (a redraw: the solved line's count)
+if TAUGHT:      # the start's position is known: only small shifts round it, one round (and the box start after, as for any panel)
+    ROUNDS = [(1.0, 1, 1)] * 3; cands = [(W, d_) for d_ in (0, 6, -6, 12, -12, 20, -20)]; class_cands = None; cached_ax = None; cached_flip = (1, 1)
 for attempt, rd_ in enumerate(ROUNDS):
-    ax_, sx_, sy_ = rd_[:3]; ROLL = math.radians(rd_[3]) if len(rd_) > 3 else ROLL0
+    ax_, sx_, sy_ = rd_[:3]; TANCHOR = attempt if TAUGHT else 0; ROLL = math.radians(rd_[3]) if len(rd_) > 3 else ROLL0
     ROUND_END = (time.time() - T_START) + 70      # each round gets its own budget; the whole search is capped below
     if time.time() - T_START > float(os.environ.get('WDRAW_START_BUDGET') or 230) and attempt > 2: break      # the whole search for a start circle is capped: a panel without one is reported, not chased (WDRAW_START_BUDGET seconds)
     AX = cached_ax if (attempt == 0 and cached_ax) else ax_; SX, SY = cached_flip if attempt == 0 else (sx_, sy_)
@@ -315,8 +380,17 @@ for attempt, rd_ in enumerate(ROUNDS):
         c.click(settle=1.0)                          # enter: the cursor appears at the screen centre
         if not probe_free_look(): break              # entered (the cursor moved, the view did not)
         rclick()                                     # not entered: leave and click again
+    # Entering a puzzle frames the camera on the panel (it turns to it): the taught positions are projected from that view, not the one
+    # before the click (Quarry Intro Right, looking at its start circle from the person's spot: the panel moved up and right on entering).
+    if TAUGHT:      # (it turns over a second or more: wait until the view holds still)
+        t_still = time.time(); last_v = p.camera()
+        while time.time() - t_still < 4:
+            time.sleep(0.15); v_ = p.camera()
+            if math.dist(v_[0], last_v[0]) < 1e-3 and abs(v_[1][0] - last_v[1][0]) < 1e-4 and abs(v_[1][1] - last_v[1][1]) < 1e-4: break
+            last_v = v_
+        CAM = cam_basis()
     cur = (0.0, 0.0)
-    for w_, dy_ in (class_cands if (attempt == 0 and class_cands) else cands if (attempt < 2 or FORCE) else ROLL_CANDS if len(rd_) > 3 else [(w2, dy2) for dy2 in (0, 12, -12, 24, -24, 36, -36) for w2 in ((0.70, 0.66, 0.74, 0.62, 0.78, 0.58, 0.82) if attempt == 2 else (0.567, 0.645, 0.70, 0.76, 0.82, 0.88, 0.95, 1.05))]):
+    for w_, dy_ in (class_cands if (attempt == 0 and class_cands) else cands if (attempt < 2 or FORCE or TAUGHT) else ROLL_CANDS if len(rd_) > 3 else [(w2, dy2) for dy2 in (0, 12, -12, 24, -24, 36, -36) for w2 in ((0.70, 0.66, 0.74, 0.62, 0.78, 0.58, 0.82) if attempt == 2 else (0.567, 0.645, 0.70, 0.76, 0.82, 0.88, 0.95, 1.05))]):
         if time.time() - T_START > ROUND_END: break
         W = w_
         sx, sy = node_px(path[0]); sy += dy_
@@ -324,7 +398,7 @@ for attempt, rd_ in enumerate(ROUNDS):
         n_ = max(1, int(math.ceil(max(abs(ddx), abs(ddy)) / 14)))
         if abs(ddx) + abs(ddy) >= 1: c.send(['mouse %d %d' % (round(ddx / n_), round(ddy / n_))] * n_, 1.1 * c.frame * n_ + 0.02)
         cur = (cur[0] + round(ddx / n_) * n_ / COUNTS_PER_PX, cur[1] + round(ddy / n_) * n_ / COUNTS_PER_PX)
-        if os.environ.get('WDRAW_KSHOTS'): c.send(['shot k_%d_%d' % (round(w_ * 1000), dy_)], 0.4)
+        if os.environ.get('WDRAW_KSHOTS'): c.send(['shot k_%d_%d_%d' % (attempt, round(w_ * 1000), dy_)], 0.4)
         c.send(['button L down', 'button L up'], 0.14)      # press and release on the start circle: the line starts
         # A redraw: the solved line's count stays until a new line starts, and state 3 shows up just from entering a solved panel, so only the count
         # changing from what the old line had (a new line counts 1) says the click started it.
@@ -387,8 +461,8 @@ if not started and not os.environ.get('WDRAW_NO_BOX_START'):
     except Exception as e_: stamp('box start failed: %r' % e_)
 if not started: done(False, 'the line did not start with any panel size or offset tried', traced(), dist)
 W = started[0]
-stamp('line started with W %.3f m, vertical offset %d px, width factor %.2f, flips %d %d' % (started + (AX, SX, SY)))
-if kcache_path:
+stamp('line started with W %.3f m, vertical offset %d px, width factor %.2f, flips %d %d' % (started + (AX, SX, SY)) + (', taught, cursor anchor %d' % TANCHOR if TAUGHT else ''))
+if kcache_path and not TAUGHT:
     kcache['w%x' % eid] = list(started) + [AX, SX, SY]; kcache['r%x' % eid] = round(math.degrees(ROLL)); kcache[pskey] = started[0]; kcache[ckey] = list(started) + [AX, SX, SY]
     try: json.dump(kcache, open(kcache_path, 'w'))
     except Exception: pass
@@ -530,13 +604,13 @@ for i in range(1, len(path)):
     if gain.get(axis_) and norm > 4:
         first = float(os.environ.get("WDRAW_FIRST") or 0.9) * gain[axis_] * norm; mouse(vx, vy, first); used += first
     stalled_at = traced(); since = 0
-    for _ in range(250):
+    for _ in range(max(250, int(2.5 * norm))):
         if traced() >= i + 1: break
         # No progress for a while: the axis may run the other way on this panel (a vertical flip the start search did not catch; Jungle Second
         # Row 1 went nowhere going up). Push the main axis the other way, and keep that flip for the edges after if it works.
         if traced() == stalled_at: since += 1
         else: stalled_at = traced(); since = 0
-        if since == 60 and not os.environ.get('WDRAW_NO_FLIP_RETRY'):
+        if since == 60 and not os.environ.get('WDRAW_NO_FLIP_RETRY') and not TAUGHT:      # (taught: the positions are the game's own, no axis is reversed)
             if abs(vy) >= abs(vx): vy = -vy; axflip['v'] = -axflip.get('v', 1)
             else: vx = -vx; axflip['h'] = -axflip.get('h', 1)
             dbg('no progress on segment', path[i - 1], '->', path[i], ': main axis reversed')

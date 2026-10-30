@@ -25,6 +25,9 @@ from logic import Logic, CREDITS
 from planner import Planner
 from witness import ROOT, RUN, PYW, win, real_saves
 import solver
+TAUGHT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'taught.json')      # learned from recordings of a person (teach.py)
+try: TAUGHT = json.load(open(TAUGHT_FILE))
+except (OSError, ValueError): TAUGHT = {}
 from group_config import configs
 from group_suite import replace_copy, digest, EXE_HASH, DLL_HASH
 
@@ -171,6 +174,8 @@ class Playthrough:
         self.rec('manifest', source=str(master), panels=len(self.manifest))
 
     def path_for(self, h):
+        if h not in self.paths and '%#x' % h in TAUGHT:      # a person's accepted line (teach.py): drawn as they drew it, no solver
+            self.paths[h] = TAUGHT['%#x' % h]['line']; self.rec('taught line', panel='%#x' % h, name=self.logic.entities[h].name, nodes=len(self.paths[h]))
         if h not in self.paths:
             if not self.manifest[h].get('nodes'):      # some panels get their puzzle only later in the game (the mountain's pillar room entry): read it now
                 try:
@@ -217,6 +222,7 @@ class Playthrough:
         # it walks there (tools/win/wnav.py): what the other bots and earlier runs saw of the island is read with its own map
         env['WNAV_MAPS'] = ';'.join(win(str(p)) for p in [self.nav_map] + [b.dir / 'wnav_map.bin' for b in self.bots if b is not bot] if p.exists())
         if redraw: env['WDRAW_REDRAW'] = '1'
+        if '%#x' % h in TAUGHT: env['WDRAW_TAUGHT'] = win(TAUGHT_FILE); env['WSLENV'] += ':WDRAW_TAUGHT'      # stand, look and start as the person did
         # A first attempt gets a short search for the start circle, so a hard panel does not hold a bot while easy work waits; later attempts the full one.
         env['WDRAW_START_BUDGET'] = '75' if self.planner.tries.get(h, 0) == 0 else '230'; env['WSLENV'] += ':WDRAW_START_BUDGET:WDRAW_FLIP_SIDE'
         # The start was not found from the front last time: this time stand on the other side (a panel seen from behind or through a cage).
