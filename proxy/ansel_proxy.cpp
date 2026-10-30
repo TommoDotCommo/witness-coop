@@ -83,11 +83,38 @@ void InstallHooks();
 void CoopStart();
 void GameStart();
 void StateStart();
+// A crash is logged before the game dies: the faulting address and the return addresses above it, each as module+offset, so a fault in a
+// driver call can be traced to the call in this DLL that made it (map an AnselSDK64.dll offset with objdump or nm on the build).
+static LONG WINAPI CrashLogger(EXCEPTION_POINTERS* ep) {
+    const DWORD code = ep->ExceptionRecord->ExceptionCode;
+    if (code != EXCEPTION_ACCESS_VIOLATION && code != EXCEPTION_ILLEGAL_INSTRUCTION && code != EXCEPTION_STACK_OVERFLOW && code != EXCEPTION_INT_DIVIDE_BY_ZERO && code != EXCEPTION_PRIV_INSTRUCTION) return EXCEPTION_CONTINUE_SEARCH;
+    static volatile LONG once; if (InterlockedExchange(&once, 1)) return EXCEPTION_CONTINUE_SEARCH;
+    auto where = [](const void* a, char* out, size_t n) {
+        HMODULE mod = nullptr; char name[MAX_PATH] = "?";
+        if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCSTR)a, &mod) && mod) { GetModuleFileNameA(mod, name, MAX_PATH); const char* sl = strrchr(name, '\\'); snprintf(out, n, "%s+0x%llx", sl ? sl + 1 : name, (unsigned long long)((uintptr_t)a - (uintptr_t)mod)); }
+        else snprintf(out, n, "%p", a);
+    };
+    char m[400], w[200]; where(ep->ExceptionRecord->ExceptionAddress, w, sizeof w);
+    snprintf(m, sizeof m, "CRASH: exception 0x%lx at %s (thread %lu, access %llu of %p)", code, w, GetCurrentThreadId(), code == EXCEPTION_ACCESS_VIOLATION && ep->ExceptionRecord->NumberParameters >= 2 ? (unsigned long long)ep->ExceptionRecord->ExceptionInformation[0] : 0ull, code == EXCEPTION_ACCESS_VIOLATION && ep->ExceptionRecord->NumberParameters >= 2 ? (void*)ep->ExceptionRecord->ExceptionInformation[1] : nullptr); Log(m);
+    void* frames[32]; USHORT n = RtlCaptureStackBackTrace(0, 32, frames, nullptr);
+    for (USHORT i = 0; i < n; i++) { where(frames[i], w, sizeof w); snprintf(m, sizeof m, "CRASH: stack %2u %s", i, w); Log(m); }
+    // the frames above are the handler's own; the faulting thread's stack is walked from its context
+    CONTEXT* c = ep->ContextRecord; int depth = 0; char line[1200] = "CRASH: trace"; size_t at = strlen(line);
+    for (uintptr_t* sp = (uintptr_t*)c->Rsp; depth < 24 && (uintptr_t)sp < c->Rsp + 4096; sp++) {
+        if (IsBadReadPtr(sp, 8)) break; uintptr_t v = *sp; HMODULE mod = nullptr;
+        if (v > 0x10000 && GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCSTR)v, &mod) && mod) {
+            MEMORY_BASIC_INFORMATION mbi; if (VirtualQuery((void*)v, &mbi, sizeof mbi) && (mbi.Protect & (PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE))) { where((void*)v, w, sizeof w); at += snprintf(line + at, sizeof line - at, " %s", w); depth++; if (at > sizeof line - 120) break; }
+        }
+    }
+    Log(line); Sleep(300);      // the log thread gets a moment to write
+    return EXCEPTION_CONTINUE_SEARCH;
+}
 static DWORD WINAPI Init(LPVOID) {
     char msg[300], exe[MAX_PATH];
     GetModuleFileNameA(nullptr, exe, MAX_PATH);
     snprintf(msg, sizeof msg, "proxy loaded: pid=%lu host=%s tick=%lu", GetCurrentProcessId(), exe, GetTickCount());
     Log(msg);
+    AddVectoredExceptionHandler(1, CrashLogger);
     OverlayInstall();
     CoopStart();
     GameStart();

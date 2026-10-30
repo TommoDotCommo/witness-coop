@@ -299,6 +299,7 @@ static bool EnsureDepth(UINT w, UINT h) {
     D3D11_DEPTH_STENCIL_VIEW_DESC dv = {}; dv.Format = DXGI_FORMAT_D32_FLOAT; dv.ViewDimension = D3D11_DSV_DIMENSION_TEXTURE2D;
     D3D11_SHADER_RESOURCE_VIEW_DESC sv = {}; sv.Format = DXGI_FORMAT_R32_FLOAT; sv.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D; sv.Texture2D.MipLevels = 1;
     if (FAILED(g_dev->CreateTexture2D(&td, nullptr, &g_depthTex)) || FAILED(g_dev->CreateDepthStencilView(g_depthTex, &dv, &g_dsv)) || FAILED(g_dev->CreateShaderResourceView(g_depthTex, &sv, &g_depthSrv))) return false;
+    DepthIgnore(g_depthTex);      // the depth module watches the game's depth-stencil binds for a full-size typeless buffer: ours now looks like one
     D3D11_TEXTURE2D_DESC md = {}; md.Width = w; md.Height = h; md.MipLevels = 1; md.ArraySize = 1; md.Format = DXGI_FORMAT_R8_UNORM; md.SampleDesc.Count = 1; md.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
     if (FAILED(g_dev->CreateTexture2D(&md, nullptr, &g_maskTex)) || FAILED(g_dev->CreateRenderTargetView(g_maskTex, nullptr, &g_maskRtv)) || FAILED(g_dev->CreateShaderResourceView(g_maskTex, nullptr, &g_maskSrv))) return false;
     g_depthW = w; g_depthH = h; return true;

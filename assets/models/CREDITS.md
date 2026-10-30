@@ -8,6 +8,8 @@ CC0 1.0: https://creativecommons.org/publicdomain/zero/1.0/legalcode
 
 The former Cesium Man, Rigged Figure and Fox sample assets were removed; no other code or asset uses them. The proxy still uses the independently licensed cgltf and stb_image libraries, whose own notices remain in `proxy/third_party/`.
 
-`adventurer.glb.txt` records the model's fit: `eye_joint=eye`, `speed=1.20` and `run_speed=2.80` metres per second. Animation clips are named idle, walk and run; the proxy cross-fades between them over 200 ms.
+`adventurer.glb.txt` records the model's fit: `eye_joint=eye`, `speed=1.20` and `run_speed=2.80` metres per second, and `lid_close=1.495`, the stretch of the eyelid bones that closes the eyes. Animation clips are named idle, walk, run, fidget_shift, fidget_look and fidget_hat; the proxy cross-fades between them over 200 ms. The skeleton has 29 joints: the body, the eyes and eyelids, the scarf tails and the hanging gear.
+
+The model carries three textures baked from the same procedural materials: the colour atlas (2048, JPEG), a tangent-space normal map and a material map (occlusion, roughness, metalness; both 1024, PNG), all original work, CC0 1.0.
 
 The palette definitions and original material-region mapping in `models/src/appearance.py` are also original work for this mod, CC0 1.0. The refined face, modeled hair locks, strap holes, boot welts and surface microtexture are original additions in the same generator and licence. No new external art or textures are used.
