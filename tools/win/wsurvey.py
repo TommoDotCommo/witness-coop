@@ -1,70 +1,52 @@
-"""Map the island for walking once, from the air, in a throwaway game (the playthrough itself only walks; owner's OK 2026-10-30).
+"""Survey the island for the walking map: for each leg, put the player on known ground (a teleport: it is a survey, not play) and walk from
+there to the leg's target as the bot would (tools/win/wnav.py), looking as it goes. The walks are real; the map the walker learns is saved.
 
-Usage: Windows Python wsurvey.py <pid> <game folder> <out map> [part/parts, e.g. 1/2] [spacing m]
-The player is held (`hover`) over points `spacing` m apart (16 by default) within 60 m of a panel (further out over the sea the game moves
-the player back), and at each point takes eight depth pictures (`depthdump`): four from 25 m up looking down as far as the game allows (the
-ground, roofs, the shape of the land) and four at the eye height of the nearest panel looking a little down (walls, fences, the ground under
-trees). They go into the walking map of tools/win/wnav.py, saved to <out map> every 20 points; `part` splits the points between games
-(each writes its own map; the orchestrator merges maps). Prints progress on stderr and one JSON line at the end."""
-import os, sys, math, time, json, struct
+Usage: Windows Python wsurvey.py <pid> <game folder> <out.jsonl> <legs.json> [seconds budget]      (legs: tools/nav_coverage.py --legs)
+Per leg one JSON line: leg, panel, result (walked / failed), why, metres, seconds, where it started and ended, whether the teleport landed.
+A leg's walk ends at the target (within 1 m) or when the walker gives up; the player is looked round at the start and at the end (four
+pictures, each only taken while the camera holds still). The cells walked are marked as stood on (the trail, every 0.5 m).
+Nothing in the world is changed."""
+import os, sys, json, math, time
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
 from wcontrol import Control
 import wnav
 exec(compile(open(os.path.join(HERE, 'wlib.py')).read(), 'wlib.py', 'exec'))
 
-pid, gdir, out = int(sys.argv[1]), sys.argv[2], sys.argv[3]
-part, parts = (int(v) for v in (sys.argv[4] if len(sys.argv) > 4 else '1/1').split('/'))
-SPACING = float(sys.argv[5]) if len(sys.argv) > 5 else 16.0
-p = attach(pid); c = Control(gdir); depth = os.path.join(gdir, 'witness_depth.bin')
-wnav.RANGE = 60.0      # from the air the ground is 30-50 m away
-
-panels = []
-for e in p.entity_table():
-    if e and p.type_of(e) == TI_PANEL: panels.append(struct.unpack('<3f', p.rd(e + 0x24, 12)))
-xs = [q[0] for q in panels]; ys = [q[1] for q in panels]
-points = []
-y = min(ys) - 40
-while y <= max(ys) + 40:
-    x = min(xs) - 40
-    while x <= max(xs) + 40:
-        near = min(panels, key=lambda q: math.hypot(q[0] - x, q[1] - y))
-        if math.hypot(near[0] - x, near[1] - y) < 60: points.append((x, y, near[2]))
-        x += SPACING
-    y += SPACING
-points = points[part - 1::parts]
-def done_before():      # points already done (<out map>.idx, written with every save): the game crashes after a thousand or so hovers, is started again and goes on
-    try: return int(open(out + '.idx').read())
-    except (OSError, ValueError): return 0
-SKIP = int(os.environ.get('WSURVEY_SKIP') or done_before())
-m = wnav.Map(); m.load(out)
-print('%d panels, %d points for this part' % (len(panels), len(points)), file=sys.stderr, flush=True)
+pid, gdir, out, legs_file = int(sys.argv[1]), sys.argv[2], sys.argv[3], sys.argv[4]
+budget = float(sys.argv[5]) if len(sys.argv) > 5 else 1e9
+legs = json.load(open(legs_file)); p = attach(pid); c = Control(gdir); log = open(out, 'a')
+walker = wnav.Walker(p, c, gdir, log=lambda m: print(m, file=sys.stderr, flush=True))
+t_all = time.monotonic()
 
 
-def look():
-    try: before = os.path.getmtime(depth)
-    except OSError: before = 0
-    c.send(['depthdump']); t0 = time.monotonic()
-    while time.monotonic() - t0 < 1.5:
-        try:
-            if os.path.getmtime(depth) != before:
-                data = open(depth, 'rb').read()
-                if len(data) >= 44: return m.integrate(wnav.depth_points(data, 1)[1])
-        except (OSError, ValueError, struct.error): pass
-        time.sleep(0.01)
-    return 0
+def tp(x, y, feet, yaw=0.0):
+    c.send(['hover off'])
+    for z in (feet + 0.3, feet + 1.5):
+        c.send(['tp %.4f %.4f %.4f %.5f 0.0' % (x, y, z, yaw)], 2.5)
+        q = p.camera()[0]
+        if math.dist(q[:2], (x, y)) < 2.0 and abs(q[2] - wnav.EYE - feet) < 2.5: return True
+    return False
 
 
-t0 = time.monotonic(); looks = moved_back = 0
-for idx, (x, y, z) in enumerate(points):
-    if idx < SKIP: continue
-    for hz, pitch in ((z + 25.0, -0.93), (z, -0.3)):
-        for yaw in (0.0, math.pi / 2, math.pi, -math.pi / 2):
-            c.send(['hover %.3f %.3f %.3f %.4f %.3f' % (x, y, hz, yaw, pitch)], 0.3)
-            cam = p.camera()[0]
-            if math.hypot(cam[0] - x, cam[1] - y) > 5: moved_back += 1; continue      # the game put the player back somewhere: not this point's view
-            looks += 1 if look() else 0
-    if idx % 20 == 19 or idx == len(points) - 1:
-        m.save(out); open(out + '.idx', 'w').write(str(idx + 1))
-        print('%d/%d points, %d looks, %d cells, %.0f s' % (idx + 1, len(points), looks, len(m.cells), time.monotonic() - t0), file=sys.stderr, flush=True)
-c.send(['hover off'])
-print(json.dumps({'points': len(points), 'looks': looks, 'moved_back': moved_back, 'cells': len(m.cells), 'seconds': round(time.monotonic() - t0)}), flush=True)
+for i, leg in enumerate(legs):
+    if time.monotonic() - t_all > budget: break
+    f, t = leg.get('from'), leg['to']
+    rec = {'leg': i, 'panel': '%#x' % leg['panel'], 'to': t}
+    if not f: rec.update(result='failed', why='no known ground near it'); log.write(json.dumps(rec) + '\n'); log.flush(); continue
+    landed = tp(f[0], f[1], f[2], math.atan2(t[1] - f[1], t[0] - f[0]))
+    rec['landed'] = landed; start = p.camera()[0]
+    if not landed:
+        rec.update(result='failed', why='the teleport did not land', end=[round(v, 2) for v in start]); log.write(json.dumps(rec) + '\n'); log.flush(); continue
+    walker.walked = 0.0; walker.stuck = 0; walker.replans = 0; walker.looks = 0; walker.avoid = set(); walker.stuck_at = []; walker.backouts = 0; walker.sidesteps = 0
+    walker.trail = []; walker.dear = set(); walker.cells = []
+    d = math.dist(start[:2], t[:2])
+    r = walker.go((t[0], t[1], t[2] + wnav.EYE), 1.0, min(200.0, 40.0 + 1.5 * d), ztol=1.8)
+    end = p.camera()[0]; ok = r['ok']
+    n = walker.map.walk_line(list(walker.trail)) if len(walker.trail) > 1 else 0      # (the trail: eye positions every 0.5 m, a real walk)
+    walker.look_around()
+    try: walker.map.save(walker.map_path)
+    except OSError: pass
+    rec.update(result='walked' if ok else 'failed', why=r['why'], metres=r['walked'], seconds=r['seconds'], stuck=r['stuck'], looks=r['looks'], blurred=r.get('blurred', 0),
+               trail_cells=n, **{'from': [round(v, 2) for v in start]}, end=[round(v, 2) for v in end], cells=len(walker.map.cells))
+    log.write(json.dumps(rec) + '\n'); log.flush(); print(json.dumps(rec), flush=True)
+log.write(json.dumps({'done': True, 'seconds': round(time.monotonic() - t_all, 1)}) + '\n'); log.flush()
