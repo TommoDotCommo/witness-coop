@@ -350,6 +350,17 @@ def trail_back(trail, metres):
     return out
 
 
+def pressed(pts, q, yaw, reach=1.2, side=4.0):
+    """Cells of what the player is pressed against: points in the body band (0.75 m to 1.9 m above the feet) up to `reach` m ahead of the eye
+    position q (x, y, z) facing yaw and `side` m to either side. Stuck at a wall the map took for a hedge (band filled: soft), only the one
+    cell ahead was bumped, and the walk went on along the wall to the next soft cell, stuck again 12 times: the whole wall in sight goes at once."""
+    fx, fy = math.cos(yaw), math.sin(yaw); feet = q[2] - EYE; out = set()
+    for x, y, z in pts:
+        ahead = (x - q[0]) * fx + (y - q[1]) * fy; across = -(x - q[0]) * fy + (y - q[1]) * fx
+        if -0.2 <= ahead <= reach and abs(across) <= side and feet + BAND[0] <= z <= feet + BAND[1]: out.add(cell_of(x, y))
+    return out
+
+
 def pocket(stuck_at, q, r=3.0, n=2):
     """Stuck here n times already (within r m): a pocket, back out of it."""
     return sum(1 for s in stuck_at if math.dist(s[:2], q[:2]) < r) >= n
@@ -378,7 +389,7 @@ class Walker:
         self.recorded = 0      # cells known-good from a person's recorded walks (WNAV_RECORDINGS: ';' separated session.jsonl files)
         for q in [q for q in (os.environ.get('WNAV_RECORDINGS') or '').split(';') if q]:
             for w in walks(load_recording(q)): self.recorded += self.map.walk_line(w)
-        self.tag = ''      # a prefix for the kept pictures (the benchmark sets one per leg)
+        self.last_pts = []; self.pressed_n = 0; self.tag = ''      # a prefix for the kept pictures (the benchmark sets one per leg)
         self.trail = []; self.dear = set(); self.hit = set(); self.backouts = 0; self.sidesteps = 0; self.doors = None; self.blurred = 0      # where this walker has been (newest last); open doors, read once
 
     def pos(self): return self.p.camera()[0]
@@ -416,7 +427,7 @@ class Walker:
         except (ValueError, struct.error): return False
         if not still(cam0, self.p.camera()):      # (the camera turned or moved while the picture was taken)
             self.blurred += 1; time.sleep(0.1); return self.look(again - 1) if again > 0 else False
-        self.map.integrate(pts); self.looks += 1
+        self.map.integrate(pts); self.looks += 1; self.last_pts = pts
         q = self.pos(); self.map.stand(q[0], q[1], q[2] - EYE)
         return True
 
@@ -558,6 +569,10 @@ class Walker:
                     for side in range(-again, again + 1):
                         x = q[0] + r * math.cos(y) - side * CELL * math.sin(y); yy = q[1] + r * math.sin(y) + side * CELL * math.cos(y)
                         self.map.bump(x, yy); self.avoid.add(cell_of(x, yy))
+                if self.look(0):      # (what it is pressed against: all of it, not only the cell ahead)
+                    wall = pressed(self.last_pts, q, y)
+                    for c_ in wall: self.map.bump(*centre(c_))
+                    self.pressed_n += len(wall)
                 self.note(stuck=[round(q[0], 2), round(q[1], 2)], again=again, yaw=round(y, 2), z=round(q[2], 2)); self.keep_depth('stuck%d' % self.stuck)
                 self.log('stuck %d at %.1f %.1f: bumped, planning again' % (self.stuck, q[0], q[1]))
                 if pocketed and self.back_out('stuck %d times here' % (again + 1)): way = None; continue
@@ -568,7 +583,7 @@ class Walker:
         try: self.map.save(self.map_path)
         except OSError: pass
         return {'ok': ok, 'why': why, 'seconds': round(time.monotonic() - t0, 1), 'walked': round(self.walked, 1), 'stuck': self.stuck,
-                'replans': self.replans, 'looks': self.looks, 'backouts': self.backouts, 'sidesteps': self.sidesteps, 'blurred': self.blurred, 'from': [round(v, 2) for v in start], 'to': [round(v, 2) for v in self.pos()]}
+                'replans': self.replans, 'looks': self.looks, 'backouts': self.backouts, 'sidesteps': self.sidesteps, 'pressed': self.pressed_n, 'blurred': self.blurred, 'from': [round(v, 2) for v in start], 'to': [round(v, 2) for v in self.pos()]}
 
 
 if __name__ == '__main__' and sys.argv[1:2] == ['--merge-maps']:      # OUT.bin A.bin B.bin ...: the maps added together (the walkers' learnt walls and walked cells)
