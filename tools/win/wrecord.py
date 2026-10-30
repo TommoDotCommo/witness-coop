@@ -6,7 +6,8 @@ the owner's OK), a message on the screen says what to do, and everything needed 
 twenty times a second while it changes: where the player stands and looks, the panel's state, how many nodes are traced and how far along
 the current edge (+0x228, the last record's t), the raw traced records (world positions of the line), and when solved the line the game
 keeps (+0x454/+0x458). The walk between and around is kept as well, and added to the walking map (<game folder>/wnav_map.bin).
-Solving the panel goes on to the next task; walking more than 15 m away from it skips it. Prints one JSON line per task."""
+Solving the panel goes on to the next task; walking more than 15 m away from it skips it. Where the player cannot be put in front of a panel,
+the message asks them to walk there (the task starts once they are within 15 m). Prints one JSON line per task."""
 import os, sys, json, math, struct, time
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
 from wcontrol import Control
@@ -78,15 +79,22 @@ for idx, h in enumerate(tasks):      # (not k: wlib keeps the kernel handle in k
         write(event='skip', panel='%#x' % h, why=why); print(json.dumps({'panel': '%#x' % h, 'name': name, 'result': why}), flush=True); continue
     c.send(['menusel %x' % h, 'menudo teleport'], 3.2)
     px, py, pz = struct.unpack('<3f', p.rd(e + 0x24, 12))
-    if not place(h, e, px, py, pz):
-        write(event='skip', panel='%#x' % h, why='could not be placed in front of it', pose=pose())
-        print(json.dumps({'panel': '%#x' % h, 'name': name, 'result': 'could not be placed in front of it'}), flush=True)
-        say('Could not put you at %s - skipping it.' % name); time.sleep(3); continue
+    # Where no teleport holds (Quarry Lower Ramp Control: every try left the player at the same spot far away, the game's own reset), the
+    # person walks there: the task waits until they are within 15 m (WRECORD_WALK_S seconds at most), and the walk is recorded too.
+    walk_there = not place(h, e, px, py, pz)
+    if walk_there: write(event='walk there', panel='%#x' % h, why='could not be placed in front of it', pose=pose(), panel_pos=[px, py, pz])
     write(event='task', panel='%#x' % h, name=name, panel_pos=[px, py, pz], pose=pose())
     msg = 'RECORDING %d/%d: solve %s (in front of you). Walk 15 m away to skip it.' % (idx + 1, len(tasks), name)
     t0 = time.time(); said = 0; last = None; result = 'skipped'; trail = []
     while True:
         now = time.time()
+        if walk_there:
+            ps = pose(); d_ = math.dist(ps[:2], (px, py))
+            if not trail or math.dist(ps[:2], trail[-1][:2]) > 0.5: trail.append(ps); nav.stand(ps[0], ps[1], ps[2] - wnav.EYE)
+            if d_ <= 15: walk_there = False; write(event='arrived', panel='%#x' % h, seconds=round(now - t0, 1), pose=ps); continue
+            if now - t0 > float(os.environ.get('WRECORD_WALK_S') or 600): result = 'could not be placed in front of it, and not reached on foot'; write(event='skipped', panel='%#x' % h, seconds=round(now - t0, 1)); break
+            if now - said > 5: say('RECORDING %d/%d: please WALK to %s (%.0f m away, at %.0f %.0f %.0f): I could not put you there.' % (idx + 1, len(tasks), name, d_, px, py, pz)); said = now
+            time.sleep(0.2); continue
         if now - said > 5: say(msg); said = now
         st = panel_state(e); ps = pose(); key = (st['traced'], st['state'], st['solved'], st['last_t'], tuple(round(v, 2) for v in ps))
         if key != last: write(event='sample', panel='%#x' % h, pose=ps, **st); last = key
