@@ -46,7 +46,8 @@ def video_options(profile=2, msaa=2, shading=2, reflection=2, texture=2, texture
     return (':/launcher\nrender_profile %d\nfullscreen false\nvsync false\nhighdpi false\nresolution 1\nmultisampling %d\ncustom_width 1920\ncustom_height 1080\n'
             'shading_quality %d\nreflection_quality %d\ntexture_quality %d\ntexture_detail %d\ngeometry_detail %d\n') % (profile, msaa, shading, reflection, texture, texture_detail, geometry)
 VIDEO = {'': None, 'high': video_options(),
-         'lowmem': video_options(profile=0, msaa=0, reflection=0, texture=0, texture_detail=0)}      # less memory: textures, reflections, no MSAA (geometry and shading as 'high')
+         'lowmem': video_options(profile=0, msaa=0, reflection=0, texture=0, texture_detail=0),      # less memory: textures, reflections, no MSAA (geometry and shading as 'high')
+         'lowest': video_options(profile=0, msaa=0, shading=0, reflection=0, texture=0, texture_detail=0, geometry=0)}
 
 
 class Bot:
