@@ -44,13 +44,13 @@ for i, h in enumerate(panels):
     spot, ppos = front(h)
     if spot is None: log.write(json.dumps({'leg': i, 'panel': '%#x' % h, 'result': 'failed', 'why': 'not a panel'}) + '\n'); log.flush(); continue
     if prev is not None and not there(*prev[1:]): teleport(*prev)      # the leg starts at the previous panel's place, whatever happened before
-    walker.walked = 0.0; walker.stuck = 0; walker.replans = 0; walker.looks = 0; walker.avoid = set(); walker.stuck_at = []
+    walker.walked = 0.0; walker.stuck = 0; walker.replans = 0; walker.looks = 0; walker.avoid = set(); walker.stuck_at = []; walker.backouts = 0; walker.sidesteps = 0
     start = p.camera()[0]; d = math.dist(start[:2], spot)
     r = walker.go((spot[0], spot[1], ppos[2]), 1.0, min(240.0, 60.0 + 1.5 * d), ztol=1.8)
     ok = r['ok'] and there(spot, ppos[2])
     result = 'walked' if ok else ('teleported' if teleport(h, spot, ppos[2]) else 'failed')
     rec = {'leg': i, 'panel': '%#x' % h, 'result': result, 'metres': r['walked'], 'seconds': r['seconds'], 'straight_m': round(d, 1), 'stuck': r['stuck'],
-           'replans': r['replans'], 'why': r['why'], 'backouts': r.get('backouts', 0), 'from': [round(v, 2) for v in start], 'to': r['to'],
+           'replans': r['replans'], 'why': r['why'], 'backouts': r.get('backouts', 0), 'sidesteps': r.get('sidesteps', 0), 'from': [round(v, 2) for v in start], 'to': r['to'],
            'end': [round(v, 2) for v in p.camera()[0]], 'spot': [round(spot[0], 2), round(spot[1], 2), round(ppos[2], 2)]}
     log.write(json.dumps(rec) + '\n'); log.flush(); print(json.dumps(rec), flush=True)
     prev = (h, spot, ppos[2])
