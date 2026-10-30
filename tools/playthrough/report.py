@@ -5,11 +5,12 @@ usage: report.py [run folder ...]      (default: every run under <run folders>/*
        report.py --panels [folders]     the best result per panel across runs (data/panel_status.json is written beside this file)
 
 Per run: where it started, how far along the credits route it got (per area), solve speed, failures grouped by reason, co-op propagation
-(percentiles, the slowest), persistent divergences, redraws, and what blocked it."""
+(percentiles, the slowest), persistent divergences and the divergence check (divergence.py), redraws, and what blocked it."""
 import glob, json, os, statistics, sys, collections
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE); sys.path.insert(0, os.path.dirname(HERE))
 from logic import Logic
 from planner import route
+import divergence
 from witness import RUN
 
 
@@ -57,6 +58,8 @@ def one(folder, L, R):
     if div:
         doors = collections.Counter(d for e in div for d in e.get('doors_differ', [])); panels = collections.Counter(x for e in div for x in e.get('panels_only_here', []) + e.get('panels_missing', []))
         print('  persistent divergences: %d (doors %s; panels %s)' % (len(div), dict(doors.most_common(6)), dict(panels.most_common(6))))
+    dc = divergence.summary(ev)      # persistent and not explained by the allow-list (data/divergence_allow.json): a co-op bug to look at
+    if dc['unknown'] or dc['known']: print('  divergence check: unknown %s, known %s, resolved %s' % (dc['unknown'] or '-', dc['known'] or '-', dc['resolved'] or '-'))
     for k in ('resolve another way', 'redraw refused: restoring', 'crash', 'no solver'):
         n = [e for e in ev if e['kind'] == k]
         if n: print('  %s: %s' % (k, ', '.join(e['panel'] for e in n[:10])))
