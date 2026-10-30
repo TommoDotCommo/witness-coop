@@ -24,7 +24,11 @@ Chat, pings, emotes, drawing, voice (with channels: proximity, radio, an open li
   hook on the Direct3D 11 `Present` call. It stands at the other player's feet, faces where they look, plays a walk clip at a rate
   matched to their measured speed (and an idle or run clip when the model has one), and is hidden by walls and doors: the proxy reads
   the game's own depth buffer (4x MSAA, reversed depth stored as `0.0597 / distance`, found by watching which depth view the game
-  binds) and discards the model's pixels that are behind it. The original adventurer is the only character, with idle, walk and run clips.
+  binds) and discards the model's pixels that are behind it. The original adventurer is the only character, with idle, walk and run clips and four fidgets.
+  It blinks, glances at a player who comes near, carries its head where its player looks, breathes (harder after a run), swings its scarf and
+  gear and coat as it moves, acts with its brows in the emotes, is lit with a normal map, roughness and metalness and a sun shadow on the ground, and its footsteps are heard where it walks: [the life layer, shading and shadow](docs/LIFE.md).
+
+  ![The adventurer in the garden](docs/showcase/adventurer_garden.jpg)
   See [asset credits](assets/models/CREDITS.md) and the [migration details](#character-migration) below.
 - **Shared panels and doors.** A detector watches all 594 `Machine_Panel` and 327 `Door` entities. A solved panel is sent to the
   other game and written there as solved; an opened door is opened there by calling the game's own door function, so the
@@ -190,7 +194,8 @@ The proxy always loads `witness_models/adventurer.glb` beside the DLL. Old `mode
 
 Existing game saves are unchanged. Campaign `.coop.txt` metadata still reads and preserves historical character strings for compatibility; new player entries record `adventurer`. These strings never select an asset.
 
-Fit overrides remain available for diagnostics: `model_height=<m>`, `model_speed=<m/s>` and `model_yaw=<degrees>`. The bundled sidecar sets eye alignment and walk/run speed. Depth settings are `depth_bias=<fraction>` and `depth_near=<m>` (default `0.0597`); model mutants are `no_model_depth=1`, `no_model_gait=1`, and `no_modelstat_queue=1`. While paused the proxy hides its overlays (`no_pause_hide=1` and `pause_wrong_flag=1` are test mutants).
+Fit overrides remain available for diagnostics: `model_height=<m>`, `model_speed=<m/s>` and `model_yaw=<degrees>`. The bundled sidecar sets eye alignment, walk/run speed and the eyelids' closing stretch (`lid_close=`).
+Lighting: `model_sun=` (default 0.55), `model_ambient=` (0.30), `model_shadow=` (0.55; 0: no shadow), `model_shading=0` (the old flat shading); `no_model_life=1` turns the life layer off (a test mutant). The other players' footsteps are heard through the voice mixer: `footsteps=0` silences them, `footstep_volume=` (percent) scales them. See [docs/LIFE.md](docs/LIFE.md). Depth settings are `depth_bias=<fraction>` and `depth_near=<m>` (default `0.0597`); model mutants are `no_model_depth=1`, `no_model_gait=1`, and `no_modelstat_queue=1`. While paused the proxy hides its overlays (`no_pause_hide=1` and `pause_wrong_flag=1` are test mutants).
 
 Protocol v6 adds a fixed 12-byte versioned appearance record to presence (36 bytes total). Pose, event, ACK, ping, social, presence and line packet magics changed so older peers are ignored. Group pose/event/ACK use distinct version-7 tags; all clients must update together. The stable-world gate and reliable event semantics are unchanged. The removed model-name field does not return. See [appearance design and verification](docs/APPEARANCE.md).
 
@@ -290,7 +295,7 @@ Power-on regressions also run in T0: dropped first sends, refused power-on calls
 and restoring power to a restarted receiver after the original events were acknowledged. Disabled power sync, no retry,
 no echo guard and no restart resync each have a twin the regression must catch.
 
-**Model code, no game needed:** `make -C proxy/model test` (also run by `make -C proxy/core test`) loads the bundled adventurer and checks skinning against the bind pose, that the walk loops, quaternion interpolation, that the camera matrix agrees with the projection the puppet always used, the placement of the figure (feet, height, facing, left/right), and the walk state (speed, idle, teleports, clip choice by name); 15 mutants cover matrix order, looping, quaternion normalisation, placement, gait, blending, run timing, joint limits, eye fitting, skins, flat colours and emote matching. `proxy/core/tests/run_protocol.py` additionally checks protocol migration with three mutants.
+**Model code, no game needed:** `make -C proxy/model test` (also run by `make -C proxy/core test`) loads the bundled adventurer and checks skinning against the bind pose, that the walk loops, quaternion interpolation, that the camera matrix agrees with the projection the puppet always used, the placement of the figure (feet, height, facing, left/right), the walk state (speed, idle, teleports, clip choice by name) and that the normal and material maps load; 15 mutants cover matrix order, looping, quaternion normalisation, placement, gait, blending, run timing, joint limits, eye fitting, skins, flat colours and emote matching. The life test (`life_test.cpp`, 14 mutants) covers the blink, the glance, the view pitch, breathing, the cloth pendulums, the coat's skirt clearing the legs through the walk, the fidget scheduler, the brows' acting with emotes, the mouth moving with speech, the arm reaching for a panel being traced, and the body's turn lag, sideways half-turn and reverse walk ([docs/LIFE.md](docs/LIFE.md)). `proxy/core/tests/run_protocol.py` additionally checks protocol migration with three mutants.
 
 **T2, two real games:**
 
@@ -303,7 +308,7 @@ default 4; it waits up to `QA_WAIT` seconds for room instead of failing). The sh
 typical seconds in `tools/qa_durations.json` (`tools/shard.py`, tested game-free by `tools/test_shard.py`), and the run ends with a table of
 scenario, shard, seconds and result and the total wall time. `tools/qa.sh --serial` runs the suite on one pair of games.
 
-`tools/qa.sh model` runs the adventurer suite (`tools/suite_model.py`, `tools/win/wmodel.py`): visibility, idle/walk/run animation, measured speed, render-thread statistics and occlusion behind the first door. It also checks migration from a removed model name. Mutants disable gait, read statistics on the command thread, and draw through walls. The updated live scenarios require a fresh verifier run; no old model-selector results apply to this version.
+`tools/qa.sh model` runs the adventurer suite (`tools/suite_model.py`, `tools/win/wmodel.py`): visibility, idle/walk/run animation, measured speed, render-thread statistics, occlusion behind the first door, blinking, the glance at a near player and the sun shadow on the floor. It also checks migration from a removed model name. Mutants disable gait, read statistics on the command thread, draw through walls, turn the life layer off and turn the shadow off. The updated live scenarios require a fresh verifier run; no old model-selector results apply to this version.
 
 Last full run from this repo (2026-10-22, one machine, localhost, build 11370412, about 8 minutes now that the bot teleports instead of
 walking 46 m). Every scenario also checks that the owner's real save folder is byte-identical, that the instance's saves were
