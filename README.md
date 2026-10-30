@@ -27,6 +27,8 @@ Chat, pings, emotes, drawing, voice (with channels: proximity, radio, an open li
   binds) and discards the model's pixels that are behind it. The original adventurer is the only character, with idle, walk and run clips and three fidgets.
   It blinks, glances at a player who comes near, carries its head where its player looks, breathes (harder after a run), swings its scarf and
   gear as it moves, and is lit with a normal map, roughness and metalness and a sun shadow on the ground: [the life layer, shading and shadow](docs/LIFE.md).
+
+  ![The adventurer in the garden](docs/showcase/adventurer_garden.jpg)
   See [asset credits](assets/models/CREDITS.md) and the [migration details](#character-migration) below.
 - **Shared panels and doors.** A detector watches all 594 `Machine_Panel` and 327 `Door` entities. A solved panel is sent to the
   other game and written there as solved; an opened door is opened there by calling the game's own door function, so the

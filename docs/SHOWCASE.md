@@ -1,6 +1,6 @@
 # witness-coop showcase
 
-These are historical captures made before the adventurer became the only character. They document the social features, not the current character roster. New runs of `tools/showcase.sh` use adventurers; fresh captures are pending.
+These are historical captures made before the adventurer became the only character. They document the social features, not the current character roster. New runs of `tools/showcase.sh` use adventurers; fresh captures of the whole set are pending. The adventurer as it looks now (its life layer, lit shading and shadow) is pictured in [docs/LIFE.md](LIFE.md).
 
 
 Co-op for **The Witness**: you and your friends in the same world, seeing each other, talking, drawing, and now also racing. These are real pictures of the game with the

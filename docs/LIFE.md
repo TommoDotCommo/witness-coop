@@ -1,5 +1,13 @@
 # The adventurer's life layer, shading and shadow
 
+![The adventurer in the garden, lit with its maps, its shadow on the grass](showcase/adventurer_garden.jpg)
+
+| The glance | A blink | The shadow | Settling the hat |
+|---|---|---|---|
+| ![Face to face: the figure looks at the viewer](showcase/adventurer_glance.jpg) | ![Eyes closed](showcase/adventurer_blink.jpg) | ![The projected shadow on the grass](showcase/adventurer_shadow.jpg) | ![The hat fidget](showcase/adventurer_hat_fidget.jpg) |
+
+Real pictures of the game with the mod (the `shot` command, two clients on one PC, 2026-10-30).
+
 What a modern character does on its own, with no packet telling it to, and how it is lit. Everything here is
 implemented in the proxy (`proxy/model/life.h`, applied in `proxy/model/model.cpp`, driven and drawn by
 `proxy/model_gpu.cpp`) and in the Blender generator (`models/src/adventurer.py`). The game-free checks are in
