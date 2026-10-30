@@ -33,6 +33,7 @@ struct LifeInput {
     float viewerDir[3] = {0, 0, 1}; // unit vector from the puppet's head to that camera, model space
     float viewerDist = 100;         // metres
     bool headBusy = false;          // an emote owns the head: the layer lets go of it
+    float viewYawOffset = 0;        // where the player looks minus where the body faces (radians, left positive): the head turns there ahead of the body
     float accel[3] = {0, 0, 0};     // the puppet's acceleration, model space, m/s^2 (y: the gait's bounce)
 };
 
@@ -111,11 +112,15 @@ struct LifeState {
 #ifdef WM_MUT_LOOK_UNCLAMPED
         yawLimit = 3.2f;
 #endif
-        float headYawT = glancing ? Clamp(tyaw, -yawLimit, yawLimit) : 0.0f;
+        float viewTurn = Clamp(in.viewYawOffset * 0.85f, -1.0f, 1.0f);
+#ifdef WM_MUT_NO_LOOK
+        viewTurn = 0;
+#endif
+        float headYawT = glancing ? Clamp(tyaw, -yawLimit, yawLimit) : viewTurn;
         float headPitchT = glancing ? Clamp(tpitch, -0.5f, 0.4f) : Clamp(in.viewPitch * 0.7f, -0.6f, 0.35f);
         // ---- saccades: small eye movements every second or two; during a glance the eyes lead the head toward the viewer
         nextSac -= dt; if (nextSac <= 0) { nextSac = 0.6f + 2.5f * Rand(); sacYaw = (Rand() - 0.5f) * 0.14f; sacPitch = (Rand() - 0.5f) * 0.08f; }
-        float eyeYawT = glancing ? Clamp(tyaw - headYaw, -0.26f, 0.26f) : sacYaw, eyePitchT = glancing ? Clamp(tpitch - headPitch, -0.18f, 0.18f) : sacPitch;
+        float eyeYawT = glancing ? Clamp(tyaw - headYaw, -0.26f, 0.26f) : sacYaw + Clamp(viewTurn - headYaw, -0.26f, 0.26f), eyePitchT = glancing ? Clamp(tpitch - headPitch, -0.18f, 0.18f) : sacPitch;
         Spring(headYaw, headYawV, headYawT, 5.5f, dt); Spring(headPitch, headPitchV, headPitchT, 5.5f, dt);
         Spring(eyeYaw, eyeYawV, eyeYawT, 20.0f, dt); Spring(eyePitch, eyePitchV, eyePitchT, 20.0f, dt);
         float wT = in.headBusy ? 0.0f : 1.0f; headWeight += (wT - headWeight) * (dt > 0 ? 1 - expf(-dt / 0.25f) : 0);

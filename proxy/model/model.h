@@ -91,7 +91,10 @@ public:
     void SetBusy(bool b) { busy_ = b; }
     bool fidgeting() const { return fidgetClip_ >= 0; }
     const float* pos() const { return pos_; }
-    float yaw() const { return yaw_; }
+    float yaw() const { return yaw_; }                  // the body's heading: it lags behind the player's view and turns half way toward a sideways walk
+    float viewYaw() const { return viewYaw_; }          // where the player actually looks
+    float yawOffset() const;                            // view minus body, wrapped to -pi..pi: what the head has to turn to look where the player looks
+    bool backward() const { return backward_; }         // walking backwards: the walk cycle runs in reverse
     float speed() const { return speed_; }
     float phase() const { return phase_; }          // seconds of animation time
 private:
@@ -103,6 +106,7 @@ private:
     mutable uint32_t rng_; mutable uint64_t idleSinceMs_ = 0, fidgetStartMs_ = 0; mutable int fidgetClip_ = -1; mutable float fidgetDue_ = 10; bool busy_ = false;
     GaitCfg g_; bool have_ = false; unsigned lastSeq_ = 0; uint64_t lastMs_ = 0, lastSeqMs_ = 0;
     float target_[3] = {0, 0, 0}, pos_[3] = {0, 0, 0}, lastTarget_[3] = {0, 0, 0}, yaw_ = 0, speed_ = 0, phase_ = 0, runPhase_ = 0, idlePhase_ = 0;
+    float viewYaw_ = 0, heading_ = 0; bool haveHeading_ = false, backward_ = false;
 };
 
 }  // namespace wm

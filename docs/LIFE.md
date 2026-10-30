@@ -17,6 +17,8 @@ implemented in the proxy (`proxy/model/life.h`, applied in `proxy/model/model.cp
 | Swings its scarf and gear | The scarf tails hang from chains of bones (`scarf_a.1-3`, `scarf_b.1-2`), the canteen and satchel from one each. Each segment is a damped pendulum driven by the body's acceleration (from the smoothed position), the gait's bounce (two steps a cycle), the air at speed (it lays hanging things back) and a little wind. Angles are clamped so the tails never swing into the coat. | Position, speed, the clip's phase |
 | Fidgets | After 6 to 16 s of standing still a clip named `fidget_*` plays once, then the next is due 8 to 22 s later. Three are bundled: a weight shift onto the left leg (the right heel lifts), a look round, and settling the hat with the right hand (the arm angles are solved on the real rig at build time, and the hand is checked to reach the brim without entering the head). Walking off or an emote ends a fidget at once (with the usual 200 ms cross-fade); a seated or emoting player never starts one. | `wm::Avatar`'s scheduler, seeded by the player id |
 | Lets an emote have the head | While a gesture owns the head or neck, the glance fades out over 250 ms and comes back after. | The gesture layer's weights |
+| Turns head first | The body's heading lags the player's view (a first-order lag, 12/s: a 90 degree turn is 95 % done in 250 ms) and the head turns ahead of it toward the view, up to 57 degrees, the eyes completing the look. | `wm::Avatar` keeps the view and the body apart |
+| Walks sideways and backwards | A player walking more than 60 degrees off their view turns the body half way toward where they are going; beyond 110 degrees (70 to come back) the body keeps facing the view and the walk cycle runs in reverse: backing away from a panel looks like backing away. | The heading of the last datagram's step |
 
 Order of the pose layers: the sampled clips (idle / walk / run / fidget, cross-faded), the emote gestures, the radio
 arm, then the life layer (`wm::PoseLayers`, `JointMatricesBlendEx`). The rig part (which node is the head, which local
@@ -54,12 +56,13 @@ The pass runs in the projected bounding rectangle of the flattened figure only. 
 ## Readouts and verification
 
 `modelstat` now also logs `lifestat: blinks N blink B glancing G head_yaw Y head_pitch P breath R exertion E scarf S fidgets F
-fidgeting X shadow_px Q shading M` for the last player drawn.
+fidgeting X shadow_px Q shading M` for the last player drawn. `lifeblink` makes every drawn figure blink at once, six times slower
+than a real blink (1.2 s), so a picture can catch the eyes closed.
 
 Game-free (seconds, no slot):
 
 ```sh
-make -C proxy/model test          # model-test (254 checks, 15 mutants) and life-test (794 checks, 8 mutants)
+make -C proxy/model test          # model-test (254 checks, 15 mutants) and life-test (802 checks, 10 mutants)
 python3 tools/test_gestures.py
 python3 tools/check_model.py assets/models/adventurer.glb
 python3 tools/check_appearance_asset.py assets/models/adventurer.glb
@@ -73,7 +76,11 @@ lowers the eyes, breathing moves the neck's base 1.5 to 20 mm at 13 a minute and
 swings the scarf tip more than 12 mm, bounded, and it settles within 8 s, a forward push leaves the tail behind, a minute of
 standing fidgets at least once and returns to the idle, walking never fidgets and ends one within 45 frames, an emote
 prevents one, and every fidget clip returns to its own first frame close to the idle's and moves the body 3 cm to 1.3 m.
-Mutants: `NO_BLINK`, `NO_LOOK`, `LOOK_UNCLAMPED`, `NO_BREATH`, `NO_CLOTH`, `CLOTH_UNDAMPED`, `NO_FIDGET`, `FIDGET_MOVING`.
+It also checks that one frame after a 90 degree turn of the view the body has turned only a little and the head has the rest
+to do, that a second later the body faces the view, that a forward walk runs the cycle forward with the body on the view, that a
+backward walk keeps the body on the view and runs the cycle in reverse, and that a sideways walk turns the body about 45 degrees
+and the head back toward the view. Mutants: `NO_BLINK`, `NO_LOOK`, `LOOK_UNCLAMPED`, `NO_BREATH`, `NO_CLOTH`, `CLOTH_UNDAMPED`,
+`NO_FIDGET`, `FIDGET_MOVING`, `NO_BODY_LAG`, `NO_BACKWALK`.
 
 With Blender, `models/build.sh adventurer` rebuilds the asset (the generator checks the lid stretch, the hat-touch reach,
 that every fidget returns to its start, and that the normal map is not flat) and writes previews including `blink_front`,

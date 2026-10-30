@@ -162,6 +162,30 @@ int main(int argc, char** argv) {
         }
         CHECK(nf >= 3, "%d fidget clips", nf);
     }
+    // ---- the body lags behind a turn of the view (the head leads), turns half way toward a sideways walk, and walks backwards in reverse
+    {
+        auto feedYaw = [&](wm::Avatar& a, uint64_t& t, unsigned& seq, float* p, float vx, float vy, float yaw, int frames) { for (int fr = 0; fr < frames; fr++, t += 17) { if (fr % 2 == 0) { seq++; p[0] += vx / 30; p[1] += vy / 30; } a.Update(t, true, seq, p, yaw); } };
+        wm::Avatar a; uint64_t t = 1000; unsigned seq = 1; float p[3] = {0, 0, 5};
+        feedYaw(a, t, seq, p, 0, 0, 0, 60);
+        a.Update(t += 17, true, seq, p, 1.5707963f); float firstFrame = a.yaw();
+        CHECK(firstFrame > 0.05f && firstFrame < 0.6f, "one frame after the view turned 90 degrees the body has turned %.2f rad (it should lag)", firstFrame);
+        CHECK(a.yawOffset() > 0.9f, "the head has %.2f rad left to turn toward the view", a.yawOffset());
+        feedYaw(a, t, seq, p, 0, 0, 1.5707963f, 60);
+        CHECK(fabsf(a.yaw() - 1.5707963f) < 0.05f && fabsf(a.yawOffset()) < 0.05f, "a second later the body faces the view (%.2f, offset %.2f)", a.yaw(), a.yawOffset());
+        // the life layer turns the head toward the view while the body catches up
+        wm::LifeState L(4); wm::LifeInput in; in.dt = 1.0f / 60; in.viewYawOffset = 0.6f; for (int fr = 0; fr < 60; fr++) L.Step(in);
+        CHECK(L.headYaw > 0.35f && L.headYaw < 0.6f, "head yaw %.2f for a view 0.6 rad left of the body", L.headYaw);
+        // walking forward (view +x, moving +x): body on the view, the cycle runs forward
+        wm::Avatar f; t = 1000; seq = 1; p[0] = p[1] = 0; feedYaw(f, t, seq, p, 2.0f, 0, 0, 120); float tf0 = f.Pick(m).time; feedYaw(f, t, seq, p, 2.0f, 0, 0, 30); float tf1 = f.Pick(m).time;
+        CHECK(fabsf(f.yaw()) < 0.1f && !f.backward() && tf1 > tf0, "forward: body yaw %.2f backward %d time %.2f -> %.2f", f.yaw(), (int)f.backward(), tf0, tf1);
+        // walking backwards (view +x, moving -x): the body keeps facing the view and the walk runs in reverse
+        wm::Avatar b; t = 1000; seq = 1; p[0] = p[1] = 0; feedYaw(b, t, seq, p, -2.0f, 0, 0, 120); float tb0 = b.Pick(m).time; feedYaw(b, t, seq, p, -2.0f, 0, 0, 30); float tb1 = b.Pick(m).time;
+        CHECK(fabsf(b.yaw()) < 0.1f && b.backward() && tb1 < tb0 && m.clips[b.Pick(m).clip].name == "walk", "backwards: body yaw %.2f backward %d time %.2f -> %.2f", b.yaw(), (int)b.backward(), tb0, tb1);
+        // walking sideways (view +x, moving +y): the body turns half way toward the heading, still walking forward
+        wm::Avatar sw; t = 1000; seq = 1; p[0] = p[1] = 0; feedYaw(sw, t, seq, p, 0, 2.0f, 0, 120); float ts0 = sw.Pick(m).time; feedYaw(sw, t, seq, p, 0, 2.0f, 0, 30); float ts1 = sw.Pick(m).time;
+        CHECK(sw.yaw() > 0.6f && sw.yaw() < 0.95f && !sw.backward() && ts1 > ts0, "sideways: body yaw %.2f (wanted about 0.79) backward %d", sw.yaw(), (int)sw.backward());
+        CHECK(sw.yawOffset() < -0.6f && sw.yawOffset() > -0.95f, "sideways: the head turns %.2f back toward the view", sw.yawOffset());
+    }
     printf("%s: %d checks, %d failed\n", g_fail ? "FAILED" : "ok", g_n, g_fail);
     return g_fail ? 1 : 0;
 }

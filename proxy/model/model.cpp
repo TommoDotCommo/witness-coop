@@ -494,24 +494,44 @@ void Avatar::Update(uint64_t nowMs, bool valid, unsigned seq, const float pos[3]
 #endif
     if (!valid) { have_ = false; speed_ = 0; return; }
     float dt = have_ ? (float)(nowMs - lastMs_) / 1000.0f : 0; lastMs_ = nowMs;
-    if (!have_) { memcpy(target_, pos, 12); memcpy(pos_, pos, 12); memcpy(lastTarget_, pos, 12); lastSeq_ = seq; lastSeqMs_ = nowMs; yaw_ = yaw; have_ = true; speed_ = 0; return; }
+    if (!have_) { memcpy(target_, pos, 12); memcpy(pos_, pos, 12); memcpy(lastTarget_, pos, 12); lastSeq_ = seq; lastSeqMs_ = nowMs; yaw_ = viewYaw_ = yaw; have_ = true; speed_ = 0; haveHeading_ = false; return; }
     if (seq != lastSeq_) {                  // a new datagram: measure the speed over the time since the previous one
         float dx = pos[0] - lastTarget_[0], dy = pos[1] - lastTarget_[1], dz = pos[2] - lastTarget_[2];
         float dist = sqrtf(dx * dx + dy * dy), tm = (float)(nowMs - lastSeqMs_) / 1000.0f;
-        if (guardTeleport && (dist > 4.0f || fabsf(dz) > 4.0f)) { memcpy(pos_, pos, 12); speed_ = 0; }                 // a teleport or a reload: jump, do not run there
-        else if (tm > 0.001f) { float inst = dist / tm; float k = 1 - expf(-tm / g_.tau); speed_ += (inst - speed_) * k; }
+        if (guardTeleport && (dist > 4.0f || fabsf(dz) > 4.0f)) { memcpy(pos_, pos, 12); speed_ = 0; haveHeading_ = false; }                 // a teleport or a reload: jump, do not run there
+        else if (tm > 0.001f) { float inst = dist / tm; float k = 1 - expf(-tm / g_.tau); speed_ += (inst - speed_) * k; if (dist > 0.02f) { heading_ = atan2f(dy, dx); haveHeading_ = true; } }
         memcpy(lastTarget_, pos, 12); lastSeq_ = seq; lastSeqMs_ = nowMs;
     } else if ((nowMs - lastSeqMs_) > 250) speed_ *= expf(-dt / g_.tau);                           // no news: stop walking
     memcpy(target_, pos, 12);
     float k = dt > 0 ? 1 - expf(-dt / 0.05f) : 0;                    // position smoothing between the 30 Hz datagrams
     for (int i = 0; i < 3; i++) pos_[i] += (target_[i] - pos_[i]) * k;
-    yaw_ = yaw;
+    // The body: it faces where the player looks, but lags a little behind a turn (the head leads, see life.h), and a player who walks
+    // sideways turns half way toward where they are going; one who walks backwards keeps facing forward and the walk cycle runs in reverse.
+    viewYaw_ = yaw; float bodyTarget = yaw; const bool moving = speed_ >= g_.idleBelow;
+    auto wrap = [](float a) { return a - 6.2831853f * floorf((a + 3.14159265f) / 6.2831853f); };
+    if (moving && haveHeading_) {
+        float d = wrap(heading_ - yaw), ad = fabsf(d);
+        backward_ = ad > (backward_ ? 1.22f : 1.92f);              // 110 degrees to start walking backwards, 70 to stop (hysteresis)
+        if (!backward_ && ad > 1.05f) bodyTarget = yaw + 0.5f * d;     // sideways: half way toward the heading
+    } else backward_ = false;
+#ifdef WM_MUT_NO_BODY_LAG
+    yaw_ = bodyTarget;
+#else
+    yaw_ = wrap(yaw_ + wrap(bodyTarget - yaw_) * (dt > 0 ? 1 - expf(-dt * 12.0f) : 1.0f));
+#endif
     idlePhase_ += dt;
-    if (speed_ >= g_.idleBelow) { phase_ += dt * speed_ / g_.refSpeed; runPhase_ += dt * speed_ / (g_.runRef > 0 ? g_.runRef : g_.refSpeed); }
+#ifdef WM_MUT_NO_BACKWALK
+    const float dir = 1;
+#else
+    const float dir = backward_ ? -1.0f : 1.0f;
+#endif
+    if (moving) { phase_ += dir * dt * speed_ / g_.refSpeed; runPhase_ += dir * dt * speed_ / (g_.runRef > 0 ? g_.runRef : g_.refSpeed); }
 #ifdef WM_MUT_NO_RUNREF
     runPhase_ = phase_;
 #endif
 }
+
+float Avatar::yawOffset() const { float a = viewYaw_ - yaw_; return a - 6.2831853f * floorf((a + 3.14159265f) / 6.2831853f); }
 
 static bool SameNoCase(const std::string& a, const char* b) { size_t i = 0; for (; i < a.size() && b[i]; ++i) if (tolower((unsigned char)a[i]) != tolower((unsigned char)b[i])) return false; return i == a.size() && !b[i]; }
 static int ClipExact(const Model& m, const char* name) { for (size_t i = 0; i < m.clips.size(); ++i) if (SameNoCase(m.clips[i].name, name)) return (int)i; return -1; }
