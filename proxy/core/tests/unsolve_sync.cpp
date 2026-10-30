@@ -89,6 +89,19 @@ bool timedDoor() {
     return !p.a.open[0] && !p.b.open[0] && p.b.closeCalls == 0 && p.a.closeCalls == 0;
 }
 
+// A door shuts and opens again within a moment on A while B refuses the close call for a while: the close is kept and retried, and the open
+// that follows it must not be judged against the door as it is now (still open, so nothing to do) and then overtaken by the retried close.
+// Both worlds end with the door open. (Seen in a 2-bot playthrough: a door that closed and re-opened while a save was settling.)
+bool doorOrder(witness::Flags fb = {}) {
+    Pair p({}, fb); p.advance(30000);
+    p.a.openDoor(); p.advance(3000);
+    if (!p.b.open[0]) return false;
+    p.b.refuse = true;
+    p.a.shutDoor(); p.advance(100); p.a.openDoor(); p.advance(500);
+    p.b.refuse = false; p.advance(6000);
+    return p.a.open[0] && p.b.open[0] && p.cb->queuedRemote() == 0;
+}
+
 // A save loaded again: the generation changes and the progress is gone at once. That is a load (the peer is asked for its state again),
 // not a run of un-solves to share.
 bool reload(witness::Flags fa = {}) {
@@ -99,17 +112,20 @@ bool reload(witness::Flags fa = {}) {
 }
 
 int main() {
-    bool a = timer(), b = door(), c = timedDoor(), d = reload();
+    bool a = timer(), b = door(), c = timedDoor(), d = reload(), o = doorOrder();
     std::printf("%s  timer panels reset on one game: reset on the other (loss, refused call, no echo)\n", a ? "PASS" : "FAIL");
     std::printf("%s  a door that shuts on one game shuts on the other\n", b ? "PASS" : "FAIL");
     std::printf("%s  a timed door shutting in both games at once: no call, no bounce\n", c ? "PASS" : "FAIL");
     std::printf("%s  a save loaded again is not shared as un-solves\n", d ? "PASS" : "FAIL");
+    std::printf("%s  a close kept for a retry is not overtaken by the open that followed it\n", o ? "PASS" : "FAIL");
     witness::Flags noUnsolve, noClose, noRetry, noReload;
     noUnsolve.noUnsolveSync = true; noClose.noDoorCloseSync = true; noRetry.noApplyRetry = true; noReload.noReloadSync = true;
-    bool e = !timer(noUnsolve), f = !door(noClose), g = !timer({}, noRetry), h = !reload(noReload);
+    witness::Flags noOrder; noOrder.noEntityOrder = true;
+    bool e = !timer(noUnsolve), f = !door(noClose), g = !timer({}, noRetry), h = !reload(noReload), k = !doorOrder(noOrder);
     std::printf("%s  no-unsolve-sync twin caught\n", e ? "PASS" : "FAIL");
     std::printf("%s  no-door-close-sync twin caught\n", f ? "PASS" : "FAIL");
     std::printf("%s  no-apply-retry twin caught for un-solves\n", g ? "PASS" : "FAIL");
     std::printf("%s  no-reload-sync twin caught: a load goes out as un-solves\n", h ? "PASS" : "FAIL");
-    return a && b && c && d && e && f && g && h ? 0 : 1;
+    std::printf("%s  no-entity-order twin caught: the retried close lands after the open\n", k ? "PASS" : "FAIL");
+    return o && k && a && b && c && d && e && f && g && h ? 0 : 1;
 }

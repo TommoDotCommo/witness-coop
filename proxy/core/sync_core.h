@@ -66,6 +66,7 @@ struct Flags {   // all off by default
     bool noDedupe = false, noEpochReset = false, noResyncOnRestart = false, noGate = false, noSettle = false;
     bool wrongAckEpoch = false, applyOutOfOrder = false, noChecksum = false;
     bool countSkippedResends = false; // twin: an event the 32-per-round budget skipped is counted as resent (a startup burst of 248 events reads as 840 resends)
+    bool noEntityOrder = false; // twin: an event retried later is overtaken by a later event about the same entity (a door close lands after the open that followed it)
     bool noApplyRetry = false;  // twin: discard ACKed events when the game cannot apply them yet
     bool noPanelPower = false;  // twin: omit panel power-on progression from live sync and snapshots
     bool noCableSync = false;   // twin: omit cable lighting from live sync and snapshots
