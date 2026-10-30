@@ -8,11 +8,13 @@ from witness import ROOT, TOOLS, DIR1, DIR2, PYW, RUN, pid, win, real_saves
 
 OCC = 'a player behind the closed door is hidden (< 2% of the pixels in front)'
 SCENARIOS = [   # name, cfg for A (the viewer), the set of checks that must FAIL (empty: all must pass), pixel scale, walk clip index, whether the idle clip animates (1) or holds a frame (0), regex the proxy log must match
-  ('model: the adventurer and legacy migration', 'model=removed-legacy-name\ncharacter=fox\nmodel_by_player=1\nsee_through=0', set(), 1.0, 1, 1, r'model: loaded .* 3 clips'),
-  ('model: adventurer ignores legacy none', 'model=none\ncharacter=removed-name\nsee_through=0', set(), 1.0, 1, 1, r'model: loaded .* 3 clips'),
-  ('MUTANT: adventurer gait disabled', 'see_through=0\nno_model_gait=1', {'a walking player plays the walk clip', 'a player moving at 5 m/s plays and advances the run clip'}, 1.0, 1, 1, r'model: loaded .* 3 clips'),
-  ('MUTANT: adventurer modelstat on command thread', 'see_through=0\nno_modelstat_queue=1', {'model statistics execute on the render thread'}, 1.0, 1, 1, r'model: loaded .* 3 clips'),
-  ('MUTANT: model drawn over walls', 'no_model_depth=1\nsee_through=0', {OCC}, 1.0, 1, 1, r'model: loaded .* 3 clips'),
+  ('model: the adventurer and legacy migration', 'model=removed-legacy-name\ncharacter=fox\nmodel_by_player=1\nsee_through=0', set(), 1.0, 1, 1, r'model: loaded .* 6 clips'),
+  ('model: adventurer ignores legacy none', 'model=none\ncharacter=removed-name\nsee_through=0', set(), 1.0, 1, 1, r'model: loaded .* 6 clips'),
+  ('MUTANT: adventurer gait disabled', 'see_through=0\nno_model_gait=1', {'a walking player plays the walk clip', 'a player moving at 5 m/s plays and advances the run clip'}, 1.0, 1, 1, r'model: loaded .* 6 clips'),
+  ('MUTANT: adventurer modelstat on command thread', 'see_through=0\nno_modelstat_queue=1', {'model statistics execute on the render thread'}, 1.0, 1, 1, r'model: loaded .* 6 clips'),
+  ('MUTANT: model drawn over walls', 'no_model_depth=1\nsee_through=0', {OCC}, 1.0, 1, 1, r'model: loaded .* 6 clips'),
+  ('MUTANT: adventurer life layer off', 'see_through=0\nno_model_life=1', {'the standing figure blinks (life layer)', 'a figure facing a near player glances at them'}, 1.0, 1, 1, r'model: life rig bound'),
+  ('MUTANT: adventurer shadow off', 'see_through=0\nmodel_shadow=0', {'the figure casts a sun shadow on the ground'}, 1.0, 1, 1, r'model: life rig bound'),
 ]
 only = sys.argv[1:]; results = []; saves0 = real_saves()
 for name, ca, must_fail, px, walk, idle_anim, logre in SCENARIOS:
@@ -27,7 +29,7 @@ for name, ca, must_fail, px, walk, idle_anim, logre in SCENARIOS:
     print(out.strip(), flush=True)
     seen = {m[1]: m[2] == 'ok' for m in (re.match(r'^  (.+?)\s+(ok|FAILED)\s+\(', l) for l in out.splitlines()) if m}
     failed = {k for k, v in seen.items() if not v}
-    expected_checks = 9 if run_only else (11 if run_check else 9)
+    expected_checks = 11 if run_only else (14 if run_check else 12)
     ok = len(seen) == expected_checks and failed == must_fail
     why = 'every check passed' if not must_fail else 'exactly the checks this protection is for failed'
     if len(seen) != expected_checks: why = 'the check script did not finish (%d of %d checks reported)' % (len(seen), expected_checks)

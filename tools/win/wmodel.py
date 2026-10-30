@@ -24,6 +24,17 @@ def stat():
             return dict(vis=int(m[1]), drawn=int(m[2]), clip=int(m[3]), speed=float(m[4]), anim=float(m[5]))
         time.sleep(0.2)
     return None
+def life():
+    """The `lifestat` line the proxy logs with every modelstat: the life layer of the last player drawn (blinks, glance, breath, shadow pixels)."""
+    log = os.path.join(da, 'witness_proxy.log'); n0 = sum(1 for l in open(log, errors='ignore') if l.startswith('lifestat:'))
+    send(da, ['modelstat'], 0.0); t = time.time()
+    while time.time() - t < 6:
+        ls = [l for l in open(log, errors='ignore') if l.startswith('lifestat:')]
+        if len(ls) > n0:
+            m = re.search(r'blinks (\d+) blink ([-0-9.]+) glancing (\d) head_yaw ([-0-9.]+) head_pitch ([-0-9.]+) breath ([-0-9.]+) exertion ([-0-9.]+) scarf ([-0-9.]+) fidgets (\d+) fidgeting (\d) shadow_px (\d+)', ls[-1])
+            if m: return dict(blinks=int(m[1]), blink=float(m[2]), glancing=int(m[3]), head_yaw=float(m[4]), head_pitch=float(m[5]), breath=float(m[6]), exertion=float(m[7]), scarf=float(m[8]), fidgets=int(m[9]), fidgeting=int(m[10]), shadow=int(m[11]))
+        time.sleep(0.2)
+    return None
 def settle_stat(wait):      # the occlusion query needs a couple of frames after the pose changes
     time.sleep(wait); stat(); time.sleep(0.5); r = stat()
     for _ in range(3):      # the game sometimes answers a command late (seen after a teleport next to a panel): ask again, and say so, rather than call that a failure of the model
@@ -51,6 +62,9 @@ send(db, ['tp %.4f %.4f %.4f %.5f %.5f' % (bx, by, cz - 1.69, th, 0.0)], 2.5)
 s_still = settle_stat(0.5)
 check('B standing 5 m ahead is drawn and visible', s_still and s_still['drawn'] and s_still['vis'] > 3000 * PX, s_still)
 check('a standing player is idle (speed < 0.3)', s_still and s_still['speed'] < 0.3, s_still)
+l0 = life(); time.sleep(12.0); l1 = life()      # the life layer: a figure blinks by itself every 2 to 6 s, and its sun shadow lies on the tunnel floor
+check('the standing figure blinks (life layer)', l0 and l1 and l1['blinks'] - l0['blinks'] >= 2, (l0, l1))
+check('the figure casts a sun shadow on the ground', l1 and l1['shadow'] > 150 * PX, l1)
 if CHECK_RUN:
     thread_lines = [l for l in open(os.path.join(da, 'witness_proxy.log'), errors='ignore') if l.startswith('modelthread:')]
     m = re.search(r'render (\d+) caller (\d+)', thread_lines[-1]) if thread_lines else None
@@ -86,6 +100,8 @@ send(da, ['tp %.4f %.4f %.4f %.5f %.5f' % (sx, sy, 3.727 - 1.69, yaw, 0.0)], 1.5
 send(da, ['fakepose %.4f %.4f %.4f %.5f' % (sx, sy - 2.0, 3.727, yaw + math.pi)], 1.0)          # in front of the door, facing A (eye position)
 s_front = settle_stat(0.5)
 check('a player in front of the door is visible', s_front and s_front['vis'] > 3000 * PX, s_front)
+time.sleep(1.5); lg = life()      # 2 m away, face to face: the figure glances at the viewer
+check('a figure facing a near player glances at them', lg and lg['glancing'] == 1, lg)
 send(da, ['fakepose %.4f %.4f %.4f %.5f' % (sx, py - 3.0, 3.727, yaw + math.pi)], 1.0)         # 3 m behind the door
 s_back = settle_stat(0.5)
 check('a player behind the closed door is hidden (< 2% of the pixels in front)', s_front and s_back and s_back['drawn'] and s_back['vis'] < 0.02 * s_front['vis'], (s_front and s_front['vis'], s_back))

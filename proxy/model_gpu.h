@@ -6,13 +6,14 @@
 #include "model/model.h"
 #include "core/appearance.h"
 
-struct ModelDrawStats { unsigned visiblePixels; unsigned frames; unsigned submittedPlayers; int clip; float speed; float animTime; int from; float blend; float eye; float yaw; int emote; float lift, lean, roll, dyaw; bool drawn; float pos[3], cam[3]; };
+struct ModelDrawStats { unsigned visiblePixels; unsigned frames; unsigned submittedPlayers; int clip; float speed; float animTime; int from; float blend; float eye; float yaw; int emote; float lift, lean, roll, dyaw; bool drawn; float pos[3], cam[3];
+    unsigned blinks, fidgets; bool glancing, fidgeting; float headYaw, headPitch, breath, exertion, scarf, blink; unsigned shadowPixels; };      // the life layer (model/life.h) of the last player drawn
 bool ModelGpuInit(ID3D11Device* dev, ID3D11DeviceContext* ctx);      // loads the configured model; false: use the flat puppet instead
 bool ModelGpuReady();
 // Draws the player at `pos` (eye position), heading `yaw`. `valid` false: the peer is gone, nothing is drawn.
 // sceneDepth: a shader resource view of a copy of the game's depth buffer, or null (nothing hides the model).
 // What the social layer says about a player: the emote it is playing (1..24, 0 none) for emoteT seconds.
-struct ModelExtra { witness::Appearance appearance; int emote = 0; float emoteT = 0; bool proximitySpeaking = false; bool seated = false; bool radioEquipped = false, radioTx = false; };
+struct ModelExtra { witness::Appearance appearance; int emote = 0; float emoteT = 0; bool proximitySpeaking = false; bool seated = false; bool radioEquipped = false, radioTx = false; float viewPitch = 0; };   // viewPitch: the remote player's own view pitch (radians, up positive): the puppet carries its head there
 bool ModelGpuDraw(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Cam& cam, bool valid, unsigned seq, const float pos[3], float yaw, unsigned playerId = 0, bool first = true, const ModelExtra* extra = nullptr);
 bool ModelGpuDrawAudience(ID3D11RenderTargetView* rtv,UINT w,UINT h,const wm::Cam& cam);
 // Coloured ribbons in world space (the other players' drawn lines), depth-tested against the game's scene. Triangle list; each vertex: position, rgba.

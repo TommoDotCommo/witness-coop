@@ -234,7 +234,7 @@ static void DrawMarkers(IDXGISwapChain* sc) {
         wm::Cam wc = {{cam[0], cam[1], cam[2]}, ang[0], ang[1], vfov, aspect, 0.1f, 2000.0f};
         bool first = true;
         for (const auto& rp : remotes) if (rp.ageMs < 2000) {
-            ModelExtra ex; ex.seated=rp.emote==14 && TvSeatedPose(rp.pos); ex.appearance = rp.appearance; ex.proximitySpeaking = rp.proximitySpeaking; ex.radioEquipped = rp.radioEquipped; ex.radioTx = rp.radioTx; { int e = 0; float t = 0; if (SocialEmoteOf(rp.id, &e, &t)) { ex.emote = e; ex.emoteT = t; } }
+            ModelExtra ex; ex.seated=rp.emote==14 && TvSeatedPose(rp.pos); ex.appearance = rp.appearance; ex.proximitySpeaking = rp.proximitySpeaking; ex.radioEquipped = rp.radioEquipped; ex.radioTx = rp.radioTx; ex.viewPitch = rp.ang[1]; { int e = 0; float t = 0; if (SocialEmoteOf(rp.id, &e, &t)) { ex.emote = e; ex.emoteT = t; } }
             ModelGpuDraw(rtv, td.Width, td.Height, wc, true, rp.seq, rp.pos, rp.ang[0], rp.id, first, &ex); first = false;
         }
         if (first) { float p[3] = {}; ModelGpuDraw(rtv, td.Width, td.Height, wc, false, 0, p, 0); }

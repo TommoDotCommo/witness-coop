@@ -51,9 +51,17 @@ int main(int argc, char** argv) {
     CHECK(wm::LoadGlb(file.data(), file.size(), &m, &err), "load: %s", err.c_str());
     if (g_fail) return 1;
     CHECK(m.verts.size() > 1000 && m.idx.size() % 3 == 0, "verts %zu idx %zu", m.verts.size(), m.idx.size());
-    CHECK(m.joints.size() == 20 && m.jointCount() == 21, "joints %zu", m.joints.size());
-    CHECK(m.clips.size() == 3 && m.clips[0].duration > 0.5f && m.clips[0].duration < 10, "clips %zu", m.clips.size());
+    CHECK(m.joints.size() == 29 && m.jointCount() == 30, "joints %zu (the adventurer has 20 body joints, 2 eyes, 2 lids, 5 scarf and 2 gear)", m.joints.size());
+    CHECK(m.clips.size() == 6 && m.clips[0].duration > 0.5f && m.clips[0].duration < 10, "clips %zu (idle, walk, run and three fidgets)", m.clips.size());
     CHECK(m.texW > 0 && m.rgba.size() == (size_t)m.texW * m.texH * 4, "texture %dx%d", m.texW, m.texH);
+    CHECK(m.nrmW >= 512 && m.nrm.size() == (size_t)m.nrmW * m.nrmH * 4 && m.mrW >= 512 && m.mr.size() == (size_t)m.mrW * m.mrH * 4, "normal map %dx%d, material map %dx%d", m.nrmW, m.nrmH, m.mrW, m.mrH);
+    {   // the normal map is mostly 'up' (flat relief tilted a little), the material map has rough cloth and a little metal
+        double nz = 0, rough = 0, metal = 0; size_t n = (size_t)m.nrmW * m.nrmH, nm = (size_t)m.mrW * m.mrH;
+        for (size_t i = 0; i < n; i += 97) nz += m.nrm[i * 4 + 2];
+        for (size_t i = 0; i < nm; i += 97) { rough += m.mr[i * 4 + 1]; metal += m.mr[i * 4 + 2] > 128; }
+        nz /= (n / 97) * 255.0; rough /= (nm / 97) * 255.0; metal /= (nm / 97);
+        CHECK(nz > 0.9 && rough > 0.4 && rough < 0.95 && metal > 0.002 && metal < 0.1, "normal z mean %.3f, roughness mean %.2f, metal fraction %.3f", nz, rough, metal);
+    }
     float h = m.bmax[1] - m.bmin[1];
     CHECK(h > 1.7f && h < 2.1f, "adventurer bind-pose height %.3f", h);
     CHECK(fabsf(m.bmin[1]) < 0.05f && fabsf((m.bmin[0] + m.bmax[0]) * 0.5f) < 0.2f && m.bmax[2] - m.bmin[2] < 0.6f, "bind pose is not standing at the origin: (%.2f %.2f %.2f)..(%.2f %.2f %.2f)", m.bmin[0], m.bmin[1], m.bmin[2], m.bmax[0], m.bmax[1], m.bmax[2]);
@@ -169,7 +177,7 @@ int main(int argc, char** argv) {
     { std::vector<uint8_t> g = ChainGlb(256); wm::Model cm; std::string ce; CHECK(!wm::LoadGlb(g.data(), g.size(), &cm, &ce), "256 joints accepted (the limit is 255)"); }
 
     // cross-fade: after the player stops, the pose fades from the walk to the idle over fadeMs instead of jumping; a new state starts from what was playing
-    if (m.clips.size() == 3) {
+    if (m.clips.size() >= 3) {
         auto clipName = [&](int c) { return c >= 0 ? m.clips[c].name : std::string("none"); };
         wm::Avatar a; walkAt(m, 3.0f, 120, a); wm::ClipPick p0 = a.Pick(m);
         CHECK(clipName(p0.clip) == "walk" && p0.from < 0 && p0.blend == 1, "walking: clip %s from %d blend %.2f", clipName(p0.clip).c_str(), p0.from, p0.blend);

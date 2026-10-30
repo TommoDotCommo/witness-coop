@@ -1,6 +1,7 @@
 // See model.h. Mutants (-DWM_MUT_...) each break one thing on purpose; the T0 test must fail for every one of them.
 #include "model.h"
 #include "gestures.h"
+#include "life.h"
 #include <algorithm>
 #include <cctype>
 #include <cmath>
@@ -99,10 +100,14 @@ bool LoadGlb(const uint8_t* data, size_t n, Model* out, std::string* err) {
     for (size_t i = 0; i < d->nodes_count; i++) cgltf_node_transform_world(&d->nodes[i], &g[i * 16]);
     const int ident = (int)m.joints.size();
     // the model has one texture: the base colour image of the first textured material; the other materials are flat colour (their base colour factor)
-    const cgltf_image* img = nullptr;
+    const cgltf_image *img = nullptr, *imgN = nullptr, *imgM = nullptr;
     for (size_t ni = 0; ni < d->nodes_count && !img; ni++) if (d->nodes[ni].mesh) for (size_t pi = 0; pi < d->nodes[ni].mesh->primitives_count && !img; pi++) {
         const cgltf_material* mt = d->nodes[ni].mesh->primitives[pi].material;
-        if (mt && mt->has_pbr_metallic_roughness && mt->pbr_metallic_roughness.base_color_texture.texture) { img = mt->pbr_metallic_roughness.base_color_texture.texture->image; memcpy(m.baseColor, mt->pbr_metallic_roughness.base_color_factor, 16); }
+        if (mt && mt->has_pbr_metallic_roughness && mt->pbr_metallic_roughness.base_color_texture.texture) {
+            img = mt->pbr_metallic_roughness.base_color_texture.texture->image; memcpy(m.baseColor, mt->pbr_metallic_roughness.base_color_factor, 16);
+            if (mt->normal_texture.texture) imgN = mt->normal_texture.texture->image;
+            if (mt->pbr_metallic_roughness.metallic_roughness_texture.texture) imgM = mt->pbr_metallic_roughness.metallic_roughness_texture.texture->image;
+        }
     }
     for (size_t ni = 0; ni < d->nodes_count; ni++) {
         const cgltf_node* nd = &d->nodes[ni]; if (!nd->mesh) continue;
@@ -163,11 +168,13 @@ bool LoadGlb(const uint8_t* data, size_t n, Model* out, std::string* err) {
         }
     }
     if (m.verts.empty() || m.idx.size() < 3) return fail("the file has no triangle mesh");
-    if (img && img->buffer_view && img->buffer_view->buffer->data) {
-        int w, h, c; const uint8_t* src = (const uint8_t*)img->buffer_view->buffer->data + img->buffer_view->offset;
-        uint8_t* px = stbi_load_from_memory(src, (int)img->buffer_view->size, &w, &h, &c, 4);
-        if (px) { m.texW = w; m.texH = h; m.rgba.assign(px, px + (size_t)w * h * 4); stbi_image_free(px); }
-    }
+    auto decode = [](const cgltf_image* im, int* w, int* h, std::vector<uint8_t>* out) {
+        if (!im || !im->buffer_view || !im->buffer_view->buffer->data) return;
+        int c; const uint8_t* src = (const uint8_t*)im->buffer_view->buffer->data + im->buffer_view->offset;
+        uint8_t* px = stbi_load_from_memory(src, (int)im->buffer_view->size, w, h, &c, 4);
+        if (px) { out->assign(px, px + (size_t)*w * *h * 4); stbi_image_free(px); } else { *w = *h = 0; }
+    };
+    decode(img, &m.texW, &m.texH, &m.rgba); decode(imgN, &m.nrmW, &m.nrmH, &m.nrm); decode(imgM, &m.mrW, &m.mrH, &m.mr);
     for (size_t ai = 0; ai < d->animations_count; ai++) {
         const cgltf_animation* a = &d->animations[ai]; Clip c; c.name = a->name ? a->name : "";
         for (size_t ci = 0; ci < a->channels_count; ci++) {
@@ -230,7 +237,77 @@ static void PoseTRS(const Model& m, int clip, float t, float* T, float* R, float
     }
 }
 
+static void QMul(const float* a, const float* b, float* o) {
+    float r[4] = {a[3]*b[0]+a[0]*b[3]+a[1]*b[2]-a[2]*b[1], a[3]*b[1]-a[0]*b[2]+a[1]*b[3]+a[2]*b[0], a[3]*b[2]+a[0]*b[1]-a[1]*b[0]+a[2]*b[3], a[3]*b[3]-a[0]*b[0]-a[1]*b[1]-a[2]*b[2]}; memcpy(o, r, 16);
+}
+// ---- the life layer's rig: which node is what, and which local axis of it does what in model space
+static void BindGlobal(const Model& m, size_t i, float* G) {      // the node's bind transform in model space
+    std::vector<int> chain; for (int n = (int)i; n >= 0; n = m.nodes[n].parent) chain.push_back(n);
+    Identity(G); for (auto n = chain.rbegin(); n != chain.rend(); ++n) { float l[16]; const Node& b = m.nodes[*n]; FromTRS(b.t, b.r, b.s, l); Mul(G, l, G); }
+}
+static void Rot3(const float* G, const float* v, float* o) { for (int r = 0; r < 3; r++) o[r] = G[r] * v[0] + G[4 + r] * v[1] + G[8 + r] * v[2]; }
+static void Rot3T(const float* G, const float* v, float* o) { for (int c = 0; c < 3; c++) o[c] = G[c * 4] * v[0] + G[c * 4 + 1] * v[1] + G[c * 4 + 2] * v[2]; }
+// The local axis (and the sign) whose rotation moves the node's probe direction (given in model space) toward `want` (model space).
+static LifeAxis ProbeAxis(const float* G, const float* probeModel, const float* want) {
+    float Gn[16]; memcpy(Gn, G, 64);
+    for (int c = 0; c < 3; c++) { float l = sqrtf(Gn[c*4]*Gn[c*4] + Gn[c*4+1]*Gn[c*4+1] + Gn[c*4+2]*Gn[c*4+2]); if (l > 1e-9f) for (int r = 0; r < 3; r++) Gn[c*4+r] /= l; }
+    float v[3]; Rot3T(Gn, probeModel, v); LifeAxis best; float bestScore = 0;
+    for (int k = 0; k < 3; k++) {
+        float e[3] = {0, 0, 0}; e[k] = 1; float c[3] = {e[1]*v[2]-e[2]*v[1], e[2]*v[0]-e[0]*v[2], e[0]*v[1]-e[1]*v[0]}, d[3]; Rot3(Gn, c, d);
+        float score = d[0]*want[0] + d[1]*want[1] + d[2]*want[2];
+        if (fabsf(score) > fabsf(bestScore)) { bestScore = score; best.axis = k; best.sign = score >= 0 ? 1.0f : -1.0f; }
+    }
+    if (fabsf(bestScore) < 0.2f) best.axis = -1;      // no local axis does it
+    return best;
+}
+static int NodeNamed(const Model& m, const char* name) { for (size_t i = 0; i < m.nodes.size(); i++) if (m.nodes[i].name == name) return (int)i; return -1; }
+static void BindChain(const Model& m, LifeChain& c, const char* prefix, int count) {
+    const float fwd[3] = {0, 0, 1}, left[3] = {1, 0, 0}; c.count = 0;
+    for (int i = 0; i < count && i < 3; i++) {
+        char nm[48]; snprintf(nm, sizeof nm, "%s.%d", prefix, i + 1); int n = NodeNamed(m, nm); if (n < 0) n = i == 0 ? NodeNamed(m, prefix) : -1; if (n < 0) break;
+        float G[16]; BindGlobal(m, n, G); float axis[3] = {0, 1, 0}, down[3]; Rot3(G, axis, down);      // the bone runs along its local Y
+        float l = sqrtf(down[0]*down[0] + down[1]*down[1] + down[2]*down[2]); if (l > 1e-9f) for (float& v : down) v /= l;
+        c.node[i] = n; c.swing[i] = ProbeAxis(G, down, fwd); c.sway[i] = ProbeAxis(G, down, left); c.count = i + 1;
+    }
+    for (int i = 0; i < c.count; i++) {
+        int child = i + 1 < c.count ? c.node[i + 1] : -1; float len = 0;
+        if (child >= 0) { const float* t = m.nodes[child].t; len = sqrtf(t[0]*t[0] + t[1]*t[1] + t[2]*t[2]); } else if (i > 0) len = c.length[i - 1];
+        c.length[i] = len > 0.01f ? len : 0.1f;
+    }
+}
+void LifeRig::Bind(const Model& m, float lidCloseScale) {
+    const float fwd[3] = {0, 0, 1}, left[3] = {1, 0, 0}, up[3] = {0, 1, 0};
+    head = NodeNamed(m, "head"); neck = NodeNamed(m, "neck"); chest = NodeNamed(m, "chest"); eye[0] = NodeNamed(m, "eye.L"); eye[1] = NodeNamed(m, "eye.R"); lid[0] = NodeNamed(m, "lid.L"); lid[1] = NodeNamed(m, "lid.R");
+    lidClose = lidCloseScale > 1.0f && lidCloseScale < 4.0f ? lidCloseScale : 1.0f; ok = head >= 0;
+    float G[16];
+    if (head >= 0) { BindGlobal(m, head, G); headYaw = ProbeAxis(G, fwd, left); headPitch = ProbeAxis(G, fwd, up); }
+    if (neck >= 0) { BindGlobal(m, neck, G); neckYaw = ProbeAxis(G, fwd, left); neckPitch = ProbeAxis(G, fwd, up); }
+    if (chest >= 0) { BindGlobal(m, chest, G); chestPitch = ProbeAxis(G, fwd, up); }
+    for (int e = 0; e < 2; e++) if (eye[e] >= 0) { BindGlobal(m, eye[e], G); eyeYaw[e] = ProbeAxis(G, fwd, left); eyePitch[e] = ProbeAxis(G, fwd, up); }
+    BindChain(m, scarfA, "scarf_a", 3); BindChain(m, scarfB, "scarf_b", 2); BindChain(m, canteen, "canteen", 1); BindChain(m, satchel, "satchel", 1);
+}
+static void RotLocal(float* q, const LifeAxis& ax, float angle) {
+    if (ax.axis < 0 || angle == 0) return;
+    float r[4] = {0, 0, 0, 1}; r[ax.axis] = sinf(ax.sign * angle * 0.5f); r[3] = cosf(ax.sign * angle * 0.5f); QMul(q, r, q);
+}
+static void ApplyLife(const LifeRig& rig, const LifeState& L, float* R, float* S) {
+    const float hw = L.headWeight;
+    if (rig.head >= 0) { RotLocal(&R[rig.head * 4], rig.headYaw, 0.65f * L.headYaw * hw); RotLocal(&R[rig.head * 4], rig.headPitch, 0.65f * L.headPitch * hw - 0.004f * L.breath); }
+    if (rig.neck >= 0) { RotLocal(&R[rig.neck * 4], rig.neckYaw, 0.35f * L.headYaw * hw); RotLocal(&R[rig.neck * 4], rig.neckPitch, 0.35f * L.headPitch * hw - 0.006f * L.breath); }
+    if (rig.chest >= 0) RotLocal(&R[rig.chest * 4], rig.chestPitch, 0.012f * L.breath);      // breathing in lifts the chest
+    for (int e = 0; e < 2; e++) {
+        if (rig.eye[e] >= 0) { RotLocal(&R[rig.eye[e] * 4], rig.eyeYaw[e], L.eyeYaw); RotLocal(&R[rig.eye[e] * 4], rig.eyePitch[e], L.eyePitch); }
+        if (rig.lid[e] >= 0) S[rig.lid[e] * 3 + 1] *= 1 + (rig.lidClose - 1) * L.blink;      // the lid bone stretches along its length (local Y)
+    }
+    auto chain = [&](const LifeChain& c, const LifePendulum* p) { for (int i = 0; i < c.count; i++) { RotLocal(&R[c.node[i] * 4], c.swing[i], p[i].a); RotLocal(&R[c.node[i] * 4], c.sway[i], p[i].b); } };
+    chain(rig.scarfA, L.scarfA); chain(rig.scarfB, L.scarfB); chain(rig.canteen, &L.canteen); chain(rig.satchel, &L.satchel);
+}
+
 void JointMatricesBlend(const Model& m, int from, float tFrom, int to, float tTo, float w, float* out, const GestureState* gesture, float radioRaise, float* radioHand) {
+    PoseLayers l; l.gesture = gesture; l.radioRaise = radioRaise; l.radioHand = radioHand; JointMatricesBlendEx(m, from, tFrom, to, tTo, w, out, l);
+}
+void JointMatricesBlendEx(const Model& m, int from, float tFrom, int to, float tTo, float w, float* out, const PoseLayers& layers) {
+    const GestureState* gesture = layers.gesture; float radioRaise = layers.radioRaise; float* radioHand = layers.radioHand;
     size_t nn = m.nodes.size();
     std::vector<float> T(nn * 3), R(nn * 4), S(nn * 3);
     PoseTRS(m, to, tTo, T.data(), R.data(), S.data());
@@ -281,6 +358,7 @@ void JointMatricesBlend(const Model& m, int from, float tFrom, int to, float tTo
         float blended[4]; Slerp(&R[i*4],target,std::min(1.0f,radioRaise),blended); memcpy(&R[i*4],blended,16);
 #endif
     }
+    if (layers.life && layers.rig && layers.rig->ok) ApplyLife(*layers.rig, *layers.life, R.data(), S.data());
     std::vector<float> G(nn * 16); std::vector<char> done(nn, 0);
     struct Rec { static void Go(const Model& m, size_t i, const float* T, const float* R, const float* S, float* G, char* done) {
         if (done[i]) return;
@@ -454,11 +532,36 @@ int EmoteClip(const Model& m, int emote) {
     return c;
 }
 
+float Avatar::TimeOf(const Model& m, int kind, int clip) const {
+    if (kind == 4) { float t = (float)(lastMs_ - fidgetStartMs_) / 1000.0f, d = clip >= 0 && clip < (int)m.clips.size() ? m.clips[clip].duration : 0; return d > 0 ? std::min(t, d - 0.001f) : t; }
+    return kind == 1 ? phase_ : kind == 2 ? runPhase_ : kind == 0 ? idlePhase_ : 0.0f;      // kind 3: a held first frame
+}
 Avatar::Sel Avatar::Choose(const Model& m) const {
     int idle = FindClip(m, "idle"); if (idle < 0) idle = FindClip(m, "stand"); if (idle < 0) idle = FindClip(m, "survey");
     int walk = FindClip(m, "walk"); int run = FindClip(m, "run"); if (run < 0) run = FindClip(m, "sprint");
     if (walk < 0) walk = idle >= 0 && m.clips.size() > 1 ? (idle == 0 ? 1 : 0) : 0;      // an unnamed clip is the walk cycle
-    if (speed_ < g_.idleBelow) return idle >= 0 ? Sel{idle, 0} : Sel{walk, 3};
+    const bool still = speed_ < g_.idleBelow;
+#ifdef WM_MUT_FIDGET_MOVING
+    if (fidgetClip_ >= 0 && busy_) fidgetClip_ = -1;
+#else
+    if (fidgetClip_ >= 0 && (!still || busy_)) fidgetClip_ = -1;      // walking off or an emote ends the fidget (it fades into what comes next)
+#endif
+    if (!still) idleSinceMs_ = 0;
+    if (fidgetClip_ >= 0) {
+        if ((float)(lastMs_ - fidgetStartMs_) / 1000.0f >= m.clips[fidgetClip_].duration - 0.05f) { fidgetClip_ = -1; idleSinceMs_ = lastMs_; fidgetDue_ = 8.0f + 14.0f * Rand(); }
+        else return Sel{fidgetClip_, 4};
+    }
+    if (still && idle >= 0 && !busy_) {
+        if (!idleSinceMs_) idleSinceMs_ = lastMs_;
+#ifndef WM_MUT_NO_FIDGET
+        if ((float)(lastMs_ - idleSinceMs_) / 1000.0f >= fidgetDue_) {
+            std::vector<int> fidgets; for (size_t i = 0; i < m.clips.size(); i++) if (m.clips[i].name.rfind("fidget", 0) == 0 && m.clips[i].duration > 0.2f) fidgets.push_back((int)i);
+            if (!fidgets.empty()) { fidgetClip_ = fidgets[std::min(fidgets.size() - 1, (size_t)(Rand() * fidgets.size()))]; fidgetStartMs_ = lastMs_; return Sel{fidgetClip_, 4}; }
+            fidgetDue_ = 1e9f;      // no fidget clips: stop asking
+        }
+#endif
+    }
+    if (still) return idle >= 0 ? Sel{idle, 0} : Sel{walk, 3};
 #ifndef WM_MUT_NO_RUN
     // Retain running through small packet-timing fluctuations at the boundary.
     // Repeatedly restarting a walk/run fade produces a visible upper-body pop.
@@ -472,11 +575,11 @@ ClipPick Avatar::Pick(const Model& m) const {
     Sel cur = Choose(m);
     if (last_.clip >= 0 && cur.clip != last_.clip) { prev_ = last_; fadeStartMs_ = lastMs_; }        // the state changed: fade from what was playing
     last_ = cur;
-    ClipPick pk{cur.clip, TimeOf(cur.kind)};
+    ClipPick pk{cur.clip, TimeOf(m, cur.kind, cur.clip)};
 #ifndef WM_MUT_NO_BLEND
     if (prev_.clip >= 0 && g_.fadeMs > 0) {
         float w = (float)(lastMs_ - fadeStartMs_) / g_.fadeMs;
-        if (w < 1) { pk.from = prev_.clip; pk.fromTime = TimeOf(prev_.kind); pk.blend = w < 0 ? 0 : w; }
+        if (w < 1) { pk.from = prev_.clip; pk.fromTime = TimeOf(m, prev_.kind, prev_.clip); pk.blend = w < 0 ? 0 : w; }
     }
 #endif
     return pk;

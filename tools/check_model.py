@@ -3,7 +3,7 @@
 usage: check_model.py <model.glb> [...]      exit 0: all fine; every problem is printed
   - one skin, at most 255 joints (the loader's and the shader's limit); every vertex has four joints and weights that add up to 1
   - clips named idle, walk and run, each a loop (its last key is its first), 0.4 to 5 seconds long
-  - no texture, or one: the colours are flat (a material's base colour) for everything else; at most 24 materials; at most 60 000 vertices
+  - one to three embedded textures (colour atlas, and optionally a normal map and a metallic-roughness map on the same material); flat colours (a material's base colour) for everything else; at most 24 materials; at most 60 000 vertices
   - standing height between 1.5 and 2.1 m, feet at the ground; if the .glb.txt names an eye joint (eye_joint=), that joint exists and is between 1.4 and 1.9 m
   - the speeds in the .glb.txt are numbers the clips can be made for (speed=, run_speed=)"""
 import json, math, os, struct, sys
@@ -42,12 +42,17 @@ def check(path):
             if any(max(row) >= len(joints) for row in jj): bad('a joint index past the skin')
     if verts > 60000: bad('%d vertices (more than 60000)' % verts)
     if len(j.get('materials', [])) > 24: bad('%d materials (more than 24)' % len(j['materials']))
-    if len(j.get('images', [])) > 1: bad('%d textures (the loader takes one)' % len(j['images']))
-    if len(j.get('images', [])) != 1: bad('%d textures (the authored character has one painted texture)' % len(j.get('images', [])))
+    images = j.get('images', [])
+    if len(images) > 3: bad('%d textures (the loader takes the colour, normal and material maps)' % len(images))
+    if not images: bad('no textures (the authored character has a painted colour atlas)')
     elif not any('baseColorTexture' in m.get('pbrMetallicRoughness', {}) for m in j.get('materials', [])): bad('the texture is not the base colour of any material')
-    else:
-        im = j['images'][0]; bv = j['bufferViews'][im['bufferView']] if 'bufferView' in im else None
-        if bv is None or b[bv.get('byteOffset', 0):bv.get('byteOffset', 0) + 3] not in (b'\xff\xd8\xff', b'\x89PN'): bad('the texture is not an embedded JPEG or PNG')
+    for im in images:
+        bv = j['bufferViews'][im['bufferView']] if 'bufferView' in im else None
+        if bv is None or b[bv.get('byteOffset', 0):bv.get('byteOffset', 0) + 3] not in (b'\xff\xd8\xff', b'\x89PN'): bad('a texture is not an embedded JPEG or PNG')
+    if len(images) == 3:
+        mats = j.get('materials', [])
+        if not any('normalTexture' in m for m in mats): bad('three textures but no material has a normal map')
+        if not any('metallicRoughnessTexture' in m.get('pbrMetallicRoughness', {}) for m in mats): bad('three textures but no material has a metallic-roughness map')
     height = zmax - zmin
     if not 1.5 <= height <= 2.1: bad('%.2f m high (want 1.5 to 2.1)' % height)
     if abs(zmin) > 0.05: bad('the feet are %.2f m from the ground (want 0)' % zmin)
