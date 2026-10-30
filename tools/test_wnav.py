@@ -197,12 +197,16 @@ check('hit', blocked and mid in w.hit and xs and all(y < 3.0 or y > 8.1 for _, y
 pts_ = ground(None, 0, 12, 0, 10, 0.0) + wall(10.1, 0, 10, 0.25, 3.0) + wall(8.0, 4.0, 6.0, 0.25, 3.0)
 cs = wnav.pressed(pts_, (9.6, 5.0, E), 0.0); ys = sorted(wnav.centre(c)[1] for c in cs); xs_ = {wnav.centre(c)[0] for c in cs}
 check('pressed', ys and ys[0] <= 1.3 and ys[-1] >= 8.7 and xs_ == {10.25}, 'bumped %d cells, y %s..%s, x %s' % (len(cs), ys[:1], ys[-1:], sorted(xs_)))
+# wall_rule: the whole wall goes from the second stuck near here, not at the first (a leg that walks without it was spoilt), 1 always, 0 never
+check('wall_rule', not wnav.wall_rule([], (0, 0, E)) and wnav.wall_rule([(3.0, 0.0)], (0, 0, E)) and not wnav.wall_rule([(30.0, 0.0)], (0, 0, E))
+      and wnav.wall_rule([], (0, 0, E), '1') and not wnav.wall_rule([(1.0, 0.0)], (0, 0, E), '0'), 'first/second/far/forced/never')
 sys.exit(1 if fails else 0)
 '''
 
 MUTANTS = [      # (file text, replacement): each removes one protection
     ("and abs(across) <= side and feet + BAND[0]", "and abs(across) <= 0.3 and feet + BAND[0]"),      # only the cell ahead is bumped at a wall
     ("if -0.2 <= ahead <= reach and", "if ahead <= reach and"),      # what is behind counts as pressed against too
+    ("return any(math.dist(s[:2], q[:2]) < r for s in stuck_at)", "return True"),      # the whole wall goes at the first stuck
     ("self.hit |= {(c[0] + dx, c[1] + dy) for dx in (-1, 0, 1) for dy in (-1, 0, 1)}; return True", "return True"),      # a blocked way is forgotten at the next plan
     ("LEVEL = 1.0 ", "LEVEL = 0.0 "),      # the fallback goes to the cell nearest across, whatever its level
     ("return [z0 + b * BIN for b in range(64) if m >> b & 1 and not (m >> b) & BAND_MASK]", "return [z0 + b * BIN for b in range(64) if m >> b & 1]"),      # nothing in the way counts

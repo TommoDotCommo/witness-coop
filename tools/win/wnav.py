@@ -6,7 +6,7 @@ Usage: Windows Python wnav.py <pid> <game folder> x y z [tolerance m]      (or i
 Prints one JSON line {"ok", "why", "seconds", "walked", "stuck", "replans", "looks", "backouts", "sidesteps", "blurred", "from", "to"}.
 Environment: WNAV_MAPS (more maps to read, ';' separated), WNAV_RECORDINGS (session.jsonl files of tools/win/wrecord.py, ';' separated:
 their walks are known-good cells), WNAV_STUCKS (stucks before giving up, 12), WNAV_TRACE (a trace in <game folder>/wnav_trace.jsonl),
-WNAV_PRESSED (bump all of the wall it is pressed against, experimental), WNAV_KEEP (a depth picture kept at each stuck as <game folder>/wnav_<Walker.tag>stuck<N>.bin).
+WNAV_PRESSED (bump all of the wall it is pressed against: 1 at every stuck, 0 never, default from the second stuck within 6 m), WNAV_KEEP (a depth picture kept at each stuck as <game folder>/wnav_<Walker.tag>stuck<N>.bin).
 
 Measured (build 11370412): a mouse count turns the camera 0.0025 rad (positive dx turns right: the yaw at CAM_ANG goes down), dy the same in
 pitch; W walks about 1.8 m/s along the yaw (atan2 of the view direction, as `hover` and `tp` take it). A command takes about 11 ms.
@@ -40,7 +40,7 @@ How it finds the way (a robot with a depth camera, as a person uses their eyes):
    turned back at them to and fro); at the start and after being stuck it looks all round (four looks);
  - stuck (W held but under 0.5 m moved in 2 s, or no nearer the target in 25 s): something unseen is in the way (the game has invisible walls
    at the shore and on steep slopes): the cells just ahead are marked bumped (dear, not forbidden: a door may open later), it steps aside
-   (A, else D; else back with S) and plans again; with WNAV_PRESSED=1 it looks once more first: the band-filled points up to 1.2 m ahead and 4 m either side are
+   (A, else D; else back with S) and plans again; from the second stuck near here (wall_rule) it looks once more first: the band-filled points up to 1.2 m ahead and 4 m either side are
    what it is pressed against (a wall the map took for a hedge), and all those cells are bumped, not only the one ahead;
  - a pocket (stuck a third time within 3 m, or no way on the map from here): it walks back out along its own trail (10 m), keeps out of the
    cells round that place for this walk (and makes all within POCKET 5 m of it dear: a U of unseen walls is wider than one bump), unbumps the cells near doors the game says are open, and plans again (3 times at most); only then
@@ -362,6 +362,15 @@ def pressed(pts, q, yaw, reach=1.2, side=4.0):
     return out
 
 
+def wall_rule(stuck_at, q, mode=None, r=6.0):
+    """Is it stuck against a wall the map took for a hedge? mode '1': at every stuck; '0': never; default: the second stuck within `r` m
+    (one stuck is a bump into one cell; a second near it means the walk goes on along the same wall to the next soft cell: the whole wall
+    in sight goes then, see pressed). Always on it bumped the way of a leg that walks without it (0xb10)."""
+    if mode == '1': return True
+    if mode == '0': return False
+    return any(math.dist(s[:2], q[:2]) < r for s in stuck_at)
+
+
 def pocket(stuck_at, q, r=3.0, n=2):
     """Stuck here n times already (within r m): a pocket, back out of it."""
     return sum(1 for s in stuck_at if math.dist(s[:2], q[:2]) < r) >= n
@@ -570,7 +579,7 @@ class Walker:
                     for side in range(-again, again + 1):
                         x = q[0] + r * math.cos(y) - side * CELL * math.sin(y); yy = q[1] + r * math.sin(y) + side * CELL * math.cos(y)
                         self.map.bump(x, yy); self.avoid.add(cell_of(x, yy))
-                if os.environ.get('WNAV_PRESSED') and self.look(0):      # (what it is pressed against: all of it, not only the cell ahead; off by default: in the benchmark it bumped the way of a leg that walks without it)
+                if wall_rule(self.stuck_at[:-1], q, os.environ.get('WNAV_PRESSED')) and self.look(0):      # (what it is pressed against: all of it, not only the cell ahead; from the second stuck near here: at the first stuck in the benchmark it bumped the way of a leg that walks without it)
                     wall = pressed(self.last_pts, q, y)
                     for c_ in wall: self.map.bump(*centre(c_))
                     self.pressed_n += len(wall)

@@ -32,13 +32,18 @@ def there(spot, pz):
 
 
 def teleport(h, spot, pz, ppos=None):
-    for _ in range(2):
+    """The dev menu's teleport; some places refuse it (the player lands at the spawn: the place is not loaded yet when jumping from far
+    away). Then the coordinate command and the menu in turn, as wdraw.py does (the first jump loads the place, the next one stays)."""
+    close = lambda: math.dist(p.camera()[0][:2], spot) < 3.0 and abs(p.camera()[0][2] - pz) < 2.5
+    c.send(['menusel %x' % h, 'menudo teleport'], 3.4)
+    if close(): return True
+    yaw = math.atan2(ppos[1] - spot[1], ppos[0] - spot[0]) if ppos else 0.0      # (facing the panel)
+    for _ in range(3):
+        c.send(['tp %.4f %.4f %.4f %.5f 0.0' % (spot[0], spot[1], pz + 0.3, yaw)], 3.0)
+        if close(): return True
         c.send(['menusel %x' % h, 'menudo teleport'], 3.4)
-        if math.dist(p.camera()[0][:2], spot) < 3.0 and abs(p.camera()[0][2] - pz) < 2.5: return True
-    # the menu put the player at the spawn instead (some places refuse it): the command that takes coordinates, facing the panel
-    x, y, _ = p.camera()[0]; yaw = math.atan2(ppos[1] - spot[1], ppos[0] - spot[0]) if ppos else 0.0
-    c.send(['tp %.4f %.4f %.4f %.5f 0.0' % (spot[0], spot[1], pz + 0.3, yaw)], 3.0)
-    return math.dist(p.camera()[0][:2], spot) < 3.0 and abs(p.camera()[0][2] - pz) < 2.5
+        if close(): return True
+    return False
 
 
 t_all = time.monotonic(); walker = wnav.Walker(p, c, gdir, log=lambda m: print(m, file=sys.stderr, flush=True))
