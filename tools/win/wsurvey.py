@@ -20,11 +20,16 @@ t_all = time.monotonic()
 
 
 def tp(x, y, feet, yaw=0.0):
+    """Teleport above the known ground and let the player fall onto what is really there (the map's floors can be junk below the ground, and
+    the game sends a player put under the ground back to the spawn point). True when the player stands within 3 m of (x, y) afterwards."""
     c.send(['hover off'])
-    for z in (feet + 0.3, feet + 1.5):
-        c.send(['tp %.4f %.4f %.4f %.5f 0.0' % (x, y, z, yaw)], 2.5)
+    for rise in (4.0, 8.0, 14.0):
+        c.send(['tp %.4f %.4f %.4f %.5f 0.0' % (x, y, feet + rise, yaw)], 3.0)
         q = p.camera()[0]
-        if math.dist(q[:2], (x, y)) < 2.0 and abs(q[2] - wnav.EYE - feet) < 2.5: return True
+        if math.dist(q[:2], (x, y)) < 3.0:
+            time.sleep(1.0); q2 = p.camera()[0]
+            if abs(q2[2] - q[2]) < 0.05: return True      # (fallen and at rest)
+            time.sleep(1.5); return math.dist(p.camera()[0][:2], (x, y)) < 3.0
     return False
 
 
