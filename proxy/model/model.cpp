@@ -303,6 +303,8 @@ void LifeRig::Bind(const Model& m, float lidCloseScale) {
         auto bindDown = [&](int n, LifeAxis* swing, LifeAxis* sway) { float G[16]; BindGlobal(m, n, G); float axis[3] = {0, 1, 0}, down[3]; Rot3(G, axis, down); float l = sqrtf(down[0]*down[0] + down[1]*down[1] + down[2]*down[2]); if (l > 1e-9f) for (float& v : down) v /= l; *swing = ProbeAxis(G, down, fwd); if (sway) *sway = ProbeAxis(G, down, left); };
         for (int k = 0; k < 3; k++) { hem[k] = NodeNamed(m, hemNames[k]); if (hem[k] >= 0) bindDown(hem[k], &hemSwing[k], &hemSway[k]); }
         for (int k = 0; k < 2; k++) { thigh[k] = NodeNamed(m, thighNames[k]); if (thigh[k] >= 0) bindDown(thigh[k], &thighSwing[k], nullptr); }
+        armR = NodeNamed(m, "upper_arm.R"); forearmR = NodeNamed(m, "forearm.R");
+        if (armR >= 0) bindDown(armR, &armSwing, &armSide); if (forearmR >= 0) bindDown(forearmR, &forearmSwing, nullptr);
     }
 }
 static void RotLocal(float* q, const LifeAxis& ax, float angle) {
@@ -318,6 +320,11 @@ static void ApplyLife(const Model& m, const LifeRig& rig, const LifeState& L, fl
     }
     for (int k = 0; k < 3; k++) if (rig.hem[k] >= 0) { RotLocal(&R[rig.hem[k] * 4], rig.hemSwing[k], L.hemAngle[k]); RotLocal(&R[rig.hem[k] * 4], rig.hemSway[k], L.hemSway[k].b); }
     if (rig.lip >= 0) T[rig.lip * 3 + rig.lipUp] -= rig.lipUpSign * L.lipOpen;      // the lower lip drops while the player speaks
+    if (rig.armR >= 0 && L.reachWeight > 0.001f) {      // the right arm reaches for the line being traced: blended over whatever the clips and gestures left
+        float q[4]; memcpy(q, m.nodes[rig.armR].r, 16); RotLocal(q, rig.armSwing, L.reachFwd); RotLocal(q, rig.armSide, L.reachSide);
+        float out[4]; Slerp(&R[rig.armR * 4], q, L.reachWeight, out); memcpy(&R[rig.armR * 4], out, 16);
+        if (rig.forearmR >= 0) { float f[4]; memcpy(f, m.nodes[rig.forearmR].r, 16); RotLocal(f, rig.forearmSwing, 0.18f); Slerp(&R[rig.forearmR * 4], f, L.reachWeight, out); memcpy(&R[rig.forearmR * 4], out, 16); }
+    }
     for (int e = 0; e < 2; e++) if (rig.brow[e] >= 0) {
         float share = e == 1 ? 1.0f : 1.0f - L.browAsym;      // 'thinking' lifts the right brow alone
         RotLocal(&R[rig.brow[e] * 4], rig.browTilt[e], L.browTilt * share);

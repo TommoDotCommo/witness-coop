@@ -28,6 +28,7 @@ implemented in the proxy (`proxy/model/life.h`, applied in `proxy/model/model.cp
 | Lets an emote have the head | While a gesture owns the head or neck, the glance fades out over 250 ms and comes back after. | The gesture layer's weights |
 | Acts with its face | The brows sit on bones of their own (`brow.L`, `brow.R`, inner end to outer). Sad and Thinking draw the inner ends up (Thinking lifts the right brow alone), Laugh, Celebrate, Cheer and Panic raise both, Facepalm and No knit them, Shrug lifts them a little; 120 ms response, back to rest when the emote ends. | The emote id from the social layer |
 | Moves its mouth when its player speaks | The lower lip sits on a bone (`lip_lower`) over a dark mouth patch that is a hairline when shut. While the player's proximity voice is active (the same activity that lifts the talking hand) the lip drops up to 4.5 mm and flutters at about five syllables a second, unevenly; it closes within 40 ms of silence. | The social layer's smoothed speech activity |
+| Reaches for the panel it is tracing | While the player's line on a panel is still being drawn (the shared line is not final and was updated within 1.5 s), the puppet's right arm swings toward the line's tip (forward and across, from the shoulder, with a slight elbow bend), blended in over 250 ms and out again when the tracing stops; an emote or the talking hand keeps the arm. | The shared-lines state and the panel's pose in this game |
 | Turns head first | The body's heading lags the player's view (a first-order lag, 12/s: a 90 degree turn is 95 % done in 250 ms) and the head turns ahead of it toward the view, up to 57 degrees, the eyes completing the look. | `wm::Avatar` keeps the view and the body apart |
 | Walks sideways and backwards | A player walking more than 60 degrees off their view turns the body half way toward where they are going; beyond 110 degrees (70 to come back) the body keeps facing the view and the walk cycle runs in reverse: backing away from a panel looks like backing away. | The heading of the last datagram's step |
 
@@ -91,7 +92,7 @@ than a real blink (1.2 s), so a picture can catch the eyes closed.
 Game-free (seconds, no slot):
 
 ```sh
-make -C proxy/model test          # model-test (254 checks, 15 mutants) and life-test (13 mutants)
+make -C proxy/model test          # model-test (254 checks, 15 mutants) and life-test (14 mutants)
 python3 tools/test_gestures.py
 python3 tools/check_model.py assets/models/adventurer.glb
 python3 tools/check_appearance_asset.py assets/models/adventurer.glb
@@ -111,7 +112,8 @@ backward walk keeps the body on the view and runs the cycle in reverse, and that
 and the head back toward the view. It also measures the brows on the skinned vertices: Sad lifts the inner ends 2.5 to 12 mm above the outer ones on both sides,
 Laugh raises both brows 3.5 to 12 mm evenly, Facepalm lowers them with the inner ends below the outer, Thinking lifts the right
 above the left, and the face is back within half a millimetre after the emote. Mutants: `NO_BLINK`, `NO_LOOK`, `LOOK_UNCLAMPED`,
-`NO_BREATH`, `NO_CLOTH`, `CLOTH_UNDAMPED`, `NO_FIDGET`, `FIDGET_MOVING`, `NO_BODY_LAG`, `NO_BACKWALK`, `NO_BROWS`, `NO_HEM`, `NO_LIPS`
+`NO_BREATH`, `NO_CLOTH`, `CLOTH_UNDAMPED`, `NO_FIDGET`, `FIDGET_MOVING`, `NO_BODY_LAG`, `NO_BACKWALK`, `NO_BROWS`, `NO_HEM`, `NO_LIPS`, `NO_REACH`
+(the reach check: the arm points within 25 degrees of a target in front and to the right, hangs again after the tracing, and stays with an emote)
 (the speech check: talking drops the lower lip 2.5 to 8 mm with at least a millimetre of flutter, silence brings it back within 0.3 mm).
 The coat check walks the cycle in 16 steps, lets the hem settle on each frame's leg swing, and measures the hem's clearance from the
 leading thigh's centre line (front panel) and the trailing thigh's (back panel) between knee and hip: more than 5 cm throughout (the

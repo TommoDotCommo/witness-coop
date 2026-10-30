@@ -447,6 +447,11 @@ bool ModelGpuDraw(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Cam& ca
         if (dist > 1e-3f) { li.viewer = true; li.viewerDist = dist; li.viewerDir[0] = (d[0]*left[0] + d[1]*left[1]) / dist; li.viewerDir[1] = d[2] / dist; li.viewerDir[2] = (d[0]*front[0] + d[1]*front[1]) / dist; }
         li.headBusy = id != 0 || (extra && extra->seated) || motion.state.pose[wm::Head].weight > 0.05f || motion.state.pose[wm::Neck].weight > 0.05f;
         li.viewYawOffset = g_avatar->yawOffset(); li.emote = id; li.talking = motion.state.talk;
+        if (extra && extra->reaching) {      // the line's tip, seen from the right shoulder, in model space (x left, y up, z front; metres)
+            float d[3] = {extra->reachAt[0] - P[0], extra->reachAt[1] - P[1], extra->reachAt[2] - P[2]};
+            float mx = d[0]*left[0] + d[1]*left[1] + 0.215f, my = d[2] + (wm::kCameraEye - 1.42f), mz = d[0]*front[0] + d[1]*front[1];      // the shoulder is 0.215 m to the right of the eyes and 0.29 m below them
+            float l = sqrtf(mx*mx + my*my + mz*mz); if (l > 0.05f) { li.reach = true; li.reachDir[0] = mx / l; li.reachDir[1] = my / l; li.reachDir[2] = mz / l; }
+        }
         if (track.have && dt > 1e-3f && dt < 0.5f) {
             float v[3], a[3]; for (int k = 0; k < 3; k++) { v[k] = (P[k] - track.lastPos[k]) / dt; a[k] = (v[k] - track.vel[k]) / dt; }
             float kf = 1 - expf(-dt / 0.08f); for (int k = 0; k < 3; k++) { if (fabsf(a[k]) > 40) a[k] = 0; track.acc[k] += (a[k] - track.acc[k]) * kf; track.vel[k] = v[k]; }      // (a teleport is not a push)

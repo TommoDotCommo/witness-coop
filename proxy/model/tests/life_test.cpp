@@ -209,6 +209,20 @@ int main(int argc, char** argv) {
         in.talking = 0; for (int fr = 0; fr < 30; fr++) L.Step(in); pose(L);
         CHECK(fabsf(drop()) < 0.0003f, "silent: the lip is %.2f mm from rest", drop() * 1000);
     }
+    // ---- reaching for a panel: the right hand goes toward the line's tip in front and to the right; it comes back when the tracing stops; an emote keeps the arm
+    {
+        CHECK(rig.armR >= 0 && rig.forearmR >= 0 && rig.armSwing.axis >= 0 && rig.armSide.axis >= 0, "right arm %d %d axes %d %d", rig.armR, rig.forearmR, rig.armSwing.axis, rig.armSide.axis);
+        int handR = -1; for (size_t i = 0; i < m.nodes.size(); i++) if (m.nodes[i].name == "hand.R") handR = (int)i;
+        auto handDir = [&](float* out) { float sh[3], hd[3]; JointPos(m, posed.data(), rig.armR, sh); JointPos(m, posed.data(), handR, hd); float l = 0; for (int k = 0; k < 3; k++) { out[k] = hd[k] - sh[k]; l += out[k] * out[k]; } l = sqrtf(l); for (int k = 0; k < 3; k++) out[k] /= l; };
+        wm::LifeState L(12); wm::LifeInput in; in.dt = 1.0f / 60; in.reach = true; float dir[3] = {-0.3f, 0.1f, 0.95f}; float dl = sqrtf(0.3f*0.3f + 0.1f*0.1f + 0.95f*0.95f); for (int k = 0; k < 3; k++) in.reachDir[k] = dir[k] / dl;
+        for (int fr = 0; fr < 90; fr++) L.Step(in); pose(L); float hd[3]; handDir(hd); float dot = hd[0] * in.reachDir[0] + hd[1] * in.reachDir[1] + hd[2] * in.reachDir[2];
+        CHECK(L.reachWeight > 0.9f && dot > 0.9f, "reaching: weight %.2f, the arm points within %.0f degrees of the target", L.reachWeight, acosf(fminf(1, fmaxf(-1, dot))) * 57.3f);
+        wm::LifeState R0(12); pose(R0); float rest[3]; handDir(rest); CHECK(rest[2] < 0.3f, "at rest the arm hangs (forward component %.2f)", rest[2]);
+        in.reach = false; for (int fr = 0; fr < 90; fr++) L.Step(in); pose(L); handDir(hd);
+        CHECK(L.reachWeight < 0.05f && fabsf(hd[2] - rest[2]) < 0.05f, "after the tracing: weight %.2f, forward %.2f (rest %.2f)", L.reachWeight, hd[2], rest[2]);
+        in.reach = true; in.emote = 3; for (int fr = 0; fr < 60; fr++) L.Step(in);
+        CHECK(L.reachWeight < 0.05f, "an emote owns the arm: reach weight %.2f", L.reachWeight);
+    }
     // ---- the brows act with an emote: sad lifts the inner ends, laughter raises both brows, a facepalm knits them, and the face returns to rest after
     {
         CHECK(rig.brow[0] >= 0 && rig.brow[1] >= 0 && rig.browTilt[0].axis >= 0, "brow bones %d %d, tilt axis %d", rig.brow[0], rig.brow[1], rig.browTilt[0].axis);
