@@ -214,6 +214,8 @@ SCENARIOS = [   # name, extra cfg for A, extra cfg for B, check(a_stats, b_stats
   ('bot-free effects', '', '', lambda a, b, ok: (ok and b.get('ecab', 9) == 0 and b.get('ep', 9) == 0, 'a solved laser-panel and a default-lit cable switched off on A reach B once, without echo, and a fresh B recovers both')),
   ('MUTANT: bot-free effects without dispatch and power-off', '', 'no_target_dispatch=1\nno_cable_off=1', lambda a, b, ok: (not ok, 'B must keep the laser off and the cable lit')),
   ('MUTANT: bot-free effects without snapshot', 'no_off_snapshot=1\nno_snap_reassert=1', '', lambda a, b, ok: (not ok, 'a fresh B must still show the cable lit')),
+  ('door shut and opened again at once', '', '', lambda a, b, ok: (ok and b.get('ed', 9) == 0, 'a door shut and opened again within ~100 ms on A, 8 times, ends open on B too, without echo')),
+  ('MUTANT: door reopen dropped as a duplicate', '', 'open_dedupe_by_position=1', lambda a, b, ok: (not ok, 'B must keep the door shut at least once (its open was taken for a duplicate)')),
   ('dev menu', '', '', lambda a, b, ok: (ok and b.get('ep', 9) == 0 and b.get('ecab', 9) == 0, 'the menu teleports, takes the mouse while open, and its solve and cable actions reach B once, without echo')),
   ('MUTANT: dev menu actions without sync', 'no_cable_sync=1', 'no_target_dispatch=1\nno_cable_sync=1', lambda a, b, ok: (not ok, 'B must keep the laser off and the cable dark')),
   ('partner view', '', '', lambda a, b, ok: (ok, "B receives A's pictures and they show what A sees")),
@@ -260,6 +262,7 @@ while True:
     open(os.path.join(RUN, 'guard.stop'), 'w').write('bot starting')      # the focus guard (for the game grabbing the foreground while loading) ends
     chain = 'cable chain' in name
     effects = 'bot-free effects' in name
+    flicker = 'door shut and opened' in name or 'door reopen dropped' in name
     devmenu = 'dev menu' in name
     partner = 'partner view' in name
     preset = 'preset apply' in name
@@ -323,6 +326,14 @@ while True:
         pyw('wsolve.py', win(DIR1), '0x32f5'); pyw('wcmd.py', win(DIR1), 'cableoff', '18458'); time.sleep(8)
         sa0 = state('A')
         bot = 'solved: True' if lit0 and sa0['lasers'].get('0x32f9') == LASER_ON and '0x18458' not in sa0['lit_cables'] else 'the laser or the cable did not change on A (or the cable was dark at the start)'
+    elif flicker:      # the first tutorial panel solved as a player would (its door 0x34eda opens in both games), then A shuts and reopens that door again and again
+        pyw('wsolve.py', win(DIR1), '0x64'); time.sleep(10)
+        opened = '0x34eda' in state('A')['doors'] and '0x34eda' in state('B')['doors']
+        before = sum('local door 0x34eda closed' in l for l in open(os.path.join(DIR1, 'witness_events.log'), errors='ignore')) if opened else 0
+        if opened: print(pyw('wflicker.py', win(DIR1), '34eda').strip(), flush=True); time.sleep(8)
+        seen = sum('local door 0x34eda closed' in l for l in open(os.path.join(DIR1, 'witness_events.log'), errors='ignore')) - before
+        print('door 0x34eda: open on both first %s, shut seen by A %d times, open on A at the end %s' % (opened, seen, '0x34eda' in state('A')['doors']), flush=True)
+        bot = 'solved: True' if opened and seen >= 1 and '0x34eda' in state('A')['doors'] else 'the door did not open on both, or A never saw it shut (the flicker proves nothing)'
     else: bot = sh('%s -I %s %s %s %s 2>&1 | tail -3' % (shlex.quote(PYW), shlex.quote(win(os.path.join(TOOLS, 'win', 'wbot_maze.py' if maze else 'wbot.py'))), pid('A'), shlex.quote(win(DIR1)), '0x293' if maze else '')).strip()
     if chain and 'solved: True' in bot:       # the first cable powers the second maze: wait for its power, then solve it too
         time.sleep(6)
