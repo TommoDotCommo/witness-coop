@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Walking-map coverage of the credits route: is every panel's approach point connected on the map to the start area?
 
-usage: python3 tools/nav_coverage.py [MAP.bin] [--panels panels.json] [--root x,y,z] [--strict] [--list] [--json OUT] [--recordings SESSION.jsonl ...]
+usage: python3 tools/nav_coverage.py [MAP.bin] [--panels panels.json] [--root x,y,z] [--strict] [--list] [--json OUT] [--legs OUT.json] [--recordings SESSION.jsonl ...]
+       python3 tools/nav_coverage.py validate BASE.bin NEW.bin     (is the grown map as clean as the base: junk floors, walked cells)
        python3 tools/nav_coverage.py selftest        game-free check on a made-up island, with a mutant that must be reported
 
 For each of the 238 panels of data/credits_route.json: its approach point is the stand pose a person taught (data/taught.json) where there is
@@ -96,6 +97,62 @@ def start_root(m, near, within=20.0):
     return wnav.centre(best[1]) + (best[2][0],)
 
 
+def nearest_reached(reached, p, rmax=80.0, height=8.0):
+    """The reached (cell centre x, y, floor) nearest to point p (horizontally, within `height` m in z), searching rings outward, else None."""
+    cx, cy = cell_of(p[0], p[1]); best = None
+    for r in range(0, int(rmax / CELL) + 1):
+        if best and r * CELL > best[0] + CELL: break
+        ring = [(x, y) for x in range(cx - r, cx + r + 1) for y in (cy - r, cy + r)] + [(x, y) for y in range(cy - r + 1, cy + r) for x in (cx - r, cx + r)]
+        for c in ring:
+            for z in reached.get(c, ()):
+                if abs(z - p[2]) > height: continue
+                d = math.dist(wnav.centre(c), p[:2])
+                if best is None or d < best[0]: best = (d, wnav.centre(c)[0], wnav.centre(c)[1], z)
+    return best and best[1:]
+
+
+def plan_legs(reached, cut, pts, cluster=8.0):
+    """Survey legs for the cut-off panels: one per cluster of them (the panels within `cluster` m of one already chosen come with it), each from
+    the reached ground nearest its approach to the approach itself. [{'panel', 'near': [panels in the cluster], 'from': [x, y, feet], 'to': [x, y, feet], 'gap'}],
+    the longest gaps last (the near ones grow the map the far ones lean on)."""
+    legs = []
+    for h in cut:
+        p = pts[h]
+        if any(math.dist(p[:2], pts[l['panel']][:2]) < cluster and abs(p[2] - pts[l['panel']][2]) < 4.0 for l in legs):
+            next(l for l in legs if math.dist(p[:2], pts[l['panel']][:2]) < cluster)['near'].append(h); continue
+        f = nearest_reached(reached, p)
+        legs.append({'panel': h, 'near': [h], 'from': list(f) if f else None, 'to': list(p[:3]), 'gap': round(math.dist(f[:2], p[:2]), 1) if f else None})
+    legs.sort(key=lambda l: (l['gap'] is None, l['gap'] or 0)); return legs
+
+
+PIT = 3.0      # m: a floor this far under every neighbour's lowest surface is a junk floor (depth points taken while the camera turned land metres off)
+
+
+def junk_stats(m, only=None):
+    """(cells looked at, pits, walked cells that are not walkable). `only`: the cells to look at (default all)."""
+    n = pits = bad = 0
+    for c in (only if only is not None else m.cells):
+        r = m.cells.get(c)
+        if r is None or r[0] < -1e3: continue
+        n += 1
+        if r[2] & wnav.WALKED and not m.walkable(c)[0]: bad += 1
+        nb = [m.cells[v][0] for v in ((c[0] + dx, c[1] + dy) for dx in (-1, 0, 1) for dy in (-1, 0, 1) if dx or dy) if v in m.cells and m.cells[v][0] > -1e3]
+        if len(nb) >= 5 and r[0] < min(nb) - PIT and not r[2] & wnav.WALKED: pits += 1
+    return n, pits, bad
+
+
+def validate(base, new, slack=2.0, floor=0.01):
+    """Is a grown map as clean as the one it grew from? Looks at the cells that are new or changed: pits (junk floors) must not be more than
+    `slack` times as common as in the base map (and at least `floor` as a share is always allowed), and no walked cell may be unwalkable.
+    Returns (ok, lines)."""
+    changed = [c for c, r in new.cells.items() if c not in base.cells or base.cells[c][:2] != r[:2]]
+    nb, pb, bb = junk_stats(base); nn, pn, bn = junk_stats(new, changed)
+    rb, rn = pb / max(1, nb), pn / max(1, nn)
+    ok = rn <= max(floor, slack * rb) and bn == 0
+    return ok, ['base: %d cells, %d pits (%.3f%%), %d walked-but-unwalkable' % (nb, pb, 100 * rb, bb),
+                'new or changed: %d cells, %d pits (%.3f%%), %d walked-but-unwalkable' % (nn, pn, 100 * rn, bn), 'VALID' if ok else 'INVALID: junk floors or unwalkable walked cells in the new cells']
+
+
 def measure(m, pts, root, areas, strict=False):
     """({area: [reached, total]}, [cut off panels], reached set size)"""
     reached = flood(m, root, strict)
@@ -118,8 +175,10 @@ def report(per, cut, pts, names, nmiss):
 
 def main(a):
     if a and a[0] == 'selftest': return selftest()
+    if a and a[0] == 'validate':      # validate BASE.bin NEW.bin
+        b, n = Map(), Map(); b.load(a[1]); n.load(a[2]); ok, lines = validate(b, n); print('\n'.join(lines)); return 0 if ok else 1
     opt = lambda f, d=None: a[a.index(f) + 1] if f in a else d
-    pos = [x for i, x in enumerate(a) if not x.startswith('--') and (i == 0 or a[i - 1] not in ('--panels', '--root', '--json'))]
+    pos = [x for i, x in enumerate(a) if not x.startswith('--') and (i == 0 or a[i - 1] not in ('--panels', '--root', '--json', '--legs'))]
     mp = pos[0] if pos else os.path.join(ROOT, 'local', 'nav_map.bin')
     from logic import Logic
     L = Logic(); route = load_route(); areas = {h: L.entities[h].area for h in route}; names = {h: L.entities[h].name for h in route}
@@ -138,6 +197,9 @@ def main(a):
     lines, tc, tt = report(per, cut, pts, names, len(missing)); print('\n'.join(lines)); print('flood reached %d (cell, level) states%s' % (nstates, ' (STOPPED at the limit: the numbers are lower bounds)' if nstates >= 6_000_000 else ''))
     if '--list' in a or cut:
         for h in cut: print('  cut off: %#07x %-40s %-22s approach %.1f %.1f %.1f (%s)' % ((h, names[h], areas[h]) + pts[h]))
+    if '--legs' in a:
+        legs = plan_legs(flood(m, root, '--strict' in a), cut, pts); json.dump(legs, open(opt('--legs'), 'w'), indent=1)
+        print('%d survey legs for %d cut-off panels -> %s' % (len(legs), len(cut), opt('--legs')))
     if opt('--json'): json.dump({'map': mp, 'covered': tc, 'total': tt, 'per_area': per, 'cut': ['%#x' % h for h in cut]}, open(opt('--json'), 'w'), indent=1)
     return 0
 
@@ -173,6 +235,15 @@ def selftest():
     per, cut, _ = measure(island(wall=False), pts, (3.0, 3.0, 0.0), areas); check('no wall: all three covered', cut == [])
     per, cut, _ = measure(island(cut_path=True, wall=False), pts, (3.0, 3.0, 0.0), areas); check('mutant: a cut path loses the hill panel', 2 in cut)
     per, cut, _ = measure(island(wall=False), {1: (3.0, 3.0, 0.0, 'x'), 4: (20.0, 40.0, 0.0, 'x')}, (3.0, 3.0, 0.0), {1: 'Start', 4: 'Void'}); check('a point on never-seen ground is cut off', cut == [4])
+    base = island(wall=False); good = island(wall=False); ground(good, 40, 44, 0, 4, 0.0)
+    junk = island(wall=False); ground(junk, 40, 44, 0, 4, 0.0)
+    for x in (41.0, 42.0, 43.0): junk.integrate([(x, 2.0, -9.0)])
+    junk2 = island(wall=False); ground(junk2, 40, 44, 0, 4, 0.0); junk2.cells[(50, 50)] = [0.0, 1, 0]; junk2.cells[(50, 50)][2] |= wnav.WALKED; junk2.cells[(50, 50)][1] = 0
+    check('validate: clean new cells pass', validate(base, good)[0]); check('validate mutant: pits in the new cells fail', not validate(base, junk)[0])
+    check('validate mutant: a walked cell with nothing to stand on fails', not validate(base, junk2)[0])
+    reached = flood(island(cut_path=True, wall=False), (3.0, 3.0, 0.0))
+    legs = plan_legs(reached, [2, 4], {2: (33.0, 3.0, 0.0, 'x'), 4: (34.0, 5.0, 0.0, 'x')})
+    check('legs: one per cluster, from the end of the reached path', len(legs) == 1 and legs[0]['near'] == [2, 4] and 12.0 <= legs[0]['from'][0] <= 14.5, ) if legs else check('legs: planned', False)
     return 0 if ok else 1
 
 
