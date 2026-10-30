@@ -64,8 +64,10 @@ def orientation_refuted():
     the screen orientation guessed for the panel is wrong (a diamond panel, Monastery Outside 1, was drawn along a mirror image of the path for all 6
     edges: the counts matched, the game did not accept it). Remembers the orientation so the next try starts from its mirror images. Node numbers
     that are not the panel's own (Shutters Control reads 6 -> 9 as (2, 5)) do not start at the path's first node and so never refute."""
-    de = drawn_edges()
+    de = drawn_edges(); ptr = p.u64(e + 0x230)
     if not de or de[0][0] != path[0] or de[0][1] == path[1] or de[0][1] >= n: return False
+    raw = p.rd(ptr + 0x10, 4) if ptr else None
+    if not raw or struct.unpack('<f', raw)[0] < 0.2: return False      # (a line that has not gone anywhere says nothing about which way it was going)
     if kcache_path:
         bad = kcache.setdefault('bad%x' % eid, [])
         cur = [AX, SX, SY, round(math.degrees(ROLL))]
@@ -674,7 +676,9 @@ for i in range(1, len(path)):
             ep = edge_progress()
             if ep and ep[1] == path[i] and 0.1 < ep[0] < 0.9: step = min(40.0, max(2.0, 0.7 * (1 - ep[0]) * used / ep[0]))
         mouse(vx, vy, step); used += step
-    else: done(False, 'stuck before node %d (path index %d)' % (path[i], i), traced(), dist)
+    else:
+        if i == 1 and not TAUGHT and not STEER: orientation_refuted()      # (a line that went along another edge than the first one: remembered, the next try mirrors)
+        done(False, 'stuck before node %d (path index %d)' % (path[i], i), traced(), dist)
     if traced() > i + 1: done(False, 'overshot node %d: the line ran past it (traced %d, wanted %d)' % (path[i], traced(), i + 1), traced(), dist)
     if not straight_on(path[i], vx, vy): mouse(vx, vy, 2)      # the count flips as the tip reaches the node: a hair further so a turn is taken at the node, not before it
     if gain.get(axis_) is None and norm > 14: gain[axis_] = used / norm
