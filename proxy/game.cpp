@@ -22,6 +22,7 @@ void TracerCommand(const char* line);      // tracer.cpp
 
 void Log(const char* msg);
 void RequestShot(const char* name);
+void DevMenuNotice(const char* text);
 void OverlayLogTags();
 #include "ui.h"
 void OverlayPovState(unsigned* aimed, int* rosterOpen);
@@ -144,6 +145,7 @@ static DWORD WINAPI CmdThread(LPVOID) {
             else if (!strncmp(line, "voicechannel ", 13)) VoiceSetChannel(line + 13);
             else if (!strncmp(line, "mapgen ", 7)) MapGenCommand(line + 7);
             else if (!strncmp(line, "mapstat", 7)) DevMenuCommand("mapstat", 0);
+            else if (!strncmp(line, "notice ", 7)) DevMenuNotice(line + 7);      // a message on the screen (tools/win/wrecord.py: what to do next)
             else if (sscanf(line, "key %15s %15s", a, b) == 2) {       // key W down|up
                 struct { const char* n; unsigned vk, sc; } keys[] = {{"W", 0x57, 0x11}, {"A", 0x41, 0x1E}, {"S", 0x53, 0x1F}, {"D", 0x44, 0x20}, {"SPACE", 0x20, 0x39}, {"ENTER", 0x0D, 0x1C}, {"ESC", 0x1B, 0x01}, {"F1", 0x70, 0x3B}, {"F2", 0x71, 0x3C}, {"F4", 0x73, 0x3E}, {"F6", 0x75, 0x40}, {"F7", 0x76, 0x41}, {"F8", 0x77, 0x42}, {"TAB", 0x09, 0x0F}, {"F9", 0x78, 0x43}, {"F5", 0x74, 0x3F}, {"V", 0x56, 0x2F}, {"LB", 0xDB, 0x1A}, {"RB", 0xDD, 0x1B}, {"BACK", 0x08, 0x0E}, {"UP", 0x26, 0x48}, {"DOWN", 0x28, 0x50}, {"F3", 0x72, 0x3D}, {"SHIFT", 0xA0, 0x2A}, {"T", 0x54, 0x14}, {"P", 0x50, 0x19}, {"G", 0x47, 0x22}, {"X", 0x58, 0x2D}, {"C", 0x43, 0x2E}, {"Z", 0x5A, 0x2C}, {"B", 0x42, 0x30}, {"N", 0x4E, 0x31}, {"H", 0x48, 0x23}, {"L", 0x4C, 0x26}, {"M", 0x4D, 0x32}, {"R", 0x52, 0x13}, {"O", 0x4F, 0x18}, {"J", 0x4A, 0x24}, {"K", 0x4B, 0x25}, {"F10", 0x79, 0x44}, {"F11", 0x7A, 0x57}, {"F12", 0x7B, 0x58}};
                 for (auto& k : keys) if (!_stricmp(a, k.n)) { Cmd c = {1, 0, 0, k.vk, k.sc, !_stricmp(b, "down"), 0, 0, 0}; EnterCriticalSection(&g_lock); if (g_n < 64) g_q[g_n++] = c; LeaveCriticalSection(&g_lock); }
