@@ -55,7 +55,7 @@ for i, h in enumerate(panels):
     if prev is not None and not there(*prev[1:]): teleport(*prev, ppos=prev_pos)      # the leg starts at the previous panel's place, whatever happened before
     walker.tag = 'leg%d_' % i; walker.walked = 0.0; walker.stuck = 0; walker.replans = 0; walker.looks = 0; walker.avoid = set(); walker.stuck_at = []; walker.backouts = 0; walker.sidesteps = 0; walker.pressed_n = 0
     start = p.camera()[0]; d = math.dist(start[:2], spot)
-    r = walker.go((spot[0], spot[1], ppos[2]), 1.0, min(240.0, 60.0 + 1.5 * d), ztol=1.8)
+    r = walker.go((spot[0], spot[1], ppos[2]), 1.0, min(300.0, 60.0 + 1.5 * d), ztol=1.8)
     ok = r['ok'] and there(spot, ppos[2])
     result = 'walked' if ok else ('teleported' if teleport(h, spot, ppos[2], ppos) else 'failed')
     rec = {'leg': i, 'panel': '%#x' % h, 'result': result, 'metres': r['walked'], 'seconds': r['seconds'], 'straight_m': round(d, 1), 'stuck': r['stuck'],

@@ -5,7 +5,7 @@ Usage: Windows Python wnav.py <pid> <game folder> x y z [tolerance m]      (or i
        python3 tools/win/wnav.py --merge-recordings MAP.bin SESSION.jsonl ...   (a person's recorded walks into a map file, game-free)
 Prints one JSON line {"ok", "why", "seconds", "walked", "stuck", "replans", "looks", "backouts", "sidesteps", "blurred", "from", "to"}.
 Environment: WNAV_MAPS (more maps to read, ';' separated), WNAV_RECORDINGS (session.jsonl files of tools/win/wrecord.py, ';' separated:
-their walks are known-good cells), WNAV_STUCKS (stucks before giving up, 12), WNAV_TRACE (a trace in <game folder>/wnav_trace.jsonl),
+their walks are known-good cells), WNAV_STUCKS (stucks before giving up, 20: at 12 the legs through a maze of unseen walls gave up where the next stuck went on), WNAV_TRACE (a trace in <game folder>/wnav_trace.jsonl),
 WNAV_PRESSED (bump all of the wall it is pressed against: 1 at every stuck, 0 never, default from the second stuck within 6 m), WNAV_KEEP (a depth picture kept at each stuck as <game folder>/wnav_<Walker.tag>stuck<N>.bin).
 
 Measured (build 11370412): a mouse count turns the camera 0.0025 rad (positive dx turns right: the yaw at CAM_ANG goes down), dy the same in
@@ -544,7 +544,7 @@ class Walker:
         if not self.free_look(): return {'ok': False, 'why': 'stuck in a puzzle: the mouse does not turn the camera', 'seconds': round(time.monotonic() - t0, 1), 'walked': 0.0, 'stuck': 0, 'replans': 0, 'looks': 0, 'from': list(self.pos()), 'to': list(self.pos())}
         self.pitch_to(-0.25)
         start = self.pos(); last = noted = start; self.note(go=list(target), at=list(start)); self.look_around()
-        stucks = int(os.environ.get('WNAV_STUCKS') or 12)
+        stucks = int(os.environ.get('WNAV_STUCKS') or 20)
         ok, why, way, k = False, 'out of time', None, 0
         last_look = 0.0; moved_at, moved_t = start, time.monotonic(); near_d, near_t = math.dist(start[:2], target[:2]), time.monotonic()
         while time.monotonic() < deadline:
