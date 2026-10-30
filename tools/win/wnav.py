@@ -74,7 +74,7 @@ HEAD_MASK = (1 << int(math.ceil(BAND[1] / BIN))) - 1      # the bins above a sur
 
 class Map:
     """cell -> [floor z, mask of the height bins above the floor that hold something, flags]"""
-    def __init__(self): self.cells = {}; self.reached = False; self.soft = set(); self.covered = False      # reached: the last plan got to the target (else only near it)
+    def __init__(self): self.cells = {}; self.reached = False; self.soft = set(); self.covered = False; self.blocked_cell = None      # reached: the last plan got to the target (else only near it)
 
     @staticmethod
     def add_point(rec, z):
@@ -254,7 +254,7 @@ class Map:
                 st = self.steps(c, f, STAIR)
                 if st and c not in self.soft: st = [q_ for q_ in st if q_[1] != SOFT]
                 nxt |= {f} if st is None else {round(z if z is not None else f, 2) for z, _ in st}
-            if not nxt: return True
+            if not nxt: self.blocked_cell = c; return True      # (which cell: the walker keeps it dear, see Walker.ahead_blocked)
             floors = set(sorted(nxt)[:6]); run += CELL * math.hypot(c[0] - p_[0], c[1] - p_[1])
             if run > dist: break
         return False
@@ -375,7 +375,7 @@ class Walker:
         for q in [q for q in (os.environ.get('WNAV_RECORDINGS') or '').split(';') if q]:
             for w in walks(load_recording(q)): self.recorded += self.map.walk_line(w)
         self.tag = ''      # a prefix for the kept pictures (the benchmark sets one per leg)
-        self.trail = []; self.dear = set(); self.backouts = 0; self.sidesteps = 0; self.doors = None; self.blurred = 0      # where this walker has been (newest last); open doors, read once
+        self.trail = []; self.dear = set(); self.hit = set(); self.backouts = 0; self.sidesteps = 0; self.doors = None; self.blurred = 0      # where this walker has been (newest last); open doors, read once
 
     def pos(self): return self.p.camera()[0]
     def yaw(self): return self.p.camera()[1][0]
@@ -476,7 +476,7 @@ class Walker:
         if self.trace: self.trace.write(json.dumps(dict(t=round(time.monotonic(), 2), **kv)) + '\n'); self.trace.flush()
 
     def plan(self, target):
-        q = self.pos(); cells = self.map.plan(q, target, avoid=self.avoid, dear=self.dear)
+        q = self.pos(); cells = self.map.plan(q, target, avoid=self.avoid, dear=self.dear | self.hit)
         if cells is None: return None
         self.replans += 1; self.cells, self.ci = cells, 0
         way = simplify(cells, target[2]) or [tuple(target)]      # (a plan of one cell: the target is next to the player)
@@ -487,7 +487,10 @@ class Walker:
         q = self.pos(); cells = self.cells
         if not cells: return False
         near = min(range(self.ci, min(len(cells), self.ci + 16)), key=lambda i: math.dist(centre(cells[i]), q[:2]))
-        self.ci = near; return self.map.blocked_along(q, cells[near:], dist)
+        self.ci = near
+        if not self.map.blocked_along(q, cells[near:], dist): return False
+        c = self.map.blocked_cell      # the way is blocked here: the next plan keeps off it (else a look from another side finds it open again, the walker turns back at it and round again: it went to and fro 40 times at a ramp)
+        self.hit |= {(c[0] + dx, c[1] + dy) for dx in (-1, 0, 1) for dy in (-1, 0, 1)}; return True
 
     def settle(self, target, tol=0.12, seconds=8.0):
         """Shuffle onto an exact spot after a walk (where a line is drawn from matters to within a few tens of cm): face it, tap W for a
@@ -511,7 +514,7 @@ class Walker:
 
     def go(self, target, tol=0.8, seconds=240, ztol=2.0):
         """Walk to `target` (x, y, z: the eye there) until within `tol` across and `ztol` in height. Returns a dict like the JSON line."""
-        t0 = time.monotonic(); deadline = t0 + seconds
+        t0 = time.monotonic(); deadline = t0 + seconds; self.hit = set()
         self.c.send(['hover off'])
         if not self.free_look(): return {'ok': False, 'why': 'stuck in a puzzle: the mouse does not turn the camera', 'seconds': round(time.monotonic() - t0, 1), 'walked': 0.0, 'stuck': 0, 'replans': 0, 'looks': 0, 'from': list(self.pos()), 'to': list(self.pos())}
         self.pitch_to(-0.25)

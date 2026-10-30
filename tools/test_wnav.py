@@ -181,10 +181,23 @@ for k in range(12): pts += ground(None, 4 + k * 0.5, 4 + k * 0.5 + 0.49, 14, 16,
 m = wnav.Map(); m.integrate(pts)
 p = m.plan((5, 15, E), (22, 15, 3 + E), margin=12); last = wnav.centre(p[-1]) if p else (0, 0)
 check('lvlfall', p is not None and not m.reached and 10 < last[0] < 17.6 and abs(last[1] - 15) < 6, 'the plan ends at %s (on the low ground below the island if x > 17.6)' % (last,))
+# hit: a way found blocked on a look is dear for the rest of the walk (a look from another side finds it open again, and the walker turned
+# back at it again and again): the walker keeps the blocked cell and its neighbours, and the next plan goes round them
+m = wnav.Map(); m.integrate(ground(None, -5, 25, -15, 30, 0.0)); w = object.__new__(wnav.Walker)
+class P_:
+    def camera(self): return ((5.0, 5.0, E), (0.0, 0.0))
+w.p = P_(); w.map = m; w.hit = set(); w.dear = set(); w.avoid = set(); w.replans = 0; w.trace = None
+first = m.plan((5, 5, E), (15, 5, E), margin=12); w.cells, w.ci = first, 0
+m.integrate(wall(10.1, 3.0, 8.0, 0.25, 3.0))      # a look sees a wall across the way
+blocked = w.ahead_blocked(99)
+mid = [c for c in first if abs(wnav.centre(c)[0] - 10.25) < 0.3][0]
+p = w.plan((15, 5, E)); xs = [wnav.centre(c) for c in w.cells if abs(wnav.centre(c)[0] - 10.25) < 0.3]
+check('hit', blocked and mid in w.hit and xs and all(y < 3.0 or y > 8.1 for _, y in xs), 'blocked %s, %d cells kept dear, crossed the wall line at y %s' % (blocked, len(w.hit), [round(y, 1) for _, y in xs]))
 sys.exit(1 if fails else 0)
 '''
 
 MUTANTS = [      # (file text, replacement): each removes one protection
+    ("self.hit |= {(c[0] + dx, c[1] + dy) for dx in (-1, 0, 1) for dy in (-1, 0, 1)}; return True", "return True"),      # a blocked way is forgotten at the next plan
     ("LEVEL = 1.0 ", "LEVEL = 0.0 "),      # the fallback goes to the cell nearest across, whatever its level
     ("return [z0 + b * BIN for b in range(64) if m >> b & 1 and not (m >> b) & BAND_MASK]", "return [z0 + b * BIN for b in range(64) if m >> b & 1]"),      # nothing in the way counts
     ("fit = [(z, 1.0) for z in surf if (z > SEA or walked) and -DOWN <= z - fu <= up]", "fit = [(z, 1.0) for z in surf[:1] if (z > SEA or walked) and -DOWN <= z - fu <= up]"),      # one level a cell (stairs over ground, decks)
