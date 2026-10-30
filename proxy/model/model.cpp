@@ -278,7 +278,11 @@ static void BindChain(const Model& m, LifeChain& c, const char* prefix, int coun
 void LifeRig::Bind(const Model& m, float lidCloseScale) {
     const float fwd[3] = {0, 0, 1}, left[3] = {1, 0, 0}, up[3] = {0, 1, 0};
     head = NodeNamed(m, "head"); neck = NodeNamed(m, "neck"); chest = NodeNamed(m, "chest"); eye[0] = NodeNamed(m, "eye.L"); eye[1] = NodeNamed(m, "eye.R"); lid[0] = NodeNamed(m, "lid.L"); lid[1] = NodeNamed(m, "lid.R");
-    brow[0] = NodeNamed(m, "brow.L"); brow[1] = NodeNamed(m, "brow.R");
+    brow[0] = NodeNamed(m, "brow.L"); brow[1] = NodeNamed(m, "brow.R"); lip = NodeNamed(m, "lip_lower");
+    if (lip >= 0) {      // the lip's translation is in the head's frame: its local axis with the largest 'up' component
+        float GP[16]; if (m.nodes[lip].parent >= 0) BindGlobal(m, m.nodes[lip].parent, GP); else Identity(GP);
+        float best = 0; for (int k = 0; k < 3; k++) { float e3[3] = {0, 0, 0}; e3[k] = 1; float d[3]; Rot3(GP, e3, d); float l = sqrtf(d[0]*d[0] + d[1]*d[1] + d[2]*d[2]); if (l > 1e-9f && fabsf(d[1] / l) > fabsf(best)) { best = d[1] / l; lipUp = k; lipUpSign = (d[1] > 0 ? 1.0f : -1.0f) / l; } }
+    }
     lidClose = lidCloseScale > 1.0f && lidCloseScale < 4.0f ? lidCloseScale : 1.0f; ok = head >= 0;
     float G[16];
     if (head >= 0) { BindGlobal(m, head, G); headYaw = ProbeAxis(G, fwd, left); headPitch = ProbeAxis(G, fwd, up); }
@@ -313,6 +317,7 @@ static void ApplyLife(const Model& m, const LifeRig& rig, const LifeState& L, fl
         L.thighSwing[k] = 2.0f * atan2f(d[rig.thighSwing[k].axis] * rig.thighSwing[k].sign, d[3]);
     }
     for (int k = 0; k < 3; k++) if (rig.hem[k] >= 0) { RotLocal(&R[rig.hem[k] * 4], rig.hemSwing[k], L.hemAngle[k]); RotLocal(&R[rig.hem[k] * 4], rig.hemSway[k], L.hemSway[k].b); }
+    if (rig.lip >= 0) T[rig.lip * 3 + rig.lipUp] -= rig.lipUpSign * L.lipOpen;      // the lower lip drops while the player speaks
     for (int e = 0; e < 2; e++) if (rig.brow[e] >= 0) {
         float share = e == 1 ? 1.0f : 1.0f - L.browAsym;      // 'thinking' lifts the right brow alone
         RotLocal(&R[rig.brow[e] * 4], rig.browTilt[e], L.browTilt * share);

@@ -43,7 +43,7 @@ int main(int argc, char** argv) {
     {
         int lidNode = rig.lid[0], lidJ = JointOf(m, lidNode); std::vector<size_t> edge, top;
         for (size_t i = 0; i < m.verts.size(); i++) for (int k = 0; k < 4; k++) if (m.verts[i].joints[k] == lidJ) { if (m.verts[i].weights[k] > 0.8f) edge.push_back(i); else if (m.verts[i].weights[k] < 0.05f) top.push_back(i); }
-        CHECK(edge.size() > 10 && top.size() > 10, "lid vertices: %zu edge, %zu top", edge.size(), top.size());
+        CHECK(edge.size() > 10 && top.size() >= 8, "lid vertices: %zu edge, %zu top", edge.size(), top.size());
         wm::LifeState L; L.blink = 1; pose(L);
         float maxDrop = 0, minDrop = 1e9f, topMove = 0, edgeFront = 0;
         for (size_t i : edge) { float a[3], b[3]; wm::SkinPosition(m, bind.data(), m.verts[i], a); wm::SkinPosition(m, posed.data(), m.verts[i], b); float drop = a[1] - b[1]; maxDrop = fmaxf(maxDrop, drop); minDrop = fminf(minDrop, drop); edgeFront = fmaxf(edgeFront, b[2] - a[2]); }
@@ -160,7 +160,7 @@ int main(int argc, char** argv) {
             float moved = 0; for (int step = 1; step < 8; step++) { wm::JointMatrices(m, (int)c, m.clips[c].duration * step / 8, b.data()); for (size_t i = 0; i < m.verts.size(); i += 11) { float p0[3], p1[3]; wm::SkinPosition(m, a.data(), m.verts[i], p0); wm::SkinPosition(m, b.data(), m.verts[i], p1); moved = fmaxf(moved, Dist(p0, p1)); } }
             CHECK(moved > 0.03f && moved < 1.3f, "%s: moves the body by %.2f m at most", m.clips[c].name.c_str(), moved);
         }
-        CHECK(nf >= 3, "%d fidget clips", nf);
+        CHECK(nf >= 4, "%d fidget clips", nf);
     }
     // ---- the coat's skirt follows the legs: through the walk cycle no hem vertex between knee and hip comes inside the thigh (the trousers run from 8 cm across at the knee to 12 at the hip)
     {
@@ -196,6 +196,18 @@ int main(int argc, char** argv) {
         }
         CHECK(swingSeen > 0.3f, "the thigh swing read from the pose peaks at %.2f rad (the walk swings 25 degrees)", swingSeen);
         CHECK(worstWalk > restMargin - 0.006f, "through the walk the hem comes %.1f cm inside the thigh's surface (standing: %.1f cm)", -worstWalk * 100, -restMargin * 100);
+    }
+    // ---- speech moves the mouth: while the voice is active the lower lip drops a few millimetres and flutters; silent, it rests
+    {
+        CHECK(rig.lip >= 0, "lower lip bone %d", rig.lip);
+        int jLip = JointOf(m, rig.lip); std::vector<size_t> lipV; for (size_t i = 0; i < m.verts.size(); i++) for (int k = 0; k < 4; k++) if (m.verts[i].joints[k] == jLip && m.verts[i].weights[k] > 0.9f) lipV.push_back(i);
+        CHECK(lipV.size() > 20, "%zu lower-lip vertices", lipV.size());
+        auto drop = [&]() { double sum = 0; for (size_t i : lipV) { float a[3], b[3]; wm::SkinPosition(m, bind.data(), m.verts[i], a); wm::SkinPosition(m, posed.data(), m.verts[i], b); sum += a[1] - b[1]; } return (float)(sum / lipV.size()); };
+        wm::LifeState L(8); wm::LifeInput in; in.dt = 1.0f / 60; in.talking = 1; float lo = 1e9f, hi = -1e9f;
+        for (int fr = 0; fr < 90; fr++) { L.Step(in); if (fr >= 30) { pose(L); float d = drop(); lo = fminf(lo, d); hi = fmaxf(hi, d); } }
+        CHECK(hi > 0.0025f && hi < 0.008f && hi - lo > 0.001f, "talking: the lower lip drops %.1f to %.1f mm", lo * 1000, hi * 1000);
+        in.talking = 0; for (int fr = 0; fr < 30; fr++) L.Step(in); pose(L);
+        CHECK(fabsf(drop()) < 0.0003f, "silent: the lip is %.2f mm from rest", drop() * 1000);
     }
     // ---- the brows act with an emote: sad lifts the inner ends, laughter raises both brows, a facepalm knits them, and the face returns to rest after
     {

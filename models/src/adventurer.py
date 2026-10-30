@@ -430,7 +430,17 @@ for upper in (False, True):
         rows.append(row)
     for a, b in zip(rows, rows[1:]):
         for j in range(4): bm.faces.new((a[j], b[j], b[j+1], a[j+1]))
-    part(face_finish('lip.'+str(upper), bm, 'lips'), ['head'])
+    if upper: part(face_finish('lip.'+str(upper), bm, 'lips'), ['head'])
+    else:      # the lower lip hangs from a bone of its own: the proxy drops it while the player speaks
+        B['lip_lower'] = (V(0, face_y(0, 1.600) - 0.003, 1.6000), V(0, face_y(0, 1.600) - 0.003, 1.5900), 'head')
+        part(face_finish('lip.'+str(upper), bm, 'lips'), ['lip_lower'])
+# the inside of the mouth: a dark patch just in front of the face, under the lips (a hairline at the seam when shut, the opening when the lower lip drops)
+bm = bmesh.new(); rows = []
+for i in range(25):
+    t = i/24; xx = -0.023+0.046*t; profile = math.sin(math.pi*t)**0.6
+    rows.append([bm.verts.new((xx, face_y(xx, zz) - 0.00018, zz)) for zz in (1.6035 - 0.0065*profile, 1.6035 + 0.0030*profile)])
+for a, b in zip(rows, rows[1:]): bm.faces.new((a[0], b[0], b[1], a[1]))
+part(face_finish('mouth_inner', bm, 'mouth_dark'), ['head'])
 for sx in (-1, 1):
     xx, zz = sx*0.010, 1.634
     part(ellipsoid('nostril.'+str(sx), (xx, face_y(xx, zz)-0.00045, zz), (0.0024, 0.0004, 0.0011), 'mouth_dark', 12, 8), ['head'])
@@ -882,6 +892,12 @@ def pose_at(kind, phi, A):      # forward-positive angles in degrees
         rot('head', -3.0 * (left + right), turn * 0.7, 0); rot('neck', 0, turn * 0.3); rot('chest', 0, turn * 0.12); rot('spine', 0, turn * 0.05)
         for sd in ('L', 'R'): rot('forearm.' + sd, 4 + 2.0 * (left + right))
         return d
+    if kind == 'fidget_neck':       # the right hand rubs the back of the neck, the head bows and rolls a little
+        u = phi / (2 * math.pi); w = bump(u, 0.05, 0.34, 0.66, 0.96); rub = math.sin(6 * math.pi * max(0.0, min(1.0, (u - 0.3) / 0.4))) * w
+        fwd, side, elbow, wrist = HAT_TOUCH.get('neck', (60.0, -30.0, 130.0, 0.0))
+        rot('upper_arm.R', fwd * w, 0, side * w + 3.0 * rub); rot('forearm.R', 4 + (elbow - 4) * w + 4.0 * rub); rot('hand.R', -20.0 * w)
+        rot('head', 10.0 * w, 0, 4.0 * w); rot('neck', 5.0 * w, 2.0 * rub); rot('chest', 2.0 * w, -3.0 * w); rot('upper_arm.L', 2.0 * w); rot('forearm.L', 4 + 3.0 * w)
+        return d
     if kind == 'fidget_hat':        # the right hand comes up to the hat's brim, settles it, and drops again
         u = phi / (2 * math.pi); w = bump(u, 0.04, 0.36, 0.62, 0.96); fwd, side, elbow, wrist = HAT_TOUCH.get('angles', (150.0, -20.0, 120.0, 0.0))
         rot('upper_arm.R', fwd * w, 0, side * w); rot('forearm.R', 4 + (elbow - 4) * w); rot('hand.R', wrist * w)
@@ -947,8 +963,7 @@ def apply(kind, phi, A, lift=0.0):
     update()
 A_WALK, A_RUN = 25.0, 39.0
 print('REPORT walk run use planted-foot trajectory')
-def solve_hat_touch():
-    target = V(-0.165, -0.085, 1.735)      # the brim, in front of the right ear (the hat sits 4 cm lower than it was built, and tilted)
+def solve_hat_touch(target=V(-0.165, -0.085, 1.735), key='angles', what='the brim', clearance=0.115):      # the brim, in front of the right ear (the hat sits 4 cm lower than it was built, and tilted)
     head_centre = V(0, 0.003, 1.690); best = None
     def hand_at(fwd, side, elbow):
         reset(); pb['upper_arm.R'].rotation_euler = (math.radians(fwd) * FWD['upper_arm.R'], 0, math.radians(side) * SIDE['upper_arm.R']); pb['forearm.R'].rotation_euler = (math.radians(elbow) * FWD['forearm.R'], 0, 0); update()
@@ -957,20 +972,21 @@ def solve_hat_touch():
         for side in range(-50, 31, 10):
             for elbow in range(60, 141, 10):
                 h = hand_at(fwd, side, elbow); dist = (h - target).length
-                if (best is None or dist < best[0]) and (h - head_centre).length > 0.115: best = (dist, fwd, side, elbow)
+                if (best is None or dist < best[0]) and (h - head_centre).length > clearance: best = (dist, fwd, side, elbow)
     _, fwd, side, elbow = best
     for step in (5, 2):      # refine
         for dfwd in (-step, 0, step):
             for dside in (-step, 0, step):
                 for delbow in (-step, 0, step):
                     h = hand_at(fwd + dfwd, side + dside, elbow + delbow); dist = (h - target).length
-                    if dist < best[0] and (h - head_centre).length > 0.115: best = (dist, fwd + dfwd, side + dside, elbow + delbow)
+                    if dist < best[0] and (h - head_centre).length > clearance: best = (dist, fwd + dfwd, side + dside, elbow + delbow)
         _, fwd, side, elbow = best
     reset(); update()
-    HAT_TOUCH['angles'] = (float(fwd), float(side), float(elbow), -10.0)
-    print('REPORT hat touch: hand %.1f cm from the brim at fwd %d side %d elbow %d' % (best[0] * 100, fwd, side, elbow))
-    if best[0] > 0.05: raise ValueError('the hand cannot reach the hat brim (%.3f m)' % best[0])
+    HAT_TOUCH[key] = (float(fwd), float(side), float(elbow), -10.0)
+    print('REPORT hat touch: hand %.1f cm from %s at fwd %d side %d elbow %d' % (best[0] * 100, what, fwd, side, elbow))
+    if best[0] > 0.05: raise ValueError('the hand cannot reach %s (%.3f m)' % (what, best[0]))
 solve_hat_touch()
+solve_hat_touch(V(-0.06, 0.075, 1.50), 'neck', 'the back of the neck', 0.09)
 
 # ---- the clips: every frame is posed first (with animation evaluation off, or an earlier clip would re-pose the rig at every update), then the keys are written straight into the action
 arm.animation_data_create(); arm.animation_data.action = None; arm.animation_data.use_nla = False
@@ -990,9 +1006,9 @@ def clip(name, kind, T, A, flight=0.0):
                 for f in range(n + 1): fc.keyframe_points.insert(1 + f, frames[f][b.name][1][i], options={'FAST'})
     tr = arm.animation_data.nla_tracks.new(); tr.name = name; st = tr.strips.new(name, 1, act); st.name = name
 clip('idle', 'idle', 3.0, 0.0); clip('walk', 'walk', 1.0, A_WALK); clip('run', 'run', RUN_DURATION, A_RUN, 0.040)
-clip('fidget_shift', 'fidget_shift', 4.8, 0.0); clip('fidget_look', 'fidget_look', 4.4, 0.0); clip('fidget_hat', 'fidget_hat', 3.6, 0.0)
+clip('fidget_shift', 'fidget_shift', 4.8, 0.0); clip('fidget_look', 'fidget_look', 4.4, 0.0); clip('fidget_hat', 'fidget_hat', 3.6, 0.0); clip('fidget_neck', 'fidget_neck', 4.0, 0.0)
 # every fidget starts and ends in the idle's rest frame (the proxy cross-fades them in and out of the idle loop): compare the first frame's keys
-for name in ('fidget_shift', 'fidget_look', 'fidget_hat'):
+for name in ('fidget_shift', 'fidget_look', 'fidget_hat', 'fidget_neck'):
     act = bpy.data.actions[name]; worst = 0.0
     for fc in act.fcurves:
         k = fc.keyframe_points; worst = max(worst, abs(k[0].co[1] - k[-1].co[1]))
@@ -1069,6 +1085,10 @@ if PREVIEW:
     apply('idle', 0.0, 0); hem_demo(); update(); cam_d.lens = 70; a = math.radians(60); cam.location = Vector((math.sin(a) * 4.0, -math.cos(a) * 4.0, 0.95)); cam.rotation_euler = (Vector((0, 0, 0.85)) - cam.location).to_track_quat('-Z', 'Y').to_euler()
     scene.render.filepath = os.path.join(PREVIEW, 'hem_step.png'); bpy.ops.render.render(write_still=True)
     for nm_ in ('thigh.L', 'thigh.R', 'shin.R', 'hem_front.L', 'hem_back'): pb[nm_].rotation_euler = (0, 0, 0)
+    def mouth_open():
+        pb['lip_lower'].location = (0, -0.0045, 0)
+    face_shot('mouth_open', 0, mouth_open); face_shot('mouth_open_threequarter', 38, mouth_open); pb['lip_lower'].location = (0, 0, 0)
+    shoot('fidget_neck', 'fidget_neck', math.pi, 0, 40); shoot('fidget_neck_face', 'fidget_neck', math.pi, 0, 120, 1.6, 0.0, 1.6, 90)
     face_shot('brows_sad', 0, lambda: brows(0.002, 0.30)); face_shot('brows_raised', 0, lambda: brows(0.006, 0.0)); face_shot('brows_frown', 0, lambda: brows(-0.003, -0.22))
     for sd in ('L', 'R'): pb['brow.' + sd].location = (0, 0, 0); pb['brow.' + sd].rotation_euler = (0, 0, 0)
     print('REPORT previews in', PREVIEW)

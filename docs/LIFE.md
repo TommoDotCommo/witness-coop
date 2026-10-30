@@ -24,9 +24,10 @@ implemented in the proxy (`proxy/model/life.h`, applied in `proxy/model/model.cp
 | Breathes | The chest tilts back and forth 0.7 degrees (the neck and head counter it so the gaze stays level) at 13 breaths a minute at rest. Running (above 2.2 m/s) builds exertion over 6 s; it fades over 18 s and raises the rate to 46 a minute and the depth 2.6 times: a player who has just sprinted up is out of breath. | The measured speed |
 | Swings its scarf and gear | The scarf tails hang from chains of bones (`scarf_a.1-3`, `scarf_b.1-2`), the canteen and satchel from one each. Each segment is a damped pendulum driven by the body's acceleration (from the smoothed position), the gait's bounce (two steps a cycle), the air at speed (it lays hanging things back) and a little wind. Angles are clamped so the tails never swing into the coat. | Position, speed, the clip's phase |
 | Swings its coat | The coat's skirt hangs from three hem bones at the waist (front left, front right, back); below the waist the cloth's weight shifts from the torso and thighs to them over 25 cm. Each front panel follows the leg on its side forward (95 % of the thigh's swing, read from the pose) and the back panel follows whichever leg trails, with a 60 ms follow so the cloth stays ahead of the leg, and a slow pendulum on top for the lag and sway of heavy wool. Standing still it hangs as built. | The thighs' swing in the applied pose, the body's acceleration, the wind |
-| Fidgets | After 6 to 16 s of standing still a clip named `fidget_*` plays once, then the next is due 8 to 22 s later. Three are bundled: a weight shift onto the left leg (the right heel lifts), a look round, and settling the hat with the right hand (the arm angles are solved on the real rig at build time, and the hand is checked to reach the brim without entering the head). Walking off or an emote ends a fidget at once (with the usual 200 ms cross-fade); a seated or emoting player never starts one. | `wm::Avatar`'s scheduler, seeded by the player id |
+| Fidgets | After 6 to 16 s of standing still a clip named `fidget_*` plays once, then the next is due 8 to 22 s later. Four are bundled: a weight shift onto the left leg (the right heel lifts), a look round, settling the hat with the right hand, and a rub at the back of the neck with the head bowed (the two reaches are solved on the real rig at build time, and the hand is checked to reach without entering the head). Walking off or an emote ends a fidget at once (with the usual 200 ms cross-fade); a seated or emoting player never starts one. | `wm::Avatar`'s scheduler, seeded by the player id |
 | Lets an emote have the head | While a gesture owns the head or neck, the glance fades out over 250 ms and comes back after. | The gesture layer's weights |
 | Acts with its face | The brows sit on bones of their own (`brow.L`, `brow.R`, inner end to outer). Sad and Thinking draw the inner ends up (Thinking lifts the right brow alone), Laugh, Celebrate, Cheer and Panic raise both, Facepalm and No knit them, Shrug lifts them a little; 120 ms response, back to rest when the emote ends. | The emote id from the social layer |
+| Moves its mouth when its player speaks | The lower lip sits on a bone (`lip_lower`) over a dark mouth patch that is a hairline when shut. While the player's proximity voice is active (the same activity that lifts the talking hand) the lip drops up to 4.5 mm and flutters at about five syllables a second, unevenly; it closes within 40 ms of silence. | The social layer's smoothed speech activity |
 | Turns head first | The body's heading lags the player's view (a first-order lag, 12/s: a 90 degree turn is 95 % done in 250 ms) and the head turns ahead of it toward the view, up to 57 degrees, the eyes completing the look. | `wm::Avatar` keeps the view and the body apart |
 | Walks sideways and backwards | A player walking more than 60 degrees off their view turns the body half way toward where they are going; beyond 110 degrees (70 to come back) the body keeps facing the view and the walk cycle runs in reverse: backing away from a panel looks like backing away. | The heading of the last datagram's step |
 
@@ -90,7 +91,7 @@ than a real blink (1.2 s), so a picture can catch the eyes closed.
 Game-free (seconds, no slot):
 
 ```sh
-make -C proxy/model test          # model-test (254 checks, 15 mutants) and life-test (12 mutants)
+make -C proxy/model test          # model-test (254 checks, 15 mutants) and life-test (13 mutants)
 python3 tools/test_gestures.py
 python3 tools/check_model.py assets/models/adventurer.glb
 python3 tools/check_appearance_asset.py assets/models/adventurer.glb
@@ -110,7 +111,8 @@ backward walk keeps the body on the view and runs the cycle in reverse, and that
 and the head back toward the view. It also measures the brows on the skinned vertices: Sad lifts the inner ends 2.5 to 12 mm above the outer ones on both sides,
 Laugh raises both brows 3.5 to 12 mm evenly, Facepalm lowers them with the inner ends below the outer, Thinking lifts the right
 above the left, and the face is back within half a millimetre after the emote. Mutants: `NO_BLINK`, `NO_LOOK`, `LOOK_UNCLAMPED`,
-`NO_BREATH`, `NO_CLOTH`, `CLOTH_UNDAMPED`, `NO_FIDGET`, `FIDGET_MOVING`, `NO_BODY_LAG`, `NO_BACKWALK`, `NO_BROWS`, `NO_HEM`.
+`NO_BREATH`, `NO_CLOTH`, `CLOTH_UNDAMPED`, `NO_FIDGET`, `FIDGET_MOVING`, `NO_BODY_LAG`, `NO_BACKWALK`, `NO_BROWS`, `NO_HEM`, `NO_LIPS`
+(the speech check: talking drops the lower lip 2.5 to 8 mm with at least a millimetre of flutter, silence brings it back within 0.3 mm).
 The coat check walks the cycle in 16 steps, lets the hem settle on each frame's leg swing, and measures the hem's clearance from the
 leading thigh's centre line (front panel) and the trailing thigh's (back panel) between knee and hip: more than 5 cm throughout (the
 thigh is 10 cm across); `NO_HEM` (a passive skirt) fails it, which is why the skirt is driven and not simulated alone.

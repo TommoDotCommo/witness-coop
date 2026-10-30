@@ -21,6 +21,7 @@ struct LifeRig {
     LifeAxis headYaw, headPitch, neckYaw, neckPitch, chestPitch, eyeYaw[2], eyePitch[2], browTilt[2];   // browTilt: a roll that lifts the brow's inner end (the bone runs inner to outer)
     int browUp[2] = {1, 1}; float browUpSign[2] = {1, 1};      // the bone's local axis (and sign) that is 'up' in model space, for lifting the brow
     int hem[3] = {-1, -1, -1}, thigh[2] = {-1, -1};             // the coat's skirt: front left, front right, back; the thighs that drive them
+    int lip = -1, lipUp = 1; float lipUpSign = 1;                // the lower lip and its parent-frame 'up' axis: it drops while the player speaks
     LifeAxis hemSwing[3], hemSway[3], thighSwing[2];            // swing: the hem's bottom toward +z (front); thighSwing: the thigh's foot toward +z
     LifeChain scarfA, scarfB, canteen, satchel;
     float lidClose = 1.0f;          // the lid bone's scale along its length that closes the eye (the model's .glb.txt: lid_close=); 1: no lids
@@ -37,6 +38,7 @@ struct LifeInput {
     float viewerDist = 100;         // metres
     bool headBusy = false;          // an emote owns the head: the layer lets go of it
     int emote = 0;                  // the emote playing (1..24, 0 none): the brows act with it
+    float talking = 0;              // 0..1: the player's proximity voice is active (the social layer's smoothed activity): the mouth moves
     float viewYawOffset = 0;        // where the player looks minus where the body faces (radians, left positive): the head turns there ahead of the body
     float accel[3] = {0, 0, 0};     // the puppet's acceleration, model space, m/s^2 (y: the gait's bounce)
 };
@@ -48,6 +50,7 @@ struct LifeState {
     float blink = 0;                // 0 open .. 1 closed
     float headYaw = 0, headPitch = 0, headWeight = 1;   // radians, model space: yaw > 0 looks left, pitch > 0 up
     float browLift = 0, browTilt = 0, browAsym = 0;      // the face acting with an emote: lift in metres (up), tilt in radians (inner ends up), asym: the right brow's share of the lift (thinking)
+    float lipOpen = 0;                                   // how far the lower lip has dropped, metres (speech)
     float eyeYaw = 0, eyePitch = 0;
     float breath = 0;               // -1 .. 1 (times the exertion gain)
     float exertion = 0;             // 0 rested .. 1 just after a run
@@ -145,6 +148,13 @@ struct LifeState {
         liftT = tiltT = asymT = 0;
 #endif
         float kb = dt > 0 ? 1 - expf(-dt / 0.12f) : 0; browLift += (liftT - browLift) * kb; browTilt += (tiltT - browTilt) * kb; browAsym += (asymT - browAsym) * kb;
+        // ---- speech: the lower lip drops and flutters at a syllable's pace (about 5 a second, unevenly) while the voice is active
+        float syll = 0.5f + 0.5f * sinf(6.2831853f * 5.2f * t) * (0.6f + 0.4f * sinf(6.2831853f * 1.3f * t + 0.7f)) ;
+        float lipT = Clamp(in.talking, 0, 1) * 0.0045f * (0.25f + 0.75f * syll);
+#ifdef WM_MUT_NO_LIPS
+        lipT = 0;
+#endif
+        lipOpen += (lipT - lipOpen) * (dt > 0 ? 1 - expf(-dt / 0.04f) : 0);
         // ---- breathing: 13 breaths a minute at rest, up to 46 after a run, deeper too; the exertion builds over a run and fades over half a minute
         float exT = in.speed > 2.2f ? 1.0f : 0.0f; exertion += (exT - exertion) * (dt > 0 ? 1 - expf(-dt / (exT > exertion ? 6.0f : 18.0f)) : 0);
         breathPhase += 6.2831853f * (0.22f + 0.55f * exertion) * dt; if (breathPhase > 6.2831853f) breathPhase -= 6.2831853f;

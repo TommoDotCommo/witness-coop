@@ -8,11 +8,11 @@ from witness import ROOT, TOOLS, DIR1, DIR2, PYW, RUN, pid, win, real_saves
 
 OCC = 'a player behind the closed door is hidden (< 2% of the pixels in front)'
 SCENARIOS = [   # name, cfg for A (the viewer), the set of checks that must FAIL (empty: all must pass), pixel scale, walk clip index, whether the idle clip animates (1) or holds a frame (0), regex the proxy log must match
-  ('model: the adventurer and legacy migration', 'model=removed-legacy-name\ncharacter=fox\nmodel_by_player=1\nsee_through=0', set(), 1.0, 1, 1, r'model: loaded .* 6 clips'),
-  ('model: adventurer ignores legacy none', 'model=none\ncharacter=removed-name\nsee_through=0', set(), 1.0, 1, 1, r'model: loaded .* 6 clips'),
-  ('MUTANT: adventurer gait disabled', 'see_through=0\nno_model_gait=1', {'a walking player plays the walk clip', 'a player moving at 5 m/s plays and advances the run clip', "the walking figure's footsteps are heard (voice mixer played them)"}, 1.0, 1, 1, r'model: loaded .* 6 clips'),      # (no gait, no foot plants, no steps)
-  ('MUTANT: adventurer modelstat on command thread', 'see_through=0\nno_modelstat_queue=1', {'model statistics execute on the render thread'}, 1.0, 1, 1, r'model: loaded .* 6 clips'),
-  ('MUTANT: model drawn over walls', 'no_model_depth=1\nsee_through=0', {OCC, 'the figure casts a sun shadow on the ground'}, 1.0, 1, 1, r'model: loaded .* 6 clips'),      # (without the scene depth there is no ground to lay a shadow on either)
+  ('model: the adventurer and legacy migration', 'model=removed-legacy-name\ncharacter=fox\nmodel_by_player=1\nsee_through=0', set(), 1.0, 1, 1, r'model: loaded .* 7 clips'),
+  ('model: adventurer ignores legacy none', 'model=none\ncharacter=removed-name\nsee_through=0', set(), 1.0, 1, 1, r'model: loaded .* 7 clips'),
+  ('MUTANT: adventurer gait disabled', 'see_through=0\nno_model_gait=1', {'a walking player plays the walk clip', 'a player moving at 5 m/s plays and advances the run clip', "the walking figure's footsteps are heard (voice mixer played them)"}, 1.0, 1, 1, r'model: loaded .* 7 clips'),      # (no gait, no foot plants, no steps)
+  ('MUTANT: adventurer modelstat on command thread', 'see_through=0\nno_modelstat_queue=1', {'model statistics execute on the render thread'}, 1.0, 1, 1, r'model: loaded .* 7 clips'),
+  ('MUTANT: model drawn over walls', 'no_model_depth=1\nsee_through=0', {OCC, 'the figure casts a sun shadow on the ground'}, 1.0, 1, 1, r'model: loaded .* 7 clips'),      # (without the scene depth there is no ground to lay a shadow on either)
   ('MUTANT: adventurer life layer off', 'see_through=0\nno_model_life=1', {'the standing figure blinks (life layer)', 'a figure facing a near player glances at them'}, 1.0, 1, 1, r'model: life rig bound'),
   ('MUTANT: adventurer shadow off', 'see_through=0\nmodel_shadow=0', {'the figure casts a sun shadow on the ground'}, 1.0, 1, 1, r'model: life rig bound'),
   ('MUTANT: adventurer footsteps off', 'see_through=0\nfootsteps=0', {"the walking figure's footsteps are heard (voice mixer played them)"}, 1.0, 1, 1, r'model: life rig bound'),

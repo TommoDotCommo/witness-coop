@@ -51,8 +51,8 @@ int main(int argc, char** argv) {
     CHECK(wm::LoadGlb(file.data(), file.size(), &m, &err), "load: %s", err.c_str());
     if (g_fail) return 1;
     CHECK(m.verts.size() > 1000 && m.idx.size() % 3 == 0, "verts %zu idx %zu", m.verts.size(), m.idx.size());
-    CHECK(m.joints.size() == 34 && m.jointCount() == 35, "joints %zu (the adventurer has 20 body joints, 2 eyes, 2 lids, 2 brows, 5 scarf, 2 gear and 3 hem)", m.joints.size());
-    CHECK(m.clips.size() == 6 && m.clips[0].duration > 0.5f && m.clips[0].duration < 10, "clips %zu (idle, walk, run and three fidgets)", m.clips.size());
+    CHECK(m.joints.size() == 35 && m.jointCount() == 36, "joints %zu (the adventurer has 20 body joints, 2 eyes, 2 lids, 2 brows, a lower lip, 5 scarf, 2 gear and 3 hem)", m.joints.size());
+    CHECK(m.clips.size() == 7 && m.clips[0].duration > 0.5f && m.clips[0].duration < 10, "clips %zu (idle, walk, run and four fidgets)", m.clips.size());
     CHECK(m.texW > 0 && m.rgba.size() == (size_t)m.texW * m.texH * 4, "texture %dx%d", m.texW, m.texH);
     CHECK(m.nrmW >= 512 && m.nrm.size() == (size_t)m.nrmW * m.nrmH * 4 && m.mrW >= 512 && m.mr.size() == (size_t)m.mrW * m.mrH * 4, "normal map %dx%d, material map %dx%d", m.nrmW, m.nrmH, m.mrW, m.mrH);
     {   // the normal map is mostly 'up' (flat relief tilted a little), the material map has rough cloth and a little metal
