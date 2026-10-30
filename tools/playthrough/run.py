@@ -23,6 +23,7 @@ HERE = os.path.dirname(os.path.abspath(__file__)); TOOLS = os.path.dirname(HERE)
 sys.path.insert(0, HERE); sys.path.insert(0, TOOLS)
 from logic import Logic, CREDITS
 from planner import Planner
+import divergence
 from witness import ROOT, RUN, PYW, win, real_saves
 import solver
 TAUGHT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'taught.json')      # learned from recordings of a person (teach.py)
@@ -378,10 +379,12 @@ class Playthrough:
         a = snap()
         if not a: return      # a world could not be read: compare next time
         first = diff(a)
-        if not first: return
+        # every comparison is recorded, with what still differs both times: divergence.py tells a divergence that resolved from one that stayed
+        if not first: self.rec('worlds compared', differing=[]); return
         time.sleep(settle); b2 = snap()
         if not b2: return
         second = diff(b2)
+        self.rec('worlds compared', differing=sorted({'%#x' % h for i, d in first.items() for part, p2 in zip(d, second.get(i, (frozenset(),) * 3)) for h in part & p2}))
         for i, (extra, missing, doors) in first.items():
             e2, m2, d2 = second.get(i, (frozenset(),) * 3)
             for persistent, (x, m, d) in ((True, (extra & e2, missing & m2, doors & d2)), (False, (extra - e2, missing - m2, doors - d2))):
@@ -509,7 +512,7 @@ class Playthrough:
                  lasers=sum(1 for l in self.logic.lasers if l in done), per_bot={b.id: sum(1 for e in solves if e['bot'] == b.id) for b in self.bots},
                  by_area=by_area, median_solve_s=statistics.median([e['seconds'] for e in solves]) if solves else None,
                  propagation_s=dict(p50=pct(props, 50), p95=pct(props, 95), max=round(max(props), 2) if props else None, n=len(props)),
-                 divergences=sum(1 for e in ev if e['kind'] == 'divergence' and e.get('persistent', True)), transient_differences=sum(1 for e in ev if e['kind'] == 'divergence' and e.get('persistent') is False), crashes=sum(1 for e in ev if e['kind'] == 'crash'),
+                 divergences=sum(1 for e in ev if e['kind'] == 'divergence' and e.get('persistent', True)), divergence_check=divergence.summary(ev), transient_differences=sum(1 for e in ev if e['kind'] == 'divergence' and e.get('persistent') is False), crashes=sum(1 for e in ev if e['kind'] == 'crash'),
                  no_solver=sorted('%#x' % h for h in self.no_solver), blocked=[e for e in ev if e['kind'] == 'blocked'][-1:] or None,
                  movement=dict(walks=sum(1 for m in moves if m['how'] == 'walk' and m.get('ok')), walks_failed=sum(1 for m in moves if m['how'] == 'walk' and not m.get('ok')),
                                teleports=sum(1 for m in moves if m['how'] == 'teleport'), metres_walked=round(sum(m.get('walked', 0) for m in moves))))

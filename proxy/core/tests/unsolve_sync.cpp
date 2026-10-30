@@ -8,7 +8,7 @@
 
 struct UndoWorld : witness::World {
     bool solved[3] = {false, false, false}, open[2] = {false, false}, request[2] = {false, false};
-    bool refuse = false; uint64_t gen = 1;
+    bool refuse = false, lag = false; uint64_t gen = 1;      // lag: as in the game, a door call sets where the door goes (+0x1D4); it moves on the next frame (+0x1D0)
     unsigned unsolveCalls = 0, closeCalls = 0;
     bool cameraValid() override { return true; }
     bool scan(std::vector<unsigned>& p, std::vector<unsigned>& d, uint64_t* t) override { p = {1, 2}; d = {10}; *t = 1; return true; }
@@ -20,9 +20,10 @@ struct UndoWorld : witness::World {
     bool doorOpen(unsigned) override { return open[0]; }
     bool doorRequested(unsigned) override { return request[0]; }
     void applyPanelSolved(unsigned id) override { solved[id] = true; }
-    bool applyDoorOpen(unsigned) override { open[0] = request[0] = true; return true; }
+    bool applyDoorOpen(unsigned) override { request[0] = true; if (!lag) open[0] = true; return true; }
     bool applyPanelUnsolved(unsigned id) override { ++unsolveCalls; if (refuse) return false; solved[id] = false; return true; }
-    bool applyDoorClose(unsigned) override { ++closeCalls; if (refuse) return false; open[0] = request[0] = false; return true; }
+    bool applyDoorClose(unsigned) override { ++closeCalls; if (refuse) return false; request[0] = false; if (!lag) open[0] = false; return true; }
+    void frame() { open[0] = request[0]; }
     bool pose(float p[3], float a[2]) override { p[0] = p[1] = p[2] = 1; a[0] = a[1] = 0; return true; }
     void openDoor() { open[0] = request[0] = true; }
     void shutDoor() { open[0] = request[0] = false; }
@@ -48,6 +49,8 @@ struct Pair {
         uint64_t end = now + duration;
         while (now < end) {
             now += 50;
+            if (a.lag) a.frame();
+            if (b.lag) b.frame();
             ca->pollState(now); cb->pollState(now);
             ca->tick(now); cb->tick(now);
             auto qa = std::move(toA), qb = std::move(toB); toA.clear(); toB.clear();
@@ -78,6 +81,21 @@ bool door(witness::Flags fa = {}) {
     if (!p.b.open[0]) return false;
     p.a.shutDoor(); p.advance(3000);
     return !p.b.open[0] && !p.b.request[0] && p.b.closeCalls == 1 && p.echoesB == 0;
+}
+
+// A door on A shuts and opens again within 100 ms (seen in the game on 0x14724 and a hedge maze shortcut): both events reach B in one
+// batch, B applies the close, and its door still stands open when the open is looked at (the game moves it on the next frame). The open
+// must not be taken for a duplicate: B's door ends open, as A's.
+// Every phase of the 150 ms send round is tried (in some, the two events travel in different rounds).
+bool flicker(witness::Flags fb = {}) {
+    for (uint64_t phase : {0, 50, 100}) {
+        Pair p({}, fb); p.b.lag = true; p.advance(30000 + phase);
+        p.a.openDoor(); p.advance(3000);
+        if (!p.b.open[0]) return false;
+        p.a.shutDoor(); p.advance(50); p.a.openDoor(); p.advance(6000);
+        if (!(p.a.open[0] && p.b.open[0] && p.b.request[0] && p.b.closeCalls == 1)) return false;
+    }
+    return true;
 }
 
 // The timed door: opened on A (B has it applied), then it shuts by itself in both games in the same frame. No call is needed on B, and
@@ -112,13 +130,14 @@ bool reload(witness::Flags fa = {}) {
 }
 
 int main() {
-    bool a = timer(), b = door(), c = timedDoor(), d = reload(), o = doorOrder();
+    bool a = timer(), b = door(), c = timedDoor(), d = reload(), o = doorOrder(), fl = flicker();
     std::printf("%s  timer panels reset on one game: reset on the other (loss, refused call, no echo)\n", a ? "PASS" : "FAIL");
     std::printf("%s  a door that shuts on one game shuts on the other\n", b ? "PASS" : "FAIL");
     std::printf("%s  a timed door shutting in both games at once: no call, no bounce\n", c ? "PASS" : "FAIL");
     std::printf("%s  a save loaded again is not shared as un-solves\n", d ? "PASS" : "FAIL");
     std::printf("%s  a close kept for a retry is not overtaken by the open that followed it\n", o ? "PASS" : "FAIL");
-    witness::Flags noUnsolve, noClose, noRetry, noReload;
+    std::printf("%s  a door that shuts and opens again within 100 ms ends open on the other game too\n", fl ? "PASS" : "FAIL");
+    witness::Flags noUnsolve, noClose, noRetry, noReload, byPosition; byPosition.openDedupeByPosition = true;
     noUnsolve.noUnsolveSync = true; noClose.noDoorCloseSync = true; noRetry.noApplyRetry = true; noReload.noReloadSync = true;
     witness::Flags noOrder; noOrder.noEntityOrder = true;
     bool e = !timer(noUnsolve), f = !door(noClose), g = !timer({}, noRetry), h = !reload(noReload), k = !doorOrder(noOrder);
@@ -127,5 +146,7 @@ int main() {
     std::printf("%s  no-apply-retry twin caught for un-solves\n", g ? "PASS" : "FAIL");
     std::printf("%s  no-reload-sync twin caught: a load goes out as un-solves\n", h ? "PASS" : "FAIL");
     std::printf("%s  no-entity-order twin caught: the retried close lands after the open\n", k ? "PASS" : "FAIL");
-    return o && k && a && b && c && d && e && f && g && h ? 0 : 1;
+    bool i = !flicker(byPosition);
+    std::printf("%s  open-dedupe-by-position twin caught: the reopened door stays shut on the other game\n", i ? "PASS" : "FAIL");
+    return o && k && a && b && c && d && fl && e && f && g && h && i ? 0 : 1;
 }
