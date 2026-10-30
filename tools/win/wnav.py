@@ -374,6 +374,7 @@ class Walker:
         self.recorded = 0      # cells known-good from a person's recorded walks (WNAV_RECORDINGS: ';' separated session.jsonl files)
         for q in [q for q in (os.environ.get('WNAV_RECORDINGS') or '').split(';') if q]:
             for w in walks(load_recording(q)): self.recorded += self.map.walk_line(w)
+        self.tag = ''      # a prefix for the kept pictures (the benchmark sets one per leg)
         self.trail = []; self.dear = set(); self.backouts = 0; self.sidesteps = 0; self.doors = None; self.blurred = 0      # where this walker has been (newest last); open doors, read once
 
     def pos(self): return self.p.camera()[0]
@@ -468,7 +469,7 @@ class Walker:
     def keep_depth(self, name):
         """WNAV_KEEP=1: the last depth picture (and the camera it was taken from) kept as <game folder>/wnav_<name>.bin, to see what a stuck is against."""
         if os.environ.get('WNAV_KEEP'):
-            try: self.look(0); open(os.path.join(self.game_dir, 'wnav_%s.bin' % name), 'wb').write(open(self.depth, 'rb').read())
+            try: self.look(0); open(os.path.join(self.game_dir, 'wnav_%s%s.bin' % (self.tag, name)), 'wb').write(open(self.depth, 'rb').read())
             except OSError: pass
 
     def note(self, **kv):

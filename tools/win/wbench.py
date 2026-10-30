@@ -31,27 +31,31 @@ def there(spot, pz):
     q = p.camera()[0]; return math.dist(q[:2], spot) < 1.0 and abs(q[2] - pz) < 2.0
 
 
-def teleport(h, spot, pz):
+def teleport(h, spot, pz, ppos=None):
     for _ in range(2):
         c.send(['menusel %x' % h, 'menudo teleport'], 3.4)
         if math.dist(p.camera()[0][:2], spot) < 3.0 and abs(p.camera()[0][2] - pz) < 2.5: return True
-    return False
+    # the menu put the player at the spawn instead (some places refuse it): the command that takes coordinates, facing the panel
+    x, y, _ = p.camera()[0]; yaw = math.atan2(ppos[1] - spot[1], ppos[0] - spot[0]) if ppos else 0.0
+    c.send(['tp %.4f %.4f %.4f %.5f 0.0' % (spot[0], spot[1], pz + 0.3, yaw)], 3.0)
+    return math.dist(p.camera()[0][:2], spot) < 3.0 and abs(p.camera()[0][2] - pz) < 2.5
 
 
 t_all = time.monotonic(); walker = wnav.Walker(p, c, gdir, log=lambda m: print(m, file=sys.stderr, flush=True))
-prev = None
+prev = None; prev_pos = None; only = {int(v) for v in os.environ.get('WBENCH_ONLY', '').split(',') if v}      # (WBENCH_ONLY: walk only these legs)
 for i, h in enumerate(panels):
     spot, ppos = front(h)
     if spot is None: log.write(json.dumps({'leg': i, 'panel': '%#x' % h, 'result': 'failed', 'why': 'not a panel'}) + '\n'); log.flush(); continue
-    if prev is not None and not there(*prev[1:]): teleport(*prev)      # the leg starts at the previous panel's place, whatever happened before
-    walker.walked = 0.0; walker.stuck = 0; walker.replans = 0; walker.looks = 0; walker.avoid = set(); walker.stuck_at = []; walker.backouts = 0; walker.sidesteps = 0
+    if only and i not in only: prev = (h, spot, ppos[2]); prev_pos = ppos; continue
+    if prev is not None and not there(*prev[1:]): teleport(*prev, ppos=prev_pos)      # the leg starts at the previous panel's place, whatever happened before
+    walker.tag = 'leg%d_' % i; walker.walked = 0.0; walker.stuck = 0; walker.replans = 0; walker.looks = 0; walker.avoid = set(); walker.stuck_at = []; walker.backouts = 0; walker.sidesteps = 0
     start = p.camera()[0]; d = math.dist(start[:2], spot)
     r = walker.go((spot[0], spot[1], ppos[2]), 1.0, min(240.0, 60.0 + 1.5 * d), ztol=1.8)
     ok = r['ok'] and there(spot, ppos[2])
-    result = 'walked' if ok else ('teleported' if teleport(h, spot, ppos[2]) else 'failed')
+    result = 'walked' if ok else ('teleported' if teleport(h, spot, ppos[2], ppos) else 'failed')
     rec = {'leg': i, 'panel': '%#x' % h, 'result': result, 'metres': r['walked'], 'seconds': r['seconds'], 'straight_m': round(d, 1), 'stuck': r['stuck'],
            'replans': r['replans'], 'why': r['why'], 'backouts': r.get('backouts', 0), 'sidesteps': r.get('sidesteps', 0), 'from': [round(v, 2) for v in start], 'to': r['to'],
            'end': [round(v, 2) for v in p.camera()[0]], 'spot': [round(spot[0], 2), round(spot[1], 2), round(ppos[2], 2)]}
     log.write(json.dumps(rec) + '\n'); log.flush(); print(json.dumps(rec), flush=True)
-    prev = (h, spot, ppos[2])
+    prev = (h, spot, ppos[2]); prev_pos = ppos
 log.write(json.dumps({'done': True, 'seconds': round(time.monotonic() - t_all, 1)}) + '\n'); log.flush()
