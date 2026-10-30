@@ -2,7 +2,7 @@
 # Walking benchmark (tools/walk_bench.py has the panel list): one or two games from a save, each walks its share of the 15 legs
 # (tools/win/wbench.py); results in local/bench/<time>/ (results.jsonl, table.txt, the walkers' traces). Leases the slots without
 # waiting (exit 3 = busy or not enough RAM) and always releases them. Every game starts from the same walking map (local/nav_map.bin).
-# usage: tools/test_walk_bench.sh [1|2] [save file] [--compare BEFORE.jsonl]
+# usage: tools/test_walk_bench.sh [1|2] [save file] [--compare BEFORE.jsonl]      (WALK_BENCH_RECORDINGS=0: without local/recordings)
 #        (the save: a .witness_campaign file; default local/run/checkpoint-0850.witness_campaign)
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -22,6 +22,9 @@ trap '"$WITNESS_RESOURCES" release >/dev/null' EXIT
 eval "$("$WITNESS_RESOURCES" env witness)"
 make -C proxy >/dev/null
 PANELS="$(python3 tools/walk_bench.py panels)"
+# a person's recorded walks are known-good cells (tools/win/wnav.py, WNAV_RECORDINGS); WALK_BENCH_RECORDINGS=0 leaves them out
+RECS=""; if [ "${WALK_BENCH_RECORDINGS:-1}" != 0 ]; then for f in local/recordings/*/session.jsonl; do [ -f "$f" ] && RECS="$RECS${RECS:+;}$(wslpath -w "$PWD/$f")"; done; fi
+export WNAV_RECORDINGS="$RECS"
 cd tools/playthrough
 N="$n" SAVE="$SAVE" OUT="$OUT" PANELS="$PANELS" python3 - <<'EOF'
 import concurrent.futures as cf, os, shutil, subprocess, time

@@ -101,7 +101,8 @@ def walk_to(hx, hy, hz, tol=1.0):
     d = math.dist(p.camera()[0][:2], (hx, hy))
     r = walker.go((hx, hy, hz), tol, min(300.0, 60.0 + 2.0 * d), ztol=1.8)
     if r['ok'] and tol < 0.5: r['settled'] = round(walker.settle((hx, hy)), 2)      # onto the exact spot
-    MOVES.append({'how': 'walk', 'ok': r['ok'], 'why': r['why'], 'seconds': r['seconds'], 'walked': r['walked'], 'stuck': r['stuck'], 'settled': r.get('settled')})
+    MOVES.append({'how': 'walk', 'ok': r['ok'], 'why': r['why'], 'seconds': r['seconds'], 'walked': r['walked'], 'stuck': r['stuck'], 'settled': r.get('settled'),
+                  'backouts': r.get('backouts', 0), 'sidesteps': r.get('sidesteps', 0)})
     stamp('walked %.0f m in %.0f s: %s' % (r['walked'], r['seconds'], 'there' if r['ok'] else r['why']))
     return r['ok']
 def teleported(why): MOVES.append({'how': 'teleport', 'why': why}); stamp('TELEPORT (last resort): %s' % why)
