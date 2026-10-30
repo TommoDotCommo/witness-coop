@@ -1,6 +1,7 @@
 """Walk the player somewhere as a person would: look, plan a way, turn with the mouse, hold W. No teleport.
 
 Usage: Windows Python wnav.py <pid> <game folder> x y z [tolerance m]      (or import: Walker(p, c, game_dir).go((x, y, z)))
+       python3 tools/win/wnav.py --merge-maps OUT.bin A.bin B.bin ...   (maps added together, game-free)
        python3 tools/win/wnav.py --merge-recordings MAP.bin SESSION.jsonl ...   (a person's recorded walks into a map file, game-free)
 Prints one JSON line {"ok", "why", "seconds", "walked", "stuck", "replans", "looks", "backouts", "sidesteps", "blurred", "from", "to"}.
 Environment: WNAV_MAPS (more maps to read, ';' separated), WNAV_RECORDINGS (session.jsonl files of tools/win/wrecord.py, ';' separated:
@@ -462,6 +463,12 @@ class Walker:
         self.key('W', False)
         for _ in range(4): self.look(); self.turn(math.pi / 2); time.sleep(0.15)      # (the turn takes a frame or two: a look during it is blurred)
 
+    def keep_depth(self, name):
+        """WNAV_KEEP=1: the last depth picture (and the camera it was taken from) kept as <game folder>/wnav_<name>.bin, to see what a stuck is against."""
+        if os.environ.get('WNAV_KEEP'):
+            try: self.look(0); open(os.path.join(self.game_dir, 'wnav_%s.bin' % name), 'wb').write(open(self.depth, 'rb').read())
+            except OSError: pass
+
     def note(self, **kv):
         if self.trace: self.trace.write(json.dumps(dict(t=round(time.monotonic(), 2), **kv)) + '\n'); self.trace.flush()
 
@@ -470,7 +477,7 @@ class Walker:
         if cells is None: return None
         self.replans += 1; self.cells, self.ci = cells, 0
         way = simplify(cells, target[2]) or [tuple(target)]      # (a plan of one cell: the target is next to the player)
-        self.note(plan=[[round(w[0], 1), round(w[1], 1)] for w in way], at=[round(v, 2) for v in q]); return way
+        self.note(plan=[[round(w[0], 1), round(w[1], 1)] for w in way], at=[round(v, 2) for v in q], reached=self.map.reached); return way
 
     def ahead_blocked(self, dist=8.0):
         """Is the plan's way ahead (its own cells, from the one nearest the player) no longer walkable?"""
@@ -541,7 +548,7 @@ class Walker:
                     for side in range(-again, again + 1):
                         x = q[0] + r * math.cos(y) - side * CELL * math.sin(y); yy = q[1] + r * math.sin(y) + side * CELL * math.cos(y)
                         self.map.bump(x, yy); self.avoid.add(cell_of(x, yy))
-                self.note(stuck=[round(q[0], 2), round(q[1], 2)], again=again)
+                self.note(stuck=[round(q[0], 2), round(q[1], 2)], again=again, yaw=round(y, 2), z=round(q[2], 2)); self.keep_depth('stuck%d' % self.stuck)
                 self.log('stuck %d at %.1f %.1f: bumped, planning again' % (self.stuck, q[0], q[1]))
                 if pocketed and self.back_out('stuck %d times here' % (again + 1)): way = None; continue
                 if not self.sidestep(): self.c.send(['key S down'], 0.4); self.c.send(['key S up'])      # (the sidestep or the step back: off the thing unseen)
@@ -554,6 +561,8 @@ class Walker:
                 'replans': self.replans, 'looks': self.looks, 'backouts': self.backouts, 'sidesteps': self.sidesteps, 'blurred': self.blurred, 'from': [round(v, 2) for v in start], 'to': [round(v, 2) for v in self.pos()]}
 
 
+if __name__ == '__main__' and sys.argv[1:2] == ['--merge-maps']:      # OUT.bin A.bin B.bin ...: the maps added together (the walkers' learnt walls and walked cells)
+    m = Map(); n = sum(m.load(q) for q in sys.argv[3:]); m.save(sys.argv[2]); print(json.dumps({'map': sys.argv[2], 'cells': len(m.cells), 'read': n})); sys.exit(0)
 if __name__ == '__main__' and sys.argv[1:2] == ['--merge-recordings']:
     m = Map(); m.load(sys.argv[2]); n = sum(m.walk_line(w) for q in sys.argv[3:] for w in walks(load_recording(q)))
     m.save(sys.argv[2]); print(json.dumps({'map': sys.argv[2], 'cells': len(m.cells), 'stood': n})); sys.exit(0)
