@@ -22,8 +22,6 @@
  "bot-free effects": 116,
  "MUTANT: bot-free effects without dispatch and power-off": 151,
  "MUTANT: bot-free effects without snapshot": 106,
- "door shut and opened again at once": 116,
- "MUTANT: door reopen dropped as a duplicate": 116,
  "dev menu": 142,
  "MUTANT: dev menu actions without sync": 112,
  "partner view": 85,
