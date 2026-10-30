@@ -162,6 +162,41 @@ int main(int argc, char** argv) {
         }
         CHECK(nf >= 3, "%d fidget clips", nf);
     }
+    // ---- the coat's skirt follows the legs: through the walk cycle no hem vertex between knee and hip comes inside the thigh (the trousers run from 8 cm across at the knee to 12 at the hip)
+    {
+        CHECK(rig.hem[0] >= 0 && rig.hem[1] >= 0 && rig.hem[2] >= 0 && rig.thigh[0] >= 0 && rig.thighSwing[0].axis >= 0, "hem bones %d %d %d, thighs %d (swing axis %d)", rig.hem[0], rig.hem[1], rig.hem[2], rig.thigh[0], rig.thighSwing[0].axis);
+        int jHem[3] = {JointOf(m, rig.hem[0]), JointOf(m, rig.hem[1]), JointOf(m, rig.hem[2])}; std::vector<size_t> hemV;
+        for (size_t i = 0; i < m.verts.size(); i++) { bool hem = false; for (int k = 0; k < 4; k++) for (int h = 0; h < 3; h++) if (m.verts[i].joints[k] == jHem[h] && m.verts[i].weights[k] > 0.5f) hem = true; if (hem) hemV.push_back(i); }
+        CHECK(hemV.size() > 100, "%zu hem vertices", hemV.size());
+        int walk = wm::FindClip(m, "walk"); int shin[2] = {-1, -1}; for (size_t i = 0; i < m.nodes.size(); i++) { if (m.nodes[i].name == "shin.L") shin[0] = (int)i; if (m.nodes[i].name == "shin.R") shin[1] = (int)i; }
+        auto poseClip = [&](const wm::LifeState& L, int clip, float t) { wm::PoseLayers pl; pl.life = &L; pl.rig = &rig; wm::JointMatricesBlendEx(m, -1, 0, clip, t, 1, posed.data(), pl); };
+        // the worst margin between a hem vertex and the thigh's surface (radius 8 cm at the knee to 12 at the hip), over both legs: negative is cloth inside the leg
+        auto margin = [&]() {
+            float worst = 1e9f;
+            for (int leg = 0; leg < 2; leg++) {
+                float hip[3], knee[3]; JointPos(m, posed.data(), rig.thigh[leg], hip); JointPos(m, posed.data(), shin[leg], knee);
+                for (size_t i : hemV) {
+                    float p[3]; wm::SkinPosition(m, posed.data(), m.verts[i], p);
+                    float t = (p[1] - knee[1]) / std::max(1e-3f, hip[1] - knee[1]); if (t < 0.0f || t > 0.9f) continue;
+                    float cx = knee[0] + (hip[0] - knee[0]) * t, cz = knee[2] + (hip[2] - knee[2]) * t, r = 0.08f + 0.04f * t;
+                    worst = std::min(worst, sqrtf((p[0] - cx) * (p[0] - cx) + (p[2] - cz) * (p[2] - cz)) - r);
+                }
+            }
+            return worst;
+        };
+        // the yardstick is the standing figure: the trousers' hip ring already sits a centimetre outside the coat's waist in the built model
+        wm::LifeState S0(6); wm::LifeInput still; still.dt = 1.0f / 60; for (int k = 0; k < 60; k++) { poseClip(S0, idle, 0); S0.Step(still); }
+        poseClip(S0, idle, 0); float restMargin = margin();
+        CHECK(fabsf(S0.hemAngle[0]) < 0.03f && fabsf(S0.hemAngle[2]) < 0.03f && restMargin > -0.02f, "standing: hem angles %.3f %.3f, margin %.1f cm", S0.hemAngle[0], S0.hemAngle[2], restMargin * 100);
+        float worstWalk = 1e9f, swingSeen = 0;
+        for (int step = 0; step < 16; step++) {
+            float t = m.clips[walk].duration * step / 16.0f; wm::LifeState L(6); wm::LifeInput in; in.dt = 1.0f / 60; in.speed = 1.2f;
+            for (int k = 0; k < 24; k++) { poseClip(L, walk, t); L.Step(in); }      // the hem follow settles on this frame's leg swing (one frame of lag in the real loop)
+            poseClip(L, walk, t); swingSeen = std::max(swingSeen, fabsf(L.thighSwing[0])); worstWalk = std::min(worstWalk, margin());
+        }
+        CHECK(swingSeen > 0.3f, "the thigh swing read from the pose peaks at %.2f rad (the walk swings 25 degrees)", swingSeen);
+        CHECK(worstWalk > restMargin - 0.006f, "through the walk the hem comes %.1f cm inside the thigh's surface (standing: %.1f cm)", -worstWalk * 100, -restMargin * 100);
+    }
     // ---- the brows act with an emote: sad lifts the inner ends, laughter raises both brows, a facepalm knits them, and the face returns to rest after
     {
         CHECK(rig.brow[0] >= 0 && rig.brow[1] >= 0 && rig.browTilt[0].axis >= 0, "brow bones %d %d, tilt axis %d", rig.brow[0], rig.brow[1], rig.browTilt[0].axis);

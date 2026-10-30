@@ -20,6 +20,8 @@ struct LifeRig {
     int head = -1, neck = -1, chest = -1, eye[2] = {-1, -1}, lid[2] = {-1, -1}, brow[2] = {-1, -1};
     LifeAxis headYaw, headPitch, neckYaw, neckPitch, chestPitch, eyeYaw[2], eyePitch[2], browTilt[2];   // browTilt: a roll that lifts the brow's inner end (the bone runs inner to outer)
     int browUp[2] = {1, 1}; float browUpSign[2] = {1, 1};      // the bone's local axis (and sign) that is 'up' in model space, for lifting the brow
+    int hem[3] = {-1, -1, -1}, thigh[2] = {-1, -1};             // the coat's skirt: front left, front right, back; the thighs that drive them
+    LifeAxis hemSwing[3], hemSway[3], thighSwing[2];            // swing: the hem's bottom toward +z (front); thighSwing: the thigh's foot toward +z
     LifeChain scarfA, scarfB, canteen, satchel;
     float lidClose = 1.0f;          // the lid bone's scale along its length that closes the eye (the model's .glb.txt: lid_close=); 1: no lids
     bool ok = false;                // the head was found: the layer does something
@@ -49,7 +51,9 @@ struct LifeState {
     float eyeYaw = 0, eyePitch = 0;
     float breath = 0;               // -1 .. 1 (times the exertion gain)
     float exertion = 0;             // 0 rested .. 1 just after a run
-    LifePendulum scarfA[3], scarfB[2], canteen, satchel;
+    LifePendulum scarfA[3], scarfB[2], canteen, satchel, hemSway[3];
+    float hemFollow[3] = {0, 0, 0}, hemAngle[3] = {0, 0, 0};    // the coat's skirt: what the legs ask of it (front left, front right, back; radians, front positive) and what is shown
+    mutable float thighSwing[2] = {0, 0};                       // the thighs' forward swing in the pose last applied (written by the pose code, read by the next Step)
     bool glancing = false;
     // state
     float t = 0, nextBlink = 1.5f, blinkT = -1, blinkSlow = 1, glanceGap = 1.0f, glanceLeft = 0, nextSac = 0.4f, sacYaw = 0, sacPitch = 0, breathPhase = 0;      // blinkSlow: a forced blink for pictures runs this many times slower
@@ -156,6 +160,19 @@ struct LifeState {
         for (int i = 0; i < 2; i++) StepPendulum(scarfB[i], 0.075f, az + (i ? scarfB[i - 1].va * 0.3f : 0.0f), ax + wind * (1.2f + 0.4f * i), ay, 3.0f, -0.10f, 0.55f, -0.35f, 0.35f, drag * 0.15f, dt);
         StepPendulum(canteen, 0.17f, az, ax + wind * 0.2f, ay, 1.4f, -0.5f, 0.5f, -0.25f, 0.12f, drag * 0.5f, dt);
         StepPendulum(satchel, 0.18f, az, ax + wind * 0.15f, ay, 1.6f, -0.45f, 0.45f, -0.08f, 0.30f, drag * 0.4f, dt);
+        // ---- the coat's skirt: each front panel follows the leg on its side forward, the back follows whichever leg trails (a fast follow, 60 ms,
+        // so the cloth stays ahead of the thigh); on top of that a slow pendulum adds the lag and sway of heavy wool
+        float tl = thighSwing[0], tr = thighSwing[1];
+        float want[3] = {fmaxf(0, tl) * 0.95f + fminf(0, tl) * 0.25f, fmaxf(0, tr) * 0.95f + fminf(0, tr) * 0.25f, -fmaxf(0, fmaxf(-tl, -tr)) * 0.95f};
+#ifdef WM_MUT_NO_HEM
+        want[0] = want[1] = want[2] = 0;
+#endif
+        float kh = dt > 0 ? 1 - expf(-dt / 0.06f) : 0;
+        for (int k = 0; k < 3; k++) {
+            hemFollow[k] += (want[k] - hemFollow[k]) * kh;
+            StepPendulum(hemSway[k], 0.43f, az * 0.5f, ax * 0.5f + wind * 0.3f, ay, 2.5f, -0.2f, 0.2f, -0.15f, 0.15f, 0, dt);
+            hemAngle[k] = Clamp(hemFollow[k] + hemSway[k].a, -0.8f, 0.8f);
+        }
     }
 };
 

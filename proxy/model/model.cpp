@@ -294,12 +294,25 @@ void LifeRig::Bind(const Model& m, float lidCloseScale) {
         float best = 0; for (int k = 0; k < 3; k++) { float e3[3] = {0, 0, 0}; e3[k] = 1; float d[3]; Rot3(GP, e3, d); float l = sqrtf(d[0]*d[0] + d[1]*d[1] + d[2]*d[2]); if (l > 1e-9f && fabsf(d[1] / l) > fabsf(best)) { best = d[1] / l; browUp[e] = k; browUpSign[e] = (d[1] > 0 ? 1.0f : -1.0f) / l; } }
     }
     BindChain(m, scarfA, "scarf_a", 3); BindChain(m, scarfB, "scarf_b", 2); BindChain(m, canteen, "canteen", 1); BindChain(m, satchel, "satchel", 1);
+    {   // the coat's hem panels and the thighs that drive them: a bone's probe is its own direction (local Y), swung toward the front (+z)
+        const char* hemNames[3] = {"hem_front.L", "hem_front.R", "hem_back"}; const char* thighNames[2] = {"thigh.L", "thigh.R"};
+        auto bindDown = [&](int n, LifeAxis* swing, LifeAxis* sway) { float G[16]; BindGlobal(m, n, G); float axis[3] = {0, 1, 0}, down[3]; Rot3(G, axis, down); float l = sqrtf(down[0]*down[0] + down[1]*down[1] + down[2]*down[2]); if (l > 1e-9f) for (float& v : down) v /= l; *swing = ProbeAxis(G, down, fwd); if (sway) *sway = ProbeAxis(G, down, left); };
+        for (int k = 0; k < 3; k++) { hem[k] = NodeNamed(m, hemNames[k]); if (hem[k] >= 0) bindDown(hem[k], &hemSwing[k], &hemSway[k]); }
+        for (int k = 0; k < 2; k++) { thigh[k] = NodeNamed(m, thighNames[k]); if (thigh[k] >= 0) bindDown(thigh[k], &thighSwing[k], nullptr); }
+    }
 }
 static void RotLocal(float* q, const LifeAxis& ax, float angle) {
     if (ax.axis < 0 || angle == 0) return;
     float r[4] = {0, 0, 0, 1}; r[ax.axis] = sinf(ax.sign * angle * 0.5f); r[3] = cosf(ax.sign * angle * 0.5f); QMul(q, r, q);
 }
-static void ApplyLife(const LifeRig& rig, const LifeState& L, float* T, float* R, float* S) {
+static void ApplyLife(const Model& m, const LifeRig& rig, const LifeState& L, float* T, float* R, float* S) {
+    // the thighs' forward swing in this pose (the rotation from the rest pose about the probe's axis), for the next step of the skirt
+    for (int k = 0; k < 2; k++) if (rig.thigh[k] >= 0 && rig.thighSwing[k].axis >= 0) {
+        const float* r0 = m.nodes[rig.thigh[k]].r; const float* q = &R[rig.thigh[k] * 4]; float c[4] = {-r0[0], -r0[1], -r0[2], r0[3]}, d[4]; QMul(c, q, d);      // delta = conj(rest) * pose
+        if (d[3] < 0) for (float& v : d) v = -v;
+        L.thighSwing[k] = 2.0f * atan2f(d[rig.thighSwing[k].axis] * rig.thighSwing[k].sign, d[3]);
+    }
+    for (int k = 0; k < 3; k++) if (rig.hem[k] >= 0) { RotLocal(&R[rig.hem[k] * 4], rig.hemSwing[k], L.hemAngle[k]); RotLocal(&R[rig.hem[k] * 4], rig.hemSway[k], L.hemSway[k].b); }
     for (int e = 0; e < 2; e++) if (rig.brow[e] >= 0) {
         float share = e == 1 ? 1.0f : 1.0f - L.browAsym;      // 'thinking' lifts the right brow alone
         RotLocal(&R[rig.brow[e] * 4], rig.browTilt[e], L.browTilt * share);
@@ -373,7 +386,7 @@ void JointMatricesBlendEx(const Model& m, int from, float tFrom, int to, float t
         float blended[4]; Slerp(&R[i*4],target,std::min(1.0f,radioRaise),blended); memcpy(&R[i*4],blended,16);
 #endif
     }
-    if (layers.life && layers.rig && layers.rig->ok) ApplyLife(*layers.rig, *layers.life, T.data(), R.data(), S.data());
+    if (layers.life && layers.rig && layers.rig->ok) ApplyLife(m, *layers.rig, *layers.life, T.data(), R.data(), S.data());
     std::vector<float> G(nn * 16); std::vector<char> done(nn, 0);
     struct Rec { static void Go(const Model& m, size_t i, const float* T, const float* R, const float* S, float* G, char* done) {
         if (done[i]) return;

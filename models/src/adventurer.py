@@ -122,6 +122,7 @@ def tube(name, p1, p2, r, material, seg=10, r2=None):
     for v in bm.verts: v.co = rot @ v.co + mid
     return finish(name, bm, material, True, 0)
 
+SIGMA = 0.075      # the distance weighting's width (metres), used below and by the coat's own weighting
 parts = []      # (object, allowed bones | single rigid bone [, weights]): weights(vertex index) -> {bone: weight} replaces the distance weighting
 def part(ob, bones, weights=None): parts.append((ob, bones, weights))
 TORSO = ['pelvis', 'spine', 'chest']
@@ -143,17 +144,37 @@ def coat_drape(co):
     return p
 coat_body = loft('coat', COAT, 'coat', 32, 1, False, 0.012, 0.010)
 for v in coat_body.data.vertices: v.co = coat_drape(v.co)
-part(coat_body, ['pelvis', 'spine', 'chest', ('thigh.L', 0.55), ('thigh.R', 0.55)])
+# The coat's skirt hangs from three hem bones at the waist (front left, front right, back). The proxy swings each with the leg on its side
+# (so a leg never comes through the cloth) and lets it lag and sway; in the clips themselves they stay still. Above the waist the coat
+# follows the torso and the thighs by distance as before; the hem's share grows from nothing at the waist to all of it 25 cm lower.
+B['hem_front.L'] = (V(0.11, -0.125, 1.00), V(0.15, -0.19, 0.57), 'pelvis'); B['hem_front.R'] = (V(-0.11, -0.125, 1.00), V(-0.15, -0.19, 0.57), 'pelvis'); B['hem_back'] = (V(0, 0.135, 1.00), V(0, 0.19, 0.57), 'pelvis')
+HEM_BONES = ['hem_front.L', 'hem_front.R', 'hem_back']
+def coat_weights(ob, base):      # base: the torso/thigh bones with their multipliers, as the distance weighting takes them
+    cos = [v.co.copy() for v in ob.data.vertices]; mult = {(b[0] if isinstance(b, tuple) else b): (b[1] if isinstance(b, tuple) else 1.0) for b in base}
+    def smooth(t): t = max(0.0, min(1.0, t)); return t * t * (3 - 2 * t)
+    def seg(p, a, b):
+        ab = b - a; t = max(0.0, min(1.0, (p - a).dot(ab) / max(ab.length_squared, 1e-9))); return (p - (a + ab * t)).length
+    def w(i):
+        p = cos[i]; h = smooth((1.0 - p.z) / 0.25); angle = math.atan2(p.x, -(p.y - 0.01))
+        back = smooth((abs(angle) - 1.5) / 0.9); left = smooth((angle + 0.12) / 0.24)
+        out = {'hem_front.L': h * (1 - back) * left, 'hem_front.R': h * (1 - back) * (1 - left), 'hem_back': h * back}
+        raw = [(b, mult[b] * math.exp(-(seg(p, B[b][0], B[b][1]) / SIGMA) ** 2)) for b in mult]; raw.sort(key=lambda r: -r[1]); raw = raw[:4]; tot = sum(x for _, x in raw)
+        if tot > 1e-6:
+            for b, x in raw: out[b] = out.get(b, 0.0) + (1 - h) * x / tot
+        return {b: x for b, x in out.items() if x > 0.01}
+    return w
+COAT_BASE = ['pelvis', 'spine', 'chest', ('thigh.L', 0.55), ('thigh.R', 0.55)]
+part(coat_body, COAT_BASE + HEM_BONES, coat_weights(coat_body, COAT_BASE))
 coat_facing = loft('coat_facing', [(0.57, 0, 0.018, 0.277, 0.194, 0.13), (0.68, 0, 0.012, 0.258, 0.182, 0.12)], 'coat_dark', 36, 0, False, 0.014)
 for v in coat_facing.data.vertices: v.co = coat_drape(v.co)
-part(coat_facing, ['pelvis', ('thigh.L', 0.55), ('thigh.R', 0.55)])
+part(coat_facing, COAT_BASE + HEM_BONES, coat_weights(coat_facing, COAT_BASE))
 coat_collar = loft('collar', [(1.43, 0, 0.016, 0.112, 0.095, 0.52), (1.48, 0, 0.018, 0.098, 0.083, 0.58), (1.535, 0, 0.020, 0.070, 0.060, 0.64)], 'coat_dark', 28, 1, False, 0.010)
 part(coat_collar, ['chest', 'neck'])
 for sd, x in (('L', 1), ('R', -1)):
     flap = box('pocket.' + sd, (0.125 * x, -0.174, 0.805), (0.105, 0.018, 0.064), 'coat_dark', 0.005)
     flap.data.transform(Matrix.Translation((0.125*x, -0.174, 0.805)) @ Matrix.Rotation(x * 0.08, 4, 'Y') @ Matrix.Translation((-0.125*x, 0.174, -0.805)))
-    part(flap, ['pelvis'])
-    part(ellipsoid('pocket_btn.' + sd, (0.125 * x, -0.187, 0.810), (0.008, 0.004, 0.008), 'brass', 10, 6), ['pelvis'])
+    part(flap, ['pelvis'] + HEM_BONES, coat_weights(flap, ['pelvis']))
+    btn = ellipsoid('pocket_btn.' + sd, (0.125 * x, -0.187, 0.810), (0.008, 0.004, 0.008), 'brass', 10, 6); part(btn, ['pelvis'] + HEM_BONES, coat_weights(btn, ['pelvis']))
 for z in (1.11, 1.22, 1.33):
     part(ellipsoid('vest_button', (0, -0.127 if z < 1.2 else -0.137, z), (0.008, 0.0045, 0.008), 'brass', 10, 6), TORSO)
 part(loft('belt', [(1.015, 0, 0, 0.218, 0.154), (1.072, 0, 0, 0.218, 0.154)], 'strap', 32, 0, False, 0.005), ['pelvis', 'spine'])
@@ -558,11 +579,12 @@ for sx in (-1, 1):
         t = i/30; angle = t*math.pi*5.4; radius = 0.004+0.050*t
         spiral.append(V(sx*0.166, 0.205+radius*math.cos(angle), 1.305+radius*math.sin(angle)))
     cord('bedroll_spiral', spiral, 0.0014, 'trousers', ['chest', 'spine'], 4)
-def stitches(name, a, b, count, bones, material='stitching', radius=0.0011):
+def stitches(name, a, b, count, bones, material='stitching', radius=0.0011, on_coat=False):
     a, b = Vector(a), Vector(b)
     for i in range(count):
-        p = a.lerp(b, (i + 0.18) / count); q = a.lerp(b, (i + 0.68) / count)
-        part(tube(name, p, q, radius, material, 5), bones)
+        p = a.lerp(b, (i + 0.18) / count); q = a.lerp(b, (i + 0.68) / count); t = tube(name, p, q, radius, material, 5)
+        if on_coat: part(t, bones + HEM_BONES, coat_weights(t, bones))
+        else: part(t, bones)
 def coat_ring(z):
     for a, b in zip(COAT, COAT[1:]):
         if a[0] <= z <= b[0]:
@@ -582,7 +604,7 @@ for sd, sx in (('L', 1), ('R', -1)):
     stitch_a, stitch_b = rows[0][1].co.copy(), rows[-1][1].co.copy()
     part(face_finish('lapel.'+sd, bm, 'coat_dark', True, 0, 0, 0.005), ['spine', 'chest'])
     stitches('lapel_stitch.'+sd, stitch_a, stitch_b, 16, ['spine', 'chest'], 'thread')
-    stitches('pocket_stitch.'+sd, (sx*0.080, -0.187, 0.827), (sx*0.170, -0.187, 0.827), 9, ['pelvis'])
+    stitches('pocket_stitch.'+sd, (sx*0.080, -0.187, 0.827), (sx*0.170, -0.187, 0.827), 9, ['pelvis'], on_coat=True)
     shoulder = [V(sx*(0.213+0.069*math.sin(a)), 0.071*math.cos(a), 1.393) for a in [2*math.pi*i/24 for i in range(25)]]
     cord('shoulder_seam.'+sd, shoulder, 0.0016, 'coat_dark', ['chest', 'upper_arm.'+sd])
     for i in range(5):
@@ -618,7 +640,6 @@ for s, sx in (('L', 1), ('R', -1)):
 # ---- weights: by distance to the bones a part may follow, blended near the joints (at most four per vertex)
 def seg_dist(p, a, b):
     ab = b - a; t = max(0.0, min(1.0, (p - a).dot(ab) / max(ab.length_squared, 1e-9))); return (p - (a + ab * t)).length
-SIGMA = 0.075
 for ob, bones, custom in parts:
     mult = {(b[0] if isinstance(b, tuple) else b): (b[1] if isinstance(b, tuple) else 1.0) for b in bones}; allowed = [b for b in mult if b in B]
     groups = {b: ob.vertex_groups.new(name=b) for b in allowed}
@@ -1042,6 +1063,12 @@ if PREVIEW:
     def brows(lift, tilt):      # lift: metres up; tilt: radians, inner end up when positive (the bone points outward: a roll about the face normal)
         for sd, x in (('L', 1), ('R', -1)):
             pb['brow.' + sd].location = (0, lift, 0); pb['brow.' + sd].rotation_euler = (0, 0, -tilt * SIDE['brow.' + sd] * x)      # (the proxy's own sign comes from a probe at load time; this is only the preview)
+    def hem_demo():
+        pb['thigh.L'].rotation_euler = (math.radians(25) * FWD['thigh.L'], 0, 0); pb['thigh.R'].rotation_euler = (math.radians(-20) * FWD['thigh.R'], 0, 0); pb['shin.R'].rotation_euler = (math.radians(-30) * FWD['shin.R'], 0, 0)
+        pb['hem_front.L'].rotation_euler = (math.radians(24) * FWD['hem_front.L'], 0, 0); pb['hem_back'].rotation_euler = (math.radians(-19) * FWD['hem_back'], 0, 0)
+    apply('idle', 0.0, 0); hem_demo(); update(); cam_d.lens = 70; a = math.radians(60); cam.location = Vector((math.sin(a) * 4.0, -math.cos(a) * 4.0, 0.95)); cam.rotation_euler = (Vector((0, 0, 0.85)) - cam.location).to_track_quat('-Z', 'Y').to_euler()
+    scene.render.filepath = os.path.join(PREVIEW, 'hem_step.png'); bpy.ops.render.render(write_still=True)
+    for nm_ in ('thigh.L', 'thigh.R', 'shin.R', 'hem_front.L', 'hem_back'): pb[nm_].rotation_euler = (0, 0, 0)
     face_shot('brows_sad', 0, lambda: brows(0.002, 0.30)); face_shot('brows_raised', 0, lambda: brows(0.006, 0.0)); face_shot('brows_frown', 0, lambda: brows(-0.003, -0.22))
     for sd in ('L', 'R'): pb['brow.' + sd].location = (0, 0, 0); pb['brow.' + sd].rotation_euler = (0, 0, 0)
     print('REPORT previews in', PREVIEW)

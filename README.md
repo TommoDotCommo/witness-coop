@@ -26,7 +26,7 @@ Chat, pings, emotes, drawing, voice (with channels: proximity, radio, an open li
   the game's own depth buffer (4x MSAA, reversed depth stored as `0.0597 / distance`, found by watching which depth view the game
   binds) and discards the model's pixels that are behind it. The original adventurer is the only character, with idle, walk and run clips and three fidgets.
   It blinks, glances at a player who comes near, carries its head where its player looks, breathes (harder after a run), swings its scarf and
-  gear as it moves, is lit with a normal map, roughness and metalness and a sun shadow on the ground, and its footsteps are heard where it walks: [the life layer, shading and shadow](docs/LIFE.md).
+  gear and coat as it moves, acts with its brows in the emotes, is lit with a normal map, roughness and metalness and a sun shadow on the ground, and its footsteps are heard where it walks: [the life layer, shading and shadow](docs/LIFE.md).
 
   ![The adventurer in the garden](docs/showcase/adventurer_garden.jpg)
   See [asset credits](assets/models/CREDITS.md) and the [migration details](#character-migration) below.
@@ -280,7 +280,7 @@ Power-on regressions also run in T0: dropped first sends, refused power-on calls
 and restoring power to a restarted receiver after the original events were acknowledged. Disabled power sync, no retry,
 no echo guard and no restart resync each have a twin the regression must catch.
 
-**Model code, no game needed:** `make -C proxy/model test` (also run by `make -C proxy/core test`) loads the bundled adventurer and checks skinning against the bind pose, that the walk loops, quaternion interpolation, that the camera matrix agrees with the projection the puppet always used, the placement of the figure (feet, height, facing, left/right), the walk state (speed, idle, teleports, clip choice by name) and that the normal and material maps load; 15 mutants cover matrix order, looping, quaternion normalisation, placement, gait, blending, run timing, joint limits, eye fitting, skins, flat colours and emote matching. The life test (`life_test.cpp`, 11 mutants) covers the blink, the glance, the view pitch, breathing, the cloth pendulums, the fidget scheduler, the brows' acting with emotes, and the body's turn lag, sideways half-turn and reverse walk ([docs/LIFE.md](docs/LIFE.md)). `proxy/core/tests/run_protocol.py` additionally checks protocol migration with three mutants.
+**Model code, no game needed:** `make -C proxy/model test` (also run by `make -C proxy/core test`) loads the bundled adventurer and checks skinning against the bind pose, that the walk loops, quaternion interpolation, that the camera matrix agrees with the projection the puppet always used, the placement of the figure (feet, height, facing, left/right), the walk state (speed, idle, teleports, clip choice by name) and that the normal and material maps load; 15 mutants cover matrix order, looping, quaternion normalisation, placement, gait, blending, run timing, joint limits, eye fitting, skins, flat colours and emote matching. The life test (`life_test.cpp`, 12 mutants) covers the blink, the glance, the view pitch, breathing, the cloth pendulums, the coat's skirt clearing the legs through the walk, the fidget scheduler, the brows' acting with emotes, and the body's turn lag, sideways half-turn and reverse walk ([docs/LIFE.md](docs/LIFE.md)). `proxy/core/tests/run_protocol.py` additionally checks protocol migration with three mutants.
 
 **T2, two real games:**
 
