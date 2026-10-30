@@ -1,25 +1,48 @@
 """Walk the player somewhere as a person would: look, plan a way, turn with the mouse, hold W. No teleport.
 
 Usage: Windows Python wnav.py <pid> <game folder> x y z [tolerance m]      (or import: Walker(p, c, game_dir).go((x, y, z)))
-Prints one JSON line {"ok", "why", "seconds", "walked", "stuck", "replans", "looks", "from", "to"}.
+       python3 tools/win/wnav.py --merge-maps OUT.bin A.bin B.bin ...   (maps added together, game-free)
+       python3 tools/win/wnav.py --merge-recordings MAP.bin SESSION.jsonl ...   (a person's recorded walks into a map file, game-free)
+Prints one JSON line {"ok", "why", "seconds", "walked", "stuck", "replans", "looks", "backouts", "sidesteps", "blurred", "from", "to"}.
+Environment: WNAV_MAPS (more maps to read, ';' separated), WNAV_RECORDINGS (session.jsonl files of tools/win/wrecord.py, ';' separated:
+their walks are known-good cells), WNAV_STUCKS (stucks before giving up, 12), WNAV_TRACE (a trace in <game folder>/wnav_trace.jsonl).
 
 Measured (build 11370412): a mouse count turns the camera 0.0025 rad (positive dx turns right: the yaw at CAM_ANG goes down), dy the same in
 pitch; W walks about 1.8 m/s along the yaw (atan2 of the view direction, as `hover` and `tp` take it). A command takes about 11 ms.
 
+The map file (wnav_map.bin): records of REC = '<hhfQB' (23 bytes, little-endian, no header): cell x, cell y (int16, cell = floor(metres /
+0.5)), floor z (float32, the lowest surface seen, metres), mask (uint64: bit b set = something seen between floor + 0.25 b and floor +
+0.25 (b + 1), so a cell holds 16 m above its floor, WINDOW), flags (uint8: 1 WALKED, someone stood there; 2 BUMPED, a walk was stopped
+there). A floor below -1000 marks a cell known only from a bump. Maps merge by adding their points (Map.load); two levels more than
+WINDOW apart cannot share a cell, the higher one is kept.
+
 How it finds the way (a robot with a depth camera, as a person uses their eyes):
  - it looks: the proxy's `depthdump` writes the scene depth of the frame as a 192 x 108 picture with its camera (witness_depth.bin); every
-   pixel is a point of the world. The points go into a map of 0.5 m cells: each cell keeps its lowest surface seen (the floor) and which
-   0.25 m height bins above that hold something (a 64-bit mask). A cell can be walked when nothing is between 0.75 m and 1.9 m above its
-   floor (a wall, a fence, a cliff face fill that band; a tree's crown or a roof above the head does not);
- - it plans: A* over the cells from where it stands to the target, a step up of at most 0.6 m and down of at most 1.2 m between cells;
-   a cell never seen counts as walkable but dearer, so the plan heads into the unknown only where the known way runs out;
+   pixel is a point of the world. A picture taken while the camera turned or moved is thrown away (still(): its depth and camera are from
+   different frames, so its points land metres off). The points go into the cells. A cell can be walked at a surface when nothing is between
+   0.75 m and 1.9 m above it (a wall, a fence, a cliff face fill that band; a tree's crown or a roof above the head does not);
+ - it plans: A* over (cell, level) from where it stands to the target. The rules of a step between neighbouring cells:
+   * up at most UP 0.6 m, down at most DOWN 1.2 m; a cell may hold several levels (a deck over the ground, stairs beside it): all are kept;
+   * stairs: a rise up to STAIR 0.85 m is a step when the step before it climbed too, or the next cell on climbs on (surfaces are bin
+     starts, so a 0.45 m step can read 0.7 m); the same rise on flat ground before and after is a ledge, not climbed;
+   * a drop of more than UP cannot be walked back up: it costs DROP (8 m of walking), so a plan does not jump down into a pocket to save a
+     few metres;
+   * a cell whose band is filled at the step's height is soft (bushes, tall grass): walkable at SOFT times the cost; a cliff face never;
+   * a cell never seen is walkable at 3 times the cost; under cover (something over the head where it stands) a cell known only far above
+     is not seen yet (the ground over a tunnel); a level more than WINDOW above a cell's floor is not seen yet either (junk points far below
+     the ground filled a third of the town's cells and hid the street);
+   * a WALKED cell costs 0.8 (a person's recorded walk, the bot's own), a BUMPED one 40; no corner cutting past a cell that cannot be entered;
  - it walks the plan, looking again every half second (the camera faces the way it walks) and planning again when the way ahead is no
    longer free; at the start and after being stuck it looks all round (four looks);
- - stuck (W held but under 0.5 m moved in 2 s, or no nearer the target in 25 s): something unseen is in the way (the game has invisible walls at the shore and
-   on steep slopes): the cells just ahead are marked bumped (dear, not forbidden: a door may open later), it backs off and plans again.
-The map is kept in <game folder>/wnav_map.bin and read with the maps in WNAV_MAPS (';' separated, the other bots' and the shared one): it is
-learnt once and shared (the orchestrator merges the bots' maps). Doors open and close: a cell whose floor is seen with the band above it
-empty takes that newer view."""
+ - stuck (W held but under 0.5 m moved in 2 s, or no nearer the target in 25 s): something unseen is in the way (the game has invisible walls
+   at the shore and on steep slopes): the cells just ahead are marked bumped (dear, not forbidden: a door may open later), it steps aside
+   (A, else D; else back with S) and plans again;
+ - a pocket (stuck a third time within 3 m, or no way on the map from here): it walks back out along its own trail (10 m), keeps out of the
+   cells round that place for this walk (and makes all within POCKET 5 m of it dear: a U of unseen walls is wider than one bump), unbumps the cells near doors the game says are open, and plans again (3 times at most); only then
+   does it give up, and the caller may teleport (the last resort).
+The map is kept in <game folder>/wnav_map.bin and read with the maps in WNAV_MAPS (the other bots' and the shared one): it is learnt once
+and shared (the orchestrator merges the bots' maps). Doors open and close: a cell whose floor is seen with the band above it empty takes
+that newer view."""
 import os, sys, math, time, json, heapq, struct
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
 
@@ -33,7 +56,12 @@ SEA = -50.0                    # (no sea level: the sea has no depth, and the be
 HW = 1.5                       # A* heuristic weight: a little longer ways, many fewer cells searched (a plan of 100 m took 5 s at 1.0)
 SOFT = 25.0                    # cost factor of a cell whose band is filled at a step's height (foliage, or a wall: see walkable); a wall a cell thick costs a 12 m detour
 WALKED, BUMPED = 1, 2          # cell flags
+WINDOW = 64 * BIN              # a cell describes 16 m above its floor (its 64-bit mask): a level higher than that is not in the cell
+STAIR = UP + BIN               # a rise up to this is a stair step when the step before or after it climbs too (surfaces are bin starts: up to 0.25 m low)
+POCKET = 5.0                   # after backing out of a pocket, the cells this near it (m) cost as much as bumped ones for the rest of the walk
+DROP = 16.0                    # (8 m of walking) extra cost of a step down that cannot be stepped back up (more than UP): a one-way drop leads into pockets
 REC = struct.Struct('<hhfQB')  # cell x, cell y, floor z, height mask, flags
+DOOR_TYPE = 0x62DE70           # the door entities' type descriptor (module-relative, as TI_DOOR in wlib.py; build 11370412)
 
 
 def wrap(a): return (a + math.pi) % (2 * math.pi) - math.pi
@@ -68,6 +96,7 @@ class Map:
             old = self.cells.get(c)
             if old is None: self.cells[c] = f; continue
             if abs(f[0] - old[0]) < 2 * BIN and not (f[1] & BAND_MASK): self.cells[c] = [f[0], f[1], old[2]]; continue
+            if f[0] - old[0] > WINDOW - BAND[1]: self.cells[c] = [f[0], f[1], old[2]]; continue      # above all the cell can hold (junk far below, see steps)
             rec = [old[0], old[1], old[2]]
             for b in range(64):
                 if f[1] >> b & 1: self.add_point(rec, f[0] + b * BIN + BIN / 2)
@@ -79,6 +108,8 @@ class Map:
         c = cell_of(x, y); old = self.cells.get(c)
         if old is None or old[0] < -1e3: self.cells[c] = [feet, 1, WALKED]; return
         rec = [old[0], old[1], old[2] | WALKED]
+        if feet - rec[0] > WINDOW - BAND[1] - 1:      # standing above all the cell can hold: move its window up (4 m below the feet kept)
+            k = int((feet - 4.0 - rec[0]) / BIN); rec[0] += k * BIN; rec[1] >>= k
         b0 = int((feet - rec[0]) / BIN) if feet >= rec[0] - BIN else None
         if b0 is not None and b0 >= 0: rec[1] &= ~(HEAD_MASK << (b0 + 1)) & 0xFFFFFFFFFFFFFFFF      # the player's body is here: nothing in the way above the feet
         self.cells[c] = self.add_point(rec, feet)
@@ -87,6 +118,30 @@ class Map:
         c = cell_of(x, y); old = self.cells.get(c)
         if old is None: self.cells[c] = [-1e4, 0, BUMPED]
         elif not old[2] & WALKED: old[2] |= BUMPED
+
+    def walk_line(self, points, gap=3.0):
+        """A walk someone made (eye positions in order, a person's recording or the bot's own): every cell on the way between two points
+        less than `gap` m apart and less than UP apart in height was stood on (known-good, see stand). Returns the cells marked."""
+        n = 0
+        for a, b in zip(points, points[1:]):
+            d = math.dist(a[:2], b[:2])
+            if d > gap or abs(a[2] - b[2]) > max(UP, d): continue
+            k = max(1, int(math.ceil(d / (CELL / 2))))
+            for i in range(k + (b is points[-1])):
+                t = i / k; self.stand(a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1]), a[2] + t * (b[2] - a[2]) - EYE); n += 1
+        return n
+
+    def unbump_near(self, centres, r=3.0):
+        """Doors the game says are open (their positions): the cells within r m of one were maybe bumped while it was shut: not any more."""
+        n = 0
+        for x, y in centres:
+            for cx in range(int(math.floor((x - r) / CELL)), int(math.floor((x + r) / CELL)) + 1):
+                for cy in range(int(math.floor((y - r) / CELL)), int(math.floor((y + r) / CELL)) + 1):
+                    rec = self.cells.get((cx, cy))
+                    if rec and rec[2] & BUMPED and math.dist(centre((cx, cy)), (x, y)) <= r:
+                        rec[2] &= ~BUMPED; n += 1
+                        if rec[0] < -1e3: del self.cells[(cx, cy)]      # (known only from the bump)
+        return n
 
     def surfaces(self, c):
         """Heights in cell c the player could stand on: a height bin holding something with nothing in the body band above it (0.75 m to
@@ -111,31 +166,39 @@ class Map:
         if not st: return False, r[0], 1.0
         z, k = min(st, key=lambda q: abs(q[0] - fu)); return True, z, k
 
-    def steps(self, c, fu):
+    def steps(self, c, fu, up=UP):
         """Where a step from height fu into cell c can land: [(floor, cost factor)]. Every surface within a step (cost 1: stairs go up
         while the ground beside them stays, both are kept), else the soft floor (see walkable); [] when it cannot; None: never seen."""
         r = self.cells.get(c)
         if r is None: return None
         if self.covered and r[0] > fu + BAND[1] and not r[2] & BUMPED: return None      # under cover (a tunnel, a roof) all that is known there may be above it (the ground over the tunnel, seen from the air): down here it is not seen yet
+        if r[0] > -1e3 and fu - r[0] > WINDOW - BAND[1]: return None      # this level is above all the cell can hold (its floor was seen 16 m and more below:
+                                                                          # junk points under the town filled a third of its cells): not seen here yet
         surf = self.surfaces(c)
         if surf == [None]: return [(fu, 1.0)]
         walked = r[2] & WALKED
-        fit = [(z, 1.0) for z in surf if (z > SEA or walked) and -DOWN <= z - fu <= UP]
+        fit = [(z, 1.0) for z in surf if (z > SEA or walked) and -DOWN <= z - fu <= up]      # (up: STAIR when the planner checks the stair rule itself)
         if fit: return fit
         if -DOWN <= r[0] - fu <= UP and r[0] > SEA: return [(r[0], SOFT)]
         return []
 
-    def plan(self, a, b, limit=120000, margin=40.0, avoid=frozenset()):
+    def plan(self, a, b, limit=120000, margin=40.0, avoid=frozenset(), dear=frozenset()):
         """Cells from a's to b's along walkable ground (A* over cell and level), else to the reachable cell nearest b, or None.
-        a, b: (x, y, z of the eye). `avoid`: cells not to enter (bumped on this walk)."""
+        a, b: (x, y, z of the eye). `avoid`: cells not to enter (bumped on this walk); `dear`: cells round a pocket, cost 40."""
         sa, sb = cell_of(a[0], a[1]), cell_of(b[0], b[1]); fb = b[2] - EYE
         lo = (min(sa[0], sb[0]) - margin / CELL, min(sa[1], sb[1]) - margin / CELL); hi = (max(sa[0], sb[0]) + margin / CELL, max(sa[1], sb[1]) + margin / CELL)
         def key(c, z): return (c[0], c[1], int(round(z / BIN)))
         memo = {}
-        def steps(c, fu):      # (the same cell is asked about from many neighbours: its surfaces are worked out once a plan)
-            k = (c, round(fu, 3))
-            if k not in memo: memo[k] = self.steps(c, fu)
+        def steps(c, fu, up=UP):      # (the same cell is asked about from many neighbours: its surfaces are worked out once a plan)
+            k = (c, round(fu, 3), up)
+            if k not in memo: memo[k] = self.steps(c, fu, up)
             return memo[k]
+        def stair(u, fu, v, dx, dy, fv):
+            """A rise of more than UP (up to STAIR) is a stair step when the step before it climbed too, or the next cell on climbs on (a
+            surface is the start of its 0.25 m bin, so a 0.45 m step can read 0.7 m); on flat ground before and after it is a ledge."""
+            p_ = prev.get(u)
+            if p_ is not None and fu - floor[p_] >= 0.1: return True
+            return any(0.1 <= z - fv <= STAIR for z, k in (steps((v[0] + dx, v[1] + dy), fv, STAIR) or []) if z is not None and k == 1.0)
         s0 = key(sa, a[2] - EYE); floor = {s0: a[2] - EYE}
         r0 = self.cells.get(sa)      # the player is under cover: something is known above its head where it stands (out in the open a surface that high is a plateau)
         self.covered = bool(r0) and r0[0] > -1e3 and any(r0[0] + b * BIN > a[2] - EYE + BAND[1] for b in range(64) if r0[1] >> b & 1)
@@ -145,7 +208,7 @@ class Map:
             while out[-1] in prev: out.append(prev[out[-1]])
             out.reverse(); self.soft = set()      # the soft cells this way goes through knowingly (see blocked_along)
             for p_, k_ in zip(out, out[1:]):
-                st = self.steps((k_[0], k_[1]), floor[p_]) or []
+                st = self.steps((k_[0], k_[1]), floor[p_], STAIR) or []
                 if any(abs(z - floor[k_]) < 1e-6 and c_ == SOFT for z, c_ in st if z is not None): self.soft.add((k_[0], k_[1]))
             return [(k[0], k[1]) for k in out]
         while heap and n < limit:
@@ -161,13 +224,14 @@ class Map:
                     if not (lo[0] <= v[0] <= hi[0] and lo[1] <= v[1] <= hi[1]) or v in avoid: continue
                     if dx and dy:      # no corner cutting past a cell that cannot be stepped onto
                         if any(st == [] for st in (steps((u[0] + dx, u[1]), fu), steps((u[0], u[1] + dy), fu))): continue
-                    st = steps(v, fu); step = 1.4142 if dx and dy else 1.0
+                    st = steps(v, fu, STAIR); step = 1.4142 if dx and dy else 1.0
                     if st is None: opts = [(fu, 3.0)]      # never seen: walkable, dearer
                     else:
                         r = self.cells[v]
-                        opts = [(z, 40.0 if r[2] & BUMPED else (0.8 if r[2] & WALKED else k)) for z, k in st]
+                        opts = [(z, 40.0 if r[2] & BUMPED else (0.8 if r[2] & WALKED else k)) for z, k in st if z is None or z - fu <= UP or stair(u, fu, v, dx, dy, z)]
                     for fv, cost in opts:
-                        kv = key(v, fv); nd = g[u] + step * cost
+                        if v in dear: cost = max(cost, 40.0)
+                        kv = key(v, fv); nd = g[u] + step * cost + (DROP if fu - fv > UP else 0.0)
                         if nd < g.get(kv, 1e18):
                             g[kv] = nd; prev[kv] = u; floor[kv] = fv
                             heapq.heappush(heap, (nd + HW * math.hypot(v[0] - sb[0], v[1] - sb[1]), kv))
@@ -185,7 +249,7 @@ class Map:
         for p_, c in zip(cells, cells[1:]):
             nxt = set()
             for f in floors:
-                st = self.steps(c, f)
+                st = self.steps(c, f, STAIR)
                 if st and c not in self.soft: st = [q_ for q_ in st if q_[1] != SOFT]
                 nxt |= {f} if st is None else {round(z if z is not None else f, 2) for z, _ in st}
             if not nxt: return True
@@ -208,6 +272,8 @@ class Map:
             c = (cx, cy); old = self.cells.get(c); n += 1
             if old is None: self.cells[c] = [z, m, fl]; continue
             rec = [old[0], old[1], old[2] | fl]
+            if z > -1e3 and old[0] > -1e3 and abs(z - old[0]) > WINDOW - BAND[1]:      # two levels too far apart for one cell: the higher one is kept (see integrate)
+                self.cells[c] = [z, m, old[2] | fl] if z > old[0] else rec; continue
             if z > -1e3:
                 for b in range(64):
                     if m >> b & 1: self.add_point(rec, z + b * BIN + BIN / 2)
@@ -235,6 +301,54 @@ def depth_points(data, step=2):
     return (cx, cy, cz), pts
 
 
+def load_recording(path):
+    """Eye positions of a person's recorded play (tools/win/wrecord.py's session.jsonl: every 'sample' pose and 'trail' point), in order."""
+    out = []
+    try: lines = open(path, errors='ignore').read().splitlines()
+    except OSError: return out
+    for line in lines:
+        try: r = json.loads(line)
+        except ValueError: continue
+        if r.get('event') == 'sample' and r.get('pose'): out.append(tuple(r['pose'][:3]))
+        elif r.get('event') == 'trail': out.extend(tuple(q[:3]) for q in r.get('points') or [])
+        elif r.get('event') in ('task', 'skip'): out.append(None)      # a teleport to the next task: not a walk
+    return out
+
+
+def walks(points):
+    """Split a recording's positions at the teleports (None) into separate walks."""
+    run = []
+    for q in points:
+        if q is None:
+            if len(run) > 1: yield run
+            run = []
+        else: run.append(q)
+    if len(run) > 1: yield run
+
+
+def still(cam0, cam1, ang=0.02, move=0.4):
+    """Did the camera hold still while a depth picture was taken ((position, (yaw, pitch)) before the request and after the picture came)?
+    A picture taken while turning pairs one frame's depth with another frame's camera: its points land metres off (walls smeared sideways,
+    the ground turned under itself); such a look is not used."""
+    (p0, (y0, q0)), (p1, (y1, q1)) = cam0, cam1
+    return abs(wrap(y1 - y0)) <= ang and abs(q1 - q0) <= ang and math.dist(p0, p1) <= move
+
+
+def trail_back(trail, metres):
+    """The way back along a walked trail (eye positions in order, the newest last): its points from the newest backwards until `metres` m of
+    trail are covered (all of it when shorter). The pocket rule: no progress here, so leave the way it came in before planning again."""
+    out, run = [], 0.0
+    for a, b in zip(trail[::-1], trail[::-1][1:]):
+        run += math.dist(a[:2], b[:2]); out.append(b)
+        if run >= metres: break
+    return out
+
+
+def pocket(stuck_at, q, r=3.0, n=2):
+    """Stuck here n times already (within r m): a pocket, back out of it."""
+    return sum(1 for s in stuck_at if math.dist(s[:2], q[:2]) < r) >= n
+
+
 def simplify(cells, z):
     """Waypoints (x, y, z) along a cell path: one every 2 m and at every turn."""
     out = []; last = None
@@ -255,6 +369,10 @@ class Walker:
         self.trace = open(os.path.join(game_dir, 'wnav_trace.jsonl'), 'a') if os.environ.get('WNAV_TRACE') else None
         self.map_path = os.path.join(game_dir, 'wnav_map.bin'); self.depth = os.path.join(game_dir, 'witness_depth.bin')
         for q in [q for q in (os.environ.get('WNAV_MAPS') or '').split(';') if q] + [self.map_path]: self.map.load(q)
+        self.recorded = 0      # cells known-good from a person's recorded walks (WNAV_RECORDINGS: ';' separated session.jsonl files)
+        for q in [q for q in (os.environ.get('WNAV_RECORDINGS') or '').split(';') if q]:
+            for w in walks(load_recording(q)): self.recorded += self.map.walk_line(w)
+        self.trail = []; self.dear = set(); self.backouts = 0; self.sidesteps = 0; self.doors = None; self.blurred = 0      # where this walker has been (newest last); open doors, read once
 
     def pos(self): return self.p.camera()[0]
     def yaw(self): return self.p.camera()[1][0]
@@ -274,11 +392,11 @@ class Walker:
         err = want - self.p.camera()[1][1]
         if abs(err) > 0.05: self.c.send(['mouse 0 %d' % int(round(-err / RAD_PER_COUNT))], 0.03)
 
-    def look(self):
-        """One depth picture into the map. False: the proxy did not answer."""
+    def look(self, again=1):
+        """One depth picture into the map. False: the proxy did not answer, or the camera did not hold still (tried `again` more times)."""
         try: before = os.path.getmtime(self.depth)
         except OSError: before = 0
-        self.c.send(['depthdump']); t0 = time.monotonic()
+        cam0 = self.p.camera(); self.c.send(['depthdump']); t0 = time.monotonic()
         while time.monotonic() - t0 < 1.0:
             try:
                 if os.path.getmtime(self.depth) != before:
@@ -289,23 +407,77 @@ class Walker:
         else: return False
         try: _, pts = depth_points(data)
         except (ValueError, struct.error): return False
+        if not still(cam0, self.p.camera()):      # (the camera turned or moved while the picture was taken)
+            self.blurred += 1; time.sleep(0.1); return self.look(again - 1) if again > 0 else False
         self.map.integrate(pts); self.looks += 1
         q = self.pos(); self.map.stand(q[0], q[1], q[2] - EYE)
         return True
 
+    def open_doors(self):
+        """Positions of the doors the game holds open (its entities of the door type with +0x1d0 = 1.0, as tools/win/wstatedump.py), read once."""
+        if self.doors is None:
+            self.doors = []
+            try:
+                for e in self.p.entity_table():
+                    if e and self.p.type_of(e) == DOOR_TYPE and self.p.u32(e + 0x1d0) == 0x3f800000: self.doors.append(struct.unpack('<2f', self.p.rd(e + 0x24, 8)))
+            except Exception as e_: self.log('doors not read: %r' % e_)
+        return self.doors
+
+    def follow(self, points, seconds=15.0):
+        """Walk through these points in turn by steering alone (no plan): the way back out of a pocket. True when the last was reached."""
+        t0 = time.monotonic(); last, last_t = self.pos(), t0
+        for pt in points:
+            while time.monotonic() - t0 < seconds:
+                q = self.pos()
+                if math.dist(q[:2], pt[:2]) < 0.7: break
+                err = wrap(math.atan2(pt[1] - q[1], pt[0] - q[0]) - self.yaw()); self.turn(err); self.key('W', abs(err) < 0.7)
+                if math.dist(q[:2], last[:2]) > 0.3: last, last_t = q, time.monotonic()
+                elif time.monotonic() - last_t > 2.0: self.key('W', False); return False
+                time.sleep(0.03)
+            else: self.key('W', False); return False
+        self.key('W', False); return True
+
+    def sidestep(self):
+        """Stuck against something unseen: a step to the left, else to the right (A, D). True when one moved the player."""
+        self.key('W', False)
+        for k in ('A', 'D'):
+            q = self.pos(); self.c.send(['key %s down' % k], 0.5 if k == 'A' else 0.8); self.c.send(['key %s up' % k], 0.1)
+            if math.dist(self.pos()[:2], q[:2]) > 0.3: self.sidesteps += 1; return True
+        return False
+
+    def back_out(self, why):
+        """The pocket rule: leave along the trail it came in by (10 m), the cells round here not entered again on this walk, the doors the
+        game says are open unbumped, then plan again. False when there is no trail to go back on or it has backed out 3 times."""
+        q = self.pos(); back = trail_back(self.trail, 10.0)
+        if self.backouts >= 3 or not back or math.dist(back[-1][:2], q[:2]) < 2.0: return False
+        self.backouts += 1; self.note(backout=[round(q[0], 2), round(q[1], 2)], why=why); self.log('backing out (%s) at %.1f %.1f' % (why, q[0], q[1]))
+        for dx in range(-3, 4):
+            for dy in range(-3, 4):
+                if dx * dx + dy * dy <= 9: c_ = cell_of(q[0] + dx * CELL, q[1] + dy * CELL); self.avoid.add(c_); self.map.bump(*centre(c_))
+        r_ = int(POCKET / CELL)      # and the whole pocket round it dear (a U of unseen walls is 6 m wide: one disc of bumps only moved the next try aside)
+        self.dear |= {(c0[0] + dx, c0[1] + dy) for c0 in [cell_of(q[0], q[1])] for dx in range(-r_, r_ + 1) for dy in range(-r_, r_ + 1) if dx * dx + dy * dy <= r_ * r_}
+        self.map.unbump_near(self.open_doors())
+        self.follow(back); self.trail = self.trail[:max(1, len(self.trail) - len(back))]; self.look_around(); return True
+
     def look_around(self):
         self.key('W', False)
-        for _ in range(4): self.look(); self.turn(math.pi / 2); time.sleep(0.05)
+        for _ in range(4): self.look(); self.turn(math.pi / 2); time.sleep(0.15)      # (the turn takes a frame or two: a look during it is blurred)
+
+    def keep_depth(self, name):
+        """WNAV_KEEP=1: the last depth picture (and the camera it was taken from) kept as <game folder>/wnav_<name>.bin, to see what a stuck is against."""
+        if os.environ.get('WNAV_KEEP'):
+            try: self.look(0); open(os.path.join(self.game_dir, 'wnav_%s.bin' % name), 'wb').write(open(self.depth, 'rb').read())
+            except OSError: pass
 
     def note(self, **kv):
         if self.trace: self.trace.write(json.dumps(dict(t=round(time.monotonic(), 2), **kv)) + '\n'); self.trace.flush()
 
     def plan(self, target):
-        q = self.pos(); cells = self.map.plan(q, target, avoid=self.avoid)
+        q = self.pos(); cells = self.map.plan(q, target, avoid=self.avoid, dear=self.dear)
         if cells is None: return None
         self.replans += 1; self.cells, self.ci = cells, 0
         way = simplify(cells, target[2]) or [tuple(target)]      # (a plan of one cell: the target is next to the player)
-        self.note(plan=[[round(w[0], 1), round(w[1], 1)] for w in way], at=[round(v, 2) for v in q]); return way
+        self.note(plan=[[round(w[0], 1), round(w[1], 1)] for w in way], at=[round(v, 2) for v in q], reached=self.map.reached); return way
 
     def ahead_blocked(self, dist=8.0):
         """Is the plan's way ahead (its own cells, from the one nearest the player) no longer walkable?"""
@@ -347,10 +519,13 @@ class Walker:
         while time.monotonic() < deadline:
             q = self.pos(); self.walked += math.dist(q[:2], last[:2])
             if math.dist(q[:2], noted[:2]) > 1.0: self.note(pos=[round(q[0], 2), round(q[1], 2), round(q[2], 2)]); noted = q
+            if self.trail and math.dist(q[:2], self.trail[-1][:2]) > 3.0: self.trail = []      # a teleport (or a reload): the way here is not a walk
+            if not self.trail or math.dist(q[:2], self.trail[-1][:2]) > 0.5: self.trail.append(q)
             last = q
             if math.dist(q[:2], target[:2]) < tol and abs(q[2] - target[2]) < ztol: ok, why = True, ''; break
             if way is None or k >= len(way):
                 way, k = self.plan(target), 0
+                if way is None and math.dist(q[:2], target[:2]) >= tol and self.back_out('no way on the map'): continue
                 if way is None: why = 'no way on the map' if math.dist(q[:2], target[:2]) >= tol else 'here, but %.1f m %s it' % (abs(q[2] - target[2]), 'below' if q[2] < target[2] else 'above'); break
             while k < len(way) - 1 and math.dist(q[:2], way[k][:2]) < 1.0: k += 1
             aim = way[k]; d = math.dist(q[:2], aim[:2])
@@ -368,23 +543,29 @@ class Walker:
                 moved_at, moved_t, near_d, near_t = q, now, dt, now
                 self.stuck += 1
                 if self.stuck > stucks: why = 'stuck %d times' % (self.stuck - 1); break
-                y = self.yaw(); again = sum(1 for s in self.stuck_at if math.dist(s, q[:2]) < 3.0); self.stuck_at.append(q[:2])
+                y = self.yaw(); again = sum(1 for s in self.stuck_at if math.dist(s, q[:2]) < 3.0); pocketed = pocket(self.stuck_at, q); self.stuck_at.append(q[:2])
                 for r in (0.45, 0.75, 1.05, 1.35):      # the cells ahead (wider each time it is stuck here again)
                     for side in range(-again, again + 1):
                         x = q[0] + r * math.cos(y) - side * CELL * math.sin(y); yy = q[1] + r * math.sin(y) + side * CELL * math.cos(y)
                         self.map.bump(x, yy); self.avoid.add(cell_of(x, yy))
-                self.note(stuck=[round(q[0], 2), round(q[1], 2)], again=again)
+                self.note(stuck=[round(q[0], 2), round(q[1], 2)], again=again, yaw=round(y, 2), z=round(q[2], 2)); self.keep_depth('stuck%d' % self.stuck)
                 self.log('stuck %d at %.1f %.1f: bumped, planning again' % (self.stuck, q[0], q[1]))
-                self.key('W', False); self.c.send(['key S down'], 0.4); self.c.send(['key S up'])
+                if pocketed and self.back_out('stuck %d times here' % (again + 1)): way = None; continue
+                if not self.sidestep(): self.c.send(['key S down'], 0.4); self.c.send(['key S up'])      # (the sidestep or the step back: off the thing unseen)
                 self.look_around(); way = None
             time.sleep(0.02)
         self.release()
         try: self.map.save(self.map_path)
         except OSError: pass
         return {'ok': ok, 'why': why, 'seconds': round(time.monotonic() - t0, 1), 'walked': round(self.walked, 1), 'stuck': self.stuck,
-                'replans': self.replans, 'looks': self.looks, 'from': [round(v, 2) for v in start], 'to': [round(v, 2) for v in self.pos()]}
+                'replans': self.replans, 'looks': self.looks, 'backouts': self.backouts, 'sidesteps': self.sidesteps, 'blurred': self.blurred, 'from': [round(v, 2) for v in start], 'to': [round(v, 2) for v in self.pos()]}
 
 
+if __name__ == '__main__' and sys.argv[1:2] == ['--merge-maps']:      # OUT.bin A.bin B.bin ...: the maps added together (the walkers' learnt walls and walked cells)
+    m = Map(); n = sum(m.load(q) for q in sys.argv[3:]); m.save(sys.argv[2]); print(json.dumps({'map': sys.argv[2], 'cells': len(m.cells), 'read': n})); sys.exit(0)
+if __name__ == '__main__' and sys.argv[1:2] == ['--merge-recordings']:
+    m = Map(); m.load(sys.argv[2]); n = sum(m.walk_line(w) for q in sys.argv[3:] for w in walks(load_recording(q)))
+    m.save(sys.argv[2]); print(json.dumps({'map': sys.argv[2], 'cells': len(m.cells), 'stood': n})); sys.exit(0)
 if __name__ == '__main__':
     from wcontrol import Control
     exec(compile(open(os.path.join(HERE, 'wlib.py')).read(), 'wlib.py', 'exec'))
