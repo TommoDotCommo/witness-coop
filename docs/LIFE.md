@@ -2,9 +2,9 @@
 
 ![The adventurer in the garden, lit with its maps, its shadow on the grass](showcase/adventurer_garden.jpg)
 
-| The glance | A blink | The shadow | Settling the hat |
-|---|---|---|---|
-| ![Face to face: the figure looks at the viewer](showcase/adventurer_glance.jpg) | ![Eyes closed](showcase/adventurer_blink.jpg) | ![The projected shadow on the grass](showcase/adventurer_shadow.jpg) | ![The hat fidget](showcase/adventurer_hat_fidget.jpg) |
+| The glance | A blink | The shadow | Settling the hat | Laughing |
+|---|---|---|---|---|
+| ![Face to face: the figure looks at the viewer](showcase/adventurer_glance.jpg) | ![Eyes closed](showcase/adventurer_blink.jpg) | ![The projected shadow on the grass](showcase/adventurer_shadow.jpg) | ![The hat fidget](showcase/adventurer_hat_fidget.jpg) | ![The Laugh emote: brows raised](showcase/adventurer_laugh.jpg) |
 
 Real pictures of the game with the mod (the `shot` command, two clients on one PC, 2026-10-30).
 
