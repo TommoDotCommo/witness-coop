@@ -379,7 +379,7 @@ class Playthrough:
                 # co-op failure, recorded by propagation() and compare_worlds(), not a reason to solve it again). Power likewise.
                 with cf.ThreadPoolExecutor(max_workers=self.n) as rp: states = [st for st in rp.map(self.state_or_recover, self.bots) if st]
                 if not states: continue
-                solved = set().union(*(st[0] for st in states)); self.powered = set().union(*(st[2] for st in states)); self.solved = solved
+                solved = set().union(*(st[0] for st in states), self.solved); self.powered = set().union(*(st[2] for st in states)); self.solved = solved      # (once solved stays solved: a timer panel resets itself, and the Shadows door timer was solved three times over)
                 self.stalls(solved, [h for _, h in busy.values()])
                 for i, (fut, h) in list(busy.items()):
                     if not fut.done(): continue
