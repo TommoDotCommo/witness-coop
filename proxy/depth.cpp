@@ -30,8 +30,10 @@ static void Note(ID3D11Texture2D* t) {
 // The scene depth buffer: a full-size typeless depth texture that can also be read by a shader (the game renders with 4x MSAA).
 static CRITICAL_SECTION g_cs; static bool g_csInit;
 static ID3D11Texture2D* g_scene; static ID3D11ShaderResourceView* g_sceneSrv; static bool g_sceneMs; static UINT g_sceneSamples;
+static ID3D11Texture2D* g_ignore;      // our own depth buffer (model_gpu.cpp): full size and typeless like the game's, never the scene
+void DepthIgnore(ID3D11Texture2D* t) { g_ignore = t; }
 static void ConsiderScene(ID3D11Texture2D* t, const D3D11_TEXTURE2D_DESC& d) {
-    if (t == g_scene) return;
+    if (t == g_scene || t == g_ignore) return;
     bool typeless = d.Format == DXGI_FORMAT_R24G8_TYPELESS || d.Format == DXGI_FORMAT_R32_TYPELESS || d.Format == DXGI_FORMAT_R32G8X24_TYPELESS;
     if (d.Width != g_w || d.Height != g_h || !typeless || !(d.BindFlags & D3D11_BIND_SHADER_RESOURCE) || !(d.BindFlags & D3D11_BIND_DEPTH_STENCIL)) return;
     EnterCriticalSection(&g_cs);

@@ -39,7 +39,7 @@ with tempfile.TemporaryDirectory(prefix='witness-gestures-') as tmp:
         for folder in ('third_party','core'):
             target=tmp/'proxy'/folder
             if not target.exists(): shutil.copytree(root/'proxy'/folder,target,ignore=shutil.ignore_patterns('build'))
-        for header in ('model.h','gestures.h'): shutil.copyfile(root/'proxy/model'/header,model/header)
+        for header in ('model.h','gestures.h','life.h'): shutil.copyfile(root/'proxy/model'/header,model/header)
         (model/'model.cpp').write_text(source.replace(old,new))
         exe=tmp/name
         subprocess.run(['g++','-std=c++17','-O2',str(root/'proxy/model/tests/gestures.cpp'),str(model/'model.cpp'),'-o',str(exe)],check=True)

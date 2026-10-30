@@ -1,0 +1,5 @@
+{
+ "0x334db": {"name": "Door Timer Outside (Shadows)", "reason": "a timer panel: each world runs its own countdown after a solve and resets the panel about 20 s later (the reset is shared since the un-solve events); a comparison inside that window, or two players running their own timers, sees a difference. The owner ruled on 2026-10-30 that the timer panels differ per world by design unless proven otherwise."},
+ "0x334dc": {"name": "Door Timer Inside (Shadows)", "reason": "the other timer panel of the same door: as 0x334db."},
+ "0x19b24": {"name": "Timed Door (Shadows)", "reason": "opened by the timer panels and shut by their countdown in the world that ran it: it follows 0x334db/0x334dc, so it differs while they do."}
+}

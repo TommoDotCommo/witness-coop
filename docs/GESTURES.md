@@ -12,6 +12,7 @@ dispatch, including configured keys. `emote 0` cancels the current animation.
 | 2 | 9 Point, 10 Clap, 11 Facepalm, 12 Thumbs up, 13 Thinking, 14 Sit, 15 Stretch, 16 Salute |
 | 3 | 17 Beckon, 18 Celebrate, 19 Sad, 20 Laugh, 21 Panic, 22 Sway, 23 Puzzle spark, 24 Horizon |
 
+The brows act with the emotes (Sad, Thinking, Laugh, Celebrate, Cheer, Panic, Facepalm, No and Shrug move them; see [the life layer](LIFE.md)).
 Thinking, Sit and Sway loop until cancelled or interrupted. Other gestures finish
 in 2.6–4.8 seconds. Wave, Yes, No, Shrug, Point, Clap, Thumbs up, Salute and Beckon
 retain control of the upper body while walking. Movement above 0.35 m/s cancels

@@ -1,0 +1,71 @@
+{"t": 15.0, "kind": "started", "bots": 2}
+{"t": 208.88, "kind": "solved", "bot": 1, "panel": "0xa3b5", "name": "Back Left", "area": "Tutorial (Inside)", "seconds": 161.3}
+{"t": 209.29, "kind": "propagated", "panel": "0xa3b5", "origin": 1, "to": 2, "seconds": 0.41, "exact_s": 0.067}
+{"t": 271.03, "kind": "solved", "bot": 1, "panel": "0x3629", "name": "Gate Open", "area": "Tutorial (Inside)", "seconds": 59.2}
+{"t": 271.44, "kind": "propagated", "panel": "0x3629", "origin": 1, "to": 2, "seconds": 0.41, "exact_s": 0.157}
+{"t": 348.24, "kind": "solved", "bot": 2, "panel": "0x334db", "name": "Door Timer Outside", "area": "Shadows", "seconds": 72.5}
+{"t": 351.66, "kind": "propagated", "panel": "0x334db", "origin": 2, "to": 1, "seconds": 3.41, "exact_s": 0.062}
+{"t": 591.49, "kind": "solved", "bot": 2, "panel": "0x139", "name": "Hedge Maze 1", "area": "Keep", "seconds": 240.5}
+{"t": 591.9, "kind": "propagated", "panel": "0x139", "origin": 2, "to": 1, "seconds": 0.41, "exact_s": 0.017}
+{"t": 683.08, "kind": "solved", "bot": 2, "panel": "0x334db", "name": "Door Timer Outside", "area": "Shadows", "seconds": 90.8}
+{"t": 683.48, "kind": "propagated", "panel": "0x334db", "origin": 2, "to": 1, "seconds": 0.4, "exact_s": 0.16}
+{"t": 814.67, "kind": "solved", "bot": 2, "panel": "0x334db", "name": "Door Timer Outside", "area": "Shadows", "seconds": 23.5}
+{"t": 815.09, "kind": "propagated", "panel": "0x334db", "origin": 2, "to": 1, "seconds": 0.42, "exact_s": 0.045}
+{"t": 1126.57, "kind": "solved", "bot": 2, "panel": "0x334db", "name": "Door Timer Outside", "area": "Shadows", "seconds": 51.3}
+{"t": 1127.18, "kind": "propagated", "panel": "0x334db", "origin": 2, "to": 1, "seconds": 0.6, "exact_s": 0.148}
+{"t": 1184.87, "kind": "solved", "bot": 2, "panel": "0x334db", "name": "Door Timer Outside", "area": "Shadows", "seconds": 20.9}
+{"t": 1185.3, "kind": "propagated", "panel": "0x334db", "origin": 2, "to": 1, "seconds": 0.43, "exact_s": 0.069}
+{"t": 1361.35, "kind": "solved", "bot": 2, "panel": "0x2c4", "name": "First Row 1", "area": "Jungle", "seconds": 175.1}
+{"t": 1361.83, "kind": "propagated", "panel": "0x2c4", "origin": 2, "to": 1, "seconds": 0.48, "exact_s": 0.037}
+{"t": 1393.58, "kind": "solved", "bot": 1, "panel": "0x767", "name": "First Row 2", "area": "Jungle", "seconds": 26.1}
+{"t": 1394.2, "kind": "propagated", "panel": "0x767", "origin": 1, "to": 2, "seconds": 0.61, "exact_s": 0.027}
+{"t": 1480.9, "kind": "solved", "bot": 1, "panel": "0x2c6", "name": "First Row 3", "area": "Jungle", "seconds": 25.8}
+{"t": 1481.39, "kind": "propagated", "panel": "0x2c6", "origin": 1, "to": 2, "seconds": 0.49, "exact_s": 0.095}
+{"t": 1664.46, "kind": "solved", "bot": 2, "panel": "0x334db", "name": "Door Timer Outside", "area": "Shadows", "seconds": 302.6}
+{"t": 1664.89, "kind": "propagated", "panel": "0x334db", "origin": 2, "to": 1, "seconds": 0.43, "exact_s": 0.129}
+{"t": 1948.22, "kind": "solved", "bot": 2, "panel": "0xb10", "name": "Entry Left", "area": "Monastery", "seconds": 282.0}
+{"t": 1948.64, "kind": "propagated", "panel": "0xb10", "origin": 2, "to": 1, "seconds": 0.42, "exact_s": 0.123}
+{"t": 1980.16, "kind": "solved", "bot": 1, "panel": "0x334db", "name": "Door Timer Outside", "area": "Shadows", "seconds": 58.3}
+{"t": 1980.58, "kind": "propagated", "panel": "0x334db", "origin": 1, "to": 2, "seconds": 0.41, "exact_s": 0.115}
+{"t": 2164.83, "kind": "solved", "bot": 1, "panel": "0xc92", "name": "Entry Right", "area": "Monastery", "seconds": 183.2}
+{"t": 2165.25, "kind": "propagated", "panel": "0xc92", "origin": 1, "to": 2, "seconds": 0.42, "exact_s": 0.088}
+{"t": 2277.17, "kind": "solved", "bot": 1, "panel": "0x334db", "name": "Door Timer Outside", "area": "Shadows", "seconds": 109.7}
+{"t": 2277.73, "kind": "propagated", "panel": "0x334db", "origin": 1, "to": 2, "seconds": 0.54, "exact_s": 0.168}
+{"t": 2384.27, "kind": "solved", "bot": 2, "panel": "0x19dc", "name": "Hedge Maze 2", "area": "Keep", "seconds": 167.4}
+{"t": 2384.67, "kind": "propagated", "panel": "0x19dc", "origin": 2, "to": 1, "seconds": 0.4, "exact_s": 0.069}
+{"t": 2538.33, "kind": "solved", "bot": 2, "panel": "0x334db", "name": "Door Timer Outside", "area": "Shadows", "seconds": 152.0}
+{"t": 2538.73, "kind": "propagated", "panel": "0x334db", "origin": 2, "to": 1, "seconds": 0.4, "exact_s": 0.053}
+{"t": 2730.41, "kind": "solved", "bot": 2, "panel": "0x19e7", "name": "Hedge Maze 3", "area": "Keep", "seconds": 190.2}
+{"t": 2731.79, "kind": "propagated", "panel": "0x19e7", "origin": 2, "to": 1, "seconds": 1.38, "exact_s": 0.058}
+{"t": 2867.16, "kind": "solved", "bot": 2, "panel": "0x1a0f", "name": "Hedge Maze 4", "area": "Keep", "seconds": 134.6}
+{"t": 2867.59, "kind": "propagated", "panel": "0x1a0f", "origin": 2, "to": 1, "seconds": 0.43, "exact_s": 0.047}
+{"t": 3266.67, "kind": "solved", "bot": 1, "panel": "0x334db", "name": "Door Timer Outside", "area": "Shadows", "seconds": 44.0}
+{"t": 3267.1, "kind": "propagated", "panel": "0x334db", "origin": 1, "to": 2, "seconds": 0.43, "exact_s": 0.114}
+{"t": 3574.93, "kind": "solved", "bot": 1, "panel": "0x334db", "name": "Door Timer Outside", "area": "Shadows", "seconds": 97.9}
+{"t": 3575.35, "kind": "propagated", "panel": "0x334db", "origin": 1, "to": 2, "seconds": 0.43, "exact_s": 0.16}
+{"t": 3787.53, "kind": "solved", "bot": 2, "panel": "0x334db", "name": "Door Timer Outside", "area": "Shadows", "seconds": 44.5}
+{"t": 3787.93, "kind": "propagated", "panel": "0x334db", "origin": 2, "to": 1, "seconds": 0.4, "exact_s": 0.123}
+{"t": 3815.99, "kind": "solved", "bot": 1, "panel": "0x1a54", "name": "Entry Panel", "area": "Glass Factory", "seconds": 239.1}
+{"t": 3816.54, "kind": "propagated", "panel": "0x1a54", "origin": 1, "to": 2, "seconds": 0.54, "exact_s": 0.108}
+{"t": 3962.0, "kind": "solved", "bot": 1, "panel": "0x334db", "name": "Door Timer Outside", "area": "Shadows", "seconds": 97.3}
+{"t": 3962.41, "kind": "propagated", "panel": "0x334db", "origin": 1, "to": 2, "seconds": 0.42, "exact_s": 0.066}
+{"t": 4150.29, "kind": "solved", "bot": 2, "panel": "0x334db", "name": "Door Timer Outside", "area": "Shadows", "seconds": 27.1}
+{"t": 4150.76, "kind": "propagated", "panel": "0x334db", "origin": 2, "to": 1, "seconds": 0.47, "exact_s": 0.109}
+{"t": 4364.16, "kind": "divergence", "persistent": true, "between": [1, 2], "panels_only_here": [], "panels_missing": [], "doors_differ": ["0x14724"]}
+{"t": 4419.04, "kind": "divergence", "persistent": true, "between": [1, 2], "panels_only_here": [], "panels_missing": [], "doors_differ": ["0x14724"]}
+{"t": 4474.11, "kind": "divergence", "persistent": true, "between": [1, 2], "panels_only_here": [], "panels_missing": [], "doors_differ": ["0x14724"]}
+{"t": 4528.9, "kind": "divergence", "persistent": true, "between": [1, 2], "panels_only_here": [], "panels_missing": [], "doors_differ": ["0x14724"]}
+{"t": 4580.07, "kind": "solved", "bot": 1, "panel": "0x334db", "name": "Door Timer Outside", "area": "Shadows", "seconds": 325.1}
+{"t": 4580.49, "kind": "propagated", "panel": "0x334db", "origin": 1, "to": 2, "seconds": 0.41, "exact_s": 0.089}
+{"t": 4583.99, "kind": "divergence", "persistent": true, "between": [1, 2], "panels_only_here": [], "panels_missing": [], "doors_differ": ["0x14724"]}
+{"t": 4639.04, "kind": "divergence", "persistent": true, "between": [1, 2], "panels_only_here": [], "panels_missing": [], "doors_differ": ["0x14724"]}
+{"t": 4693.77, "kind": "divergence", "persistent": true, "between": [1, 2], "panels_only_here": [], "panels_missing": [], "doors_differ": ["0x14724"]}
+{"t": 4748.35, "kind": "divergence", "persistent": true, "between": [1, 2], "panels_only_here": [], "panels_missing": [], "doors_differ": ["0x14724"]}
+{"t": 4802.82, "kind": "divergence", "persistent": true, "between": [1, 2], "panels_only_here": [], "panels_missing": [], "doors_differ": ["0x14724"]}
+{"t": 4815.36, "kind": "solved", "bot": 1, "panel": "0x334db", "name": "Door Timer Outside", "area": "Shadows", "seconds": 89.7}
+{"t": 4815.75, "kind": "propagated", "panel": "0x334db", "origin": 1, "to": 2, "seconds": 0.4, "exact_s": 0.069}
+{"t": 4857.54, "kind": "divergence", "persistent": true, "between": [1, 2], "panels_only_here": [], "panels_missing": [], "doors_differ": ["0x14724"]}
+{"t": 4883.3, "kind": "solved", "bot": 2, "panel": "0x334db", "name": "Door Timer Outside", "area": "Shadows", "seconds": 23.2}
+{"t": 4883.78, "kind": "propagated", "panel": "0x334db", "origin": 2, "to": 1, "seconds": 0.48, "exact_s": 0.091}
+{"t": 4912.22, "kind": "divergence", "persistent": true, "between": [1, 2], "panels_only_here": [], "panels_missing": [], "doors_differ": ["0x14724"]}
+{"t": 4966.78, "kind": "divergence", "persistent": true, "between": [1, 2], "panels_only_here": [], "panels_missing": [], "doors_differ": ["0x14724"]}

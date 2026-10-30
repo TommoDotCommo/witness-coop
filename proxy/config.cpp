@@ -117,6 +117,15 @@ const Cfg& GetCfg() {
             else if (sscanf(line, "no_group_avatar_state=%d", &v) == 1) r.noGroupAvatarState = v != 0;
             else if (sscanf(line, "no_modelstat_queue=%d", &v) == 1) r.noModelStatQueue = v != 0;
             else if (sscanf(line, "no_model_gait=%d", &v) == 1) r.noModelGait = v != 0;
+            else if (sscanf(line, "no_model_life=%d", &v) == 1) r.noModelLife = v != 0;
+            else if (sscanf(line, "no_model_normalmap=%d", &v) == 1) r.noModelNormalMap = v != 0;
+            else if (sscanf(line, "no_model_matmap=%d", &v) == 1) r.noModelMaterialMap = v != 0;
+            else if (sscanf(line, "footsteps=%d", &v) == 1) r.footsteps = v != 0;
+            else if (sscanf(line, "footstep_volume=%d", &v) == 1) r.footstepVolume = v;
+            else if (sscanf(line, "model_sun=%f", &fv) == 1) r.modelSun = fv;
+            else if (sscanf(line, "model_ambient=%f", &fv) == 1) r.modelAmbient = fv;
+            else if (sscanf(line, "model_shadow=%f", &fv) == 1) r.modelShadow = fv;
+            else if (sscanf(line, "model_shading=%d", &v) == 1) r.modelShading = v;
             else if (sscanf(line, "save_dir=%299[^\r\n]", s) == 1) {
                 if (!strcmp(s, "instance")) r.saveDir = DllDir() + L"appdata";
                 else { wchar_t w[300]; MultiByteToWideChar(CP_UTF8, 0, s, -1, w, 300); r.saveDir = w; }

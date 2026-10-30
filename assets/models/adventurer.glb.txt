@@ -1,3 +1,4 @@
 eye_joint=eye
 speed=1.20
 run_speed=2.80
+lid_close=1.495

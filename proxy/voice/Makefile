@@ -8,9 +8,18 @@ $(BUILD)/voice-test: $(SRC) voice.h
 $(BUILD)/mutant-%: $(SRC) voice.h
 	mkdir -p $(BUILD)
 	g++ -std=c++17 -O2 -Wno-unused-parameter -DWV_MUT_$* -o $@ $(SRC)
-test: $(BUILD)/voice-test $(addprefix $(BUILD)/mutant-,$(MUTANTS))
+FOOT_MUTANTS = FS_NO_STEPS FS_NO_DISTANCE FS_NO_PAN FS_NO_DECAY
+$(BUILD)/footsteps-test: voice.cpp footsteps_test.cpp footsteps.h voice.h
+	mkdir -p $(BUILD)
+	g++ -std=c++17 -O2 -Wall -Wextra -o $@ voice.cpp footsteps_test.cpp
+$(BUILD)/footmutant-%: voice.cpp footsteps_test.cpp footsteps.h voice.h
+	mkdir -p $(BUILD)
+	g++ -std=c++17 -O2 -Wno-unused-parameter -DWV_MUT_$* -o $@ voice.cpp footsteps_test.cpp
+test: $(BUILD)/voice-test $(addprefix $(BUILD)/mutant-,$(MUTANTS)) $(BUILD)/footsteps-test $(addprefix $(BUILD)/footmutant-,$(FOOT_MUTANTS))
 	$(BUILD)/voice-test
 	@for m in $(MUTANTS); do if $(BUILD)/mutant-$$m >/dev/null; then echo "MUTANT $$m SURVIVED (the test cannot fail for it)"; exit 1; else echo "mutant $$m killed"; fi; done
+	$(BUILD)/footsteps-test
+	@for m in $(FOOT_MUTANTS); do if $(BUILD)/footmutant-$$m >/dev/null; then echo "FOOTSTEP MUTANT $$m SURVIVED (the test cannot fail for it)"; exit 1; else echo "footstep mutant $$m killed"; fi; done
 clean:
 	rm -rf $(BUILD)
 .PHONY: test clean

@@ -1,0 +1,139 @@
+{"t": 21.08, "kind": "started", "bots": 4}
+{"t": 30.27, "kind": "solved", "bot": 1, "panel": "0x64", "name": "Straight", "area": "Tutorial (Inside)", "seconds": 7.9}
+{"t": 30.9, "kind": "propagated", "panel": "0x64", "origin": 1, "to": 2, "seconds": 0.63}
+{"t": 31.43, "kind": "propagated", "panel": "0x64", "origin": 1, "to": 3, "seconds": 1.16}
+{"t": 31.94, "kind": "propagated", "panel": "0x64", "origin": 1, "to": 4, "seconds": 1.67}
+{"t": 42.7, "kind": "solved", "bot": 2, "panel": "0x182", "name": "Bend", "area": "Tutorial (Inside)", "seconds": 12.5}
+{"t": 43.35, "kind": "propagated", "panel": "0x182", "origin": 2, "to": 1, "seconds": 0.64}
+{"t": 44.01, "kind": "propagated", "panel": "0x182", "origin": 2, "to": 3, "seconds": 1.3}
+{"t": 44.56, "kind": "propagated", "panel": "0x182", "origin": 2, "to": 4, "seconds": 1.86}
+{"t": 58.28, "kind": "solved", "bot": 3, "panel": "0xa3b5", "name": "Back Left", "area": "Tutorial (Inside)", "seconds": 15.2}
+{"t": 58.83, "kind": "propagated", "panel": "0xa3b5", "origin": 3, "to": 1, "seconds": 0.55}
+{"t": 59.33, "kind": "propagated", "panel": "0xa3b5", "origin": 3, "to": 2, "seconds": 1.05}
+{"t": 59.84, "kind": "propagated", "panel": "0xa3b5", "origin": 3, "to": 4, "seconds": 1.56}
+{"t": 60.39, "kind": "solved", "bot": 2, "panel": "0xa3b2", "name": "Back Right", "area": "Tutorial (Inside)", "seconds": 17.3}
+{"t": 60.98, "kind": "propagated", "panel": "0xa3b2", "origin": 2, "to": 1, "seconds": 0.59}
+{"t": 61.11, "kind": "solved", "bot": 1, "panel": "0x293", "name": "Front Center", "area": "Tutorial (Inside)", "seconds": 18.0}
+{"t": 61.54, "kind": "propagated", "panel": "0xa3b2", "origin": 2, "to": 3, "seconds": 1.15}
+{"t": 61.66, "kind": "propagated", "panel": "0x293", "origin": 1, "to": 2, "seconds": 0.55}
+{"t": 62.06, "kind": "propagated", "panel": "0xa3b2", "origin": 2, "to": 4, "seconds": 1.67}
+{"t": 62.16, "kind": "propagated", "panel": "0x293", "origin": 1, "to": 3, "seconds": 1.05}
+{"t": 62.65, "kind": "propagated", "panel": "0x293", "origin": 1, "to": 4, "seconds": 1.54}
+{"t": 80.96, "kind": "solved", "bot": 1, "panel": "0x295", "name": "Center Left", "area": "Tutorial (Inside)", "seconds": 17.2}
+{"t": 81.45, "kind": "propagated", "panel": "0x295", "origin": 1, "to": 2, "seconds": 0.49}
+{"t": 82.02, "kind": "propagated", "panel": "0x295", "origin": 1, "to": 3, "seconds": 1.06}
+{"t": 82.64, "kind": "propagated", "panel": "0x295", "origin": 1, "to": 4, "seconds": 1.68}
+{"t": 97.97, "kind": "solved", "bot": 1, "panel": "0x2c2", "name": "Front Left", "area": "Tutorial (Inside)", "seconds": 15.2}
+{"t": 98.54, "kind": "propagated", "panel": "0x2c2", "origin": 1, "to": 2, "seconds": 0.57}
+{"t": 99.03, "kind": "propagated", "panel": "0x2c2", "origin": 1, "to": 3, "seconds": 1.05}
+{"t": 99.57, "kind": "propagated", "panel": "0x2c2", "origin": 1, "to": 4, "seconds": 1.59}
+{"t": 143.29, "kind": "solved", "bot": 1, "panel": "0xa3b5", "name": "Back Left", "area": "Tutorial (Inside)", "seconds": 21.5}
+{"t": 143.81, "kind": "propagated", "panel": "0xa3b5", "origin": 1, "to": 2, "seconds": 0.52}
+{"t": 144.3, "kind": "propagated", "panel": "0xa3b5", "origin": 1, "to": 3, "seconds": 1.0}
+{"t": 144.78, "kind": "propagated", "panel": "0xa3b5", "origin": 1, "to": 4, "seconds": 1.48}
+{"t": 160.71, "kind": "solved", "bot": 1, "panel": "0x3629", "name": "Gate Open", "area": "Tutorial (Inside)", "seconds": 15.2}
+{"t": 161.24, "kind": "propagated", "panel": "0x3629", "origin": 1, "to": 2, "seconds": 0.53}
+{"t": 162.15, "kind": "propagated", "panel": "0x3629", "origin": 1, "to": 3, "seconds": 1.45}
+{"t": 162.81, "kind": "propagated", "panel": "0x3629", "origin": 1, "to": 4, "seconds": 2.1}
+{"t": 174.99, "kind": "solved", "bot": 3, "panel": "0x139", "name": "Hedge Maze 1", "area": "Keep", "seconds": 13.8}
+{"t": 175.51, "kind": "propagated", "panel": "0x139", "origin": 3, "to": 1, "seconds": 0.52}
+{"t": 176.02, "kind": "propagated", "panel": "0x139", "origin": 3, "to": 2, "seconds": 1.03}
+{"t": 176.53, "kind": "propagated", "panel": "0x139", "origin": 3, "to": 4, "seconds": 1.55}
+{"t": 182.14, "kind": "solved", "bot": 2, "panel": "0x334db", "name": "Door Timer Outside", "area": "Shadows", "seconds": 20.9}
+{"t": 182.68, "kind": "propagated", "panel": "0x334db", "origin": 2, "to": 1, "seconds": 0.53}
+{"t": 183.26, "kind": "propagated", "panel": "0x334db", "origin": 2, "to": 3, "seconds": 1.11}
+{"t": 183.81, "kind": "propagated", "panel": "0x334db", "origin": 2, "to": 4, "seconds": 1.67}
+{"t": 184.77, "kind": "solved", "bot": 4, "panel": "0x698", "name": "Surface 1", "area": "Desert", "seconds": 23.5}
+{"t": 185.14, "kind": "solved", "bot": 3, "panel": "0xb10", "name": "Entry Left", "area": "Monastery", "seconds": 7.8}
+{"t": 185.36, "kind": "propagated", "panel": "0x698", "origin": 4, "to": 1, "seconds": 0.6}
+{"t": 185.79, "kind": "propagated", "panel": "0xb10", "origin": 3, "to": 1, "seconds": 0.65}
+{"t": 185.98, "kind": "propagated", "panel": "0x698", "origin": 4, "to": 2, "seconds": 1.21}
+{"t": 186.4, "kind": "propagated", "panel": "0xb10", "origin": 3, "to": 2, "seconds": 1.27}
+{"t": 186.6, "kind": "propagated", "panel": "0x698", "origin": 4, "to": 3, "seconds": 1.83}
+{"t": 187.07, "kind": "propagated", "panel": "0xb10", "origin": 3, "to": 4, "seconds": 1.93}
+{"t": 196.53, "kind": "solved", "bot": 2, "panel": "0x19dc", "name": "Hedge Maze 2", "area": "Keep", "seconds": 13.3}
+{"t": 197.11, "kind": "propagated", "panel": "0x19dc", "origin": 2, "to": 1, "seconds": 0.58}
+{"t": 197.67, "kind": "propagated", "panel": "0x19dc", "origin": 2, "to": 3, "seconds": 1.14}
+{"t": 198.18, "kind": "propagated", "panel": "0x19dc", "origin": 2, "to": 4, "seconds": 1.65}
+{"t": 220.26, "kind": "solved", "bot": 2, "panel": "0x48f", "name": "Surface 2", "area": "Desert", "seconds": 23.4}
+{"t": 220.98, "kind": "propagated", "panel": "0x48f", "origin": 2, "to": 1, "seconds": 0.72}
+{"t": 221.6, "kind": "propagated", "panel": "0x48f", "origin": 2, "to": 3, "seconds": 1.34}
+{"t": 222.19, "kind": "propagated", "panel": "0x48f", "origin": 2, "to": 4, "seconds": 1.93}
+{"t": 226.94, "kind": "solved", "bot": 3, "panel": "0x1a54", "name": "Entry Panel", "area": "Glass Factory", "seconds": 41.0}
+{"t": 227.53, "kind": "propagated", "panel": "0x1a54", "origin": 3, "to": 1, "seconds": 0.58}
+{"t": 228.13, "kind": "propagated", "panel": "0x1a54", "origin": 3, "to": 2, "seconds": 1.18}
+{"t": 228.75, "kind": "propagated", "panel": "0x1a54", "origin": 3, "to": 4, "seconds": 1.8}
+{"t": 230.27, "kind": "solved", "bot": 4, "panel": "0x18590", "name": "Transparent", "area": "Town", "seconds": 44.4}
+{"t": 230.87, "kind": "propagated", "panel": "0x18590", "origin": 4, "to": 1, "seconds": 0.6}
+{"t": 231.54, "kind": "propagated", "panel": "0x18590", "origin": 4, "to": 2, "seconds": 1.27}
+{"t": 232.24, "kind": "propagated", "panel": "0x18590", "origin": 4, "to": 3, "seconds": 1.98}
+{"t": 233.86, "kind": "solved", "bot": 2, "panel": "0xc92", "name": "Entry Right", "area": "Monastery", "seconds": 12.6}
+{"t": 234.43, "kind": "propagated", "panel": "0xc92", "origin": 2, "to": 1, "seconds": 0.57}
+{"t": 234.97, "kind": "propagated", "panel": "0xc92", "origin": 2, "to": 3, "seconds": 1.11}
+{"t": 235.5, "kind": "propagated", "panel": "0xc92", "origin": 2, "to": 4, "seconds": 1.63}
+{"t": 238.69, "kind": "divergence", "persistent": false, "between": [1, 2], "panels_only_here": ["0xc92"], "panels_missing": [], "doors_differ": []}
+{"t": 238.69, "kind": "divergence", "persistent": true, "between": [1, 3], "panels_only_here": [], "panels_missing": [], "doors_differ": ["0xc128"]}
+{"t": 238.7, "kind": "divergence", "persistent": false, "between": [1, 3], "panels_only_here": [], "panels_missing": [], "doors_differ": ["0x1a29"]}
+{"t": 244.73, "kind": "solved", "bot": 3, "panel": "0x86", "name": "Back Wall 1", "area": "Glass Factory", "seconds": 15.3}
+{"t": 245.23, "kind": "propagated", "panel": "0x86", "origin": 3, "to": 1, "seconds": 0.51}
+{"t": 245.75, "kind": "propagated", "panel": "0x86", "origin": 3, "to": 2, "seconds": 1.02}
+{"t": 246.07, "kind": "solved", "bot": 4, "panel": "0x19e7", "name": "Hedge Maze 3", "area": "Keep", "seconds": 13.8}
+{"t": 258.5, "kind": "propagated", "panel": "0x86", "origin": 3, "to": 4, "seconds": 13.78}
+{"t": 258.89, "kind": "propagated", "panel": "0x19e7", "origin": 4, "to": 2, "seconds": 12.82}
+{"t": 260.29, "kind": "solved", "bot": 3, "panel": "0x1a0f", "name": "Hedge Maze 4", "area": "Keep", "seconds": 13.1}
+{"t": 260.61, "kind": "propagated", "panel": "0x19e7", "origin": 4, "to": 1, "seconds": 14.54}
+{"t": 266.32, "kind": "solved", "bot": 4, "panel": "0x87", "name": "Back Wall 2", "area": "Glass Factory", "seconds": 19.0}
+{"t": 267.0, "kind": "propagated", "panel": "0x87", "origin": 4, "to": 1, "seconds": 0.68}
+{"t": 267.6, "kind": "propagated", "panel": "0x87", "origin": 4, "to": 2, "seconds": 1.28}
+{"t": 268.91, "kind": "solved", "bot": 3, "panel": "0x9fa0", "name": "Surface 3 Control", "area": "Desert", "seconds": 7.9}
+{"t": 279.32, "kind": "propagated", "panel": "0x19e7", "origin": 4, "to": 3, "seconds": 33.25}
+{"t": 279.86, "kind": "propagated", "panel": "0x1a0f", "origin": 3, "to": 4, "seconds": 19.57}
+{"t": 280.26, "kind": "propagated", "panel": "0x87", "origin": 4, "to": 3, "seconds": 13.94}
+{"t": 280.27, "kind": "propagated", "panel": "0x9fa0", "origin": 3, "to": 2, "seconds": 11.35}
+{"t": 280.87, "kind": "propagated", "panel": "0x9fa0", "origin": 3, "to": 4, "seconds": 11.96}
+{"t": 281.02, "kind": "propagated", "panel": "0x1a0f", "origin": 3, "to": 1, "seconds": 20.73}
+{"t": 281.6, "kind": "propagated", "panel": "0x1a0f", "origin": 3, "to": 2, "seconds": 21.32}
+{"t": 281.91, "kind": "propagated", "panel": "0x9fa0", "origin": 3, "to": 1, "seconds": 13.0}
+{"t": 282.81, "kind": "solved", "bot": 4, "panel": "0x59", "name": "Back Wall 3", "area": "Glass Factory", "seconds": 16.1}
+{"t": 283.45, "kind": "propagated", "panel": "0x59", "origin": 4, "to": 1, "seconds": 0.64}
+{"t": 284.17, "kind": "propagated", "panel": "0x59", "origin": 4, "to": 2, "seconds": 1.35}
+{"t": 284.72, "kind": "propagated", "panel": "0x59", "origin": 4, "to": 3, "seconds": 1.91}
+{"t": 300.54, "kind": "solved", "bot": 4, "panel": "0x62", "name": "Back Wall 4", "area": "Glass Factory", "seconds": 16.3}
+{"t": 301.13, "kind": "divergence", "persistent": true, "between": [1, 3], "panels_only_here": [], "panels_missing": [], "doors_differ": ["0x1a0e"]}
+{"t": 301.13, "kind": "divergence", "persistent": true, "between": [1, 4], "panels_only_here": [], "panels_missing": [], "doors_differ": ["0x199a", "0x19e6"]}
+{"t": 301.22, "kind": "propagated", "panel": "0x62", "origin": 4, "to": 1, "seconds": 0.68}
+{"t": 301.78, "kind": "propagated", "panel": "0x62", "origin": 4, "to": 2, "seconds": 1.24}
+{"t": 302.31, "kind": "propagated", "panel": "0x62", "origin": 4, "to": 3, "seconds": 1.77}
+{"t": 361.86, "kind": "divergence", "persistent": true, "between": [1, 2], "panels_only_here": [], "panels_missing": [], "doors_differ": ["0x19b24"]}
+{"t": 361.86, "kind": "divergence", "persistent": true, "between": [1, 3], "panels_only_here": [], "panels_missing": [], "doors_differ": ["0x19b24", "0x1a0e"]}
+{"t": 361.86, "kind": "divergence", "persistent": true, "between": [1, 4], "panels_only_here": [], "panels_missing": [], "doors_differ": ["0x199a", "0x19e6"]}
+{"t": 384.89, "kind": "solved", "bot": 3, "panel": "0x198b5", "name": "Intro 1", "area": "Shadows", "seconds": 20.2}
+{"t": 385.47, "kind": "propagated", "panel": "0x198b5", "origin": 3, "to": 1, "seconds": 0.57}
+{"t": 386.07, "kind": "propagated", "panel": "0x198b5", "origin": 3, "to": 2, "seconds": 1.18}
+{"t": 386.61, "kind": "propagated", "panel": "0x198b5", "origin": 3, "to": 4, "seconds": 1.72}
+{"t": 407.93, "kind": "solved", "bot": 3, "panel": "0x198bd", "name": "Intro 2", "area": "Shadows", "seconds": 21.9}
+{"t": 408.47, "kind": "propagated", "panel": "0x198bd", "origin": 3, "to": 1, "seconds": 0.54}
+{"t": 408.97, "kind": "propagated", "panel": "0x198bd", "origin": 3, "to": 2, "seconds": 1.05}
+{"t": 409.58, "kind": "propagated", "panel": "0x198bd", "origin": 3, "to": 4, "seconds": 1.66}
+{"t": 421.45, "kind": "divergence", "persistent": true, "between": [1, 2], "panels_only_here": [], "panels_missing": [], "doors_differ": ["0x19b24"]}
+{"t": 421.45, "kind": "divergence", "persistent": true, "between": [1, 3], "panels_only_here": [], "panels_missing": [], "doors_differ": ["0x19b24"]}
+{"t": 421.45, "kind": "divergence", "persistent": true, "between": [1, 4], "panels_only_here": [], "panels_missing": [], "doors_differ": ["0x199a", "0x19e6"]}
+{"t": 431.88, "kind": "solved", "bot": 3, "panel": "0x198bf", "name": "Intro 3", "area": "Shadows", "seconds": 21.9}
+{"t": 432.68, "kind": "propagated", "panel": "0x198bf", "origin": 3, "to": 1, "seconds": 0.8}
+{"t": 433.24, "kind": "propagated", "panel": "0x198bf", "origin": 3, "to": 2, "seconds": 1.36}
+{"t": 433.88, "kind": "propagated", "panel": "0x198bf", "origin": 3, "to": 4, "seconds": 2.0}
+{"t": 451.92, "kind": "solved", "bot": 3, "panel": "0x2899c", "name": "Wooden Roof Lower Row 1", "area": "Town", "seconds": 19.1}
+{"t": 452.54, "kind": "propagated", "panel": "0x2899c", "origin": 3, "to": 1, "seconds": 0.62}
+{"t": 453.08, "kind": "propagated", "panel": "0x2899c", "origin": 3, "to": 2, "seconds": 1.16}
+{"t": 453.6, "kind": "propagated", "panel": "0x2899c", "origin": 3, "to": 4, "seconds": 1.68}
+{"t": 479.26, "kind": "solved", "bot": 3, "panel": "0x19771", "name": "Intro 4", "area": "Shadows", "seconds": 24.5}
+{"t": 479.79, "kind": "propagated", "panel": "0x19771", "origin": 3, "to": 1, "seconds": 0.53}
+{"t": 480.3, "kind": "propagated", "panel": "0x19771", "origin": 3, "to": 2, "seconds": 1.03}
+{"t": 480.81, "kind": "propagated", "panel": "0x19771", "origin": 3, "to": 4, "seconds": 1.55}
+{"t": 482.74, "kind": "divergence", "persistent": true, "between": [1, 2], "panels_only_here": [], "panels_missing": [], "doors_differ": ["0x19b24"]}
+{"t": 482.74, "kind": "divergence", "persistent": true, "between": [1, 3], "panels_only_here": [], "panels_missing": [], "doors_differ": ["0x19b24"]}
+{"t": 482.74, "kind": "divergence", "persistent": true, "between": [1, 4], "panels_only_here": [], "panels_missing": [], "doors_differ": ["0x199a", "0x19e6"]}
+{"t": 534.77, "kind": "solved", "bot": 4, "panel": "0x5c", "name": "Back Wall 5", "area": "Glass Factory", "seconds": 146.1}
+{"t": 535.3, "kind": "propagated", "panel": "0x5c", "origin": 4, "to": 1, "seconds": 0.53}
+{"t": 535.82, "kind": "propagated", "panel": "0x5c", "origin": 4, "to": 2, "seconds": 1.05}
+{"t": 536.33, "kind": "propagated", "panel": "0x5c", "origin": 4, "to": 3, "seconds": 1.56}

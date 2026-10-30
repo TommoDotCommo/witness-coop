@@ -23,6 +23,11 @@ struct Cfg {
     bool noModelStatQueue = false; // test mutant: read render-owned model statistics on the command thread
     bool noModelGait = false;    // test mutant: the figure never walks, whatever the player does
     bool noModelDepth = false;   // test mutant: draw the model over walls
+    float modelSun = 0.55f, modelAmbient = 0.30f, modelShadow = 0.55f;   // model_sun= model_ambient= (linear light on the adventurer: the sun and the sky/ground hemisphere), model_shadow= (how dark its sun shadow is, 0: none)
+    int modelShading = 1;        // model_shading=0: the old flat shading (no normal map, no specular, no shadow), for comparison
+    bool noModelLife = false;    // test mutant: no blinks, glances, breathing, cloth or fidgets
+    bool noModelNormalMap = false, noModelMaterialMap = false;   // diagnostics: ignore the baked normal map / the material map (flat relief; roughness 0.6, no metal)
+    bool footsteps = true; int footstepVolume = 100;             // footsteps=0: the other players walk silently (a test mutant); footstep_volume= percent
     bool pauseWrongFlag = false; // test mutant: the first, wrong pause flag (it flips with F6 / F7 and with entering a puzzle)
 #define BIND(name, member, key, text, label) unsigned member = key;
 #include "../common/bindings.def"

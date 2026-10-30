@@ -6,13 +6,15 @@
 #include "model/model.h"
 #include "core/appearance.h"
 
-struct ModelDrawStats { unsigned visiblePixels; unsigned frames; unsigned submittedPlayers; int clip; float speed; float animTime; int from; float blend; float eye; float yaw; int emote; float lift, lean, roll, dyaw; bool drawn; float pos[3], cam[3]; };
+struct ModelDrawStats { unsigned visiblePixels; unsigned frames; unsigned submittedPlayers; int clip; float speed; float animTime; int from; float blend; float eye; float yaw; int emote; float lift, lean, roll, dyaw; bool drawn; float pos[3], cam[3];
+    unsigned blinks, fidgets; bool glancing, fidgeting; float headYaw, headPitch, breath, exertion, scarf, blink; unsigned shadowPixels; };      // the life layer (model/life.h) of the last player drawn
 bool ModelGpuInit(ID3D11Device* dev, ID3D11DeviceContext* ctx);      // loads the configured model; false: use the flat puppet instead
 bool ModelGpuReady();
 // Draws the player at `pos` (eye position), heading `yaw`. `valid` false: the peer is gone, nothing is drawn.
 // sceneDepth: a shader resource view of a copy of the game's depth buffer, or null (nothing hides the model).
 // What the social layer says about a player: the emote it is playing (1..24, 0 none) for emoteT seconds.
-struct ModelExtra { witness::Appearance appearance; int emote = 0; float emoteT = 0; bool proximitySpeaking = false; bool seated = false; bool radioEquipped = false, radioTx = false; };
+struct ModelExtra { witness::Appearance appearance; int emote = 0; float emoteT = 0; bool proximitySpeaking = false; bool seated = false; bool radioEquipped = false, radioTx = false; float viewPitch = 0;   // viewPitch: the remote player's own view pitch (radians, up positive): the puppet carries its head there
+    bool reaching = false; float reachAt[3] = {0, 0, 0}; };      // reaching: the player is tracing a line on a panel; reachAt: where its tip is (world): the puppet's right hand reaches for it
 bool ModelGpuDraw(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Cam& cam, bool valid, unsigned seq, const float pos[3], float yaw, unsigned playerId = 0, bool first = true, const ModelExtra* extra = nullptr);
 bool ModelGpuDrawAudience(ID3D11RenderTargetView* rtv,UINT w,UINT h,const wm::Cam& cam);
 // Coloured ribbons in world space (the other players' drawn lines), depth-tested against the game's scene. Triangle list; each vertex: position, rgba.
@@ -30,4 +32,5 @@ void ModelGpuRequestProbeGrid(float x0 = 0.2f, float y0 = 0.2f, float x1 = 0.8f,
 void ModelGpuRequestDepthDump();  // the next frame writes witness_depth.bin: the scene depth as a small picture with its camera (witness_cmd.txt: depthdump)
 void ModelGpuRequestProbe();      // the next frame logs the scene depth at a few pixels (witness_cmd.txt: probe)
 void ModelGpuLogStats();               // witness_cmd.txt: modelstat -> one log line: pixels of the model that survived the depth test (GPU occlusion query), clip, speed
+void ModelGpuForceBlink();                // witness_cmd.txt: lifeblink -> every drawn figure starts a blink at the next frame
 void ModelGpuDepthView(bool on);          // witness_cmd.txt: depthview on|off (diagnostic: draw the game's depth buffer instead of the model)

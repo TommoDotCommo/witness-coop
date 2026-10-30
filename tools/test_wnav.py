@@ -18,7 +18,7 @@ import math, os, shutil, struct, subprocess, sys, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CHECK = r'''
-import math, struct, sys
+import json, math, os, struct, sys, tempfile
 sys.path.insert(0, D); import wnav
 E = wnav.EYE
 def ground(m, x0, x1, y0, y1, z):
@@ -109,12 +109,77 @@ data = struct.pack('<3I', 0x31444457, W, H) + struct.pack('<8f', cx, cy, cz, th,
 c_, pts = wnav.depth_points(data, 1)
 err = max((math.dist(q[:2], w) for q, w in zip(pts, want)), default=9)
 check('depth', len(pts) == len(want) > 200 and max(abs(z) for _, _, z in pts) < 0.02 and err < 0.02, '%d points, worst height %.3f, worst place %.3f m' % (len(pts), max((abs(z) for _, _, z in pts), default=9), err))
+
+# deep: junk points 25 m under the ground (a third of the town's cells had a floor at -15 m) must not hide the ground the player walks on
+junk = ground(None, -5, 25, -5, 25, -15.0)
+m = wnav.Map(); m.integrate(junk)
+p = m.plan((2, 10, 10 + E), (18, 10, 10 + E), margin=5)
+check('deep', p is not None and m.reached, 'the level 25 m above the junk reads as blocked')
+m.integrate(ground(None, -5, 25, -5, 25, 10.0)); top = m.surfaces(wnav.cell_of(5.1, 5.1))
+check('rebase', 10.0 in [round(z, 2) for z in top or [] if z is not None], 'the ground seen above the junk was dropped: %s' % top)
+m = wnav.Map(); m.integrate(junk); m.stand(5.1, 5.1, 10.0); top = m.surfaces(wnav.cell_of(5.1, 5.1))
+check('standhi', any(abs(z - 10.0) < 0.3 for z in top or [] if z is not None), 'standing 25 m above the junk is not kept: %s' % top)
+d_ = tempfile.mkdtemp(); a_, b_ = os.path.join(d_, 'a.bin'), os.path.join(d_, 'b.bin')
+m = wnav.Map(); m.integrate(junk); m.save(a_); m = wnav.Map(); m.integrate(ground(None, -5, 25, -5, 25, 10.0)); m.save(b_)
+m = wnav.Map(); m.load(a_); m.load(b_); top = m.surfaces(wnav.cell_of(5.1, 5.1))
+check('loadhi', any(abs(z - 10.0) < 0.3 for z in top or [] if z is not None), 'merging maps lost the ground above the junk: %s' % top)
+
+# stairs: 0.45 m a step on 0.5 m treads, with the surfaces read up to 0.24 m low on every other tread (they are bin starts): climbed
+pts = ground(None, -5, 3.9, -15, 30, 0.0) + ground(None, 10, 25, -15, 30, 5.4)
+for k in range(12): pts += ground(None, 4 + k * 0.5, 4 + k * 0.5 + 0.49, -15, 30, (k + 1) * 0.45 - (0.24 if k % 2 else 0.0))
+m = wnav.Map(); m.integrate(pts)
+p = m.plan((2, 5, E), (15, 5, 5.4 + E), margin=8)
+check('stairs', p is not None and m.reached, 'the steep stairs read as a wall')
+# carry: stairs of 0.5 m beside the ground (the ground stays a level beside the first tread): the way up must not read as blocked
+pts = ground(None, -5, 9.9, -15, 30, 0.0) + ground(None, 10, 25, -15, 30, 6.0) + wall(10.0, -15, 12.9, 0.25, 6.0) + wall(10.0, 15.1, 30, 0.25, 6.0)
+for k in range(12): pts += ground(None, 4 + k * 0.5, 4 + k * 0.5 + 0.49, 13, 15, (k + 1) * 0.5)
+m = wnav.Map(); m.integrate(pts); p = m.plan((5, 5, E), (15, 5, 6.0 + E), margin=12)
+check('carry', p is not None and m.reached and not m.blocked_along((5, 5, E), p, 99), 'the way up the 0.5 m stairs reads as blocked')
+# ledge: a 0.75 m step on flat ground, flat on both sides, is not a stair
+m = wnav.Map(); m.integrate(ground(None, -5, 9.9, -15, 30, 0.0) + ground(None, 10, 25, -15, 30, 0.75))
+p = m.plan((5, 5, E), (15, 5, 0.75 + E), margin=8)
+check('ledge', not m.reached, 'climbed a 0.75 m ledge')
+# drop: a one-way drop (1 m down into a basin, out by stairs at its far side) is dearer than a short walk round it
+pts = ground(None, -5, 25, -15, 30, 0.0)
+pts = [q for q in pts if not (7 <= q[0] <= 13 and 1 <= q[1] <= 9)] + ground(None, 7, 13, 1, 9, -1.0)
+pts = [q for q in pts if not (12 <= q[0] <= 13 and 1 <= q[1] <= 9)] + ground(None, 12, 12.49, 1, 9, -0.6) + ground(None, 12.5, 13, 1, 9, -0.25)
+m = wnav.Map(); m.integrate(pts)
+p = m.plan((5, 5, E), (15, 5, E), margin=12); inside = [c for c in (p or []) if 7.5 <= wnav.centre(c)[0] <= 11.5 and 1.5 <= wnav.centre(c)[1] <= 8.5]
+check('drop', p is not None and m.reached and not inside, 'went down into the basin: %d cells in it' % len(inside))
+
+# recorded walks: a person walked through a hedge (the band filled: soft) at y 5; the cells on their way are known-good, 2 m samples filled in
+m = wnav.Map(); m.integrate(ground(None, -5, 25, -15, 30, 0.0) + [(x / 4, y / 4, z / 4) for x in range(38, 44) for y in range(-60, 121) for z in range(1, 8)])
+rec_ = os.path.join(d_, 'session.jsonl')
+with open(rec_, 'w') as f:
+    f.write(json.dumps({'event': 'task', 'pose': [0, 0, 0, 0, 0]}) + '\n')
+    for x in range(0, 21, 2): f.write(json.dumps({'event': 'sample', 'pose': [x + 0.1, 5.1, E, 0, 0]}) + '\n')
+    f.write(json.dumps({'event': 'skip'}) + '\n'); f.write(json.dumps({'event': 'sample', 'pose': [-40, -40, E, 0, 0]}) + '\n')
+ws = list(wnav.walks(wnav.load_recording(rec_)))
+for w in ws: m.walk_line(w)
+ks = [m.walkable(wnav.cell_of(x, 5.1), 0.0)[2] for x in (9.6, 10.1, 10.6)]
+check('recorded', [len(w) for w in ws] == [11] and ks == [1.0, 1.0, 1.0], 'walks of %s points, cost through the hedge %s' % ([len(w) for w in ws], ks))
+p = m.plan((2, 0, E), (18, 0, E), margin=10); ys = cells_x(p or [], 10.25)
+check('recwalk', p is not None and ys and all(abs(y - 5.25) < 1.1 for y in ys), 'crossed the hedge at y %s, not on the recorded way' % ys)
+
+# still: a depth picture is used only when the camera held still while it was taken
+c0 = ((0.0, 0.0, 1.65), (0.5, -0.25))
+check('still', wnav.still(c0, ((0.05, 0.0, 1.65), (0.505, -0.25))) and not wnav.still(c0, ((0.0, 0.0, 1.65), (0.6, -0.25))) and not wnav.still(c0, ((0.0, 0.0, 1.65), (0.5, -0.4))), 'a turning camera was taken for still')
+# back out of a pocket: the way back along the trail, newest first, 10 m of it
+trail = [(x * 1.0, 0.0, E) for x in range(30)]
+bk = wnav.trail_back(trail, 10.0)
+check('backout', len(bk) == 10 and bk[0][0] == 28.0 and bk[-1][0] == 19.0, 'back along the trail: %s' % [q[0] for q in bk])
+check('pocket', wnav.pocket([(5, 5), (5.5, 5)], (5.2, 5.1)) and not wnav.pocket([(5, 5), (20, 5)], (5.2, 5.1)), 'stuck twice in one place is not a pocket')
+# doors: the game says a door is open: the cells bumped at it while it was shut are free again
+m = wnav.Map(); m.integrate(ground(None, -5, 25, -15, 30, 0.0)); avoid = set()
+for y in range(-30, 61): m.bump(10.1, y * 0.5)
+n_ = m.unbump_near([(10.1, 5.0)], 2.0)
+check('doors', n_ >= 6 and not m.cells[wnav.cell_of(10.1, 5.1)][2] & wnav.BUMPED and m.cells[wnav.cell_of(10.1, 12.1)][2] & wnav.BUMPED, '%d unbumped' % n_)
 sys.exit(1 if fails else 0)
 '''
 
 MUTANTS = [      # (file text, replacement): each removes one protection
     ("return [z0 + b * BIN for b in range(64) if m >> b & 1 and not (m >> b) & BAND_MASK]", "return [z0 + b * BIN for b in range(64) if m >> b & 1]"),      # nothing in the way counts
-    ("fit = [(z, 1.0) for z in surf if (z > SEA or walked) and -DOWN <= z - fu <= UP]", "fit = [(z, 1.0) for z in surf[:1] if (z > SEA or walked) and -DOWN <= z - fu <= UP]"),      # one level a cell (stairs over ground, decks)
+    ("fit = [(z, 1.0) for z in surf if (z > SEA or walked) and -DOWN <= z - fu <= up]", "fit = [(z, 1.0) for z in surf[:1] if (z > SEA or walked) and -DOWN <= z - fu <= up]"),      # one level a cell (stairs over ground, decks)
     ("if -DOWN <= r[0] - fu <= UP and r[0] > SEA: return [(r[0], SOFT)]", "if r[0] > SEA: return [(r[0], SOFT)]"),      # a cliff face is soft, any height
     ("and abs(fu - fb) < 2.0: self.reached = True", ": self.reached = True"),      # the target's height not asked
     ("if abs(f[0] - old[0]) < 2 * BIN and not (f[1] & BAND_MASK): self.cells[c] = [f[0], f[1], old[2]]; continue", "pass"),      # an opened door stays shut
@@ -125,6 +190,18 @@ MUTANTS = [      # (file text, replacement): each removes one protection
     ("nxt |= {f} if st is None else {round(z if z is not None else f, 2) for z, _ in st}", "nxt |= {f} if st is None else {round(z if z is not None else f, 2) for z, _ in sorted(st, key=lambda q_: abs((q_[0] if q_[0] is not None else f) - f))[:1]}"),      # one level carried
     ("if st and c not in self.soft: st = [q_ for q_ in st if q_[1] != SOFT]", "pass"),      # a door shut on the way is not seen
     ("up = (-math.sin(ph) * math.cos(th), -math.sin(ph) * math.sin(th), math.cos(ph))\n    tv", "up = (math.sin(ph) * math.cos(th), math.sin(ph) * math.sin(th), math.cos(ph))\n    tv"),      # the camera's up vector wrong
+    ("if r[0] > -1e3 and fu - r[0] > WINDOW - BAND[1]: return None", "pass"),      # a level far above junk points is blocked by them
+    ("if f[0] - old[0] > WINDOW - BAND[1]: self.cells[c] = [f[0], f[1], old[2]]; continue", "pass"),      # the ground seen above junk is dropped
+    ("k = int((feet - 4.0 - rec[0]) / BIN); rec[0] += k * BIN; rec[1] >>= k", "pass"),      # standing above junk is not kept
+    ("self.cells[c] = [z, m, old[2] | fl] if z > old[0] else rec; continue", "pass"),      # merging maps drops the higher level
+    ("if z is None or z - fu <= UP or stair(u, fu, v, dx, dy, z)]", "if z is None or z - fu <= UP]"),      # no stair rule: steep stairs are walls
+    ("if p_ is not None and fu - floor[p_] >= 0.1: return True\n            return any(", "return True\n            return any("),      # every 0.75 m ledge is a stair
+    ("+ (DROP if fu - fv > UP else 0.0)", "+ 0.0"),      # a one-way drop costs nothing
+    ("self.stand(a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1]), a[2] + t * (b[2] - a[2]) - EYE); n += 1", "self.stand(a[0], a[1], a[2] - EYE); n += 1"),      # recorded samples not filled in between
+    ("elif r.get('event') in ('task', 'skip'): out.append(None)", "pass"),      # a teleport between tasks taken for a walk
+    ("run += math.dist(a[:2], b[:2]); out.append(b)\n        if run >= metres: break", "out.append(b)"),      # backs out along all of the trail
+    ("rec[2] &= ~BUMPED; n += 1", "n += 1"),      # an open door stays bumped
+    ("return abs(wrap(y1 - y0)) <= ang and abs(q1 - q0) <= ang and", "return"),      # a look taken while turning is used
 ]
 
 

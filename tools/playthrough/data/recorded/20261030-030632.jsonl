@@ -1,0 +1,70 @@
+{"t": 19.05, "kind": "started", "bots": 4}
+{"t": 58.27, "kind": "solved", "bot": 3, "panel": "0x73", "name": "Back 4", "area": "Symmetry Island", "seconds": 37.5}
+{"t": 58.74, "kind": "propagated", "panel": "0x73", "origin": 3, "to": 1, "seconds": 0.46, "exact_s": 0.116}
+{"t": 59.21, "kind": "propagated", "panel": "0x73", "origin": 3, "to": 2, "seconds": 0.94, "exact_s": 0.116}
+{"t": 59.74, "kind": "propagated", "panel": "0x73", "origin": 3, "to": 4, "seconds": 1.46, "exact_s": 0.117}
+{"t": 99.49, "kind": "solved", "bot": 3, "panel": "0x77", "name": "Back 5", "area": "Symmetry Island", "seconds": 39.3}
+{"t": 99.98, "kind": "propagated", "panel": "0x77", "origin": 3, "to": 1, "seconds": 0.49, "exact_s": 0.01}
+{"t": 100.47, "kind": "propagated", "panel": "0x77", "origin": 3, "to": 2, "seconds": 0.97, "exact_s": 0.021}
+{"t": 100.94, "kind": "propagated", "panel": "0x77", "origin": 3, "to": 4, "seconds": 1.44, "exact_s": 0.012}
+{"t": 137.87, "kind": "solved", "bot": 3, "panel": "0x79", "name": "Back 6", "area": "Symmetry Island", "seconds": 38.0}
+{"t": 138.33, "kind": "propagated", "panel": "0x79", "origin": 3, "to": 1, "seconds": 0.46, "exact_s": 0.127}
+{"t": 138.78, "kind": "propagated", "panel": "0x79", "origin": 3, "to": 2, "seconds": 0.91, "exact_s": 0.134}
+{"t": 139.28, "kind": "propagated", "panel": "0x79", "origin": 3, "to": 4, "seconds": 1.41, "exact_s": 0.137}
+{"t": 792.95, "kind": "solved", "bot": 2, "panel": "0x197e5", "name": "Near 5", "area": "Shadows", "seconds": 11.6}
+{"t": 793.43, "kind": "propagated", "panel": "0x197e5", "origin": 2, "to": 1, "seconds": 0.48, "exact_s": 0.106}
+{"t": 793.95, "kind": "propagated", "panel": "0x197e5", "origin": 2, "to": 3, "seconds": 0.99, "exact_s": 0.101}
+{"t": 794.42, "kind": "propagated", "panel": "0x197e5", "origin": 2, "to": 4, "seconds": 1.47, "exact_s": 0.103}
+{"t": 812.34, "kind": "solved", "bot": 2, "panel": "0x28ad9", "name": "Wooden Rooftop", "area": "Town", "seconds": 18.4}
+{"t": 812.79, "kind": "propagated", "panel": "0x28ad9", "origin": 2, "to": 1, "seconds": 0.45, "exact_s": 0.161}
+{"t": 813.26, "kind": "propagated", "panel": "0x28ad9", "origin": 2, "to": 3, "seconds": 0.92, "exact_s": 0.164}
+{"t": 813.72, "kind": "propagated", "panel": "0x28ad9", "origin": 2, "to": 4, "seconds": 1.38, "exact_s": 0.164}
+{"t": 824.62, "kind": "solved", "bot": 2, "panel": "0x334db", "name": "Door Timer Outside", "area": "Shadows", "seconds": 9.9}
+{"t": 825.1, "kind": "propagated", "panel": "0x334db", "origin": 2, "to": 1, "seconds": 0.48, "exact_s": 0.101}
+{"t": 825.55, "kind": "propagated", "panel": "0x334db", "origin": 2, "to": 3, "seconds": 0.93, "exact_s": 0.104}
+{"t": 826.0, "kind": "propagated", "panel": "0x334db", "origin": 2, "to": 4, "seconds": 1.38, "exact_s": 0.098}
+{"t": 855.97, "kind": "divergence", "persistent": true, "between": [1, 2], "panels_only_here": [], "panels_missing": ["0x334db", "0x334dc"], "doors_differ": []}
+{"t": 912.59, "kind": "divergence", "persistent": true, "between": [1, 2], "panels_only_here": [], "panels_missing": ["0x334db", "0x334dc"], "doors_differ": []}
+{"t": 968.98, "kind": "divergence", "persistent": true, "between": [1, 2], "panels_only_here": [], "panels_missing": ["0x334db", "0x334dc"], "doors_differ": []}
+{"t": 1025.28, "kind": "divergence", "persistent": true, "between": [1, 2], "panels_only_here": [], "panels_missing": ["0x334db", "0x334dc"], "doors_differ": []}
+{"t": 1081.48, "kind": "divergence", "persistent": true, "between": [1, 2], "panels_only_here": [], "panels_missing": ["0x334db", "0x334dc"], "doors_differ": []}
+{"t": 1139.08, "kind": "divergence", "persistent": true, "between": [1, 2], "panels_only_here": [], "panels_missing": ["0x334db", "0x334dc"], "doors_differ": []}
+{"t": 1139.08, "kind": "divergence", "persistent": true, "between": [1, 4], "panels_only_here": [], "panels_missing": ["0x334db", "0x334dc"], "doors_differ": []}
+{"t": 1197.11, "kind": "divergence", "persistent": true, "between": [1, 2], "panels_only_here": [], "panels_missing": ["0x334db", "0x334dc"], "doors_differ": []}
+{"t": 1197.11, "kind": "divergence", "persistent": true, "between": [1, 4], "panels_only_here": [], "panels_missing": ["0x334db", "0x334dc"], "doors_differ": []}
+{"t": 1255.47, "kind": "divergence", "persistent": true, "between": [1, 2], "panels_only_here": [], "panels_missing": ["0x334db", "0x334dc"], "doors_differ": []}
+{"t": 1255.47, "kind": "divergence", "persistent": true, "between": [1, 4], "panels_only_here": [], "panels_missing": ["0x334db", "0x334dc"], "doors_differ": []}
+{"t": 1312.71, "kind": "divergence", "persistent": true, "between": [1, 2], "panels_only_here": [], "panels_missing": ["0x334db", "0x334dc"], "doors_differ": []}
+{"t": 1312.72, "kind": "divergence", "persistent": true, "between": [1, 4], "panels_only_here": [], "panels_missing": ["0x334db", "0x334dc"], "doors_differ": []}
+{"t": 1370.1, "kind": "divergence", "persistent": true, "between": [1, 2], "panels_only_here": [], "panels_missing": ["0x334db", "0x334dc"], "doors_differ": []}
+{"t": 1370.1, "kind": "divergence", "persistent": true, "between": [1, 4], "panels_only_here": [], "panels_missing": ["0x334db", "0x334dc"], "doors_differ": []}
+{"t": 1426.36, "kind": "divergence", "persistent": true, "between": [1, 2], "panels_only_here": [], "panels_missing": ["0x334db", "0x334dc"], "doors_differ": []}
+{"t": 1426.36, "kind": "divergence", "persistent": true, "between": [1, 3], "panels_only_here": [], "panels_missing": ["0x334db", "0x334dc"], "doors_differ": []}
+{"t": 1426.36, "kind": "divergence", "persistent": true, "between": [1, 4], "panels_only_here": [], "panels_missing": ["0x334db", "0x334dc"], "doors_differ": []}
+{"t": 1482.76, "kind": "divergence", "persistent": true, "between": [1, 2], "panels_only_here": [], "panels_missing": ["0x334db", "0x334dc"], "doors_differ": []}
+{"t": 1482.76, "kind": "divergence", "persistent": true, "between": [1, 3], "panels_only_here": [], "panels_missing": ["0x334db", "0x334dc"], "doors_differ": []}
+{"t": 1482.76, "kind": "divergence", "persistent": true, "between": [1, 4], "panels_only_here": [], "panels_missing": ["0x334db", "0x334dc"], "doors_differ": []}
+{"t": 1539.73, "kind": "divergence", "persistent": true, "between": [1, 2], "panels_only_here": [], "panels_missing": ["0x334db", "0x334dc"], "doors_differ": []}
+{"t": 1539.73, "kind": "divergence", "persistent": true, "between": [1, 3], "panels_only_here": [], "panels_missing": ["0x334db", "0x334dc"], "doors_differ": []}
+{"t": 1539.73, "kind": "divergence", "persistent": true, "between": [1, 4], "panels_only_here": [], "panels_missing": ["0x334db", "0x334dc"], "doors_differ": []}
+{"t": 1597.67, "kind": "divergence", "persistent": true, "between": [1, 2], "panels_only_here": [], "panels_missing": ["0x334db", "0x334dc"], "doors_differ": []}
+{"t": 1597.67, "kind": "divergence", "persistent": true, "between": [1, 3], "panels_only_here": [], "panels_missing": ["0x334db", "0x334dc"], "doors_differ": []}
+{"t": 1597.67, "kind": "divergence", "persistent": true, "between": [1, 4], "panels_only_here": [], "panels_missing": ["0x334db", "0x334dc"], "doors_differ": []}
+{"t": 1656.99, "kind": "divergence", "persistent": true, "between": [1, 2], "panels_only_here": [], "panels_missing": ["0x334db", "0x334dc"], "doors_differ": []}
+{"t": 1656.99, "kind": "divergence", "persistent": true, "between": [1, 3], "panels_only_here": [], "panels_missing": ["0x334db", "0x334dc"], "doors_differ": []}
+{"t": 1656.99, "kind": "divergence", "persistent": true, "between": [1, 4], "panels_only_here": [], "panels_missing": ["0x334db", "0x334dc"], "doors_differ": []}
+{"t": 1716.14, "kind": "divergence", "persistent": true, "between": [1, 2], "panels_only_here": [], "panels_missing": ["0x334db", "0x334dc"], "doors_differ": []}
+{"t": 1716.14, "kind": "divergence", "persistent": true, "between": [1, 3], "panels_only_here": [], "panels_missing": ["0x334db", "0x334dc"], "doors_differ": []}
+{"t": 1716.14, "kind": "divergence", "persistent": true, "between": [1, 4], "panels_only_here": [], "panels_missing": ["0x334db", "0x334dc"], "doors_differ": []}
+{"t": 1774.84, "kind": "divergence", "persistent": true, "between": [1, 2], "panels_only_here": [], "panels_missing": ["0x334db", "0x334dc"], "doors_differ": []}
+{"t": 1774.84, "kind": "divergence", "persistent": true, "between": [1, 3], "panels_only_here": [], "panels_missing": ["0x334db", "0x334dc"], "doors_differ": []}
+{"t": 1774.84, "kind": "divergence", "persistent": true, "between": [1, 4], "panels_only_here": [], "panels_missing": ["0x334db", "0x334dc"], "doors_differ": []}
+{"t": 1833.56, "kind": "divergence", "persistent": true, "between": [1, 2], "panels_only_here": [], "panels_missing": ["0x334db", "0x334dc"], "doors_differ": []}
+{"t": 1833.56, "kind": "divergence", "persistent": true, "between": [1, 3], "panels_only_here": [], "panels_missing": ["0x334db", "0x334dc"], "doors_differ": []}
+{"t": 1833.56, "kind": "divergence", "persistent": true, "between": [1, 4], "panels_only_here": [], "panels_missing": ["0x334db", "0x334dc"], "doors_differ": []}
+{"t": 1892.46, "kind": "divergence", "persistent": true, "between": [1, 2], "panels_only_here": [], "panels_missing": ["0x334db", "0x334dc"], "doors_differ": []}
+{"t": 1892.46, "kind": "divergence", "persistent": true, "between": [1, 3], "panels_only_here": [], "panels_missing": ["0x334db", "0x334dc"], "doors_differ": []}
+{"t": 1892.46, "kind": "divergence", "persistent": true, "between": [1, 4], "panels_only_here": [], "panels_missing": ["0x334db", "0x334dc"], "doors_differ": []}
+{"t": 1951.07, "kind": "divergence", "persistent": true, "between": [1, 2], "panels_only_here": [], "panels_missing": ["0x334db", "0x334dc"], "doors_differ": []}
+{"t": 1951.07, "kind": "divergence", "persistent": true, "between": [1, 3], "panels_only_here": [], "panels_missing": ["0x334db", "0x334dc"], "doors_differ": []}
+{"t": 1951.07, "kind": "divergence", "persistent": true, "between": [1, 4], "panels_only_here": [], "panels_missing": ["0x334db", "0x334dc"], "doors_differ": []}
