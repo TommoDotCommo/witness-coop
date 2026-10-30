@@ -584,7 +584,9 @@ void SyncCore::applyRemote(uint64_t now) {
             if (h_.onApplied) h_.onApplied(r.kind, r.entity, r.epoch, r.seq);
             std::snprintf(l, sizeof l, "state: remote cable %#x dark", r.entity); log(l);
         } else if (r.kind == EV_DOOR_OPENED && w_->isDoor(r.entity)) {
-            if (w_->doorOpen(r.entity) && !f_.noDedupe) {
+            // Judged by where the door is going, as a close is: a close applied in this frame leaves the door standing open until the game
+            // moves it, and an open that came right behind it (the peer's door shut and opened again within 100 ms) must still be applied.
+            if ((f_.openDedupeByPosition ? w_->doorOpen(r.entity) : w_->doorRequested(r.entity)) && !f_.noDedupe) {
                 knownDoor_.insert(r.entity);
                 if (h_.onRejected) h_.onRejected(r.kind, r.entity, r.epoch, r.seq, "already open");
                 continue;

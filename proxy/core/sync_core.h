@@ -72,6 +72,7 @@ struct Flags {   // all off by default
     bool noCableOff = false;    // twin: a cable that goes dark stays lit on the peer
     bool noUnsolveSync = false; // twin: a panel that un-solves (a timer ran out) stays solved on the peer
     bool noDoorCloseSync = false; // twin: a door that shuts stays open on the peer
+    bool openDedupeByPosition = false; // twin: a door told to shut but still standing open counts as open, so an open right after the close is dropped (one world kept 0x14724 shut)
     bool noOffSnapshot = false; // twin: snapshots do not tell a fresh peer about cables that were switched off
     bool noSnapReassert = false; // twin: a peer's snapshot that relights a cable this player switched off is ignored but not corrected
     bool noCableArbiter = false; // twin: no tie-break when both players switch the same cable at the same moment
