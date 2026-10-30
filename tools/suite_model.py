@@ -15,6 +15,7 @@ SCENARIOS = [   # name, cfg for A (the viewer), the set of checks that must FAIL
   ('MUTANT: model drawn over walls', 'no_model_depth=1\nsee_through=0', {OCC, 'the figure casts a sun shadow on the ground'}, 1.0, 1, 1, r'model: loaded .* 6 clips'),      # (without the scene depth there is no ground to lay a shadow on either)
   ('MUTANT: adventurer life layer off', 'see_through=0\nno_model_life=1', {'the standing figure blinks (life layer)', 'a figure facing a near player glances at them'}, 1.0, 1, 1, r'model: life rig bound'),
   ('MUTANT: adventurer shadow off', 'see_through=0\nmodel_shadow=0', {'the figure casts a sun shadow on the ground'}, 1.0, 1, 1, r'model: life rig bound'),
+  ('MUTANT: adventurer footsteps off', 'see_through=0\nfootsteps=0', {"the walking figure's footsteps are heard (voice mixer played them)"}, 1.0, 1, 1, r'model: life rig bound'),
 ]
 only = sys.argv[1:]; results = []; saves0 = real_saves()
 for name, ca, must_fail, px, walk, idle_anim, logre in SCENARIOS:
@@ -29,7 +30,7 @@ for name, ca, must_fail, px, walk, idle_anim, logre in SCENARIOS:
     print(out.strip(), flush=True)
     seen = {m[1]: m[2] == 'ok' for m in (re.match(r'^  (.+?)\s+(ok|FAILED)\s+\(', l) for l in out.splitlines()) if m}
     failed = {k for k, v in seen.items() if not v}
-    expected_checks = 11 if run_only else (14 if run_check else 12)
+    expected_checks = 12 if run_only else (15 if run_check else 13)
     ok = len(seen) == expected_checks and failed == must_fail
     why = 'every check passed' if not must_fail else 'exactly the checks this protection is for failed'
     if len(seen) != expected_checks: why = 'the check script did not finish (%d of %d checks reported)' % (len(seen), expected_checks)

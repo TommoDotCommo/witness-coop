@@ -16,6 +16,8 @@
 #include "model_gpu.h"
 #include "model/gestures.h"
 #include "model/life.h"
+#include "voice/footsteps.h"
+void VoiceFootstep(unsigned id, const float pos[3], float speed, bool run);      // voice_audio.cpp: a footfall heard where the walker is
 #include "tv.h"
 #include "tv/mesh.h"
 static_assert(offsetof(wm::Vertex, appearanceGroup) == 56, "appearance input layout must match Vertex");
@@ -29,7 +31,7 @@ void Log(const char* msg);
 extern HMODULE g_selfModule();
 
 // One loaded character model with everything that belongs to it: the mesh on the GPU, how it is fitted and timed, and the walk state of each player drawn with it.
-struct LifeTrack { wm::LifeState state; float lastPos[3] = {}, vel[3] = {}, acc[3] = {}; bool have = false, wasClosed = false, wasFidgeting = false; unsigned blinks = 0, fidgets = 0; explicit LifeTrack(unsigned seed) : state(seed) {} };
+struct LifeTrack { wm::LifeState state; wvoice::FootstepTracker steps; float lastPos[3] = {}, vel[3] = {}, acc[3] = {}; bool have = false, wasClosed = false, wasFidgeting = false; unsigned blinks = 0, fidgets = 0; explicit LifeTrack(unsigned seed) : state(seed) {} };
 struct Loaded {
     wm::Model model; ID3D11Buffer *vb = nullptr, *ib = nullptr; ID3D11ShaderResourceView *tex = nullptr, *texN = nullptr, *texM = nullptr; wm::Fit fit = {}; wm::GaitCfg gait; float yaw = 0, height = 0; char eyeJoint[80] = "";
     wm::LifeRig rig;
@@ -457,6 +459,11 @@ bool ModelGpuDraw(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Cam& ca
         if (first && InterlockedExchange(&g_forceBlink, 0)) for (auto& kv : g_L->life) if (kv.second->state.blinkT < 0) { kv.second->state.blinkT = 0; kv.second->state.blinkSlow = 6; }      // a slow blink (1.2 s) for pictures
         if (!cfg.noModelLife) track.state.Step(li);
         bool closed = track.state.blink > 0.9f; if (closed && !track.wasClosed) track.blinks++; track.wasClosed = closed;
+        {   // footsteps: the walk and run cycles plant a foot at phase 0 and 0.5 (the generator's planted-foot trajectory); the sound is placed where the walker is
+            const bool gaitClip = pk.clip >= 0 && pk.clip < (int)g_L->model.clips.size() && (g_L->model.clips[pk.clip].name == "walk" || g_L->model.clips[pk.clip].name == "run");
+            int foot = 0; int n = track.steps.Step(gaitClip ? pk.time / std::max(cycle, 0.2f) : 0.0f, gaitClip && li.speed > 0.35f, &foot);
+            for (int k = 0; k < n; k++) VoiceFootstep(playerId, P, li.speed, g_L->model.clips[pk.clip].name == "run");
+        }
         bool fidgeting = g_avatar->fidgeting(); if (fidgeting && !track.wasFidgeting) track.fidgets++; track.wasFidgeting = fidgeting;
     }
     wm::PoseLayers layers; layers.gesture = &motion.state; layers.radioRaise = radio.first.value; layers.radioHand = radioHand; layers.life = cfg.noModelLife ? nullptr : &track.state; layers.rig = &g_L->rig;

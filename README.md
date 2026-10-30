@@ -26,7 +26,7 @@ Chat, pings, emotes, drawing, voice (with channels: proximity, radio, an open li
   the game's own depth buffer (4x MSAA, reversed depth stored as `0.0597 / distance`, found by watching which depth view the game
   binds) and discards the model's pixels that are behind it. The original adventurer is the only character, with idle, walk and run clips and three fidgets.
   It blinks, glances at a player who comes near, carries its head where its player looks, breathes (harder after a run), swings its scarf and
-  gear as it moves, and is lit with a normal map, roughness and metalness and a sun shadow on the ground: [the life layer, shading and shadow](docs/LIFE.md).
+  gear as it moves, is lit with a normal map, roughness and metalness and a sun shadow on the ground, and its footsteps are heard where it walks: [the life layer, shading and shadow](docs/LIFE.md).
 
   ![The adventurer in the garden](docs/showcase/adventurer_garden.jpg)
   See [asset credits](assets/models/CREDITS.md) and the [migration details](#character-migration) below.
@@ -195,7 +195,7 @@ The proxy always loads `witness_models/adventurer.glb` beside the DLL. Old `mode
 Existing game saves are unchanged. Campaign `.coop.txt` metadata still reads and preserves historical character strings for compatibility; new player entries record `adventurer`. These strings never select an asset.
 
 Fit overrides remain available for diagnostics: `model_height=<m>`, `model_speed=<m/s>` and `model_yaw=<degrees>`. The bundled sidecar sets eye alignment, walk/run speed and the eyelids' closing stretch (`lid_close=`).
-Lighting: `model_sun=` (default 0.55), `model_ambient=` (0.30), `model_shadow=` (0.55; 0: no shadow), `model_shading=0` (the old flat shading); `no_model_life=1` turns the life layer off (a test mutant). See [docs/LIFE.md](docs/LIFE.md). Depth settings are `depth_bias=<fraction>` and `depth_near=<m>` (default `0.0597`); model mutants are `no_model_depth=1`, `no_model_gait=1`, and `no_modelstat_queue=1`. While paused the proxy hides its overlays (`no_pause_hide=1` and `pause_wrong_flag=1` are test mutants).
+Lighting: `model_sun=` (default 0.55), `model_ambient=` (0.30), `model_shadow=` (0.55; 0: no shadow), `model_shading=0` (the old flat shading); `no_model_life=1` turns the life layer off (a test mutant). The other players' footsteps are heard through the voice mixer: `footsteps=0` silences them, `footstep_volume=` (percent) scales them. See [docs/LIFE.md](docs/LIFE.md). Depth settings are `depth_bias=<fraction>` and `depth_near=<m>` (default `0.0597`); model mutants are `no_model_depth=1`, `no_model_gait=1`, and `no_modelstat_queue=1`. While paused the proxy hides its overlays (`no_pause_hide=1` and `pause_wrong_flag=1` are test mutants).
 
 Protocol v6 adds a fixed 12-byte versioned appearance record to presence (36 bytes total). Pose, event, ACK, ping, social, presence and line packet magics changed so older peers are ignored. Group pose/event/ACK use distinct version-7 tags; all clients must update together. The stable-world gate and reliable event semantics are unchanged. The removed model-name field does not return. See [appearance design and verification](docs/APPEARANCE.md).
 

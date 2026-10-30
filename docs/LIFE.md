@@ -36,6 +36,20 @@ measured in model space.
 
 `no_model_life=1` is the test mutant that turns the whole layer off.
 
+## Footsteps
+
+Each walk or run cycle plants the left foot at phase 0 and the right at 0.5 (the generator's planted-foot trajectory). The render
+thread reports each plant (`voice/footsteps.h`: `FootstepTracker`, forwards or in reverse, never on the first frame of a walk) and
+the voice playback thread renders it beside the voices as a short synthesized footfall (`Foley`: a soft low-passed thud with a
+crisp scuff at the start, 2 ms attack, a decay of 170 ms walking and 215 ms running, a run landing harder) placed like a proximity
+voice: inverse distance, panned to the walker's side, gone beyond the voice range (`ComputeMix`), never clipping the output.
+`footsteps=0` silences them (the test mutant), `footstep_volume=` scales them. `voicestat` reports `footsteps N footsteps_dropped M`.
+The playback thread runs even with voice chat off, so the steps are heard whenever the mod can open a playback device.
+
+Game-free: `make -C proxy/voice test` (15 footstep checks; mutants `FS_NO_STEPS`, `FS_NO_DISTANCE`, `FS_NO_PAN`, `FS_NO_DECAY`).
+Live: `tools/win/wmodel.py` counts the mixer's footsteps across the 1.2 s walk (at least two); `MUTANT: adventurer footsteps off`
+must fail that check.
+
 ## Shading
 
 The puppet is lit in linear light, with the result converted back to the game's display values:
@@ -44,8 +58,12 @@ The puppet is lit in linear light, with the result converted back to the game's 
   B metalness; both 1024, PNG) are baked beside it from the same procedural materials (cloth folds and grain at scales the
   map can hold; the fine weave stays in the colour, where it was). Blender's glTF exporter writes them as `normalTexture`
   and `metallicRoughnessTexture`; the loader reads the first textured material's three images.
-- The normal map is applied through a cotangent frame from screen-space derivatives (the vertices carry no tangents); +Y
-  up in the image as glTF defines it.
+- The normal map is applied through a cotangent frame from screen-space derivatives (the vertices carry no tangents). Sign
+  convention: the frame's bitangent follows increasing glTF `v` (down the image), and the sampled green is negated, which is the
+  same resolution the Khronos glTF Sample Viewer makes (its bitangent is `cross(n, t)`, pointing up the image, with the green
+  unflipped): both read a glTF normal map's +Y as "up the image". Blender bakes OpenGL-style +Y-up maps and its exporter
+  leaves the image alone while flipping `v`, so the bundled map follows the glTF convention. The map's strength is 0.75 and it
+  fades out at grazing angles, where the screen-space frame degenerates.
 - The sun (`model_sun`, default 0.55, warm white) with wrapped diffuse (skin wraps further and gets a warm band at the
   terminator), GGX specular with Schlick Fresnel and Smith geometry from the map's roughness and metalness, a sky/ground
   hemisphere (`model_ambient`, default 0.30) times the baked occlusion, and a sheen on wool and knit (coat, scarf, trousers).
