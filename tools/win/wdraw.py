@@ -46,11 +46,19 @@ def leave_puzzle():
         rclick()
 MOVES = []      # how the player got to each place it stood (in the result)
 def done(solved, why, traced=0, dist=0.0):
+    drawn_ = drawn_edges() if not solved else []      # (read before leaving the puzzle: it forgets the line)
     if not solved: c.send(['shot fail_%x' % eid], 0.8)      # what the game showed, taken while still there
     leave_puzzle()                                           # leave the puzzle if it is still entered (nothing happens otherwise)
     c.send(['hover off'], 0.2)
-    print(json.dumps({'id': eid, 'solved': solved, 'why': why, 'traced': traced, 'dist': round(dist, 2), 'seq': sequence(), 'want': path, 'moves': MOVES}), flush=True); sys.exit(0 if solved else 1)
+    print(json.dumps({'id': eid, 'solved': solved, 'why': why, 'traced': traced, 'dist': round(dist, 2), 'seq': sequence(), 'want': path, 'drawn': drawn_, 'moves': MOVES}), flush=True); sys.exit(0 if solved else 1)
 
+def drawn_edges():
+    """The line as the game holds it: (index_a, index_b) of every traced-edge record (at most 60), to tell a line that took another route from the
+    one that was wanted (the traced count only says how many nodes were reached). [] when unreadable."""
+    n_ = traced(); ptr = p.u64(e + 0x230)
+    if not ptr or n_ < 1 or n_ > 60: return []
+    try: return [list(struct.unpack('<2I', p.rd(ptr + k * 0x34, 8))) for k in range(n_)]
+    except (struct.error, TypeError): return []
 def is_solved(): return p.u32(e + 0x294) == 0x3f800000 and p.u32(e + 0x298) == 1
 def traced(): return p.u32(e + 0x228)
 def edge_progress():
@@ -65,6 +73,16 @@ def first_t():      # how far the line has got along its first edge (traced-edge
     ptr = p.u64(e + 0x230)
     return struct.unpack('<f', p.rd(ptr + 0x10, 4))[0] if ptr else 1.0
 def state(): return p.u32(e + 0x280)
+def start_ok():
+    """True when the line that just started is on the node the path begins with (the first traced-edge record's index_a is the start node).
+    A panel with several start circles (the symmetry panels have four): a wrong panel size or offset hits another one, a line starts there all
+    the same, and the path drawn from it is not the solution (Symmetry Left 3 failed this way at sizes 0.7 and 0.95 m, accepted at 0.567 m).
+    Unreadable records count as fine."""
+    ptr = p.u64(e + 0x230)
+    if not ptr or traced() < 1: return True
+    raw = p.rd(ptr, 4)
+    if not raw or len(raw) < 4: return True
+    return struct.unpack('<I', raw)[0] == path[0]
 if not e or p.type_of(e) != TI_PANEL: done(False, 'not a panel')
 REDRAW = bool(os.environ.get('WDRAW_REDRAW'))      # draw again over a solved panel (another solution: a panel whose other exit powers something else)
 if is_solved() and not REDRAW: done(True, 'already solved')
@@ -402,7 +420,15 @@ for attempt, rd_ in enumerate(ROUNDS):
         c.send(['button L down', 'button L up'], 0.14)      # press and release on the start circle: the line starts
         # A redraw: the solved line's count stays until a new line starts, and state 3 shows up just from entering a solved panel, so only the count
         # changing from what the old line had (a new line counts 1) says the click started it.
-        if (not REDRAW and (traced() >= 1 or state() == 3)) or (REDRAW and traced() >= 1 and (traced() != OLD_TRACED or first_t() < 0.99)): started = (w_, dy_); break
+        if (not REDRAW and (traced() >= 1 or state() == 3)) or (REDRAW and traced() >= 1 and (traced() != OLD_TRACED or first_t() < 0.99)):
+            if start_ok(): started = (w_, dy_); break
+            stamp('the line started on another start circle than node %d at W %.3f dy %d: leave and look again' % (path[0], w_, dy_))
+            rclick()
+            for _ in range(3):
+                c.click(settle=1.0)
+                if not probe_free_look(): break
+                rclick()
+            cur = (0.0, 0.0)
     if started: break
     rclick()
 def depth_grid(box):
@@ -450,6 +476,7 @@ def start_from_box():
             cur = (cur[0] + round(ddx / n_) * n_ / COUNTS_PER_PX, cur[1] + round(ddy / n_) * n_ / COUNTS_PER_PX)
             c.send(['button L down', 'button L up'], 0.14)
             if (not REDRAW and (traced() >= 1 or state() == 3)) or (REDRAW and traced() >= 1 and (traced() != OLD_TRACED or first_t() < 0.99)):
+                if not start_ok(): stamp('box start: the line started on another start circle'); break
                 stamp('box start: line started at %.3f %.3f (reading %.2f %.2f)' % (sx, sy, fu, fv)); return True
         rclick()
     return False
