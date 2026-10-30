@@ -5,7 +5,8 @@ Usage: Windows Python wnav.py <pid> <game folder> x y z [tolerance m]      (or i
        python3 tools/win/wnav.py --merge-recordings MAP.bin SESSION.jsonl ...   (a person's recorded walks into a map file, game-free)
 Prints one JSON line {"ok", "why", "seconds", "walked", "stuck", "replans", "looks", "backouts", "sidesteps", "blurred", "from", "to"}.
 Environment: WNAV_MAPS (more maps to read, ';' separated), WNAV_RECORDINGS (session.jsonl files of tools/win/wrecord.py, ';' separated:
-their walks are known-good cells), WNAV_STUCKS (stucks before giving up, 12), WNAV_TRACE (a trace in <game folder>/wnav_trace.jsonl).
+their walks are known-good cells), WNAV_STUCKS (stucks before giving up, 12), WNAV_TRACE (a trace in <game folder>/wnav_trace.jsonl),
+WNAV_KEEP (a depth picture kept at each stuck as <game folder>/wnav_<Walker.tag>stuck<N>.bin).
 
 Measured (build 11370412): a mouse count turns the camera 0.0025 rad (positive dx turns right: the yaw at CAM_ANG goes down), dy the same in
 pitch; W walks about 1.8 m/s along the yaw (atan2 of the view direction, as `hover` and `tp` take it). A command takes about 11 ms.
@@ -32,8 +33,11 @@ How it finds the way (a robot with a depth camera, as a person uses their eyes):
      is not seen yet (the ground over a tunnel); a level more than WINDOW above a cell's floor is not seen yet either (junk points far below
      the ground filled a third of the town's cells and hid the street);
    * a WALKED cell costs 0.8 (a person's recorded walk, the bot's own), a BUMPED one 40; no corner cutting past a cell that cannot be entered;
+ - a plan that cannot reach the target ends at the cell nearest it across AND in height (LEVEL cells per metre of height: the ground below
+   a ledge is not near the ledge), when that is a metre nearer than here;
  - it walks the plan, looking again every half second (the camera faces the way it walks) and planning again when the way ahead is no
-   longer free; at the start and after being stuck it looks all round (four looks);
+   longer free (the cells found blocked stay dear for the rest of the walk: a look from another side finds them open again, and the walker
+   turned back at them to and fro); at the start and after being stuck it looks all round (four looks);
  - stuck (W held but under 0.5 m moved in 2 s, or no nearer the target in 25 s): something unseen is in the way (the game has invisible walls
    at the shore and on steep slopes): the cells just ahead are marked bumped (dear, not forbidden: a door may open later), it steps aside
    (A, else D; else back with S) and plans again;
