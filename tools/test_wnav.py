@@ -8,6 +8,8 @@ Scenes are built from points as a depth picture would give them (0.25 m apart):
  - cliff2:   the same step with no stairs: never climbed;
  - walkway:  a deck 2 m above the ground: walking along it stays on the deck (two levels in one cell); the ground under its far end
              is not reached from it (no way down);
+ - tunnel:   under cover (something above the head where the player stands), cells known only far overhead are not seen yet, not
+             blocked (the ground over the tutorial tunnel, seen from the air); in the open the same thing is a plateau;
  - door:     a closed door blocks a corridor; a later look sees the floor there with the band above it empty: it is open;
  - bump:     cells bumped into on this walk are not entered again;
  - foliage:  the cell the player stands in is walkable whatever was seen in it;
@@ -61,6 +63,14 @@ check('walkway', p is not None and wnav.centre(p[-1])[0] > 18, 'no way along the
 p = m.plan((1, 10, 2 + E), (19, 10, E))      # under the deck's far end: no way down, so not there
 check('level', not m.reached, 'took the deck above for the ground under it')
 
+# tunnel: from the air only the ground 4 m above a tunnel is known; the player is in the tunnel: it is not seen yet, not blocked
+m = wnav.Map(); m.integrate(ground(m, -5, 25, -5, 25, 4.0))
+p = m.plan((2, 10, E), (18, 10, E), margin=5)
+check('tunnel', p is not None and m.reached, 'the tunnel reads as blocked by the ground above it')
+m.integrate(ground(m, -5, 25, -5, 25, 0.0)); m2 = wnav.Map(); m2.integrate(ground(m2, -5, 9.9, -5, 25, 0.0) + ground(m2, 10, 25, -5, 25, 3.0))
+p = m2.plan((2, 10, E), (18, 10, E), margin=5)      # out in the open the same surface overhead is a plateau, not a tunnel
+check('open', not m2.reached, 'walked under a plateau as if it were a tunnel')
+
 # door: corridor x 0..20, y 9..11 between walls; a door at x 10; later seen open
 side = wall(0, 0, 0, 0, 0)
 corr = ground(m, 0, 20, 9, 11, 0.0) + [(x / 4, 8.9, z / 4) for x in range(81) for z in range(1, 13)] + [(x / 4, 11.1, z / 4) for x in range(81) for z in range(1, 13)]
@@ -108,7 +118,9 @@ MUTANTS = [      # (file text, replacement): each removes one protection
     ("if -DOWN <= r[0] - fu <= UP and r[0] > SEA: return [(r[0], SOFT)]", "if r[0] > SEA: return [(r[0], SOFT)]"),      # a cliff face is soft, any height
     ("and abs(fu - fb) < 2.0: self.reached = True", ": self.reached = True"),      # the target's height not asked
     ("if abs(f[0] - old[0]) < 2 * BIN and not (f[1] & BAND_MASK): self.cells[c] = [f[0], f[1], old[2]]; continue", "pass"),      # an opened door stays shut
-    ("or v in avoid: continue", ": continue"),      # bumped cells entered again
+    ("or v in avoid: continue", ": continue"),
+    ("if self.covered and r[0] > fu + BAND[1] and not r[2] & BUMPED: return None", "pass"),      # the ground over a tunnel blocks the tunnel
+    ("if self.covered and r[0] > fu + BAND[1]", "if r[0] > fu + BAND[1]"),      # a plateau seen from the open is taken for a tunnel      # the ground over a tunnel blocks the tunnel      # bumped cells entered again
     ("if b0 is not None and b0 >= 0: rec[1] &= ~(HEAD_MASK << (b0 + 1)) & 0xFFFFFFFFFFFFFFFF", "pass"),      # where the player stands stays blocked
     ("nxt |= {f} if st is None else {round(z if z is not None else f, 2) for z, _ in st}", "nxt |= {f} if st is None else {round(z if z is not None else f, 2) for z, _ in sorted(st, key=lambda q_: abs((q_[0] if q_[0] is not None else f) - f))[:1]}"),      # one level carried
     ("if st and c not in self.soft: st = [q_ for q_ in st if q_[1] != SOFT]", "pass"),      # a door shut on the way is not seen

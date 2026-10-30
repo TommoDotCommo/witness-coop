@@ -45,7 +45,7 @@ HEAD_MASK = (1 << int(math.ceil(BAND[1] / BIN))) - 1      # the bins above a sur
 
 class Map:
     """cell -> [floor z, mask of the height bins above the floor that hold something, flags]"""
-    def __init__(self): self.cells = {}; self.reached = False; self.soft = set()      # reached: the last plan got to the target (else only near it)
+    def __init__(self): self.cells = {}; self.reached = False; self.soft = set(); self.covered = False      # reached: the last plan got to the target (else only near it)
 
     @staticmethod
     def add_point(rec, z):
@@ -116,6 +116,7 @@ class Map:
         while the ground beside them stays, both are kept), else the soft floor (see walkable); [] when it cannot; None: never seen."""
         r = self.cells.get(c)
         if r is None: return None
+        if self.covered and r[0] > fu + BAND[1] and not r[2] & BUMPED: return None      # under cover (a tunnel, a roof) all that is known there may be above it (the ground over the tunnel, seen from the air): down here it is not seen yet
         surf = self.surfaces(c)
         if surf == [None]: return [(fu, 1.0)]
         walked = r[2] & WALKED
@@ -136,6 +137,8 @@ class Map:
             if k not in memo: memo[k] = self.steps(c, fu)
             return memo[k]
         s0 = key(sa, a[2] - EYE); floor = {s0: a[2] - EYE}
+        r0 = self.cells.get(sa)      # the player is under cover: something is known above its head where it stands (out in the open a surface that high is a plateau)
+        self.covered = bool(r0) and r0[0] > -1e3 and any(r0[0] + b * BIN > a[2] - EYE + BAND[1] for b in range(64) if r0[1] >> b & 1)
         g = {s0: 0.0}; prev = {}; heap = [(0.0, s0)]; n = 0; best, best_h = s0, math.hypot(sa[0] - sb[0], sa[1] - sb[1])
         def back(u):
             out = [u]
