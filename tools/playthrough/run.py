@@ -123,6 +123,9 @@ class Recorder:
 
 
 class Playthrough:
+    CHECKPOINT_S = 900      # seconds between the save points taken during play (only when something new was solved)
+    last_checkpoint = 0; checkpointed = 0
+
     def __init__(self, n, goal, minutes, fps, drop, start='', resume=''):
         self.logic = Logic(); self.n, self.goal_name, self.deadline = n, goal, time.time() + minutes * 60
         self.fps, self.drop, self.start, self.resume = fps, drop, start, resume
@@ -371,6 +374,7 @@ class Playthrough:
     def play(self):
         self.launch(); self.load_manifest()
         # A bot only starts a panel the game has powered: the logic says when it should be, the game says when it is (see stalls()).
+        self.last_checkpoint = time.time()
         self.planner = Planner(self.logic, self.goal_name, can_solve=lambda h: h in self.manifest and h in self.powered and self.path_for(h) is not None)
         if self.start:      # a slice: the route from the state it starts in (seven lasers lit: straight to the mountain, not round the island again)
             from planner import route
@@ -442,6 +446,8 @@ class Playthrough:
                 if rounds % 30 == 0 and spent:
                     added = self.planner.reroute(solved, self.avoid | spent)
                     if added is not None: self.avoid |= spent; self.rec('reroute', avoiding=sorted('%#x' % h for h in self.avoid), added=len(added), route=len(self.planner.targets), early=True)
+                # A save point every few minutes while it plays, so a crash or a stop part-way resumes from near where it was (--resume).
+                if time.time() - self.last_checkpoint >= self.CHECKPOINT_S and len(self.solved) > self.checkpointed: self.checkpointed = len(self.solved); self.last_checkpoint = time.time(); self.checkpoint()
                 time.sleep(2)
         try: time.sleep(5); self.compare_worlds(); self.checkpoint()
         finally: self.summary()

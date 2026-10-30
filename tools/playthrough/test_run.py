@@ -47,7 +47,8 @@ class P(run.Playthrough):
         self.powered = set(); self.variant = {}; self.stalled_since = {}; self.fixups = []; self.last_why = {}; self.restore = set()
         self.start = ''; self.resume = ''; self.avoid = set(); self.candidates_only = set(); self.attempts = {}; self.redrawn = set()
     def launch(self): pass
-    def checkpoint(self): pass
+    CHECKPOINT_S = 0
+    def checkpoint(self): self.events.append(dict(kind='checkpoint', solved=len(self.solved)))
     def load_manifest(self): pass
     def compare_worlds(self, settle=5): pass
     def summary(self): pass
@@ -68,6 +69,8 @@ class P(run.Playthrough):
 
 p = P(); p.play()
 ok = CREDITS in W.solved
+ckpts = [e for e in p.events if e['kind'] == 'checkpoint']
+if len(ckpts) < 2: print('no save points taken during play:', len(ckpts)); sys.exit(1)      # (one more comes at the end of play)
 redrew = [d for d in W.drawn if d[0] == BACK_LEFT and d[1] and d[2] == GOOD_END]
 print('credits reached' if ok else 'credits NOT reached', '| Back Left redrawn through 104:', bool(redrew), '| solves', len(W.solved))
 sys.exit(0 if ok and redrew else 1)
@@ -76,6 +79,7 @@ sys.exit(0 if ok and redrew else 1)
 MUTANTS = [
     ("elif any(k in why for k in ('stuck', 'overshot', 'wrong branch', 'did not accept')) and 'did not start' not in why:", "elif False:"),                                    # a stuck line never redraws a prerequisite
     ("can_solve=lambda h: h in self.manifest and h in self.powered and self.path_for(h) is not None", "can_solve=lambda h: h in self.manifest and self.path_for(h) is not None"),   # no power gating
+    ("self.checkpointed = len(self.solved); self.last_checkpoint = time.time(); self.checkpoint()", "self.checkpointed = len(self.solved); self.last_checkpoint = time.time()"),      # no save points during play
     ("busy[i] = (pool.submit(self.solve, self.bots[i - 1], h, True), h)", "busy[i] = (pool.submit(self.solve, self.bots[i - 1], h), h)"),    # a redraw sent as a plain solve
 ]
 
