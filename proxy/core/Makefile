@@ -2,11 +2,13 @@
 # a test whose binary has not changed since it last passed is not run again (`make retest` forces them all). The fuzz run (tests/run_t0.py) uses the hub's framework
 # (HUB is the Co-op Anything clone).
 MAKEFLAGS += -j8
-HUB ?= $(abspath ../../../coop-anything)
+# The hub clone: next to a primary checkout, else the documented default. A worktree or scratch checkout is not next to it.
+HUB ?= $(firstword $(wildcard $(abspath ../../../coop-anything)/tools/fuzz/src) $(HOME)/source/coop-anything/tools/fuzz/src)
+HUB := $(patsubst %/tools/fuzz/src,%,$(HUB))
 FUZZ = $(HUB)/tools/fuzz
 BUILD = build
 CXXF = -std=c++17 -O2 -Wall -Wextra
-TESTS = pov ping-names social-sync line-sync group-sync apply-retry power-sync reload-sync cable-sync cable-off race-isolation resend-count unsolve-sync
+TESTS = pov ping-names social-sync line-sync group-sync apply-retry power-sync reload-sync cable-sync cable-off race-isolation resend-count unsolve-sync propagation-latency
 
 $(BUILD)/sync_core.o: sync_core.cpp sync_core.h line_precision.h appearance.h emotes.h pov.h ../radio/radio.h
 	@mkdir -p $(BUILD)
