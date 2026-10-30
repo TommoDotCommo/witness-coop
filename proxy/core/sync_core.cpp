@@ -162,7 +162,7 @@ void SyncCore::onPacket(const uint8_t* d, size_t n, uint64_t now) {
     auto& peerApplied_ = peer.applied;
     if (magic == kMagicEv && n == (fixedRoster_ ? kGroupEvLen : kEvLen)) {
         uint32_t from = get32(d + 4), seq = get32(d + 16), kind = get32(d + 20), entity = get32(d + 24); bool snap = (kind & kSnapBit) != 0; kind &= 0xFF; uint64_t epoch = get64(d + 8);
-        if (int(from) == id_ || (kind != EV_PANEL_SOLVED && kind != EV_DOOR_OPENED && kind != EV_PANEL_POWERED && kind != EV_CABLE_LIT && kind != EV_CABLE_OFF) || entity >= kMaxEntityId) return;
+        if (int(from) == id_ || (kind != EV_PANEL_SOLVED && kind != EV_DOOR_OPENED && kind != EV_PANEL_POWERED && kind != EV_CABLE_LIT && kind != EV_CABLE_OFF && kind != EV_PANEL_UNSOLVED && kind != EV_DOOR_CLOSED) || entity >= kMaxEntityId) return;
         if (epoch < peerEpoch_) { st_.ooo++; if (h_.onRejected) h_.onRejected(uint8_t(kind), entity, epoch, seq, "stale epoch"); return; }   // a delayed packet of an earlier run
         if (epoch > peerEpoch_) { peerEpoch_ = epoch; if (!f_.noEpochReset) peerApplied_ = 0; }
         bool ordered = false, dup = false;
@@ -342,6 +342,7 @@ uint64_t SyncCore::signature() {   // FNV-1a over which panels are solved and wh
 }
 
 void SyncCore::baseline(bool full) {
+    gen_ = w_->generation();
     for (unsigned id : panels_) {
         bool s = w_->entityExists(id) && w_->panelSolved(id);
         if (s) knownPanel_.insert(id); else knownPanel_.erase(id);
@@ -363,17 +364,25 @@ void SyncCore::baseline(bool full) {
     }
 }
 
-bool SyncCore::reloadSeen(uint64_t now) {   // doors do not close and one panel can be redrawn, so those alone are not a load
-    unsigned closed = 0, unsolved = 0;
+// A load takes progress back: solved panels go (and the doors they opened). Doors alone are not a load: the island has doors that shut
+// by themselves (the timed doors of the Shadows, the playthrough bot saw one close and the whole session stall for 10-50 s while it
+// re-gated); one panel alone is not either (it can be redrawn). So: two panels, or a panel and a door.
+bool SyncCore::reloadSeen(uint64_t now) {
+    if (!f_.reloadByProgress && !f_.reloadOnDoor) {      // the world can say whether it was loaded again (the twins judge by progress, the old way): then that alone decides (a panel resetting itself is not a load)
+        uint64_t g = w_->generation();
+        if (g && gen_) { if (g == gen_) return false; vanished_ = " the world was loaded again (entity generation changed)"; return true; }
+    }
+    unsigned closed = 0, unsolved = 0; vanished_.clear();
     for (unsigned id : doors_) {
         auto sp = suppressDoor_.find(id);
-        if (knownDoor_.count(id) && w_->entityExists(id) && !w_->doorOpen(id) && !(sp != suppressDoor_.end() && now < sp->second)) closed++;
+        if (knownDoor_.count(id) && w_->entityExists(id) && !w_->doorOpen(id) && !(sp != suppressDoor_.end() && now < sp->second)) { closed++; if (vanished_.size() < 120) { char b[16]; std::snprintf(b, sizeof b, " door %#x", id); vanished_ += b; } }
     }
     for (unsigned id : panels_) {
         auto sp = suppressPanel_.find(id);
-        if (knownPanel_.count(id) && w_->entityExists(id) && !w_->panelSolved(id) && !(sp != suppressPanel_.end() && now < sp->second)) unsolved++;
+        if (knownPanel_.count(id) && w_->entityExists(id) && !w_->panelSolved(id) && !(sp != suppressPanel_.end() && now < sp->second)) { unsolved++; if (vanished_.size() < 120) { char b[16]; std::snprintf(b, sizeof b, " panel %#x", id); vanished_ += b; } }
     }
-    return closed >= 1 || unsolved >= 2;
+    if (f_.reloadOnDoor) return closed >= 1 || unsolved >= 2;
+    return unsolved >= 2 || (unsolved >= 1 && closed >= 1);
 }
 
 void SyncCore::pollState(uint64_t now) {
@@ -405,7 +414,7 @@ void SyncCore::pollState(uint64_t now) {
         // The process and the link are up, but the world lost progress it had: a save was loaded. Nothing told the peer, so
         // announce a new session (the peer then resends its full state, as for a restart), wait for the loading world to
         // settle again, and publish this world's full state once it has.
-        log("state: save reload suspected (known progress vanished), waiting for a stable world");
+        { std::string m = "state: save reload suspected (known progress vanished:" + vanished_ + "), waiting for a stable world"; log(m.c_str()); }
         ready_ = false; gateSame_ = 0; gateLastPanels_ = gateLastDoors_ = 0; gateLastSig_ = 0; nextGate_ = now + 3000;
         cableVersion_.clear();
         suppressPanel_.clear(); suppressDoor_.clear(); suppressPower_.clear(); suppressCable_.clear(); anyLocalSolve_ = false;
@@ -421,6 +430,10 @@ void SyncCore::pollState(uint64_t now) {
         auto sp = suppressPanel_.find(id);
         if (sp != suppressPanel_.end() && now < sp->second) { if (s) knownPanel_.insert(id); else knownPanel_.erase(id); continue; }
         if (s && !known) { knownPanel_.insert(id); emit(EV_PANEL_SOLVED, id, false); st_.emittedPanels++; lastLocalSolveAt_ = now; anyLocalSolve_ = true; char l[100]; std::snprintf(l, sizeof l, "state: local panel %#x solved -> event", id); log(l); }
+        else if (!s && known && now >= settleUntil_ && !f_.noUnsolveSync) {      // solved before, not now (a load was ruled out above): a timer ran out, or it is being redrawn
+            knownPanel_.erase(id); emit(EV_PANEL_UNSOLVED, id, false); st_.emittedPanels++;
+            char l[100]; std::snprintf(l, sizeof l, "state: local panel %#x unsolved -> event", id); log(l);
+        }
         else if (!s) knownPanel_.erase(id);
     }
     for (unsigned id : panels_) {
@@ -464,6 +477,10 @@ void SyncCore::pollState(uint64_t now) {
         bool cascade = anyLocalSolve_ && now < lastLocalSolveAt_ + kCascadeMs;
         if (now < settleUntil_ && o != known && !cascade) { if (o) knownDoor_.insert(id); else knownDoor_.erase(id); char l[100]; std::snprintf(l, sizeof l, "state: door %#x changed during start-up, folded into the baseline", id); log(l); continue; }
         if (o && !known) { knownDoor_.insert(id); emit(EV_DOOR_OPENED, id, false); st_.emittedDoors++; char l[100]; std::snprintf(l, sizeof l, "state: local door %#x opened -> event", id); log(l); }
+        else if (!o && known && !f_.noDoorCloseSync) {      // open before, shutting now (a timed door, a hedge maze door)
+            knownDoor_.erase(id); emit(EV_DOOR_CLOSED, id, false); st_.emittedDoors++;
+            char l[100]; std::snprintf(l, sizeof l, "state: local door %#x closed -> event", id); log(l);
+        }
         else if (!o) knownDoor_.erase(id);
     }
     // Detect new commands before a snapshot can fold them into the baseline with an older version.
@@ -582,6 +599,28 @@ void SyncCore::applyRemote(uint64_t now) {
             st_.appliedDoors++;
             if (h_.onApplied) h_.onApplied(r.kind, r.entity, r.epoch, r.seq);
             std::snprintf(l, sizeof l, "state: remote door %#x opened (call %s)", r.entity, ok ? "ok" : "REFUSED"); log(l);
+        } else if (r.kind == EV_PANEL_UNSOLVED && w_->isPanel(r.entity)) {
+            if (!w_->panelSolved(r.entity) && !f_.noDedupe) { knownPanel_.erase(r.entity); continue; }
+            if (!w_->applyPanelUnsolved(r.entity)) {
+                if (!f_.noApplyRetry) recvQ_.push_back(r);
+                continue;
+            }
+            knownPanel_.erase(r.entity);
+            if (!f_.noEchoGuard) suppressPanel_[r.entity] = now + kSuppressMs;
+            st_.appliedPanels++;
+            if (h_.onApplied) h_.onApplied(r.kind, r.entity, r.epoch, r.seq);
+            std::snprintf(l, sizeof l, "state: remote panel %#x applied as unsolved", r.entity); log(l);
+        } else if (r.kind == EV_DOOR_CLOSED && w_->isDoor(r.entity)) {
+            if (!w_->doorRequested(r.entity) && !f_.noDedupe) { knownDoor_.erase(r.entity); continue; }      // (already shutting by itself here: the timed doors)
+            if (!w_->applyDoorClose(r.entity)) {
+                if (!f_.noApplyRetry) recvQ_.push_back(r);
+                continue;
+            }
+            knownDoor_.erase(r.entity);
+            if (!f_.noEchoGuard) suppressDoor_[r.entity] = now + kSuppressMs;
+            st_.appliedDoors++;
+            if (h_.onApplied) h_.onApplied(r.kind, r.entity, r.epoch, r.seq);
+            std::snprintf(l, sizeof l, "state: remote door %#x closed", r.entity); log(l);
         } else {
             std::snprintf(l, sizeof l, "state: remote event kind %u entity %#x: wrong entity type, ignored", r.kind, r.entity); log(l);
             if (h_.onRejected) h_.onRejected(r.kind, r.entity, r.epoch, r.seq, "wrong entity type");

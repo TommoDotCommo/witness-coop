@@ -1,12 +1,14 @@
-"""Draw a given path on a panel through in-process input: teleport with the dev menu, enter the puzzle, trace the node list, finish.
+"""Draw a given path on a panel through in-process input: walk to it (teleport only when walking fails), enter the puzzle, trace the node list, finish.
 
 Usage: Windows Python wdraw.py <pid> <game folder> <panel id hex> <node,node,...>
 The path is a list of panel node indices from a start node to an end node (the end stub included). Prints one JSON line:
-{"id", "solved", "why", "traced", "dist", "seq", "want"}; the verdict is the game's own solved flag after the line was drawn and finished.
+{"id", "solved", "why", "traced", "dist", "seq", "want", "moves"}; the verdict is the game's own solved flag after the line was drawn and finished.
+"moves": how the player got to each place it stood ({"how": "walk" | "teleport", ...}): it walks (wnav.py) and is teleported only when the walk
+did not get there (WDRAW_WALK=0: teleport straight away, the old way).
 Environment: WDRAW_KCACHE (a json file that remembers what a panel needed), WDRAW_TIMING, WDRAW_SHOTS (debug output on stderr).
 
 What it does, and what was measured (build 11370412, 1920x1080, see NOTES.md of the hub):
- 1. teleport with the dev menu (it holds the player 2 s so it settles on the ground), then aim the camera at the middle of the panel;
+ 1. walk to 2.5 m in front of the panel (else teleport with the dev menu: it holds the player 2 s so it settles on the ground), then aim the camera at the middle of the panel;
  2. enter the puzzle with a click; the cursor appears at the screen centre, i.e. on the middle of the panel; a 4-count mouse move that does not turn the
     view proves it was entered;
  3. find the start circle: node positions are projected with a pinhole camera (1033 px at 1 m, the panel's full rotation, its size in metres W unknown), and
@@ -39,13 +41,25 @@ def done(solved, why, traced=0, dist=0.0):
     if not solved: c.send(['shot fail_%x' % eid], 0.8)      # what the game showed, taken while still there
     rclick()                                                 # leave the puzzle if it is still entered (nothing happens otherwise)
     c.send(['hover off'], 0.2)
-    print(json.dumps({'id': eid, 'solved': solved, 'why': why, 'traced': traced, 'dist': round(dist, 2), 'seq': sequence(), 'want': path}), flush=True); sys.exit(0 if solved else 1)
+    print(json.dumps({'id': eid, 'solved': solved, 'why': why, 'traced': traced, 'dist': round(dist, 2), 'seq': sequence(), 'want': path, 'moves': MOVES}), flush=True); sys.exit(0 if solved else 1)
 
 def is_solved(): return p.u32(e + 0x294) == 0x3f800000 and p.u32(e + 0x298) == 1
 def traced(): return p.u32(e + 0x228)
+def edge_progress():
+    """(progress t, end node) of the edge the line is on: the last traced-edge record (count - 1), 0x34 bytes each (index_a, index_b, id_a, id_b
+    as ints, then t). None when there is no such record."""
+    n_ = traced(); ptr = p.u64(e + 0x230)
+    if not ptr or n_ < 1 or n_ > 500: return None
+    raw = p.rd(ptr + (n_ - 1) * 0x34, 0x14)
+    if not raw: return None
+    return struct.unpack('<f', raw[16:20])[0], struct.unpack('<2I', raw[:8])[1]
+def first_t():      # how far the line has got along its first edge (traced-edge records at [+0x230], 0x34 bytes each, t at +0x10): 1.0 on a finished line, near 0 on a new one
+    ptr = p.u64(e + 0x230)
+    return struct.unpack('<f', p.rd(ptr + 0x10, 4))[0] if ptr else 1.0
 def state(): return p.u32(e + 0x280)
 if not e or p.type_of(e) != TI_PANEL: done(False, 'not a panel')
-if is_solved(): done(True, 'already solved')
+REDRAW = bool(os.environ.get('WDRAW_REDRAW'))      # draw again over a solved panel (another solution: a panel whose other exit powers something else)
+if is_solved() and not REDRAW: done(True, 'already solved')
 
 # ---- the panel ------------------------------------------------------------------------------------------------------------------------------
 n = p.u32(e + 0x3b4); m_ = p.u32(e + 0x3b8)
@@ -61,14 +75,42 @@ def quat_rot(v):      # rotate a local vector by the panel's quaternion
     x, y, z = v; tx = 2 * (qy * z - qz * y); ty = 2 * (qz * x - qx * z); tz = 2 * (qx * y - qy * x)
     return (x + qw * tx + (qy * tz - qz * ty), y + qw * ty + (qz * tx - qx * tz), z + qw * tz + (qx * ty - qy * tx))
 NORMAL = quat_rot((1.0, 0.0, 0.0))      # the panel faces along its local +x (a yaw-only panel at rotation rz faces (cos rz, sin rz, 0))
+FLIP = bool(os.environ.get('WDRAW_FLIP_SIDE'))      # stand on the other side: for a panel whose start was not found from the front (seen from behind, or through a cage)
+if FLIP: NORMAL = (-NORMAL[0], -NORMAL[1], -NORMAL[2])
 def standing(pos):      # distance along the (horizontal part of the) panel's normal and the sideways offset of a camera position
     nx, ny = NORMAL[0], NORMAL[1]; nn = math.hypot(nx, ny) or 1.0; nx, ny = nx / nn, ny / nn
     ux, uy = pos[0] - px_, pos[1] - py_; return ux * nx + uy * ny, -ux * ny + uy * nx
 
-# ---- teleport -------------------------------------------------------------------------------------------------------------------------------
+# ---- getting there: walk, teleport only when that fails -------------------------------------------------------------------------------------
+WALK = os.environ.get('WDRAW_WALK', '1') != '0'
+MOVES = []      # how the player got to each place it stood (in the result)
+walker = None
+def walk_to(hx, hy, hz, tol=1.0):
+    """Walk to (hx, hy) with the eye near hz. True when there."""
+    global walker
+    if not WALK: return False
+    import wnav
+    if walker is None: walker = wnav.Walker(p, c, gdir, log=dbg)
+    d = math.dist(p.camera()[0][:2], (hx, hy))
+    r = walker.go((hx, hy, hz), tol, min(300.0, 60.0 + 2.0 * d), ztol=1.8)
+    MOVES.append({'how': 'walk', 'ok': r['ok'], 'why': r['why'], 'seconds': r['seconds'], 'walked': r['walked'], 'stuck': r['stuck']})
+    stamp('walked %.0f m in %.0f s: %s' % (r['walked'], r['seconds'], 'there' if r['ok'] else r['why']))
+    return r['ok']
+def teleported(why): MOVES.append({'how': 'teleport', 'why': why}); stamp('TELEPORT (last resort): %s' % why)
+def hover_to(hx, hy, hz, yaw, why):
+    """Walk to (hx, hy); when that fails, the old way: held there (a teleport) and let go to settle."""
+    if walk_to(hx, hy, hz): return
+    teleported(why); c.send(['hover %.4f %.4f %.4f %.5f 0.0' % (hx, hy, hz, yaw)], 2.4); c.send(['hover off'], 1.5)
+
 def menu_teleport():
-    """The dev menu's teleport (the feature under test): 3 m in front of the panel, held 2 s while the player settles on the ground there."""
+    """Walk to 2.5 m in front of the panel; when that fails, the dev menu's teleport: 3 m in front, held 2 s while the player settles there."""
     if os.environ.get('WDRAW_NO_TELEPORT'): return p.camera()[0]      # a human is standing in front of the panel: draw from where they are (the menu teleport may land off the platform they are on)
+    nx, ny = NORMAL[0], NORMAL[1]; nn = math.hypot(nx, ny) or 1.0
+    if walk_to(px_ + 2.5 * nx / nn, py_ + 2.5 * ny / nn, pz_):
+        pos = p.camera()[0]; dn_, lat_ = standing(pos)
+        if 1.0 < dn_ < 8 and abs(lat_) < 2.0 and abs(pos[2] - pz_) < 2.0: return pos
+        MOVES[-1]['ok'] = False; MOVES[-1]['why'] = 'arrived, but not in front of the panel (%.1f m out, %.1f m aside, %.1f m in height)' % (dn_, lat_, pos[2] - pz_)
+    teleported('the walk did not get in front of the panel' if WALK else 'walking is off (WDRAW_WALK=0)')
     for attempt in range(3):
         c.send(['menusel %x' % eid, 'menudo teleport'], 3.2)
         pos, ang = p.camera(); dn_, lat_ = standing(pos)
@@ -85,14 +127,42 @@ def menu_teleport():
     done(False, 'teleport refused and the player could not be held there: camera at %.1f %.1f %.1f (panel at %.1f %.1f %.1f)' % (*pos, px_, py_, pz_))
 
 stamp('start')
-pos = menu_teleport()
+FLAT = abs(NORMAL[2]) > 0.7      # a panel lying flat (the Desert laser redirect control on the town's roof faces the sky): stand beside it, look down
+def stand_beside_flat():
+    for ax_ in ((0.0, 1.0, 0.0), (0.0, -1.0, 0.0), (0.0, 0.0, 1.0), (0.0, 0.0, -1.0)):      # the panel's own sides, made horizontal
+        sx_, sy_, _ = quat_rot(ax_); sn_ = math.hypot(sx_, sy_)
+        if sn_ < 0.3: continue
+        hx_, hy_ = px_ + 1.6 * sx_ / sn_, py_ + 1.6 * sy_ / sn_
+        if not walk_to(hx_, hy_, pz_ + 1.65, tol=0.6):
+            teleported('the walk did not get beside the flat panel'); c.send(['hover %.4f %.4f %.4f %.5f -0.8' % (hx_, hy_, pz_ + 1.65, math.atan2(py_ - hy_, px_ - hx_))], 2.4)
+        aim(); r_ = depth_ratio(); stamp('flat panel: beside it at (%.1f, %.1f), depth ratio %.2f' % (hx_, hy_, r_))
+        if 0.7 < r_ < 1.45: return p.camera()[0]
+    return p.camera()[0]
+pos = p.camera()[0] if FLAT else menu_teleport()      # (a flat panel: stood beside it below, once aim and the depth check exist)
+STAND = os.environ.get('WDRAW_STAND')      # "sideways,distance" in metres: stand there instead (part of the panel was hidden from the menu's spot: the
+if STAND and not FLIP:                     # cursor only reaches what the camera sees, so a line stops at the edge of a wall in front of the panel)
+    lat_, dd_ = (float(v) for v in STAND.split(',')); nx_, ny_ = NORMAL[0], NORMAL[1]; nn_ = math.hypot(nx_, ny_) or 1.0; nx_, ny_ = nx_ / nn_, ny_ / nn_
+    hx_, hy_ = px_ + dd_ * nx_ - lat_ * ny_, py_ + dd_ * ny_ + lat_ * nx_
+    hover_to(hx_, hy_, pz_ + 0.2, math.atan2(py_ - hy_, px_ - hx_), 'the walk did not get to the standing spot asked for')
+    pos = p.camera()[0]; stamp('stood at %.1f m sideways, %.1f m out' % (lat_, dd_))
+if FLIP:      # the menu's teleport puts us on its side: move to the other one (3 m along the flipped normal), then let the player settle there
+    nx_, ny_ = NORMAL[0], NORMAL[1]; nn_ = math.hypot(nx_, ny_) or 1.0; hx_, hy_ = px_ + 3.0 * nx_ / nn_, py_ + 3.0 * ny_ / nn_
+    hover_to(hx_, hy_, pz_ + 0.2, math.atan2(py_ - hy_, px_ - hx_), 'the walk did not get to the other side of the panel')
+    pos = p.camera()[0]; stamp('moved to the other side of the panel')
 dist = math.dist(pos, (px_, py_, pz_))
-stamp('teleported')
+stamp('in front of the panel')
 
+def look(yaw, pitch):
+    """Turn the camera to these angles with the mouse, as a player does (0.0025 rad a count; dx right turns the yaw down, dy down the pitch)."""
+    for _ in range(3):
+        _, (cy_, cp_) = p.camera(); ey = (yaw - cy_ + math.pi) % (2 * math.pi) - math.pi; ep = pitch - cp_
+        if abs(ey) < 0.004 and abs(ep) < 0.004: break
+        c.send(['mouse %d %d' % (max(-1500, min(1500, round(-ey / 0.0025))), max(-1500, min(1500, round(-ep / 0.0025))))], 0.08)
+    time.sleep(0.3)
 def aim():
-    """Point the camera at the middle of the panel (the angles are set by a teleport to where we already stand)."""
+    """Point the camera at the middle of the panel."""
     cx, cy, cz = p.camera()[0]; hd = math.hypot(px_ - cx, py_ - cy) or 1.0
-    c.send(['tp %.4f %.4f %.4f %.5f %.5f' % (cx, cy, cz, math.atan2(py_ - cy, px_ - cx), math.atan2(pz_ - cz, hd))], 0.4)
+    look(math.atan2(py_ - cy, px_ - cx), math.atan2(pz_ - cz, hd))
 aim()
 
 def depth_ratio():
@@ -115,12 +185,35 @@ def other_standing_points():
     nx, ny = NORMAL[0], NORMAL[1]; nn = math.hypot(nx, ny) or 1.0; nx, ny = nx / nn, ny / nn
     return [(px_ + d_ * nx, py_ + d_ * ny) for d_ in (2.0, 4.0, 1.6, 5.0, 2.5, 3.5)]
 
+def centre_on_panel():
+    """The panel's middle may not be its entity's origin (Quarry Boat Spawn sits well below where the camera aims): find it on the screen in the
+    scene depth (an 11 x 7 grid over the middle of the screen, cells at about the panel's distance) and turn the camera onto it."""
+    log = os.path.join(gdir, 'witness_proxy.log')
+    try: n0 = sum(1 for l in open(log, errors='ignore') if l.startswith('probegrid:'))
+    except OSError: return
+    c.send(['probegrid'], 0.0); rows = None
+    for _ in range(30):
+        time.sleep(0.15)
+        ls_ = [l for l in open(log, errors='ignore') if l.startswith('probegrid:')]
+        if len(ls_) >= n0 + 7 or any('failed' in l or 'no scene' in l for l in ls_[n0:]): rows = ls_[n0:]; break
+    if not rows or len(rows) < 7 or any('failed' in l or 'no scene' in l for l in rows): return
+    try: v_ = [float(x) for l in rows[:7] for x in l.split(':', 2)[2].split()]
+    except (ValueError, IndexError): return      # a garbled line: no correction
+    if len(v_) != 77: return
+    cpos, cang = p.camera(); d_ = math.dist(cpos, (px_, py_, pz_)); want = 0.0597 / max(0.3, d_)
+    cells = [(0.2 + 0.6 * (k % 11) / 10, 0.2 + 0.6 * (k // 11) / 6) for k, dv in enumerate(v_) if dv > 0 and 0.75 < dv / want < 1.35]
+    if len(cells) < 2: stamp('panel not found in the depth grid'); return
+    fx = sum(x for x, _ in cells) / len(cells); fy = sum(y for _, y in cells) / len(cells)
+    if abs(fx - 0.5) < 0.04 and abs(fy - 0.5) < 0.04: return
+    dyaw = -math.atan((fx - 0.5) * 1920 / FOCAL); dpitch = -math.atan((fy - 0.5) * 1080 / FOCAL)      # screen right: yaw down; screen down: pitch down
+    look(cang[0] + dyaw, cang[1] + dpitch)
+    stamp('re-aimed on the panel found in the depth grid (%.2f, %.2f), %d cells' % (fx, fy, len(cells)))
+if FLAT: pos = stand_beside_flat(); dist = math.dist(pos, (px_, py_, pz_)); stamp('stood beside the flat panel')
 r_ = depth_ratio(); stamp('view check: depth ratio %.2f' % r_)
 if not 0.7 < r_ < 1.45:
     ok_view = False
     for (hx, hy) in other_standing_points():
-        c.send(['hover %.4f %.4f %.4f %.5f 0.0' % (hx, hy, pz_ + 0.2, math.atan2(py_ - hy, px_ - hx))], 2.4)
-        c.send(['hover off'], 1.5)
+        hover_to(hx, hy, pz_ + 0.2, math.atan2(py_ - hy, px_ - hx), 'the walk did not get to another place to see the panel from')
         cx, cy, cz = p.camera()[0]
         if math.hypot(cx - px_, cy - py_) > 12: continue            # put back at the spawn point: nothing to stand on there
         aim(); r_ = depth_ratio(); stamp('view check at (%.1f, %.1f): depth ratio %.2f' % (hx, hy, r_))
@@ -133,6 +226,9 @@ if not 0.7 < r_ < 1.45:
             done(False, 'the panel cannot be seen from any of the places tried (something is in the way, or there is nothing to stand on)', 0, dist)
         stamp('depth check failed everywhere; drawing anyway (glass or a thin cover?)')
     dist = math.dist(p.camera()[0], (px_, py_, pz_))
+if not os.environ.get('WDRAW_NO_RECENTRE'):
+    try: centre_on_panel()
+    except Exception as e_: stamp('re-centring skipped: %r' % e_)      # a help, never a reason to fail
 
 # ---- projection -----------------------------------------------------------------------------------------------------------------------------
 def cam_basis():
@@ -192,10 +288,11 @@ if 'r%x' % eid in kcache: ROLL0 = ROLL = math.radians(kcache['r%x' % eid]); cand
 ROUNDS = [(1.0, 1, 1), (1.0, 1, 1), (1.4, -1, -1), (1.0, 1, 1, 45), (1.0, -1, -1, 45)] + [(ax_, sx_, sy_) for ax_ in (1.0, 1.45, 0.7, 2.0, 0.5) for (sx_, sy_) in ((-1, -1), (1, 1), (1, -1), (-1, 1)) if (ax_, sx_, sy_) != (1.0, 1, 1)]
 if FORCE:
     fw, fdy, fax, fsx, fsy = [float(v) for v in FORCE.split(',')]; ROUNDS = [(fax, int(fsx), int(fsy))] * 2; cands = [(fw, int(fdy))]; cached_ax = None
+OLD_TRACED = traced()      # (a redraw: the solved line's count)
 for attempt, rd_ in enumerate(ROUNDS):
     ax_, sx_, sy_ = rd_[:3]; ROLL = math.radians(rd_[3]) if len(rd_) > 3 else ROLL0
     ROUND_END = (time.time() - T_START) + 70      # each round gets its own budget; the whole search is capped below
-    if time.time() - T_START > 230 and attempt > 2: break      # the whole search for a start circle is capped: a panel without one is reported, not chased
+    if time.time() - T_START > float(os.environ.get('WDRAW_START_BUDGET') or 230) and attempt > 2: break      # the whole search for a start circle is capped: a panel without one is reported, not chased (WDRAW_START_BUDGET seconds)
     AX = cached_ax if (attempt == 0 and cached_ax) else ax_; SX, SY = cached_flip if attempt == 0 else (sx_, sy_)
     for _ in range(3):
         c.click(settle=1.0)                          # enter: the cursor appears at the screen centre
@@ -212,9 +309,65 @@ for attempt, rd_ in enumerate(ROUNDS):
         cur = (cur[0] + round(ddx / n_) * n_ / COUNTS_PER_PX, cur[1] + round(ddy / n_) * n_ / COUNTS_PER_PX)
         if os.environ.get('WDRAW_KSHOTS'): c.send(['shot k_%d_%d' % (round(w_ * 1000), dy_)], 0.4)
         c.send(['button L down', 'button L up'], 0.14)      # press and release on the start circle: the line starts
-        if traced() >= 1 or state() == 3: started = (w_, dy_); break
+        # A redraw: the solved line's count stays until a new line starts, and state 3 shows up just from entering a solved panel, so only the count
+        # changing from what the old line had (a new line counts 1) says the click started it.
+        if (not REDRAW and (traced() >= 1 or state() == 3)) or (REDRAW and traced() >= 1 and (traced() != OLD_TRACED or first_t() < 0.99)): started = (w_, dy_); break
     if started: break
     rclick()
+def depth_grid(box):
+    """The scene depth on an 11 x 7 grid over box (x0, y0, x1, y1 in screen fractions): [(fx, fy, stored depth)], or None."""
+    log = os.path.join(gdir, 'witness_proxy.log')
+    try: n0 = sum(1 for l in open(log, errors='ignore') if l.startswith('probegrid:'))
+    except OSError: return None
+    c.send(['probegrid %.4f %.4f %.4f %.4f' % box], 0.0)
+    for _ in range(30):
+        time.sleep(0.15); ls_ = [l for l in open(log, errors='ignore') if l.startswith('probegrid:')]
+        if len(ls_) >= n0 + 7 or any('failed' in l or 'no scene' in l for l in ls_[n0:]): break
+    rows = ls_[n0:n0 + 7]
+    if len(rows) < 7 or any('failed' in l or 'no scene' in l for l in rows): return None
+    try: v = [float(x) for l in rows for x in l.split(':', 2)[2].split()]
+    except (ValueError, IndexError): return None
+    if len(v) != 77: return None
+    return [(box[0] + (box[2] - box[0]) * (k % 11) / 10, box[1] + (box[3] - box[1]) * (k // 11) / 6, v[k]) for k in range(77)]
+def panel_box():
+    """Where the panel is on the screen (x0, y0, x1, y1 fractions): the depth cells at the panel's distance, a coarse grid then a fine one."""
+    want = 0.0597 / max(0.3, math.dist(p.camera()[0], (px_, py_, pz_)))
+    def hits(g): return [(fx, fy) for fx, fy, v in (g or []) if v > 0 and 0.75 < v / want < 1.35]
+    h1 = hits(depth_grid((0.15, 0.15, 0.85, 0.85)))
+    if len(h1) < 2: return None
+    b = (max(0.0, min(x for x, _ in h1) - 0.07), max(0.0, min(y for _, y in h1) - 0.117), min(1.0, max(x for x, _ in h1) + 0.07), min(1.0, max(y for _, y in h1) + 0.117))
+    h2 = hits(depth_grid(b)) or h1
+    hx, hy = (b[2] - b[0]) / 20, (b[3] - b[1]) / 12      # half a cell of the fine grid
+    return (min(x for x, _ in h2) - hx, min(y for _, y in h2) - hy, max(x for x, _ in h2) + hx, max(y for _, y in h2) + hy)
+def start_from_box():
+    """The start circle placed by where the panel is on the screen (no size model): its panel coordinates mapped into the panel's box, the
+    four mirror readings in turn, a small spiral of clicks round each. True when a line started."""
+    box = panel_box()
+    if not box: stamp('box start: the panel was not found in the depth grid'); return False
+    u, v = dots[2 * path[0]], dots[2 * path[0] + 1]; stamp('box start: panel at %.2f..%.2f x %.2f..%.2f' % box)
+    for fu, fv in ((u, 1 - v), (u, v), (1 - u, 1 - v), (1 - u, v)):
+        sx = box[0] + fu * (box[2] - box[0]); sy = box[1] + fv * (box[3] - box[1])
+        for _ in range(3):
+            c.click(settle=1.0)
+            if not probe_free_look(): break
+            rclick()
+        cur = (0.0, 0.0)
+        for ox, oy in ((0, 0), (10, 0), (-10, 0), (0, 10), (0, -10), (20, 0), (-20, 0), (0, 20), (0, -20)):
+            tx, ty = (sx - 0.5) * 1920 + ox, (sy - 0.5) * 1080 + oy
+            ddx, ddy = (tx - cur[0]) * COUNTS_PER_PX, (ty - cur[1]) * COUNTS_PER_PX; n_ = max(1, int(math.ceil(max(abs(ddx), abs(ddy)) / 14)))
+            if abs(ddx) + abs(ddy) >= 1: c.send(['mouse %d %d' % (round(ddx / n_), round(ddy / n_))] * n_, 1.1 * c.frame * n_ + 0.02)
+            cur = (cur[0] + round(ddx / n_) * n_ / COUNTS_PER_PX, cur[1] + round(ddy / n_) * n_ / COUNTS_PER_PX)
+            c.send(['button L down', 'button L up'], 0.14)
+            if (not REDRAW and (traced() >= 1 or state() == 3)) or (REDRAW and traced() >= 1 and (traced() != OLD_TRACED or first_t() < 0.99)):
+                stamp('box start: line started at %.3f %.3f (reading %.2f %.2f)' % (sx, sy, fu, fv)); return True
+        rclick()
+    return False
+if not started and not os.environ.get('WDRAW_NO_BOX_START'):
+    try:
+        if start_from_box():
+            # The size model did not find the start, so the projection is not to be trusted for the walk: steer it by feedback.
+            started = (W, 0); os.environ['WDRAW_STEER'] = '1'
+    except Exception as e_: stamp('box start failed: %r' % e_)
 if not started: done(False, 'the line did not start with any panel size or offset tried', traced(), dist)
 W = started[0]
 stamp('line started with W %.3f m, vertical offset %d px, width factor %.2f, flips %d %d' % (started + (AX, SX, SY)))
@@ -242,11 +395,111 @@ def straight_on(node, vx, vy):      # does an edge leave this node in (about) th
         if (wx * vx + wy * vy) / wn > 0.9: return True
     return False
 
+axflip = {}        # axes found running the other way on this panel ('h', 'v': -1)
+path_nodes_all = range(10 ** 6)
 per_px = None      # (kept for the end stub) mouse counts per screen pixel on the last edge walked
 gain = {}          # counts per pixel, learned per direction (h / v): when the panel's width and height are scaled differently from what the projection assumed (the swamp panels), one number overshoots the other direction
+def heading(i):
+    """The screen direction to push in from path[i-1] towards path[i]. Some panels put extra nodes a few millimetres apart on a track (the
+    tutorial gate's diamond lattice: pairs 4 mm apart beside each crossing); between two of them the projected direction is rounding noise, and
+    at a turn it pushed the line the wrong way. So a short step heads for the first node along the path that is far enough to give a direction."""
+    x0_, y0_ = node_px(path[i - 1])
+    for j in range(i, len(path)):
+        x1_, y1_ = node_px(path[j])
+        if math.hypot(x1_ - x0_, y1_ - y0_) >= 6: return x1_ - x0_, y1_ - y0_
+    x1_, y1_ = node_px(path[i]); return x1_ - x0_, y1_ - y0_
+TRACER = bool(os.environ.get('WDRAW_TRACER'))      # hand the edges after the first to the game's own tracer (proxy/tracer.cpp): one frame per step, no round trips
+def run_tracer(i0):
+    """Draw path[i0:] with the in-game tracer: per edge its screen direction, the planned push (90 % of what the gain learned on the first
+    edge says), the traced count it must reach, and a hair past the node where the line turns; the end stub by dead reckoning."""
+    items = []
+    for j in range(i0, len(path)):
+        (xa, ya), (xb, yb) = node_px(path[j - 1]), node_px(path[j]); nrm = math.hypot(xb - xa, yb - ya) or 1.0
+        ux_, uy_ = heading(j); un = math.hypot(ux_, uy_) or 1.0; vx_, vy_ = ux_ / un, uy_ / un
+        g_ = gain.get('h' if abs(vx_) >= abs(vy_) else 'v') or per_px or 2.9
+        if j == len(path) - 1: items.append((vx_, vy_, g_ * nrm + float(os.environ.get('WDRAW_STUB_EXTRA') or 40), 0, 0))
+        else: items.append((vx_, vy_, 0.9 * g_ * nrm if nrm > 4 else 0, j + 1, 0 if straight_on(path[j], vx_, vy_) else 2))
+    res = os.path.join(gdir, 'witness_trace.json')
+    if os.path.exists(res): os.remove(res)
+    c.send(['trace %x %d %s' % (eid, len(items), ' '.join('%.4f %.4f %.1f %d %.1f' % it for it in items))], 0.05)
+    t_ = time.time()
+    while time.time() - t_ < 60 and not os.path.exists(res): time.sleep(0.05)
+    try: r_ = json.load(open(res))
+    except (OSError, ValueError): done(False, 'the in-game tracer gave no result', traced(), dist)
+    stamp('tracer: %d of %d edges' % (r_['done'], len(items)))
+    if not r_['ok']: done(False, 'tracer: %s (edge %d)' % (r_['why'], i0 + r_['done']), traced(), dist)
+def last_record():
+    """(index_a, index_b, t) of the edge the line is on (the last traced-edge record), or None."""
+    n_ = traced(); ptr = p.u64(e + 0x230)
+    if not ptr or n_ < 1 or n_ > 500: return None
+    raw = p.rd(ptr + (n_ - 1) * 0x34, 0x14)
+    if not raw: return None
+    a_, b_ = struct.unpack('<2I', raw[:8]); return a_, b_, struct.unpack('<f', raw[16:20])[0]
+STEER = bool(os.environ.get('WDRAW_STEER'))
+def steer_edge(i, guess):
+    """Walk path[i-1] -> path[i] by feedback alone (no projection): nudge, read which edge the line went onto (the traced-edge record),
+    keep a direction that moves it along the right edge, pull back from a wrong one and try the next. For panels the projection gets wrong:
+    tilted, warped, seen at an angle (Monastery Shutters Control). True when the node was reached."""
+    u_, v_ = path[i - 1], path[i]
+    cands = [guess] + [(math.cos(k * math.pi / 4), math.sin(k * math.pi / 4)) for k in range(8)]
+    for dx_, dy_ in cands:
+        last_t = -1.0; flat = 0
+        for _ in range(120):
+            if traced() >= i + 1: steer_dir[0] = (dx_, dy_); return True
+            r_ = last_record()
+            if traced() < i:      # this way ran back along the line drawn so far (the count dropped): push forward again, try the next way
+                for _ in range(80):
+                    if traced() >= i: break
+                    mouse(-dx_, -dy_, 4)
+                break
+            if r_:      # (the record's node numbers are not the panel's: progress is judged by its t and the count only)
+                if r_[2] > last_t + 1e-4: flat = 0; last_t = r_[2]
+                else: flat += 1
+                if flat > 25: break      # this way no longer moves the line: the next one
+            mouse(dx_, dy_, 6)
+    return traced() >= i + 1
+steer_dir = [None]
+def steer_stub():
+    """The end stub by feedback. The traced-edge record's node numbers are not the panel's node indices (on Shutters Control the line on
+    6 -> 9 read (2, 5)), so it is told by what the count does: reaching any grid node steps the count up, the end of the stub does not; an
+    edge run to t >= 0.97 with the count unchanged is the end."""
+    n_end = traced(); first = steer_dir[0]
+    for dx_, dy_ in ([first] if first else []) + [(math.cos(k * math.pi / 4), math.sin(k * math.pi / 4)) for k in range(8)]:
+        last_t = -1.0; flat = 0; last_key = None; moved = False
+        for _ in range(150):
+            r_ = last_record()
+            if traced() > n_end:      # onto another grid node: not the stub; push back to the last node, try the next way
+                for _ in range(80):
+                    if traced() <= n_end: break
+                    mouse(-dx_, -dy_, 4)
+                break
+            if traced() < n_end:      # ran back along the line: forward again, next way
+                for _ in range(80):
+                    if traced() >= n_end: break
+                    mouse(-dx_, -dy_, 4)
+                break
+            if r_ and r_[2] >= 0.97 and moved: return True      # pushed to the end of an edge without a new node: the stub's end
+            if r_:      # stalled = nothing changes (running back along a partly drawn edge first is fine; a new edge starts afresh)
+                key = (r_[0], r_[1])
+                if key != last_key or abs(r_[2] - last_t) > 1e-4: flat = 0; moved = moved or last_key is not None; last_key = key; last_t = r_[2]
+                else: flat += 1
+                if flat > 15: break
+            mouse(dx_, dy_, 6)
+    return False
 for i in range(1, len(path)):
+    if STEER and i == len(path) - 1:
+        if not steer_stub(): done(False, 'steering: the end stub was not reached', traced(), dist)
+        dbg('steered the end stub'); break
+    if STEER and i < len(path) - 1:
+        (x0, y0), (x1, y1) = node_px(path[i - 1]), node_px(path[i]); ux, uy = heading(i); un = math.hypot(ux, uy) or 1.0
+        if not steer_edge(i, (ux / un, uy / un)): done(False, 'steering: stuck before node %d (path index %d)' % (path[i], i), traced(), dist)
+        if traced() > i + 1: done(False, 'steering: overshot node %d' % path[i], traced(), dist)
+        norm = math.hypot(x1 - x0, y1 - y0) or 1.0; vx, vy = steer_dir[0] or (ux / un, uy / un); per_px = per_px or 2.9
+        dbg('steered', path[i - 1], '->', path[i], 'traced', traced()); continue
+    if TRACER and i >= 2 and (gain or per_px) and not STEER: run_tracer(i); break
     (x0, y0), (x1, y1) = node_px(path[i - 1]), node_px(path[i])
-    ux, uy = x1 - x0, y1 - y0; norm = math.hypot(ux, uy) or 1.0; vx, vy = ux / norm, uy / norm
+    norm = math.hypot(x1 - x0, y1 - y0) or 1.0; ux, uy = heading(i); vx, vy = ux / (math.hypot(ux, uy) or 1.0), uy / (math.hypot(ux, uy) or 1.0)
+    vx *= axflip.get('h', 1); vy *= axflip.get('v', 1)      # an axis found reversed on an earlier edge stays reversed
     last = i == len(path) - 1
     if last:      # the end stub: its length by dead reckoning and a little more (a cursor pushed past the panel's edge cancels the line)
         stub_gain = gain.get('h' if abs(vx) >= abs(vy) else 'v') or per_px or 2.9      # the gain of the stub's own axis (swamp panels: 2.4 sideways, 5.5 up)
@@ -259,9 +512,24 @@ for i in range(1, len(path)):
     used = 0.0; axis_ = 'h' if abs(vx) >= abs(vy) else 'v'
     if gain.get(axis_) and norm > 4:
         first = float(os.environ.get("WDRAW_FIRST") or 0.9) * gain[axis_] * norm; mouse(vx, vy, first); used += first
+    stalled_at = traced(); since = 0
     for _ in range(250):
         if traced() >= i + 1: break
-        mouse(vx, vy, 2); used += 2
+        # No progress for a while: the axis may run the other way on this panel (a vertical flip the start search did not catch; Jungle Second
+        # Row 1 went nowhere going up). Push the main axis the other way, and keep that flip for the edges after if it works.
+        if traced() == stalled_at: since += 1
+        else: stalled_at = traced(); since = 0
+        if since == 60 and not os.environ.get('WDRAW_NO_FLIP_RETRY'):
+            if abs(vy) >= abs(vx): vy = -vy; axflip['v'] = -axflip.get('v', 1)
+            else: vx = -vx; axflip['h'] = -axflip.get('h', 1)
+            dbg('no progress on segment', path[i - 1], '->', path[i], ': main axis reversed')
+        # WDRAW_PROGRESS_STEPS: on a long edge, the line's own progress along it says how much is left: push most of that (capped), then small
+        # steps. (Experimental: on short edges the estimate is noise; an uncapped version overshot the tutorial gate's first segment.)
+        step = 2
+        if os.environ.get('WDRAW_PROGRESS_STEPS') and norm > 40 and used > 0:
+            ep = edge_progress()
+            if ep and ep[1] == path[i] and 0.1 < ep[0] < 0.9: step = min(40.0, max(2.0, 0.7 * (1 - ep[0]) * used / ep[0]))
+        mouse(vx, vy, step); used += step
     else: done(False, 'stuck before node %d (path index %d)' % (path[i], i), traced(), dist)
     if traced() > i + 1: done(False, 'overshot node %d: the line ran past it (traced %d, wanted %d)' % (path[i], traced(), i + 1), traced(), dist)
     if not straight_on(path[i], vx, vy): mouse(vx, vy, 2)      # the count flips as the tip reaches the node: a hair further so a turn is taken at the node, not before it
@@ -276,4 +544,7 @@ c.send(['button L down'], 0.12); c.send(['button L up'], 0.12)
 t_end = time.time()
 while time.time() - t_end < 8 and not is_solved() and state() != 2: time.sleep(0.2)      # solved flags, or the game's verdict "wrong" (state 2)
 stamp('finished (state %d)' % state())
+if REDRAW:      # the panel was solved before; starting a new line cleared that (the walk above saw it traced from the start), so solved again
+    # now means the game accepted this line. (The stored-line field +0x454 is empty after a redraw: not usable as the verdict.)
+    done(is_solved(), '' if is_solved() else 'redrawn, but the game did not accept it (state %d)' % state(), traced(), dist)
 done(is_solved(), '' if is_solved() else 'finished but the game did not accept it (state %d)' % state(), traced(), dist)

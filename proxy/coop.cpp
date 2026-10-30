@@ -38,6 +38,18 @@ void VoiceStart();
 void VideoOnRequest(const uint8_t* data, size_t n);
 
 static std::atomic<unsigned> g_myId{0};
+// Every "state:" line of the core also goes to witness_events.log with the time in milliseconds of the machine's performance counter, the same
+// clock for every game on this PC: a solve's "local panel .. solved -> event" in one game and its "remote panel .. applied" in another give the
+// co-op propagation time exactly (tools/playthrough/run.py reads them).
+static void EventLog(const char* t) {
+    static FILE* f; static double scale;
+    if (!f) {
+        wchar_t path[MAX_PATH]; GetModuleFileNameW(g_selfModule(), path, MAX_PATH); wchar_t* sl = wcsrchr(path, L'\\'); if (sl) sl[1] = 0;
+        wcscat_s(path, L"witness_events.log"); f = _wfopen(path, L"a"); LARGE_INTEGER fr; QueryPerformanceFrequency(&fr); scale = 1000.0 / (double)fr.QuadPart;
+        if (!f) return;
+    }
+    LARGE_INTEGER c; QueryPerformanceCounter(&c); fprintf(f, "%.3f %s\n", (double)c.QuadPart * scale, t); fflush(f);
+}
 unsigned CoopMyId() { return g_myId.load(); }
 static char g_myName[40] = "";
 const char* CoopMyName() { return g_myName[0] ? g_myName : "me"; }
@@ -115,6 +127,8 @@ static DWORD WINAPI NetThread(LPVOID) {
         if (sscanf(line, "no_reload_sync=%d", &v) == 1) flags.noReloadSync = v;
         if (sscanf(line, "no_cable_sync=%d", &v) == 1) flags.noCableSync = v;
         if (sscanf(line, "no_cable_off=%d", &v) == 1) flags.noCableOff = v;
+        if (sscanf(line, "no_unsolve_sync=%d", &v) == 1) flags.noUnsolveSync = v;
+        if (sscanf(line, "no_door_close_sync=%d", &v) == 1) flags.noDoorCloseSync = v;
         if (sscanf(line, "no_off_snapshot=%d", &v) == 1) flags.noOffSnapshot = v;
         if (sscanf(line, "no_cable_arbiter=%d", &v) == 1) flags.noCableArbiter = v;
         if (sscanf(line, "no_snap_reassert=%d", &v) == 1) flags.noSnapReassert = v;
@@ -155,7 +169,7 @@ static DWORD WINAPI NetThread(LPVOID) {
         sendto(s, (const char*)b.data(), (int)b.size(), 0, (const sockaddr*)&addr, sizeof addr); };
     if (endpoints.empty()) h.send = [&](const witness::Bytes& b) { transmit(peer, b); };
     else h.sendTo = [&](unsigned target, const witness::Bytes& b) { auto it = endpoints.find(target); if (it != endpoints.end()) transmit(it->second, b); };
-    h.log = [](const char* t) { Log(t); };
+    h.log = [](const char* t) { Log(t); if (!strncmp(t, "state: ", 7)) EventLog(t); };
     h.lock = [] { EnterCriticalSection(&g_lock); }; h.unlock = [] { LeaveCriticalSection(&g_lock); };
     uint32_t session = (uint32_t)time(nullptr);     // must grow with every start: the core ignores packets from an older session
     witness::SyncCore* core = new witness::SyncCore(id, session, GameWorldInstance(), h, flags);

@@ -44,6 +44,7 @@ void InputKey(unsigned vk, unsigned scan, bool down) { Push({true, vk, scan, dow
 void InputChar(unsigned ch) { Ev e = {true, ch, 0, true, 0, 0, 0}; e.ch = true; Push(e); }
 void InputMouse(int dx, int dy, unsigned bf) { Push({false, 0, 0, false, dx, dy, bf}); }
 unsigned InputStats(int w) { return (unsigned)g_stats[w]; }
+bool InputIdle() { if (!g_init) return true; EnterCriticalSection(&g_lock); bool idle = g_n == 0; LeaveCriticalSection(&g_lock); return idle; }
 
 void InputPump(HWND wnd) {      // one event per frame, so a sequence of mouse deltas spreads over frames like real motion
     if (!g_init || !wnd) return;

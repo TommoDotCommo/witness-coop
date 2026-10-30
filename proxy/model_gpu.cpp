@@ -21,6 +21,7 @@
 static_assert(offsetof(wm::Vertex, appearanceGroup) == 56, "appearance input layout must match Vertex");
 #include "config.h"
 #include "depth.h"
+HMODULE g_selfModule();
 #include "devmenu.h"
 #include "ghost/ghost.h"
 
@@ -41,7 +42,7 @@ static Loaded* g_L = &g_adventurer;
 static volatile LONG g_modelRenderThread;
 static bool g_ready, g_tried;
 static ID3D11Device* g_dev; static ID3D11DeviceContext* g_ctx;
-static ID3D11VertexShader *g_vs, *g_vsFull; static ID3D11PixelShader *g_psDepth, *g_psProbe; static volatile LONG g_probeReq, g_depthViewCmd;
+static ID3D11VertexShader *g_vs, *g_vsFull; static ID3D11PixelShader *g_psDepth, *g_psProbe, *g_psDump; static volatile LONG g_probeReq, g_gridReq, g_dumpReq, g_depthViewCmd; static float g_gridBox[4] = {0.2f, 0.2f, 0.8f, 0.8f};
 static ID3D11VertexShader* g_vsUnused; static ID3D11PixelShader* g_ps; static ID3D11InputLayout* g_layout;
 static ID3D11Buffer *g_cbFrame, *g_cbBones;
 static ID3D11Buffer* g_vbTv;
@@ -150,6 +151,8 @@ float PSProbe(FS i) : SV_TARGET {
   int smp = 0;
   if (k < 4) smp = k; else if (k == 4) p = int2(w * 0.5, h * 0.8); else if (k == 5) p = int2(w * 0.5, h * 0.2); else if (k == 6) p = int2(w * 0.2, h * 0.5); else p = int2(w * 0.8, h * 0.5);
   return depthp.x < 1.5 ? scene1.Load(int3(p, 0)) : sceneMS.Load(p, smp); }
+// depth dump: a small picture of the scene depth (tint.xy: screen pixels per dump pixel), the first sample of each pixel
+float PSDump(FS i) : SV_TARGET { int2 p = int2(i.pos.xy * tint.xy); return depthp.x < 1.5 ? scene1.Load(int3(p, 0)) : sceneMS.Load(p, 0); }
 // debugging view of the scene depth: red = 1 - z (x10), green = z (x10), blue = untouched (z at 1)
 FS VSFull(uint id : SV_VertexID) { FS o; float2 q = float2((id << 1) & 2, id & 2); o.pos = float4(q * float2(2, -2) + float2(-1, 1), 0, 1); return o; }
 // the sun shadow: the blurred mask of the flattened model, laid only on the game's geometry near the player's ground height, and not over our own figures
@@ -177,6 +180,7 @@ void ModelGpuDepthView(bool on) { InterlockedExchange(&g_depthViewCmd, on); }
 static volatile LONG g_forceBlink;
 void ModelGpuForceBlink() { InterlockedExchange(&g_forceBlink, 1); }
 void ModelGpuRequestProbe() { InterlockedExchange(&g_probeReq, 1); }
+void ModelGpuRequestProbeGrid(float x0, float y0, float x1, float y1) { g_gridBox[0] = x0; g_gridBox[1] = y0; g_gridBox[2] = x1; g_gridBox[3] = y1; InterlockedExchange(&g_gridReq, 1); }
 ModelDrawStats ModelGpuStats() { return g_stats; }
 
 
@@ -259,6 +263,7 @@ bool ModelGpuInit(ID3D11Device* dev, ID3D11DeviceContext* ctx) {
         if (FAILED(compile(kHlsl, strlen(kHlsl), "model", nullptr, nullptr, "PSMask", "ps_5_0", 0, 0, &mb, &eb)) || FAILED(compile(kHlsl, strlen(kHlsl), "model", nullptr, nullptr, "PSShadow", "ps_5_0", 0, 0, &sb, &eb))) return Fail(eb ? (const char*)eb->GetBufferPointer() : "model: shadow shaders failed");
         dev->CreatePixelShader(mb->GetBufferPointer(), mb->GetBufferSize(), nullptr, &g_psMask); dev->CreatePixelShader(sb->GetBufferPointer(), sb->GetBufferSize(), nullptr, &g_psShadow);
     }
+    ID3DBlob* pdb = nullptr; if (SUCCEEDED(compile(kHlsl, strlen(kHlsl), "model", nullptr, nullptr, "PSDump", "ps_5_0", 0, 0, &pdb, &eb))) dev->CreatePixelShader(pdb->GetBufferPointer(), pdb->GetBufferSize(), nullptr, &g_psDump);
     {   // the other players' lines
         ID3DBlob *lvb = nullptr, *lpb = nullptr;
         if (SUCCEEDED(compile(kHlsl, strlen(kHlsl), "model", nullptr, nullptr, "VSLine", "vs_5_0", 0, 0, &lvb, &eb)) && SUCCEEDED(compile(kHlsl, strlen(kHlsl), "model", nullptr, nullptr, "PSLine", "ps_5_0", 0, 0, &lpb, &eb))) {
@@ -335,6 +340,19 @@ static void RunProbe(UINT w, UINT h, ID3D11ShaderResourceView* sceneSrv, bool ms
     float v[8]; if (!ProbeDepth(w, h, sceneSrv, ms, v)) return; char msg[300];
     snprintf(msg, sizeof msg, "probe: centre samples %.7g %.7g %.7g %.7g | low %.7g high %.7g left %.7g right %.7g (scene depth, %s)", v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], ms ? "multisampled" : "single sample"); Log(msg);
 }
+// The scene depth on an 11 x 7 grid over the middle 60 % of the screen (x 0.2..0.8, y 0.2..0.8), one line: the bot finds where on the screen a
+// panel really is (the cells at the panel's distance) when its middle is not where its entity's origin says (Quarry Boat Spawn).
+static void RunProbeGrid(UINT w, UINT h, ID3D11ShaderResourceView* sceneSrv, bool ms) {
+    char b[24];      // one log line per row (the log takes lines up to 512 bytes): "probegrid: row J of 7: v0 .. v10"
+    for (int j = 0; j < 7; j++) {
+        std::string line = "probegrid: row " + std::to_string(j) + " of 7:";
+        for (int i = 0; i < 11; i++) {
+            float v[8]; if (!ProbeDepth(w, h, sceneSrv, ms, v, g_gridBox[0] + (g_gridBox[2] - g_gridBox[0]) * i / 10, g_gridBox[1] + (g_gridBox[3] - g_gridBox[1]) * j / 6)) { Log("probegrid: failed"); return; }
+            snprintf(b, sizeof b, " %.6g", v[0]); line += b;
+        }
+        Log(line.c_str());
+    }
+}
 // The distance (along the view direction) of the game's geometry under the middle of the screen, for location pings and free drawing: asked for, answered by the next frame.
 static volatile LONG g_centerReq, g_centerReady; static float g_centerDist = -1;
 static volatile float g_centerFx = 0.5f, g_centerFy = 0.5f;
@@ -351,10 +369,50 @@ static void AnswerCenterDepth(UINT w, UINT h) {
 }
 
 
+// The scene depth as a 192 x 108 picture with the camera it was drawn from, for the bot's walking (tools/win/wnav.py builds a map of where
+// it can walk from these): witness_depth.bin next to the DLL, replaced whole. Header: "WDD1", width, height (uint32), then floats: camera
+// position x y z, yaw, pitch, vertical field of view (degrees), aspect, the game's near plane; then width * height floats, top row first,
+// each the game's depth (near / distance along the view, 0 for the sky).
+void ModelGpuRequestDepthDump() { InterlockedExchange(&g_dumpReq, 1); }
+static void RunDepthDump(UINT w, UINT h, ID3D11ShaderResourceView* sceneSrv, bool ms, const wm::Cam& cam) {
+    const UINT W = 192, H = 108;
+    D3D11_TEXTURE2D_DESC td = {}; td.Width = W; td.Height = H; td.MipLevels = 1; td.ArraySize = 1; td.Format = DXGI_FORMAT_R32_FLOAT; td.SampleDesc.Count = 1; td.BindFlags = D3D11_BIND_RENDER_TARGET;
+    ID3D11Texture2D *rt = nullptr, *st = nullptr; ID3D11RenderTargetView* rv = nullptr;
+    if (!g_psDump || FAILED(g_dev->CreateTexture2D(&td, nullptr, &rt)) || FAILED(g_dev->CreateRenderTargetView(rt, nullptr, &rv))) { Log("depthdump: cannot make the target"); if (rt) rt->Release(); return; }
+    td.Usage = D3D11_USAGE_STAGING; td.BindFlags = 0; td.CPUAccessFlags = D3D11_CPU_ACCESS_READ; g_dev->CreateTexture2D(&td, nullptr, &st);
+    FrameCB fc = {}; fc.depthp[0] = ms ? 2.0f : 1.0f; fc.tint[0] = (float)w / W; fc.tint[1] = (float)h / H;
+    g_ctx->UpdateSubresource(g_cbFrame, 0, nullptr, &fc, 0, 0);
+    D3D11_VIEWPORT vp = {0, 0, (float)W, (float)H, 0, 1};
+    g_ctx->OMSetRenderTargets(1, &rv, nullptr); g_ctx->RSSetViewports(1, &vp); g_ctx->RSSetState(g_rs); g_ctx->OMSetBlendState(g_blend, nullptr, 0xffffffff);
+    g_ctx->IASetInputLayout(nullptr); g_ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST); g_ctx->VSSetShader(g_vsFull, nullptr, 0); g_ctx->PSSetShader(g_psDump, nullptr, 0);
+    g_ctx->PSSetConstantBuffers(0, 1, &g_cbFrame); g_ctx->PSSetShaderResources(ms ? 1 : 2, 1, &sceneSrv);
+    g_ctx->GSSetShader(nullptr, nullptr, 0); g_ctx->HSSetShader(nullptr, nullptr, 0); g_ctx->DSSetShader(nullptr, nullptr, 0);
+    g_ctx->Draw(3, 0);
+    ID3D11ShaderResourceView* z3[3] = {nullptr, nullptr, nullptr}; g_ctx->PSSetShaderResources(0, 3, z3);
+    g_ctx->CopyResource(st, rt); D3D11_MAPPED_SUBRESOURCE m;
+    if (st && SUCCEEDED(g_ctx->Map(st, 0, D3D11_MAP_READ, 0, &m))) {
+        std::vector<float> px(W * H); for (UINT y = 0; y < H; y++) memcpy(&px[y * W], (const char*)m.pData + y * m.RowPitch, W * sizeof(float));
+        g_ctx->Unmap(st, 0);
+        wchar_t path[MAX_PATH]; GetModuleFileNameW(g_selfModule(), path, MAX_PATH); wchar_t* sl = wcsrchr(path, L'\\'); if (sl) sl[1] = 0;
+        wchar_t tmp[MAX_PATH], fin[MAX_PATH]; wcscpy_s(tmp, path); wcscat_s(tmp, L"witness_depth.tmp"); wcscpy_s(fin, path); wcscat_s(fin, L"witness_depth.bin");
+        if (FILE* f = _wfopen(tmp, L"wb")) {
+            uint32_t hd[3] = {0x31444457u, W, H}; float c[8] = {cam.pos[0], cam.pos[1], cam.pos[2], cam.theta, cam.phi, cam.vfovDeg, cam.aspect, GetCfg().depthNear};
+            fwrite(hd, 4, 3, f); fwrite(c, 4, 8, f); fwrite(px.data(), 4, px.size(), f); fclose(f); MoveFileExW(tmp, fin, MOVEFILE_REPLACE_EXISTING);
+        }
+    } else Log("depthdump: cannot read the target");
+    rv->Release(); rt->Release(); if (st) st->Release();
+}
+
 bool ModelGpuDraw(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Cam& cam, bool valid, unsigned seq, const float pos[3], float yaw, unsigned playerId, bool first, const ModelExtra* extra) {
     if (!g_ready) return false;
     InterlockedExchange(&g_modelRenderThread, (LONG)GetCurrentThreadId());
     if (first && InterlockedExchange(&g_centerReq, 0)) AnswerCenterDepth(w, h);
+    if (first && (g_probeReq || g_gridReq || g_dumpReq)) {      // answered here, before anything returns early: with no other player to draw they were never answered
+        ID3D11ShaderResourceView* srv = nullptr; bool ms = false; bool have = !GetCfg().noModelDepth && DepthScene(&srv, &ms);
+        if (InterlockedExchange(&g_probeReq, 0)) { if (have) RunProbe(w, h, srv, ms); else Log("probe: no scene depth buffer found"); }
+        if (InterlockedExchange(&g_gridReq, 0)) { if (have) RunProbeGrid(w, h, srv, ms); else Log("probegrid: no scene depth buffer found"); }
+        if (InterlockedExchange(&g_dumpReq, 0)) { if (have) RunDepthDump(w, h, srv, ms, cam); else Log("depthdump: no scene depth buffer found"); }
+    }
     static unsigned s_frames; if (first) { g_stats.frames = ++s_frames; g_stats.submittedPlayers = 0; g_playerDraws.clear(); }
     auto& avatar = g_L->avatars[GetCfg().noGroupAvatarState ? 0 : playerId]; if (!avatar) avatar = std::make_unique<wm::Avatar>(g_L->gait, playerId + 1);
     wm::Avatar* g_avatar = avatar.get();
@@ -431,6 +489,7 @@ bool ModelGpuDraw(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Cam& ca
     ID3D11ShaderResourceView* sceneSrv = nullptr; bool ms = false;
     bool haveScene = !cfg.noModelDepth && DepthScene(&sceneSrv, &ms);
     if (InterlockedExchange(&g_probeReq, 0)) { if (haveScene) RunProbe(w, h, sceneSrv, ms); else Log("probe: no scene depth buffer found"); }
+    if (InterlockedExchange(&g_gridReq, 0)) { if (haveScene) RunProbeGrid(w, h, sceneSrv, ms); else Log("probegrid: no scene depth buffer found"); }
     fc.screen[0] = (float)w; fc.screen[1] = (float)h;
     fc.depthp[0] = haveScene ? (ms ? 2.0f : 1.0f) : 0.0f; fc.depthp[1] = 4; fc.depthp[2] = cfg.depthBias; fc.depthp[3] = cfg.depthNear;
     g_ctx->UpdateSubresource(g_cbFrame, 0, nullptr, &fc, 0, 0); g_ctx->UpdateSubresource(g_cbBones, 0, nullptr, bones.data(), 0, 0);

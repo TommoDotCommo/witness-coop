@@ -78,6 +78,16 @@ def test_poly():
     path = solver.solve_rules(p); check_path(p, path)
     regs = cells_of(path, 3, 3); reg = {ci: k for k, r in enumerate(regs) for ci in r}; assert len(regs[reg[0]]) == 1
 
+def test_poly_pillar():
+    # a pillar of 3 columns and one row of cells (the row of nodes closes on itself). The one-cell polyomino in cell 1 needs its own region, so the
+    # line cuts columns 1 and 2; the domino in cell 0 then fills cells 2 and 0, which touch only across the seam
+    # (no top edges beside the start, so the line has to cut columns: cutting 1 and 2 is the only valid choice, cutting 0 and 1 leaves the domino a 1-cell region)
+    n = 6; edges = [(2, 0), (3, 4), (4, 5), (5, 3), (0, 3), (1, 4), (2, 5)]; flags = [0x600000] * n; flags[1] |= 2; flags[2] |= 1
+    p = {'id': 0, 'nodes': n, 'edges': len(edges), 'gx': 3, 'gy': 2, 'ndec': 3, 'flags': flags, 'ca': [a for a, b in edges], 'cb': [b for a, b in edges],
+         'dec': [(0x3 << 16) | 0x400, (0x1 << 16) | 0x400, 0], 'seq': [], 'refl': 0, 'pos': [0.0] * (2 * n), 'powered': True, 'solved': False}
+    path = solver.solve_rules(p); check_path(p, path)
+    assert path in ([1, 4, 5, 2], [1, 4, 3, 5, 2]), path
+
 def test_gap_blocks():
     p = grid(3, 3, gaps={(0, 1), (0, 3)})                   # both edges out of the start are gone: no line exists
     assert solver.solve_rules(p) is None
@@ -103,7 +113,7 @@ def run():
 def run_mutants():
     """Every rule switched off in turn (PSOLVE_MUTANT=<rule>) must make at least one test fail."""
     bad = []
-    for rule in ('dots', 'squares', 'stars', 'triangles', 'poly', 'pitch', 'hole'):
+    for rule in ('dots', 'squares', 'stars', 'triangles', 'poly', 'pitch', 'hole', 'poly_wrap'):
         r = subprocess.run([sys.executable, os.path.abspath(__file__)], env={**os.environ, 'PSOLVE_MUTANT': rule}, capture_output=True, text=True)
         print('mutant %-9s %s' % (rule, 'caught' if r.returncode else 'NOT CAUGHT'))
         if r.returncode == 0: bad.append(rule)

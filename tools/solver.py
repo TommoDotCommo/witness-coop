@@ -37,8 +37,9 @@ def unsupported(p):
     if stored(p): return []
     if p.get('refl') and len(p.get('mirror') or []) != p['nodes']: why.add('symmetry without a mirror map')
     if any(p['dec']) and not (p['gx'] > 1 and p['ndec'] == (p['gx'] - 1) * (p['gy'] - 1)) and not pillar(p): why.add('decorations on a panel that is not a grid')
-    if pillar(p) and any((v >> 8) & 0xf == 4 for v in p['dec']): why.add('polyominoes on a pillar')
-    known = 0x700000 | 0x40000 | 0x20 | 0x100 | 0x200 | 0x1000 | 0x10000 | 0x20000 | 0x30000 | 0x8 | 0x3 | 0xe000      # sound dots (0x2000/0x4000/0x8000): met in the panel's own sequence (psolve), plain dots when it has none
+    if pillar(p) and any((v >> 8) & 0xf == 4 and v & 0x2000 for v in p['dec']): why.add('negative polyominoes on a pillar')      # positive ones across the seam: psolve fits them
+    # 0x80: on one start of each mirrored pair of Glass Factory Back Wall 5, the only panel that has it (the start the player draws from; psolve's line starts there)
+    known = 0x700000 | 0x40000 | 0x20 | 0x100 | 0x200 | 0x1000 | 0x10000 | 0x20000 | 0x30000 | 0x8 | 0x3 | 0xe000 | 0x80      # sound dots (0x2000/0x4000/0x8000): met in the panel's own sequence (psolve), plain dots when it has none
     for f in p['flags']:
         if f & ~known: why.add('node flags %#x' % (f & ~known))
     return sorted(why)
@@ -94,6 +95,30 @@ def solve(p):
         if any(p['dec']) or any(f & 0x20 for f in p['flags']) or p.get('mirror'): return solve_rules(p)
         return solve_plain(p)
     return None
+
+def variants(p):
+    """Distinct solutions that differ in where the line starts or ends: the usual one (solve) first, then one per other start/end pair.
+    A panel with two exits (or two starts) can be solved either way, but only one way powers what it is cabled to (the tutorial's
+    Back Right: only the bottom exit lights the gate's latch): the caller tries the next one when the right thing did not turn on."""
+    out = []; first = solve(dict(p))
+    if first: out.append(first)
+    if p.get('mirror') and any(f & 0x20 and f & 0x300 for f in p['flags']):
+        # Symmetry with coloured dots: each line must touch the dots of its colour, and which of the two lines is blue is not in the panel data
+        # (Symmetry Island Left 1 was refused every time). The same panel with blue and yellow swapped gives the line for the other colouring.
+        q = dict(p); q['flags'] = [(f & ~0x300) | (0x200 if f & 0x100 else 0) | (0x100 if f & 0x200 else 0) for f in p['flags']]
+        try: v = solve(q)
+        except Exception: v = None
+        if v and v not in out: out.append(v)
+    starts = [i for i, f in enumerate(p['flags']) if f & START and not f & END]; ends = [i for i, f in enumerate(p['flags']) if f & END]
+    if len(starts) < 2 and len(ends) < 2: return out
+    for s_ in starts:
+        for e_ in ends:
+            q = dict(p); q['flags'] = [f & ~START if (f & START and i != s_) else f for i, f in enumerate(p['flags'])]
+            q['flags'] = [f & ~END if (f & END and i != e_) else f for i, f in enumerate(q['flags'])]
+            try: v = solve(q)
+            except Exception: v = None
+            if v and v not in out: out.append(v)
+    return out
 
 if __name__ == '__main__':
     import json

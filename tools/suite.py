@@ -170,8 +170,10 @@ def reload_check(bk, mutant):
     log_b = open(os.path.join(DIR2, 'witness_proxy.log'), errors='ignore').read()
     if (pid('A'), pid('B')) != old: return False, 'no process may restart in a same-process reload'
     if not seen_lost: return False, 'the reload never reset B (a test that cannot see the load proves nothing)'
-    if any(after_a[k] != before_a[k] and not set(before_a[k]) <= set(after_a[k]) for k in expected): return False, 'A lost progress'
-    if mutant: return all(e not in after_b[k] for k, e in expected.items()), 'reload ignored: B must still lack panel 0x64 and door 0x34eda'
+    a_lost = any(after_a[k] != before_a[k] and not set(before_a[k]) <= set(after_a[k]) for k in expected)
+    # reload ignored: B stays behind, or (since un-solves and closed doors are shared) its lost progress goes out as un-solves and A loses it too
+    if mutant: return all(e not in after_b[k] for k, e in expected.items()) or a_lost, 'reload ignored: B must still lack panel 0x64 and door 0x34eda, or A lose them through B'
+    if a_lost: return False, 'A lost progress'
     ok = all(e in after_b[k] for k, e in expected.items()) and 'save reload suspected' in log_b
     return ok, 'B caught up from A after loading its older save, without a restart'
 

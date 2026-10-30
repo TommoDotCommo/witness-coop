@@ -7,5 +7,6 @@ void InputInstallHook();                       // from InstallHooks (DllMain): p
 void InputKey(unsigned vk, unsigned scan, bool down);
 void InputChar(unsigned ch);                   // a typed character (WM_CHAR) for the window, one per frame like the others
 void InputMouse(int dx, int dy, unsigned buttonFlags);      // RI_MOUSE_* flags, 0 for a pure move
+bool InputIdle();                               // nothing queued (the last event has gone to the game)
 void InputPump(HWND wnd);                      // render thread, once per frame: post the queued events to the game window
 unsigned InputStats(int which);                // 0 posted, 1 answered, 2 hook calls for real handles, 3 hook calls for our handles

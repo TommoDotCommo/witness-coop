@@ -71,6 +71,33 @@ static bool tile(const vector<pair<int, int>>& cells, vector<unsigned> pos, vect
     if (pos.empty() && neg.empty()) return true;
     if (pos.empty()) return false;
     int minr = 99, maxr = -99, minc = 99, maxc = -99; for (auto& c : cells) { minr = min(minr, c.first); maxr = max(maxr, c.first); minc = min(minc, c.second); maxc = max(maxc, c.second); }
+    if (WRAP && neg.empty() && !mut("poly_wrap")) {
+        // A pillar: the cells go round, so a shape may cross the seam (columns are taken modulo the width). Any cell of a shape may be the one
+        // that lands on the first uncovered cell (on a cylinder its "first" cell in reading order may sit past the seam).
+        int R = maxr - minr + 1, C = CW; vector<int> target(R * C, 0), cover(R * C, 0);
+        for (auto& c : cells) target[(c.first - minr) * C + c.second] = 1;
+        vector<vector<Shape>> po; for (size_t i = 0; i < pos.size(); i++) po.push_back(orientations(pos[i] & 0xFFFF, posRot[i]));
+        vector<char> used(pos.size(), 0);
+        function<bool(int)> place = [&](int left) -> bool {
+            int first = -1; for (int i = 0; i < R * C; i++) if (cover[i] < target[i]) { first = i; break; }
+            if (left == 0 || first < 0) { for (int i = 0; i < R * C; i++) if (cover[i] != target[i]) return false; return left == 0; }
+            int fr = first / C, fc = first % C;
+            for (size_t k = 0; k < pos.size(); k++) {
+                if (used[k]) continue;
+                for (auto& sh : po[k]) for (auto& anchor : sh) {
+                    int r0 = fr - anchor.first, c0 = fc - anchor.second; bool ok = true;
+                    for (auto& p : sh) { int r = r0 + p.first, c = ((c0 + p.second) % C + C) % C; if (r < 0 || r >= R || cover[r * C + c] + 1 > target[r * C + c]) { ok = false; break; } }
+                    if (!ok) continue;
+                    for (auto& p : sh) cover[(r0 + p.first) * C + ((c0 + p.second) % C + C) % C]++;
+                    used[k] = 1; bool done = place(left - 1); used[k] = 0;
+                    for (auto& p : sh) cover[(r0 + p.first) * C + ((c0 + p.second) % C + C) % C]--;
+                    if (done) return true;
+                }
+            }
+            return false;
+        };
+        return place((int)pos.size());
+    }
     int margin = neg.empty() ? 0 : 4;      // shapes may stick out of the region only where a negative shape cancels them
     int R = maxr - minr + 1 + 2 * margin, C = maxc - minc + 1 + 2 * margin, off = margin;
     vector<int> target(R * C, 0), cover(R * C, 0);

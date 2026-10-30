@@ -1,4 +1,4 @@
-// Game-free sync core: reliable shared-state events (panel solved, door opened) among up to 16 players, the stable-world gate, the
+// Game-free sync core: reliable shared-state events (panel solved or un-solved, door opened or closed) among up to 16 players, the stable-world gate, the
 // start-up settling window and the echo guard. No Windows headers, no globals: time, transport, entropy and the game world come in
 // from outside, so the same code runs in the game (proxy/coop.cpp, proxy/state.cpp) and in the fuzzer (core/tests).
 #pragma once
@@ -16,7 +16,7 @@
 namespace witness {
 
 using Bytes = std::vector<uint8_t>;
-enum EvKind : uint8_t { EV_PANEL_SOLVED = 1, EV_DOOR_OPENED = 2, EV_PANEL_POWERED = 3, EV_CABLE_LIT = 4, EV_CABLE_OFF = 5 };
+enum EvKind : uint8_t { EV_PANEL_SOLVED = 1, EV_DOOR_OPENED = 2, EV_PANEL_POWERED = 3, EV_CABLE_LIT = 4, EV_CABLE_OFF = 5, EV_PANEL_UNSOLVED = 6, EV_DOOR_CLOSED = 7 };
 constexpr unsigned kMaxPlayers = 16;
 constexpr unsigned kMaxEntityId = 0x40000;      // the game's entity table size; ids at or above it are refused
 
@@ -34,6 +34,9 @@ public:
     virtual bool cameraValid() = 0;                                             // the world exists (the player has a position)
     virtual bool scan(std::vector<unsigned>& panels, std::vector<unsigned>& doors, uint64_t* tableId) = 0;   // false: unreadable
     virtual bool entityExists(unsigned id) = 0;
+    // Changes when the world is loaded again (a save restored in the same process re-creates the entities, so their addresses change); 0 when
+    // not known. With it a reload is told from progress that undoes itself (timed doors, desert panels that reset): see reloadSeen.
+    virtual uint64_t generation() { return 0; }
     virtual bool isPanel(unsigned id) = 0;                                      // type checks, so a wrong-typed event is refused
     virtual bool isDoor(unsigned id) = 0;
     virtual bool panelSolved(unsigned id) = 0;
@@ -42,6 +45,10 @@ public:
     virtual bool applyPanelPower(unsigned) { return false; }                    // render thread only; false: retry later
     virtual void applyPanelSolved(unsigned id) = 0;                             // render thread only
     virtual bool applyDoorOpen(unsigned id) = 0;                                // render thread only (calls the game's door function)
+    // Progress that undoes itself and must be undone on the other side too: a timer panel resets (the Shadows door timers), a door shuts.
+    virtual bool applyPanelUnsolved(unsigned) { return false; }                 // render thread only; false: retry later
+    virtual bool applyDoorClose(unsigned) { return false; }                     // render thread only; false: retry later
+    virtual bool doorRequested(unsigned id) { return doorOpen(id); }            // the door was told to open (it may still be moving)
     virtual bool scanCables(std::vector<unsigned>&) { return true; }              // all Power_Cable entities (none by default)
     virtual bool isCable(unsigned) { return false; }
     virtual bool cableLit(unsigned) { return false; }                            // the cable's lit state (+0xC4 and +0xC8 at 1.0)
@@ -63,6 +70,8 @@ struct Flags {   // all off by default
     bool noPanelPower = false;  // twin: omit panel power-on progression from live sync and snapshots
     bool noCableSync = false;   // twin: omit cable lighting from live sync and snapshots
     bool noCableOff = false;    // twin: a cable that goes dark stays lit on the peer
+    bool noUnsolveSync = false; // twin: a panel that un-solves (a timer ran out) stays solved on the peer
+    bool noDoorCloseSync = false; // twin: a door that shuts stays open on the peer
     bool noOffSnapshot = false; // twin: snapshots do not tell a fresh peer about cables that were switched off
     bool noSnapReassert = false; // twin: a peer's snapshot that relights a cable this player switched off is ignored but not corrected
     bool noCableArbiter = false; // twin: no tie-break when both players switch the same cable at the same moment
@@ -71,6 +80,8 @@ struct Flags {   // all off by default
     bool noGroupCableIntent = false; // twin: glow/echo bookkeeping hides a genuine new cable command
     bool noGroupVersions = false; // twin: use the two-player cable arbiter in a group
     bool noReloadSync = false;  // twin: ignore a same-process save reload (no re-gate, no resync with the peer)
+    bool reloadByProgress = false;  // twin: ignore the world's generation and judge a reload by vanished progress alone (panels that reset themselves stalled sync)
+    bool reloadOnDoor = false;  // twin: one closed door alone counts as a save reload (a timed door shutting by itself stalled sync for 10-50 s)
     bool noPingReply = false;   // twin: this game never answers a ping (the peers cannot measure it)
     bool noPingExpiry = false;  // twin: a ping measured once stays on show for ever, even when the peer is gone
     bool noNameSend = false;    // twin: names are not sent
@@ -193,6 +204,8 @@ private:
     std::vector<unsigned> cables_; std::set<unsigned> knownCable_; std::map<unsigned, uint64_t> suppressCable_; std::set<unsigned> everOff_; std::map<unsigned, uint64_t> cableToggledAt_;
     uint64_t lastLocalSolveAt_ = 0; bool anyLocalSolve_ = false;     // a door opening soon after a local solve is that solve's cascade, not a start-up flip
     bool settledLogged_ = false;
+    std::string vanished_;      // what reloadSeen found gone (for the log)
+    uint64_t gen_ = 0;          // the world's generation at the last baseline (0: not known)
     bool ready_ = false, gateStarted_ = false; uint64_t nextGate_ = 0, settleUntil_ = 0, nextScan_ = 0, nextStats_ = 0;
     size_t gateLastPanels_ = 0, gateLastDoors_ = 0; uint64_t gateLastSig_ = 0; int gateSame_ = 0;
 };
