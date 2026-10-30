@@ -174,10 +174,18 @@ m = wnav.Map(); m.integrate(ground(None, -5, 25, -15, 30, 0.0)); avoid = set()
 for y in range(-30, 61): m.bump(10.1, y * 0.5)
 n_ = m.unbump_near([(10.1, 5.0)], 2.0)
 check('doors', n_ >= 6 and not m.cells[wnav.cell_of(10.1, 5.1)][2] & wnav.BUMPED and m.cells[wnav.cell_of(10.1, 12.1)][2] & wnav.BUMPED, '%d unbumped' % n_)
+# lvlfall: the target stands on an island 3 m up that nothing leads to; the low ground reaches within 2.3 m of it, a plateau up stairs
+# (3 m up too) within 4.8 m: the way goes to the plateau, the target's level, not to the low cell nearest across
+pts = ground(None, -5, 30, -15, 9.9, 0.0) + ground(None, -5, 9.9, 10, 20, 0.0) + ground(None, 17.3, 19.9, 10, 20, 0.0) + ground(None, 25.1, 30, 10, 20, 0.0) + ground(None, -5, 30, 20.1, 30, 0.0) + ground(None, 10, 17.2, 10, 20, 3.0) + ground(None, 20, 25, 10, 20, 3.0)      # (no ground under the island or the plateau)
+for k in range(12): pts += ground(None, 4 + k * 0.5, 4 + k * 0.5 + 0.49, 14, 16, (k + 1) * 0.25)
+m = wnav.Map(); m.integrate(pts)
+p = m.plan((5, 15, E), (22, 15, 3 + E), margin=12); last = wnav.centre(p[-1]) if p else (0, 0)
+check('lvlfall', p is not None and not m.reached and 10 < last[0] < 17.6 and abs(last[1] - 15) < 6, 'the plan ends at %s (on the low ground below the island if x > 17.6)' % (last,))
 sys.exit(1 if fails else 0)
 '''
 
 MUTANTS = [      # (file text, replacement): each removes one protection
+    ("LEVEL = 1.0 ", "LEVEL = 0.0 "),      # the fallback goes to the cell nearest across, whatever its level
     ("return [z0 + b * BIN for b in range(64) if m >> b & 1 and not (m >> b) & BAND_MASK]", "return [z0 + b * BIN for b in range(64) if m >> b & 1]"),      # nothing in the way counts
     ("fit = [(z, 1.0) for z in surf if (z > SEA or walked) and -DOWN <= z - fu <= up]", "fit = [(z, 1.0) for z in surf[:1] if (z > SEA or walked) and -DOWN <= z - fu <= up]"),      # one level a cell (stairs over ground, decks)
     ("if -DOWN <= r[0] - fu <= UP and r[0] > SEA: return [(r[0], SOFT)]", "if r[0] > SEA: return [(r[0], SOFT)]"),      # a cliff face is soft, any height

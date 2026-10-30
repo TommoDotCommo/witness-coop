@@ -59,6 +59,7 @@ WALKED, BUMPED = 1, 2          # cell flags
 WINDOW = 64 * BIN              # a cell describes 16 m above its floor (its 64-bit mask): a level higher than that is not in the cell
 STAIR = UP + BIN               # a rise up to this is a stair step when the step before or after it climbs too (surfaces are bin starts: up to 0.25 m low)
 POCKET = 5.0                   # after backing out of a pocket, the cells this near it (m) cost as much as bumped ones for the rest of the walk
+LEVEL = 1.0                    # (m per m) the height difference counts this much in how near a cell is to a target the plan cannot reach
 DROP = 16.0                    # (8 m of walking) extra cost of a step down that cannot be stepped back up (more than UP): a one-way drop leads into pockets
 REC = struct.Struct('<hhfQB')  # cell x, cell y, floor z, height mask, flags
 DOOR_TYPE = 0x62DE70           # the door entities' type descriptor (module-relative, as TI_DOOR in wlib.py; build 11370412)
@@ -202,7 +203,8 @@ class Map:
         s0 = key(sa, a[2] - EYE); floor = {s0: a[2] - EYE}
         r0 = self.cells.get(sa)      # the player is under cover: something is known above its head where it stands (out in the open a surface that high is a plateau)
         self.covered = bool(r0) and r0[0] > -1e3 and any(r0[0] + b * BIN > a[2] - EYE + BAND[1] for b in range(64) if r0[1] >> b & 1)
-        g = {s0: 0.0}; prev = {}; heap = [(0.0, s0)]; n = 0; best, best_h = s0, math.hypot(sa[0] - sb[0], sa[1] - sb[1])
+        def near(c, f): return math.hypot(c[0] - sb[0], c[1] - sb[1]) + LEVEL * abs(f - fb) / CELL      # how near a cell is to the target (in cells): across, plus LEVEL per metre of height (the nearest ground below a ledge is not near it)
+        g = {s0: 0.0}; prev = {}; heap = [(0.0, s0)]; n = 0; best, best_h = s0, near(sa, a[2] - EYE)
         def back(u):
             out = [u]
             while out[-1] in prev: out.append(prev[out[-1]])
@@ -215,7 +217,7 @@ class Map:
             _, u = heapq.heappop(heap); n += 1
             fu = floor[u]
             if abs(u[0] - sb[0]) <= 1 and abs(u[1] - sb[1]) <= 1 and abs(fu - fb) < 2.0: self.reached = True; return back(u)
-            hu = math.hypot(u[0] - sb[0], u[1] - sb[1])
+            hu = near(u, fu)
             if hu < best_h: best, best_h = u, hu
             for dx in (-1, 0, 1):
                 for dy in (-1, 0, 1):
@@ -238,7 +240,7 @@ class Map:
         # no way to the target itself (it stands inside something, or the map does not reach it yet): the way to the reachable cell nearest
         # to it, when that is nearer than here by a metre or more (from there the next look may show more)
         self.reached = False
-        if best_h < math.hypot(sa[0] - sb[0], sa[1] - sb[1]) - 1.0 / CELL: return back(best)
+        if best_h < near(sa, a[2] - EYE) - 1.0 / CELL: return back(best)
         return None
 
     def blocked_along(self, q, cells, dist=8.0):
