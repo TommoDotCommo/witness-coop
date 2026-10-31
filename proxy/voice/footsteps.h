@@ -44,7 +44,7 @@ struct Footfall { float gain = 0, pan = 0, cutoff = 3000, decay = 0.985f, t = 0;
 constexpr float kStepGain = 0.060f, kStepRange = 10.0f;
 struct Foley {
     std::vector<Footfall> active; unsigned played = 0, dropped = 0; float volume = 1.0f;
-    float statPeak = 0, statDist = -1;      // the loudest sample the steps alone put into the output since the last TakePeak (voicestat), and the distance of the last plant
+    float statPeak = 0, statDist = -1;      // the loudest sample the steps alone put into the output since the last TakePeak (voicestat), and the nearest plant's distance in the same window (-1: none)
     // A plant by a player `dist` metres away at `bearing` (radians clockwise from straight ahead), at `speed` m/s. `s` is the voice settings (range, volume).
     void Plant(float dist, float bearing, float speed, bool run, const Settings& s) {
         Settings st = s;
@@ -60,7 +60,7 @@ struct Foley {
 #endif
         if (m.prox <= 0.002f) { dropped++; return; }
         if (active.size() >= 12) { dropped++; return; }
-        statDist = dist; Footfall f; f.run = run; f.pan = m.pan;
+        if (statDist < 0 || dist < statDist) statDist = dist; Footfall f; f.run = run; f.pan = m.pan;
         float loud = run ? 1.0f : 0.55f + 0.25f * std::min(1.0f, speed / 2.0f);      // a run lands harder
 #ifdef WV_MUT_FS_OLD_LEVEL
         f.gain = 0.22f * loud * m.prox * volume;      // the old level: only 4 dB under speech
@@ -76,7 +76,7 @@ struct Foley {
         f.rng = 2463534242u ^ (uint32_t)(played * 2654435761u + 7); if (!f.rng) f.rng = 1;
         active.push_back(f); played++;
     }
-    float TakePeak() { float p = statPeak; statPeak = 0; return p; }
+    float TakePeak(float* nearest = nullptr) { float p = statPeak; if (nearest) *nearest = statDist; statPeak = 0; statDist = -1; return p; }
     // Adds `frames` stereo samples (interleaved, -1..1) into `stereo`, which already holds the voices.
     void Render(float* stereo, int frames) {
         for (auto& f : active) {

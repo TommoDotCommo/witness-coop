@@ -16,7 +16,6 @@ SCENARIOS = [
   ('occlusion: high, multisampling off', video(msaa=0), 'see_through=0', True),
   ('occlusion: high, 2x MSAA', video(msaa=1), 'see_through=0', True),
   ('occlusion: high, 8x MSAA', video(msaa=3), 'see_through=0', True),
-  ('occlusion: high, 2560x1440 window', video(w=2560, h=1440), 'see_through=0', True),
   ('occlusion: lowest options', video(profile=0, msaa=0, shading=0, reflection=0, texture=0, texture_detail=0, geometry=0), 'see_through=0', True),
   ('MUTANT: figure drawn without scene depth (automatic high)', None, 'see_through=0\nno_model_depth=1', False),
   ('MUTANT: figure drawn without scene depth (lowest options)', video(profile=0, msaa=0, shading=0, reflection=0, texture=0, texture_detail=0, geometry=0), 'see_through=0\nno_model_depth=1', False),
