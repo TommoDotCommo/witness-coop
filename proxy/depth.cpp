@@ -55,7 +55,14 @@ static void STDMETHODCALLTYPE HookClear(ID3D11DeviceContext* c, ID3D11DepthStenc
 }
 
 static ID3D11Device* g_dev; static ID3D11DeviceContext* g_ctx;
-bool DepthScene(ID3D11ShaderResourceView** srv, bool* multisampled) {
+void DepthBackBuffer(UINT w, UINT h) {
+    if (!g_csInit || (w == g_w && h == g_h) || !w || !h) return;
+    EnterCriticalSection(&g_cs);
+    char m[160]; snprintf(m, sizeof m, "depth: back buffer is now %ux%u (was %ux%u): looking for the scene depth buffer again", w, h, g_w, g_h); Log(m);
+    g_w = w; g_h = h; if (g_sceneSrv) { g_sceneSrv->Release(); g_sceneSrv = nullptr; } if (g_scene) { g_scene->Release(); g_scene = nullptr; }
+    LeaveCriticalSection(&g_cs);
+}
+bool DepthScene(ID3D11ShaderResourceView** srv, bool* multisampled, unsigned* samples) {
     if (!g_csInit) return false;
     EnterCriticalSection(&g_cs);
     if (g_scene && !g_sceneSrv) {
@@ -67,7 +74,7 @@ bool DepthScene(ID3D11ShaderResourceView** srv, bool* multisampled) {
         else Log("depth: no device");
         char m[160]; snprintf(m, sizeof m, "depth: scene depth buffer %p %ux%u fmt %d samples %u", (void*)g_scene, d.Width, d.Height, d.Format, d.SampleDesc.Count); Log(m);
     }
-    *srv = g_sceneSrv; *multisampled = g_sceneMs; bool ok = g_sceneSrv != nullptr;
+    *srv = g_sceneSrv; *multisampled = g_sceneMs; if (samples) *samples = g_sceneSamples ? g_sceneSamples : 1; bool ok = g_sceneSrv != nullptr;
     LeaveCriticalSection(&g_cs);
     return ok;
 }

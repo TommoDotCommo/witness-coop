@@ -37,11 +37,21 @@ struct FootstepTracker {
 // One footfall being played: a burst of filtered noise with a fast attack and an exponential decay, placed by distance and bearing.
 struct Footfall { float gain = 0, pan = 0, cutoff = 3000, decay = 0.985f, t = 0; float env = 0, lp = 0, bp = 0; uint32_t rng = 1; int left = 0; bool run = false; };
 
+// Levels (owner playtest 2026-10-31: the other players' steps were far too loud). A footfall is a short impact, much quieter than speech from the same
+// spot: measured as the loudest 20 ms RMS next to speech at -20 dBFS RMS through the same distance curve (footsteps_levels.cpp), a walking step at any
+// distance inside the range is about 16 dB below the talker and a running step about 12 dB below (it was 4 dB and 1 dB). Steps also carry less far than a voice:
+// the range is capped at kStepRange metres, so with the 25 m voice range a step is gone by 16 m (the voice fade ends at range + fade).
+constexpr float kStepGain = 0.060f, kStepRange = 10.0f;
 struct Foley {
     std::vector<Footfall> active; unsigned played = 0, dropped = 0; float volume = 1.0f;
+    float statPeak = 0, statDist = -1;      // the loudest sample the steps alone put into the output since the last TakePeak (voicestat), and the distance of the last plant
     // A plant by a player `dist` metres away at `bearing` (radians clockwise from straight ahead), at `speed` m/s. `s` is the voice settings (range, volume).
     void Plant(float dist, float bearing, float speed, bool run, const Settings& s) {
-        Mix m = ComputeMix(dist, bearing, s, kProximity);
+        Settings st = s;
+#ifndef WV_MUT_FS_OLD_LEVEL
+        st.range = std::min(s.range, kStepRange);
+#endif
+        Mix m = ComputeMix(dist, bearing, st, kProximity);
 #ifdef WV_MUT_FS_NO_DISTANCE
         m.prox = s.volume;
 #endif
@@ -50,9 +60,13 @@ struct Foley {
 #endif
         if (m.prox <= 0.002f) { dropped++; return; }
         if (active.size() >= 12) { dropped++; return; }
-        Footfall f; f.run = run; f.pan = m.pan;
+        statDist = dist; Footfall f; f.run = run; f.pan = m.pan;
         float loud = run ? 1.0f : 0.55f + 0.25f * std::min(1.0f, speed / 2.0f);      // a run lands harder
-        f.gain = 0.22f * loud * m.prox * volume;
+#ifdef WV_MUT_FS_OLD_LEVEL
+        f.gain = 0.22f * loud * m.prox * volume;      // the old level: only 4 dB under speech
+#else
+        f.gain = kStepGain * loud * m.prox * volume;
+#endif
         f.cutoff = std::min(m.cutoff, run ? 3600.0f : 2600.0f);
         f.decay = run ? 0.998f : 0.9975f;       // per sample at 16 kHz: the thud falls 60 dB in about 170 ms (walk) to 215 ms (run)
 #ifdef WV_MUT_FS_NO_DECAY
@@ -62,6 +76,7 @@ struct Foley {
         f.rng = 2463534242u ^ (uint32_t)(played * 2654435761u + 7); if (!f.rng) f.rng = 1;
         active.push_back(f); played++;
     }
+    float TakePeak() { float p = statPeak; statPeak = 0; return p; }
     // Adds `frames` stereo samples (interleaved, -1..1) into `stereo`, which already holds the voices.
     void Render(float* stereo, int frames) {
         for (auto& f : active) {
@@ -75,7 +90,7 @@ struct Foley {
                 f.lp += a * (n - f.lp);
                 float scuff = f.t < 400 ? n * 0.25f * (1.0f - f.t / 400.0f) : 0.0f;
                 float x = (f.lp * 1.6f + scuff) * f.env * f.gain;
-                stereo[i * 2] += x * gl; stereo[i * 2 + 1] += x * gr;
+                stereo[i * 2] += x * gl; stereo[i * 2 + 1] += x * gr; statPeak = std::max(statPeak, std::max(std::fabs(x * gl), std::fabs(x * gr)));
             }
         }
         for (size_t i = 0; i < active.size();) { if (active[i].left <= 0 || active[i].env < 1e-4f) active.erase(active.begin() + i); else i++; }

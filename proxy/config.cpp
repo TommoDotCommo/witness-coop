@@ -154,6 +154,7 @@ const Cfg& GetCfg() {
             else if (sscanf(line, "no_model_matmap=%d", &v) == 1) r.noModelMaterialMap = v != 0;
             else if (sscanf(line, "footsteps=%d", &v) == 1) r.footsteps = v != 0;
             else if (sscanf(line, "footstep_volume=%d", &v) == 1) r.footstepVolume = v;
+            else if (sscanf(line, "footstep_old_level=%d", &v) == 1) r.footstepOldLevel = v != 0;
             else if (sscanf(line, "model_sun=%f", &fv) == 1) r.modelSun = fv;
             else if (sscanf(line, "model_ambient=%f", &fv) == 1) r.modelAmbient = fv;
             else if (sscanf(line, "model_shadow=%f", &fv) == 1) r.modelShadow = fv;

@@ -35,6 +35,7 @@ def life():
             if m: return dict(blinks=int(m[1]), blink=float(m[2]), glancing=int(m[3]), head_yaw=float(m[4]), head_pitch=float(m[5]), breath=float(m[6]), exertion=float(m[7]), scarf=float(m[8]), fidgets=int(m[9]), fidgeting=int(m[10]), shadow=int(m[11]))
         time.sleep(0.2)
     return None
+STEP_PEAK = STEP_DIST = None
 def footsteps():
     """Footsteps the voice mixer has played so far (the `voicestat` line's footsteps count)."""
     log = os.path.join(da, 'witness_proxy.log'); n0 = sum(1 for l in open(log, errors='ignore') if l.startswith('voicestat:'))
@@ -42,7 +43,10 @@ def footsteps():
     while time.time() - t < 6:
         ls = [l for l in open(log, errors='ignore') if l.startswith('voicestat:')]
         if len(ls) > n0:
-            m = re.search(r'footsteps (\d+)', ls[-1]); return int(m[1]) if m else None
+            m = re.search(r'footsteps (\d+)', ls[-1]); mp = re.search(r'step_peak ([-0-9.]+) step_dist ([-0-9.]+)', ls[-1])
+            global STEP_PEAK, STEP_DIST
+            if mp: STEP_PEAK, STEP_DIST = float(mp[1]), float(mp[2])      # the loudest sample the steps put into the output since the previous voicestat, and the distance of the last step
+            return int(m[1]) if m else None
         time.sleep(0.2)
     return None
 def settle_stat(wait):      # the occlusion query needs a couple of frames after the pose changes
@@ -79,11 +83,13 @@ if CHECK_RUN:
     thread_lines = [l for l in open(os.path.join(da, 'witness_proxy.log'), errors='ignore') if l.startswith('modelthread:')]
     m = re.search(r'render (\d+) caller (\d+)', thread_lines[-1]) if thread_lines else None
     check('model statistics execute on the render thread', m and int(m[1]) != 0 and m[1] == m[2], m.group(0) if m else 'no thread diagnostic')
+send(db, ['tp %.4f %.4f %.4f %.5f %.5f' % (cx + fx * 3, cy + fy * 3, cz - 1.69, th, 0.0)], 2.0)      # 3 m ahead, facing away: the walk below starts at the distance the level is judged at
 steps0 = footsteps()
 send(db, ['key W down'], 1.2)
 s1 = stat(); time.sleep(0.4); s2 = stat()
 steps1 = footsteps()
 check('the walking figure\'s footsteps are heard (voice mixer played them)', steps0 is not None and steps1 is not None and steps1 - steps0 >= 2, (steps0, steps1))
+check('the footsteps are quiet: peak <= 0.045 (-27 dBFS) for a walker 3 to 5 m away (the old level peaked at 0.13), yet audible (> 0.003)', steps1 is None or steps0 is None or steps1 - steps0 < 2 or (STEP_PEAK is not None and 0.003 < STEP_PEAK <= 0.045 and STEP_DIST is not None and STEP_DIST <= 6.0), (STEP_PEAK, STEP_DIST))
 check('a walking player has a measured speed of 1.5..5 m/s', s1 and s2 and 1.5 < s2['speed'] < 5.0, (s1, s2))
 check('a walking player animates (clip time advances)', s1 and s2 and abs(s2['anim'] - s1['anim']) > 0.02, (s1, s2))
 check('a walking player plays the walk clip', s2 and s2['clip'] == WALK, s2)
