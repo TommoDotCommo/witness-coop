@@ -713,7 +713,7 @@ bool ModelGpuDrawLines(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Ca
     g_ctx->UpdateSubresource(g_cbFrame, 0, nullptr, &fc, 0, 0);
     D3D11_VIEWPORT vp = {0, 0, (float)w, (float)h, 0, 1};
     g_ctx->OMSetRenderTargets(1, &rtv, prop ? g_dsv : nullptr); g_ctx->RSSetViewports(1, &vp); g_ctx->RSSetState(g_rs);
-    g_ctx->OMSetBlendState(g_blend, nullptr, 0xffffffff); g_ctx->OMSetDepthStencilState(prop ? g_dss : nullptr, 0);
+    g_ctx->OMSetBlendState(prop ? g_blendAlpha : g_blend, nullptr, 0xffffffff); g_ctx->OMSetDepthStencilState(prop ? g_dss : nullptr, 0);
     UINT stride = sizeof(LineVert), off = 0;
     g_ctx->IASetInputLayout(g_layoutLine); g_ctx->IASetVertexBuffers(0, 1, &g_vbLine, &stride, &off); g_ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     g_ctx->VSSetShader(g_vsLine, nullptr, 0); g_ctx->PSSetShader(g_psLine, nullptr, 0);
