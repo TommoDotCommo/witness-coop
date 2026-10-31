@@ -268,7 +268,17 @@ def depth_ratio():
 def other_standing_points():
     """Where else to stand: other distances along the panel's normal (the first try, 3 m, may be inside a wall or over a drop)."""
     nx, ny = NORMAL[0], NORMAL[1]; nn = math.hypot(nx, ny) or 1.0; nx, ny = nx / nn, ny / nn
-    return [(px_ + d_ * nx, py_ + d_ * ny) for d_ in (2.0, 4.0, 1.6, 5.0, 2.5, 3.5)]
+    pts = [(px_ + d_ * nx, py_ + d_ * ny) for d_ in (2.0, 4.0, 1.6, 5.0, 2.5, 3.5)]
+    # then anywhere round the panel the walking map says has a floor and a clear line to the panel's middle (not only straight out from it)
+    try:
+        global walker
+        import wnav, wlos
+        if walker is None: walker = wnav.Walker(p, c, gdir, log=dbg)
+        near = wlos.spread(wlos.standing_places(walker.map.cells, (px_, py_, pz_), NORMAL))
+        stamp('map: %d places with a clear line to the panel' % len(near))
+        pts += [(x_, y_) for x_, y_, _ in near]
+    except Exception as e_: stamp('standing places from the map skipped: %r' % e_)
+    return pts
 
 def centre_on_panel():
     """The panel's middle may not be its entity's origin (Quarry Boat Spawn sits well below where the camera aims): find it on the screen in the
