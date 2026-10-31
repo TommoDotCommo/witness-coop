@@ -33,6 +33,7 @@ static const uintptr_t kPausedOld = 0x62DAC4;      // the first candidate, WRONG
 #include "game.h"
 #include "state.h"
 #include "config.h"
+#include "near_fade_runtime.h"
 #include "input.h"
 #include "ui.h"
 #include "diag.h"
@@ -278,7 +279,7 @@ static void DrawMarkers(IDXGISwapChain* sc) {
     if (FAILED(g_dev->CreateRenderTargetView(bb, nullptr, &rtv))) { bb->Release(); return; }
     uintptr_t base = (uintptr_t)GetModuleHandleA(nullptr);
     const float* cam = (const float*)(base + kCamPos); const float* ang = (const float*)(base + kCamAng); ViewCamera(cam, ang);
-    float rects[32][4] = {}, cols[32][4] = {}, anchors[32][3] = {}; int n = 0; float aspect = (float)td.Width / (float)td.Height; const float vfov = GameProjection().vfovDeg;
+    float rects[32][4] = {}, cols[32][4] = {}, anchors[32][3] = {}; unsigned anchorIds[32]={}; int n = 0; float aspect = (float)td.Width / (float)td.Height; const float vfov = GameProjection().vfovDeg;
     uintptr_t glob = Readable((void*)(base + kGlobals), 8) ? *(uintptr_t*)(base + kGlobals) : 0;
     uintptr_t arr = glob && Readable((void*)(glob + 0x18), 8) ? *(uintptr_t*)(glob + 0x18) : 0;
     auto remotes = CoopGetRemotes();
@@ -326,12 +327,12 @@ static void DrawMarkers(IDXGISwapChain* sc) {
             float hh = fabsf(nhy - nfy) * 0.5f; if (hh < 2.0f / td.Height) hh = 2.0f / td.Height;
             int bodyIndex = n;
             rects[n][0] = (nfx + nhx) * 0.5f; rects[n][1] = (nfy + nhy) * 0.5f; rects[n][2] = hh * ((float)td.Height / td.Width) * 0.45f; rects[n][3] = hh;
-            memcpy(anchors[n],rp.pos,12); cols[n][0] = 0.1f; cols[n][1] = 0.9f; cols[n][2] = 0.2f; cols[n][3] = 1; n++;          // body: green
+            anchorIds[n]=rp.id; memcpy(anchors[n],rp.pos,12); cols[n][0] = 0.1f; cols[n][1] = 0.9f; cols[n][2] = 0.2f; cols[n][3] = 1; n++;          // body: green
             float nose[3] = {rp.pos[0] + 0.7f*cosf(rp.ang[1])*cosf(rp.ang[0]), rp.pos[1] + 0.7f*cosf(rp.ang[1])*sinf(rp.ang[0]), rp.pos[2] + 0.7f*sinf(rp.ang[1])};
             float nnx, nny;
             if (Project(cam, ang[0], ang[1], nose, aspect, &nnx, &nny)) {
                 rects[n][0] = nnx; rects[n][1] = nny; rects[n][2] = 6.0f / td.Width * 2; rects[n][3] = 6.0f / td.Height * 2;
-                memcpy(anchors[n],rp.pos,12); cols[n][0] = 1; cols[n][1] = 0.9f; cols[n][2] = 0; cols[n][3] = 1; n++;               // facing: yellow
+                anchorIds[n]=rp.id; memcpy(anchors[n],rp.pos,12); cols[n][0] = 1; cols[n][1] = 0.9f; cols[n][2] = 0; cols[n][3] = 1; n++;               // facing: yellow
             }
             if (g_frames % 300 == 1) { char m[200]; snprintf(m, sizeof m, "overlay: remote id %u age %lums at (%.2f,%.2f,%.2f) body ndc (%.3f,%.3f)", rp.id, rp.ageMs, rp.pos[0], rp.pos[1], rp.pos[2], rects[bodyIndex][0], rects[bodyIndex][1]); Log(m); }
         }
@@ -340,7 +341,7 @@ static void DrawMarkers(IDXGISwapChain* sc) {
     if (n && g_uiReady) {
         UiBegin(float(td.Width),float(td.Height));
         for(int i=0;i<n;++i) {
-            UiPlayerAnchor(cam,ang,anchors[i]);
+            UiPlayerAnchor(cam,ang,anchors[i],0,NearFadeAlpha(anchorIds[i],cam,ang,anchors[i],aspect));
             UiRect((rects[i][0]-rects[i][2]+1)*td.Width/2,
                    (1-rects[i][1]-rects[i][3])*td.Height/2,
                    rects[i][2]*td.Width,rects[i][3]*td.Height,
@@ -519,7 +520,7 @@ static void DrawNameTags(float W, float H) {
             ID3D11ShaderResourceView* scene=nullptr; bool ms=false;
             t.sceneDepth=DepthScene(&scene,&ms) ? (ms ? 2 : 1) : 0;
             t.queryReady=UiPlayerPixels(rp.id,&t.pixels);
-            UiPlayerAnchor(cam,ang,rp.pos,rp.id);
+            UiPlayerAnchor(cam,ang,rp.pos,rp.id,NearFadeAlpha(rp.id,cam,ang,rp.pos,W/H));
             float col[3]; PlayerColor(rp.id, col);
             float k = std::max(1.0f, H / 1080.0f) * std::min(1.0f, std::max(0.7f, 10.0f / std::max(t.dist, 1.0f)));
             char b[64]; if (t.ping >= 0) snprintf(b, sizeof b, "%s  %d ms", t.name, t.ping); else snprintf(b, sizeof b, "%s  - ms", t.name);
@@ -545,7 +546,7 @@ static void DrawNameTags(float W, float H) {
         float col[3]; PlayerColor(aimed, col); bool watching = VideoWatching() == aimed; float k = std::max(1.0f, H / 1080.0f);
         char b[96]; snprintf(b, sizeof b, watching ? "[V] stop watching %s" : "[V] watch %s's view", aimedName.empty() ? "player" : aimedName.c_str()); (void)aimedPing;
         float tw = UiTextWidth(b, k), th = UiLineHeight(k), x = W / 2 - tw / 2, y = H / 2 + 70 * k;
-        (void)th; UiPlayerAnchor(cam,ang,aimedEye); PromptChip(x, y, b, k, Rgba(col[0], col[1], col[2], 1)); UiPlayerAnchorEnd();
+        (void)th; UiPlayerAnchor(cam,ang,aimedEye,0,NearFadeAlpha(aimed,cam,ang,aimedEye,W/H)); PromptChip(x, y, b, k, Rgba(col[0], col[1], col[2], 1)); UiPlayerAnchorEnd();
     }
     if((TvSeated() || TvSeatAvailable()) && !GamePaused()) {
         char b[128]; snprintf(b,sizeof b,TvSeated()?"[%s] stand up; movement exits":"[%s] sit and watch",guide::KeyName(GetCfg().keyTvSeat).c_str());
@@ -557,7 +558,7 @@ static void DrawNameTags(float W, float H) {
         std::string name="player"; for(const auto& r:CoopGetRemotes()) if(r.id==tvTarget && r.name[0]) name=r.name;
         char b[160]; snprintf(b,sizeof b,deployed?"[%s] retract %s's sky TV":"[%s] deploy %s's sky TV",guide::KeyName(GetCfg().keyTvDeploy).c_str(),name.c_str());
         float k=std::max(1.f,H/1080.f),tw=UiTextWidth(b,k),th=UiLineHeight(k),x=W/2-tw/2,y=H/2+100*k;
-        (void)th; (void)tw; if(!deployed) UiPlayerAnchor(cam,ang,aimedEye); PromptChip(x,y,b,k,uitheme::Accent); if(!deployed) UiPlayerAnchorEnd();
+        (void)th; (void)tw; if(!deployed) UiPlayerAnchor(cam,ang,aimedEye,0,NearFadeAlpha(aimed,cam,ang,aimedEye,W/H)); PromptChip(x,y,b,k,uitheme::Accent); if(!deployed) UiPlayerAnchorEnd();
     }
     if (!aimed && !g_rosterOpen.load() && !VideoWatching() && !GamePaused()) {      // a quiet reminder that the other players' screens can be watched
         std::vector<unsigned> ids = PlayerIds(); if (!ids.empty()) {

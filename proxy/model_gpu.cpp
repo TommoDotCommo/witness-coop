@@ -22,6 +22,7 @@ void VoiceFootstep(unsigned id, const float pos[3], float speed, bool run);     
 #include "tv/mesh.h"
 static_assert(offsetof(wm::Vertex, appearanceGroup) == 56, "appearance input layout must match Vertex");
 #include "config.h"
+#include "near_fade_runtime.h"
 #include "depth.h"
 HMODULE g_selfModule();
 #include "devmenu.h"
@@ -92,6 +93,7 @@ float SceneVis(float2 pos, float dist, float extra) {
   if (depthp.x < 1.5) return (scene1.Load(int3(px, 0)) <= zm) ? 1 : 0;
   int ns = (int)depthp.y; float s = 0; for (int k = 0; k < ns; k++) s += (sceneMS.Load(px, k) <= zm) ? 1 : 0; return s / ns; }
 float4 PS(VOut i) : SV_TARGET {
+  clip(tint.w - 0.001);
   float3 n = normalize(i.n);
   float3 base = lerp(float3(1, 1, 1), tex.Sample(smp, i.uv).rgb, i.c.a) * i.c.rgb;      // c.a: 1 where the vertex samples the model's texture, 0 for a flat-colour material
   float3 c;
@@ -138,7 +140,7 @@ float4 PSMask(VOut i) : SV_TARGET { return float4(1, 1, 1, 1); }      // the fla
 struct LIn { float3 p : POSITION; float4 c : COLOR0; };
 struct LOut { float4 pos : SV_POSITION; float4 c : COLOR0; float dist : TEXCOORD1; };
 LOut VSLine(LIn v) { LOut o; o.pos = mul(viewProj, float4(v.p, 1)); o.dist = o.pos.w; o.c = v.c; return o; }
-float4 PSLine(LOut i) : SV_TARGET {      // a line lies in the panel's own surface: it counts as 1.5% nearer than the scene so it is not hidden by the panel it is drawn on
+float4 PSLine(LOut i) : SV_TARGET { clip(i.c.a - 0.001);      // a line lies in the panel's own surface: it counts as 1.5% nearer than the scene so it is not hidden by the panel it is drawn on
   if (depthp.x > 0.5) {
     int2 px = int2(i.pos.xy); float zm = depthp.w / i.dist * (1 + depthp.z + 0.015); float vis = 1;
     if (depthp.x < 1.5) vis = (scene1.Load(int3(px, 0)) <= zm) ? 1 : 0;
@@ -523,6 +525,8 @@ bool ModelGpuDraw(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Cam& ca
         } else gs.target = 1.0f;
         gs.alpha = wghost::Approach(gs.alpha, gs.target, dt, 5.0f); T[3] = gs.alpha;
     }
+    float nearAng[2]={cam.theta,cam.phi};
+    T[3] = std::min(T[3], NearFadeAlpha(playerId,cam.pos,nearAng,pos,cam.aspect));      // one fade, not two: the stronger of the overlap ghost (ghost/ghost.h) and the near-camera fade (near_fade.h)
     memcpy(fc.tint, T, 16);
     ID3D11ShaderResourceView* sceneSrv = nullptr; bool ms = false;
     unsigned ns = 4; bool haveScene = !cfg.noModelDepth && DepthScene(&sceneSrv, &ms, &ns);
@@ -539,7 +543,7 @@ bool ModelGpuDraw(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Cam& ca
     if (first) g_ctx->ClearDepthStencilView(g_dsv, D3D11_CLEAR_DEPTH, 1.0f, 0);
     D3D11_VIEWPORT vp = {0, 0, (float)w, (float)h, 0, 1};
     g_ctx->OMSetRenderTargets(1, &rtv, g_dsv); g_ctx->RSSetViewports(1, &vp); g_ctx->RSSetState(g_rs);
-    g_ctx->OMSetBlendState(haveScene ? g_blendAlpha : g_blend, nullptr, 0xffffffff); g_ctx->OMSetDepthStencilState(g_dss, 0);
+    g_ctx->OMSetBlendState(g_blendAlpha, nullptr, 0xffffffff); g_ctx->OMSetDepthStencilState(g_dss, 0);
     UINT stride = sizeof(wm::Vertex), off = 0;
     g_ctx->IASetInputLayout(g_layout); g_ctx->IASetVertexBuffers(0, 1, &g_L->vb, &stride, &off); g_ctx->IASetIndexBuffer(g_L->ib, DXGI_FORMAT_R32_UINT, 0);
     g_ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -649,7 +653,7 @@ bool ModelGpuDraw(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Cam& ca
             float model[3], world[3];
             for(int k=0;k<3;++k) model[k]=radioHand[k]*local[0]+radioHand[4+k]*local[1]+radioHand[8+k]*local[2]+radioHand[12+k];
             for(int k=0;k<3;++k) world[k]=fc.model[k]*model[0]+fc.model[4+k]*model[1]+fc.model[8+k]*model[2]+fc.model[12+k];
-            LineVert vert; memcpy(vert.p,world,12); memcpy(vert.c,v.c,16); item.push_back(vert);
+            LineVert vert; memcpy(vert.p,world,12); memcpy(vert.c,v.c,16); vert.c[3] *= T[3]; item.push_back(vert);
         }
         float wrist[3]; for(int k=0;k<3;++k) wrist[k]=fc.model[k]*radioHand[12]+fc.model[4+k]*radioHand[13]+fc.model[8+k]*radioHand[14]+fc.model[12+k];
         if(ModelGpuDrawLines(rtv,w,h,cam,item.data(),item.size(),1,true)) RadioRecord(playerId,radio.first.value,(unsigned)item.size(),wrist);

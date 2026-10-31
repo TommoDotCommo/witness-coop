@@ -28,7 +28,9 @@ for name, var, ca, expect in SCENARIOS:
     for d in (DIR1, DIR2):
         sd = os.path.join(d, 'appdata', 'The Witness'); os.makedirs(sd, exist_ok=True); vp = os.path.join(sd, 'Launcher.variables')
         if os.path.exists(vp): os.remove(vp)
-        if var: open(vp, 'w').write(var)
+        # Only A's scene depth is measured; the pose-sending peer can use low options.
+        options = var if d == DIR1 else video(profile=0, msaa=0, shading=0, reflection=0, texture=0, texture_detail=0, geometry=0)
+        if options: open(vp, 'w').write(options)
     subprocess.run([os.path.join(TOOLS, 'restart.sh')], env=env, capture_output=True, text=True, timeout=600, check=True)
     time.sleep(40)
     open(os.path.join(RUN, 'guard.stop'), 'w').write('bot starting')
@@ -37,7 +39,13 @@ for name, var, ca, expect in SCENARIOS:
     r2 = subprocess.run([PYW, '-I', win(os.path.join(TOOLS, 'win', 'wocc_out.py')), pid('A'), win(DIR1), pid('B'), win(DIR2), name.split(':', 1)[1].strip()], capture_output=True, text=True, timeout=600)      # the open world's terrain
     print(r2.stdout.strip(), r2.stderr.strip()[-600:], flush=True)
     log = open(os.path.join(DIR1, 'witness_proxy.log'), errors='ignore').read()
-    if os.environ.get('QA_OCC_KEEP'): import shutil; shutil.copy(os.path.join(DIR1, 'witness_proxy.log'), os.path.join(os.environ['QA_OCC_KEEP'], 'proxy_' + ''.join(c if c.isalnum() else '_' for c in name)[:60] + '.log'))      # evidence (QA_OCC_EXTRA='\ndebug_depth=1' adds the depth diagnostics)
+    if os.environ.get('QA_OCC_KEEP'):
+        import shutil
+        evidence = os.environ['QA_OCC_KEEP']; os.makedirs(evidence, exist_ok=True)
+        label = ''.join(c if c.isalnum() else '_' for c in name)[:60]
+        for side, directory in (('A', DIR1), ('B', DIR2)):
+            shutil.copy(os.path.join(directory, 'witness_proxy.log'), os.path.join(evidence, label + '_' + side + '.log'))
+        open(os.path.join(evidence, label + '_result.txt'), 'w').write(r.stdout + r.stderr + r2.stdout + r2.stderr)
     scene_lines = [l for l in log.splitlines() if 'depth: scene depth buffer' in l]
     print('  proxy log: %s' % (scene_lines[-1] if scene_lines else 'no "scene depth buffer" line'), flush=True)
     passed = r.returncode == 0 and r2.returncode == 0

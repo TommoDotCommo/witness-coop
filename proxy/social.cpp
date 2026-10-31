@@ -15,6 +15,7 @@
 #include "diag.h"
 #include "coop.h"
 #include "config.h"
+#include "near_fade_runtime.h"
 #include "gamecam.h"
 #include "ui.h"
 #include "ui/text.h"
@@ -352,7 +353,7 @@ void SocialFrame(float W, float H, const float* cam, const float* ang) {
         if (!ToScreen(cam, ang[0], ang[1], head, W, H, &sx, &sy)) continue;
         float col[3]; PlayerColor(rp.id, col); float dist = sqrtf((rp.pos[0] - cam[0]) * (rp.pos[0] - cam[0]) + (rp.pos[1] - cam[1]) * (rp.pos[1] - cam[1]) + (rp.pos[2] - cam[2]) * (rp.pos[2] - cam[2]));
         float kk = k * std::min(1.0f, std::max(0.7f, 10.0f / std::max(dist, 1.0f))); float bottom = sy - UiLineHeight(kk) - 14 * kk;
-        UiPlayerAnchor(cam,ang,rp.pos);
+        UiPlayerAnchor(cam,ang,rp.pos,0,NearFadeAlpha(rp.id,cam,ang,rp.pos,W/H));
         auto bi = g_bubbles.find(rp.id);
         if (rp.typing) { Bubbled(sx, bottom, {}, true, col, kk, now); ++g_dotsDrawn; }
         else if (bi != g_bubbles.end()) { Bubbled(sx, bottom, Wrap(bi->second.text, std::min(W - 40 * kk, 280 * kk), 4, .9f * kk), false, col, kk, now); ++g_bubblesDrawn; }
@@ -369,7 +370,7 @@ void SocialFrame(float W, float H, const float* cam, const float* ang) {
         }
         float head[3] = {rp.pos[0], rp.pos[1], rp.pos[2] + 0.30f}, sx, sy; if (!ToScreen(cam, ang[0], ang[1], head, W, H, &sx, &sy)) continue; float dist = sqrtf((rp.pos[0] - cam[0]) * (rp.pos[0] - cam[0]) + (rp.pos[1] - cam[1]) * (rp.pos[1] - cam[1]) + (rp.pos[2] - cam[2]) * (rp.pos[2] - cam[2]));
         float kk = k * std::min(1.0f, std::max(0.6f, 10.0f / std::max(dist, 1.0f)));
-        UiPlayerAnchor(cam,ang,rp.pos);
+        UiPlayerAnchor(cam,ang,rp.pos,0,NearFadeAlpha(rp.id,cam,ang,rp.pos,W/H));
         for (int b = 0; b < 3; ++b) { float ph = float(now % 500) / 500.0f * 6.2831853f + b * 2.1f, hgt = (7 + 9 * (0.5f + 0.5f * sinf(ph))) * kk; UiRect(sx + (30 + b * 7) * kk, sy - 6 * kk - hgt, 4.5f * kk, hgt, Rgba(col[0], col[1], col[2], 0.95f)); }
         if (rp.radioTx && cfg.RadioOn()) UiText(sx + 30 * kk, sy + 4 * kk, "RADIO", Rgba(1,.7f,.3f), kk*.7f);
         UiPlayerAnchorEnd(); ++g_speakDrawn;
@@ -388,7 +389,7 @@ void SocialFrame(float W, float H, const float* cam, const float* ang) {
         auto it = g_remoteEmotes.find(rp.id); if (it == g_remoteEmotes.end() || !it->second.id || !EmoteAlive(it->second.id,now-it->second.start) || rp.ageMs > 2000) continue;
         float head[3] = {rp.pos[0], rp.pos[1], rp.pos[2] + 0.8f}, sx, sy; if (!ToScreen(cam, ang[0], ang[1], head, W, H, &sx, &sy)) continue;
         float col[3]; PlayerColor(rp.id, col); char b[40]; snprintf(b, sizeof b, "~ %s ~", SocialEmoteName(it->second.id)); float tw = UiTextWidth(b, 1.0f * k);
-        UiPlayerAnchor(cam,ang,rp.pos);
+        UiPlayerAnchor(cam,ang,rp.pos,0,NearFadeAlpha(rp.id,cam,ang,rp.pos,W/H));
         float up = float(now - it->second.start) / 1000.0f * 14 * k; UiText(sx - tw / 2, sy - 26 * k - up, b, Rgba(col[0], col[1], col[2], 1), 1.0f * k);
         UiPlayerAnchorEnd();
     }

@@ -52,6 +52,9 @@ const Cfg& GetCfg() {
             else if (sscanf(line, "old_projection=%d", &v) == 1) r.oldProjection = v != 0;
             else if (sscanf(line, "no_line_draw=%d", &v) == 1) r.noLineDraw = v != 0;
             else if (sscanf(line, "no_line_mirror=%d", &v) == 1) r.noLineMirror = v != 0;
+            else if (sscanf(line, "near_fade=%d", &v) == 1) r.nearFade = v != 0;
+            else if (sscanf(line, "near_fade_start=%f", &fv) == 1) r.nearFadeStart = fv;
+            else if (sscanf(line, "near_fade_end=%f", &fv) == 1) r.nearFadeEnd = fv;
             else if (sscanf(line, "tags_through_walls=%d", &v) == 1) r.tagsThroughWalls = v != 0;
             else if (sscanf(line, "no_name_tags=%d", &v) == 1) r.noNameTags = v != 0;
             else if (sscanf(line, "key_repeat_toggle=%d", &v) == 1) r.keyRepeatToggle = v != 0;

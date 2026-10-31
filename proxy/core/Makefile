@@ -159,3 +159,11 @@ version-notice-test: $(BUILD)/version-notice $(addprefix $(BUILD)/version-notice
 	@for m in $(VN_MUTANTS); do if $(BUILD)/version-notice-mutant-$$m >/dev/null; then echo "MUTANT version-notice $$m SURVIVED"; exit 1; else echo "version-notice mutant $$m rejected"; fi; done
 test: version-notice-test
 .PHONY: version-notice-test
+
+$(BUILD)/near-fade: tests/near_fade.cpp ../near_fade.h
+	@mkdir -p $(BUILD)
+	g++ $(CXXF) -o $@ tests/near_fade.cpp
+near-fade-test: $(BUILD)/near-fade
+	$(BUILD)/near-fade
+test: near-fade-test
+.PHONY: near-fade-test

@@ -48,7 +48,7 @@ float4 PS(O i) : SV_TARGET { PlayerVisibility(); float a = tex.Sample(smp, i.t).
 float4 PSI(O i) : SV_TARGET { PlayerVisibility(); return tex.Sample(smp, i.t) * i.c; }
 )";
 struct Vtx { float x, y, u, v; uint32_t c; };
-struct Seg { size_t first; bool clip; D3D11_RECT r; ID3D11ShaderResourceView* img; float anchor[4] = {}; unsigned queryId = 0; };
+struct Seg { size_t first; bool clip; D3D11_RECT r; ID3D11ShaderResourceView* img; float anchor[4] = {}; unsigned queryId = 0; float opacity = 1; };
 
 ID3D11Device* g_dev; ID3D11DeviceContext* g_ctx;
 ID3D11VertexShader* g_vs; ID3D11PixelShader *g_ps, *g_psi; ID3D11InputLayout* g_il; ID3D11Buffer *g_vb, *g_cb;
@@ -65,7 +65,7 @@ std::vector<Vtx> g_v; std::vector<Seg> g_seg; float g_w = 1, g_h = 1; bool g_ok;
 
 uint32_t Pack(UiColor c) {
     auto b = [](float v) { return (uint32_t)(v <= 0 ? 0 : v >= 1 ? 255 : v * 255 + 0.5f); };
-    return b(c.r) | b(c.g) << 8 | b(c.b) << 16 | b(c.a) << 24;
+    return b(c.r) | b(c.g) << 8 | b(c.b) << 16 | b(c.a * (g_seg.empty() ? 1.f : g_seg.back().opacity)) << 24;
 }
 void Quad(float x0, float y0, float x1, float y1, float u0, float v0, float u1, float v1, uint32_t c) {
     if (g_v.size() + 6 > kMaxVerts) return;
@@ -198,19 +198,19 @@ void UiClip(float x, float y, float w, float h) {
     Seg s = g_seg.back(); s.first = g_v.size(); s.clip = w > 0; s.r = {(LONG)x, (LONG)y, (LONG)(x + w), (LONG)(y + h)}; s.img = nullptr;
     if (g_seg.back().first == s.first) g_seg.back() = s; else g_seg.push_back(s);
 }
-void UiPlayerAnchor(const float* cam, const float* ang, const float* eye, unsigned queryId) {
+void UiPlayerAnchor(const float* cam, const float* ang, const float* eye, unsigned queryId, float opacity) {
     float dx=eye[0]-cam[0], dy=eye[1]-cam[1], dz=eye[2]-cam[2];
     float ct=cosf(ang[0]), st=sinf(ang[0]), cp=cosf(ang[1]), sp=sinf(ang[1]);
     float f=cp*(ct*dx+st*dy)+sp*dz, r=st*dx-ct*dy, u=-sp*(ct*dx+st*dy)+cp*dz;
     float tv=tanf(GameProjection().vfovDeg*3.14159265f/360.f);
-    Seg s=g_seg.back(); s.first=g_v.size(); s.queryId=queryId;
+    Seg s=g_seg.back(); s.first=g_v.size(); s.queryId=queryId; s.opacity=opacity;
     s.anchor[0]=(0.5f+r/(2*std::max(f,0.01f)*tv*(g_w/g_h)))*g_w;
     s.anchor[1]=(0.5f-u/(2*std::max(f,0.01f)*tv))*g_h;
     s.anchor[2]=f; s.anchor[3]=GetCfg().tagsThroughWalls ? 0.f : 1.f;
     if (g_seg.back().first==s.first) g_seg.back()=s; else g_seg.push_back(s);
 }
 void UiPlayerAnchorEnd() {
-    Seg s=g_seg.back(); s.first=g_v.size(); memset(s.anchor,0,sizeof s.anchor); s.queryId=0;
+    Seg s=g_seg.back(); s.first=g_v.size(); memset(s.anchor,0,sizeof s.anchor); s.queryId=0; s.opacity=1;
     if (g_seg.back().first==s.first) g_seg.back()=s; else g_seg.push_back(s);
 }
 bool UiPlayerPixels(unsigned id, unsigned long long* pixels) {

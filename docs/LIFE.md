@@ -178,3 +178,26 @@ and behind the closed tutorial wall, with a `tags_through_walls=1` mutant that m
 fail the wall check. `tagstat` includes `visible_px`, `query_ready` and `scene_depth`;
 `onscreen` continues to mean the tag projects into the viewport. The query counts
 fragments after scene-depth and transparent-atlas discard, rather than queued UI quads.
+
+## Release note: a player sharing your viewpoint (2026-11)
+
+Remote bodies now fade from full opacity at `near_fade_start=1.4` metres to zero
+at `near_fade_end=0.6` metres, measured from the viewing camera to the remote eyes.
+The eye position comes from the remote camera pose, so the same measurement works
+for bodies, name tags and attached speaking, chat, radio and emote markers. Only
+heads within the central 65% of each screen axis trigger the distance fade (75%
+to leave that region); a 4 cm distance deadband prevents opacity flutter. A camera
+inside the head/torso envelope (35 cm horizontal radius, from 1.71 m below the eyes
+to 22 cm above them) hides the figure even when its head cannot project in front
+of the near plane. Each viewer applies this locally; panel input is unaffected.
+The body takes the stronger of this fade and the overlap ghost opacity (never both multiplied), and carried props and shadows follow it.
+At the configured endpoints opacity is exactly zero or one; invalid distance pairs
+fall back to the defaults. `near_fade=0` disables this protection and supplies its
+mutant. These are config-file options: the launcher does not expose
+`footstep_volume` or these distance controls and preserves unrecognised config keys.
+
+`tools/qa.sh --serial near_fade` checks body and name-tag GPU fragments at coincident
+viewpoints, half a metre ahead and three metres ahead, including restoration after
+separating. It runs with lowest options and automatic high, with `near_fade=0`
+mutants that must fail the near-body assertions. Game-free coverage is included in
+`make -C proxy/core test` (`near-fade-test`).
