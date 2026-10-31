@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <deque>
 #include <string>
 #include <vector>
 #include "game.h"
@@ -82,7 +83,7 @@ struct RealWorld {
     bool ray(const float o[3], const float d[3], float maxd, float* dist) { return RayQuery(o, d, maxd, dist, nullptr, nullptr, nullptr); }
 };
 struct ScanJob { std::string id; int cx0 = 0, cy0 = 0, nx = 0, ny = 0; float ztop = 250, zbot = -60; int at = 0; std::vector<unsigned char> out; unsigned withGround = 0; DWORD t0 = 0; };
-std::vector<ScanJob> g_jobs;
+std::deque<ScanJob> g_jobs;      // (a deque: the running job is referenced while the command thread adds more)
 
 std::string DoRay(const float* o, const float* d, float maxd, bool raw) {
     void* w = World(); char m[512];
