@@ -588,6 +588,7 @@ class Walker:
             dt = math.dist(q[:2], target[:2])
             if dt < near_d - 0.5: near_d, near_t = dt, now
             if now - moved_t > 2.0 or now - near_t > 25.0:
+                trig = 'still' if now - moved_t > 2.0 else 'circles'      # (into the stuck note: a stuck in circles is not against anything, its picture shows open ground)
                 moved_at, moved_t, near_d, near_t = q, now, dt, now
                 self.stuck += 1
                 if self.stuck > stucks: why = 'stuck %d times' % (self.stuck - 1); break
@@ -600,7 +601,7 @@ class Walker:
                     wall = pressed(self.last_pts, q, y)
                     for c_ in wall: self.map.bump(*centre(c_))
                     self.pressed_n += len(wall)
-                self.note(stuck=[round(q[0], 2), round(q[1], 2)], again=again, yaw=round(y, 2), z=round(q[2], 2)); self.keep_depth('stuck%d' % self.stuck)
+                self.note(stuck=[round(q[0], 2), round(q[1], 2)], again=again, yaw=round(y, 2), z=round(q[2], 2), trig=trig); self.keep_depth('stuck%d' % self.stuck)
                 self.log('stuck %d at %.1f %.1f: bumped, planning again' % (self.stuck, q[0], q[1]))
                 if pocketed and self.back_out('stuck %d times here' % (again + 1)): way = None; continue
                 if not self.sidestep(): self.c.send(['key S down'], 0.4); self.c.send(['key S up'])      # (the sidestep or the step back: off the thing unseen)
