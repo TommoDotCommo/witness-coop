@@ -41,7 +41,9 @@ How it finds the way (a robot with a depth camera, as a person uses their eyes):
  - stuck (W held but under 0.5 m moved in 2 s, or no nearer the target in 25 s): something unseen is in the way (the game has invisible walls
    at the shore and on steep slopes): the cells just ahead are marked bumped (dear, not forbidden: a door may open later), it steps aside
    (A, else D; else back with S) and plans again; from the second stuck near here (wall_rule) it looks once more first: the band-filled points up to 1.2 m ahead and 4 m either side are
-   what it is pressed against (a wall the map took for a hedge), and all those cells are bumped, not only the one ahead;
+   what it is pressed against (a wall the map took for a hedge), and all those cells are bumped, not only the one ahead; the trace's stuck note carries
+   trig (still: W held, not moving; circles: no nearer the target in 25 s) and, with WNAV_KEEP, stuck_class(depth picture) names what it is against:
+   wall (flat), foliage (scattered) or open (nothing in the body band: a kerb, a drop, an unseen collision; 43 of 88 and 56 of 110 stuck pictures);
  - a pocket (stuck a third time within 3 m, or no way on the map from here): it walks back out along its own trail (10 m), keeps out of the
    cells round that place for this walk (and makes all within POCKET 5 m of it dear: a U of unseen walls is wider than one bump), unbumps the cells near doors the game says are open, and plans again (3 times at most); only then
    does it give up, and the caller may teleport (the last resort).
