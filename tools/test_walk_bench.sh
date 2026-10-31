@@ -4,6 +4,7 @@
 # waiting (exit 3 = busy or not enough RAM) and always releases them. Every game starts from the same walking map (local/nav_map.bin).
 # usage: tools/test_walk_bench.sh [1|2] [save file] [--compare BEFORE.jsonl]      (WALK_BENCH_RECORDINGS=0: without local/recordings)
 #        (the save: a .witness_campaign file; default local/run/checkpoint-0850.witness_campaign)
+#        WBENCH_ONLY=0,3,7 (1 game): walk only these legs (numbers in tools/walk_bench.py order; each starts at the place of the leg before)
 #        WALK_BENCH_MAP=<map file>: start from that map instead of local/nav_map.bin (a pass that learns: the map the walkers saved in the
 #        run before, merged with Map.load, python3 tools/win/wnav.py --merge-maps OUT.bin A.bin B.bin); the run keeps the walkers' end maps in its folder
 set -euo pipefail
@@ -46,7 +47,7 @@ for b in bots:
     b.start(new_game=False)
 for b in bots: run.wait(lambda: 'resources ready' in (b.dir / 'witness_proxy.log').read_text(errors='ignore'), 'bot %d loaded' % b.id, 400)
 time.sleep(20)
-env = {**os.environ, 'WNAV_TRACE': '1', 'WSLENV': os.environ.get('WSLENV', '') + ':WNAV_TRACE:WNAV_RECORDINGS:WNAV_KEEP'}
+env = {**os.environ, 'WNAV_TRACE': '1', 'WSLENV': os.environ.get('WSLENV', '') + ':WNAV_TRACE:WNAV_RECORDINGS:WNAV_KEEP:WBENCH_ONLY'}
 def walk(k):
     b = bots[k]; res = out / ('results_b%d.jsonl' % b.id)
     r = subprocess.run([PYW, '-I', win(os.path.join(run.TOOLS, 'win', 'wbench.py')), b.pid, win(str(b.dir)), win(str(res)), ','.join(shares[k])],
@@ -54,7 +55,7 @@ def walk(k):
     (out / ('wbench_b%d.log' % b.id)).write_text(r.stdout + '\n--- stderr\n' + r.stderr[-20000:])
     for f in ('wnav_trace.jsonl', 'witness_proxy.log', 'wnav_map.bin'):
         if (b.dir / f).exists(): shutil.copyfile(b.dir / f, out / ('%s_b%d%s' % (Path(f).stem, b.id, Path(f).suffix)))
-    for f in (b.dir).glob('wnav_stuck*.bin'): shutil.copyfile(f, out / ('%s_b%d.bin' % (f.stem, b.id)))      # (WNAV_KEEP=1: a depth picture at each stuck)
+    for f in (b.dir).glob('wnav_*stuck*.bin'): shutil.copyfile(f, out / ('%s_b%d.bin' % (f.stem, b.id)))      # (WNAV_KEEP=1: a depth picture at each stuck)
     return res
 with cf.ThreadPoolExecutor(max_workers=n) as pool: files = list(pool.map(walk, range(n)))
 with open(out / 'results.jsonl', 'w') as f:
