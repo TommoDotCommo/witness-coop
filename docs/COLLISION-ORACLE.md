@@ -86,9 +86,9 @@ owner loaded as known-good cells), once per start map (`WALK_BENCH_MAP`). The ba
 | `island2.bin` (v2 oracle) | 0 | 13 | 2 | 652 | every leg that walked before is now "no way on the map" after 1 s |
 | island2 + depth map (`--merge-maps`: the oracle wins where it has a cell) | 0 | 8 | 1 | 441 (9 legs) | same legs as island2; the game crashed in leg 9 (see below) |
 | `island1_oracle.bin` (v1 oracle) | 4 | 9 | 2 | 1727 | walks 0x28a79, 0x698, 0xb0, 0x1a54; loses 0x28998 and 0xb10 |
-| island2 with the depth map's cells where the oracle has no ground (`tools/oracle_merge.py`) | YIELD_WALKED | YIELD_TELE | YIELD_FAILED | YIELD_SECONDS | YIELD_NOTE |
+| island2 with the depth map's cells where the oracle has no ground (`tools/oracle_merge.py`) | 5 | 8 | 2 | 1665 | 0x3629 now walks; 0xb10 and 0x698 no longer do; about the baseline, not better |
 
-Result: **the oracle map does not help the walker as it stands.** It teleports sooner (so the seconds fall), but only because the planner gives up. No leg
+Result: **the oracle map does not help the walker as it stands** (one run per map; a leg's outcome also varies from run to run). It teleports sooner (so the seconds fall), but only because the planner gives up. No leg
 that failed or teleported on the depth map walked on an oracle map. The merge with `--merge-maps` changes nothing: `Map.load` lets an ORACLE cell win over any
 other, so the false refusals survive it. `tools/oracle_merge.py` is the merge that recovers them (`yield`: a depth cell replaces an oracle cell without ground).
 
