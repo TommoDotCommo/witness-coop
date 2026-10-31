@@ -307,7 +307,10 @@ if FLAT and not TAUGHT: pos = stand_beside_flat(); dist = math.dist(pos, (px_, p
 r_ = 1.0 if TAUGHT else depth_ratio(); stamp('view check: depth ratio %.2f' % r_)
 if not 0.7 < r_ < 1.45:
     ok_view = False
-    for (hx, hy) in other_standing_points():
+    try:      # first look for the panel in the depth grid and turn onto it: a panel whose middle is far from its origin (Swamp's Sliding Bridge, drawn below the screen centre) reads as blocked at the centre
+        centre_on_panel(); r_ = depth_ratio(); stamp('view check after re-centring: depth ratio %.2f' % r_); ok_view = 0.7 < r_ < 1.45
+    except Exception as e_: stamp('re-centring skipped: %r' % e_)
+    for (hx, hy) in ([] if ok_view else other_standing_points()):
         hover_to(hx, hy, pz_ + 0.2, math.atan2(py_ - hy, px_ - hx), 'the walk did not get to another place to see the panel from')
         cx, cy, cz = p.camera()[0]
         if math.hypot(cx - px_, cy - py_) > 12: continue            # put back at the spawn point: nothing to stand on there
