@@ -286,7 +286,7 @@ class Playthrough:
             return True
         self.last_why[h] = r.get('why', '')
         shot = 'fail_%x_b%d' % (h, bot.id); bot.send('shot ' + shot)
-        self.rec('failed', bot=bot.id, panel='%#x' % h, name=e.name, area=e.area, seconds=dt, why=r.get('why', ''), moves=r.get('moves', []), shot=str(bot.dir / 'shots' / (shot + '.bmp')), trace=err.splitlines()[-40:])
+        self.rec('failed', bot=bot.id, panel='%#x' % h, name=e.name, area=e.area, seconds=dt, why=r.get('why', ''), want=r.get('want'), seq=r.get('seq'), drawn=r.get('drawn'), moves=r.get('moves', []), shot=str(bot.dir / 'shots' / (shot + '.bmp')), trace=err.splitlines()[-40:])
         return False
 
     def event_time(self, bot, text):
