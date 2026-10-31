@@ -7,6 +7,7 @@
 //   exe+0x2E7FA0  Reserve(&data, &cap, n, elemSize), exe+0x2E7F90  Free(&data)   (the game's array: int count, int cap, T* data)
 // Commands (witness_cmd.txt, lines; or `oracle` = run the lines of witness_oracle_in.txt):
 //   ray x y z dx dy dz [maxdist] [raw]    -> "ray hit dist=.. at=x,y,z ent=0x.. type=0x.." or "ray miss"
+//   scan ID cx0 cy0 nx ny [ztop zbot]     -> witness_scan_ID.bin: the cells (cx0.., cy0..) of the walking map (tools/win/wnav.py REC records), built by core/oracle_cell.h
 //   where                                 -> "where feet=x,y,z cam=x,y,z yaw=.. pitch=.."
 //   ground x y [zfrom] [maxdist]          -> "ground z=.." or "ground none"   (zfrom: where the ray starts, default 400; maxdist default 800)
 // Results: witness_oracle_out.txt, replaced whole after each batch, first line "# seq N n=COUNT" (a tool waits for a new seq).
@@ -19,6 +20,7 @@
 #include <string>
 #include <vector>
 #include "game.h"
+#include "core/oracle_cell.h"
 
 void Log(const char* msg);
 HMODULE g_selfModule();
@@ -57,6 +59,30 @@ struct ListGuard {      // a game array the destructor frees with the game's own
     ListGuard() { ((ReserveFn)(Base() + kReserve))(&l.data, &l.cap, 16, 8); }
     ~ListGuard() { if (l.data) ((FreeFn)(Base() + kFree))(&l.data); }
 };
+
+// one ray against the world: the nearest hit, or false (the same queries as the ray command)
+bool RayQuery(const float* o, const float* dir, float maxd, float* dist, float* nrm, uintptr_t* entOut, int* cand) {
+    void* w = World(); float end[3] = {o[0] + dir[0] * maxd, o[1] + dir[1] * maxd, o[2] + dir[2] * maxd};
+    ListGuard lg; Hit hit; ((HitInitFn)(Base() + kHitInit))(&hit);
+    ((BoxFn)(Base() + kBox))(w, o, end, 0xC980001, &lg.l, 0.0f, 0.0f);
+    if (cand) *cand = lg.l.count;
+    ((RayFn)(Base() + kRay))(o, dir, maxd, -1, 4, &hit, &lg.l);
+    float dd; uintptr_t ent; memcpy(&dd, hit.b, 4); memcpy(&ent, hit.b + 8, 8);
+    if (entOut) *entOut = ent; if (nrm) memcpy(nrm, hit.b + 0x28, 12);
+    if (!ent || !(dd < maxd + 1e-3f)) return false;
+    *dist = dd; return true;
+}
+bool GroundQuery(float x, float y, float zfrom, float maxd, float* z) {
+    Hit hit; ((HitInitFn)(Base() + kHitInit))(&hit); float pos[3] = {x, y, zfrom}, out[3] = {0, 0, 0};
+    if (!((GroundFn)(Base() + kGround))(pos, out, &hit, true, true, false, maxd)) return false;
+    *z = out[2]; return true;
+}
+struct RealWorld {
+    bool ground(float x, float y, float zfrom, float maxd, float* z) { return GroundQuery(x, y, zfrom, maxd, z); }
+    bool ray(const float o[3], const float d[3], float maxd, float* dist) { return RayQuery(o, d, maxd, dist, nullptr, nullptr, nullptr); }
+};
+struct ScanJob { std::string id; int cx0 = 0, cy0 = 0, nx = 0, ny = 0; float ztop = 250, zbot = -60; int at = 0; std::vector<unsigned char> out; unsigned withGround = 0; DWORD t0 = 0; };
+std::vector<ScanJob> g_jobs;
 
 std::string DoRay(const float* o, const float* d, float maxd, bool raw) {
     void* w = World(); char m[512];
@@ -107,6 +133,11 @@ std::wstring Dir() { wchar_t p[MAX_PATH]; GetModuleFileNameW(g_selfModule(), p, 
 // witness_cmd.txt line (command thread): `ray ...` and `ground ...` queue a line, `oracle` queues the lines of witness_oracle_in.txt
 void OracleCommand(const char* line) {
     Init(); std::vector<std::string> add;
+    if (!strncmp(line, "scan ", 5)) {
+        ScanJob j; char id[64]; int n = sscanf(line, "scan %63s %d %d %d %d %f %f", id, &j.cx0, &j.cy0, &j.nx, &j.ny, &j.ztop, &j.zbot);
+        if (n < 5 || j.nx <= 0 || j.ny <= 0 || (long long)j.nx * j.ny > 4000000) { Log("oracle: bad scan command"); return; }
+        j.id = id; EnterCriticalSection(&g_cs); g_jobs.push_back(j); LeaveCriticalSection(&g_cs); return;
+    }
     if (!strncmp(line, "oracle", 6)) {
         FILE* f = _wfopen((Dir() + L"witness_oracle_in.txt").c_str(), L"r"); if (!f) { Log("oracle: no witness_oracle_in.txt"); return; }
         char b[256]; while (fgets(b, sizeof b, f)) { std::string s = b; while (!s.empty() && (s.back() == '\n' || s.back() == '\r')) s.pop_back(); if (!s.empty()) add.push_back(s); }
@@ -117,8 +148,31 @@ void OracleCommand(const char* line) {
 }
 
 // render thread, once per frame
+static void ScanTick() {      // the first scan job gets 10 ms of each frame
+    EnterCriticalSection(&g_cs); bool any = !g_jobs.empty(); LeaveCriticalSection(&g_cs); if (!any) return;
+    bool ready = Ready() && World() && GameEntity(0x1E465);
+    EnterCriticalSection(&g_cs); ScanJob& j = g_jobs.front(); LeaveCriticalSection(&g_cs);      // (only this thread erases from the vector)
+    if (!j.t0) j.t0 = GetTickCount();
+    if (!ready) return;
+    RealWorld rw; oraclecell::Scanner<RealWorld> sc(rw); LARGE_INTEGER f, a, b; QueryPerformanceFrequency(&f); QueryPerformanceCounter(&a);
+    int total = j.nx * j.ny;
+    while (j.at < total) {
+        int cx = j.cx0 + j.at % j.nx, cy = j.cy0 + j.at / j.nx; oraclecell::Rec r = sc.scan(cx, cy, j.ztop, j.zbot); j.at++;
+        if (r.z > -50.0f) j.withGround++;
+        short sx = (short)cx, sy = (short)cy; unsigned char rec[17]; memcpy(rec, &sx, 2); memcpy(rec + 2, &sy, 2); memcpy(rec + 4, &r.z, 4); memcpy(rec + 8, &r.mask, 8); rec[16] = r.flags;
+        j.out.insert(j.out.end(), rec, rec + 17);
+        QueryPerformanceCounter(&b); if ((b.QuadPart - a.QuadPart) * 1000 / f.QuadPart >= 10) break;
+    }
+    if (j.at < total) return;
+    std::wstring dir = Dir(), id(j.id.begin(), j.id.end()), tmp = dir + L"witness_scan_" + id + L".tmp", fin = dir + L"witness_scan_" + id + L".bin";
+    FILE* fp = _wfopen(tmp.c_str(), L"wb"); if (fp) { fwrite(j.out.data(), 1, j.out.size(), fp); fclose(fp); MoveFileExW(tmp.c_str(), fin.c_str(), MOVEFILE_REPLACE_EXISTING); }
+    char m[200]; snprintf(m, sizeof m, "oracle: scan %s done, %d cells (%u with ground) in %lu ms", j.id.c_str(), total, j.withGround, (unsigned long)(GetTickCount() - j.t0)); Log(m);
+    EnterCriticalSection(&g_cs); g_jobs.erase(g_jobs.begin()); LeaveCriticalSection(&g_cs);
+}
+
 void OracleTick() {
     if (!g_init) return;
+    ScanTick();
     EnterCriticalSection(&g_cs);
     if (g_q.empty()) { LeaveCriticalSection(&g_cs); return; }
     std::vector<std::string> q; q.swap(g_q); LeaveCriticalSection(&g_cs);
