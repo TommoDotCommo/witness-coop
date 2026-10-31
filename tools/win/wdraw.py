@@ -46,6 +46,8 @@ def leave_puzzle():
         rclick()
 MOVES = []      # how the player got to each place it stood (in the result)
 def done(solved, why, traced=0, dist=0.0):
+    if not solved and traced >= 1 and os.environ.get('WDRAW_HOLD_ON_FAIL'):      # (test hook: a line that got part of the way stays on the panel for this many seconds, so a QA scenario can look at it from the other game)
+        print('HOLD %d %s' % (traced, why), flush=True); time.sleep(float(os.environ['WDRAW_HOLD_ON_FAIL']))
     if not solved: c.send(['shot fail_%x' % eid], 0.8)      # what the game showed, taken while still there
     leave_puzzle()                                           # leave the puzzle if it is still entered (nothing happens otherwise)
     c.send(['hover off'], 0.2)
