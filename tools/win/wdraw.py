@@ -20,6 +20,7 @@ What it does, and what was measured (build 11370412, 1920x1080, see NOTES.md of 
 import os, sys, math, struct, time, json
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
 from wcontrol import Control
+import wrounds
 exec(compile(open(os.path.join(HERE, 'wlib.py')).read(), 'wlib.py', 'exec'))
 pid, gdir, eid = int(sys.argv[1]), sys.argv[2], int(sys.argv[3], 16)
 path = [int(v) for v in sys.argv[4].split(',')]
@@ -267,7 +268,17 @@ def depth_ratio():
 def other_standing_points():
     """Where else to stand: other distances along the panel's normal (the first try, 3 m, may be inside a wall or over a drop)."""
     nx, ny = NORMAL[0], NORMAL[1]; nn = math.hypot(nx, ny) or 1.0; nx, ny = nx / nn, ny / nn
-    return [(px_ + d_ * nx, py_ + d_ * ny) for d_ in (2.0, 4.0, 1.6, 5.0, 2.5, 3.5)]
+    pts = [(px_ + d_ * nx, py_ + d_ * ny) for d_ in (2.0, 4.0, 1.6, 5.0, 2.5, 3.5)]
+    # then anywhere round the panel the walking map says has a floor and a clear line to the panel's middle (not only straight out from it)
+    try:
+        global walker
+        import wnav, wlos
+        if walker is None: walker = wnav.Walker(p, c, gdir, log=dbg)
+        near = wlos.spread(wlos.standing_places(walker.map.cells, (px_, py_, pz_), NORMAL))
+        stamp('map: %d places with a clear line to the panel' % len(near))
+        pts = pts[:2] + [(x_, y_) for x_, y_, _ in near] + pts[2:]      # (two straight-out tries, then the places the map vouches for, then the rest)
+    except Exception as e_: stamp('standing places from the map skipped: %r' % e_)
+    return pts[:8]      # (each place costs a walk of up to two minutes or a teleport: a panel that cannot be seen from eight is reported, not chased for ever; one panel spent 12 minutes on them)
 
 def centre_on_panel():
     """The panel's middle may not be its entity's origin (Quarry Boat Spawn sits well below where the camera aims): find it on the screen in the
@@ -296,7 +307,10 @@ if FLAT and not TAUGHT: pos = stand_beside_flat(); dist = math.dist(pos, (px_, p
 r_ = 1.0 if TAUGHT else depth_ratio(); stamp('view check: depth ratio %.2f' % r_)
 if not 0.7 < r_ < 1.45:
     ok_view = False
-    for (hx, hy) in other_standing_points():
+    try:      # first look for the panel in the depth grid and turn onto it: a panel whose middle is far from its origin (Swamp's Sliding Bridge, drawn below the screen centre) reads as blocked at the centre
+        centre_on_panel(); r_ = depth_ratio(); stamp('view check after re-centring: depth ratio %.2f' % r_); ok_view = 0.7 < r_ < 1.45
+    except Exception as e_: stamp('re-centring skipped: %r' % e_)
+    for (hx, hy) in ([] if ok_view else other_standing_points()):
         hover_to(hx, hy, pz_ + 0.2, math.atan2(py_ - hy, px_ - hx), 'the walk did not get to another place to see the panel from')
         cx, cy, cz = p.camera()[0]
         if math.hypot(cx - px_, cy - py_) > 12: continue            # put back at the spawn point: nothing to stand on there
@@ -403,16 +417,12 @@ if ckey in kcache:
 else: class_cands = None
 started = None
 FORCE = os.environ.get('WDRAW_FORCE')      # test: W,dy,AX,SX,SY, only this one
-ROLL0 = ROLL; ROLL_CANDS = [(w2, dy2) for dy2 in (0, 12, -12, 24, -24) for w2 in (1.88, 1.75, 2.0, 1.6, 2.15, 1.45, 1.3)]
+ROLL0 = ROLL
 if 'r%x' % eid in kcache: ROLL0 = ROLL = math.radians(kcache['r%x' % eid]); cands.insert(0, tuple(kcache['w%x' % eid][:2])) if 'w%x' % eid in kcache else None
-ROUNDS = [(1.0, 1, 1), (1.0, 1, 1), (1.4, -1, -1), (1.0, 1, 1, 45), (1.0, -1, -1, 45)] + [(ax_, sx_, sy_) for ax_ in (1.0, 1.45, 0.7, 2.0, 0.5) for (sx_, sy_) in ((-1, -1), (1, 1), (1, -1), (-1, 1)) if (ax_, sx_, sy_) != (1.0, 1, 1)]
 # An orientation the first edge refuted on an earlier try (the line ran along another edge than the path's first one: the panel is shown turned and
 # the guess was the mirror of it) is not tried again, and its mirror images come first. [ax, sx, sy, roll in degrees], remembered in the cache.
 BAD_ORIENT = [tuple(b) for b in kcache.get('bad%x' % eid, [])]
-def round_key(r_): return (r_[0], r_[1], r_[2], r_[3] if len(r_) > 3 else round(math.degrees(ROLL0)))
-if BAD_ORIENT and not TAUGHT:
-    mirrors = [m_ if m_[3] != round(math.degrees(ROLL0)) else m_[:3] for ax_, sx_, sy_, rl_ in BAD_ORIENT for m_ in ((ax_, sx_, -sy_, rl_), (ax_, -sx_, sy_, rl_)) if m_ not in BAD_ORIENT]
-    ROUNDS = list(dict.fromkeys(mirrors)) + [r_ for r_ in ROUNDS if round_key(r_) not in BAD_ORIENT]
+ROUNDS = wrounds.orientation_rounds([] if TAUGHT else BAD_ORIENT, round(math.degrees(ROLL0)))
 if FORCE:
     fw, fdy, fax, fsx, fsy = [float(v) for v in FORCE.split(',')]; ROUNDS = [(fax, int(fsx), int(fsy))] * 2; cands = [(fw, int(fdy))]; cached_ax = None
 OLD_TRACED = traced()      # (a redraw: the solved line's count)
@@ -437,7 +447,7 @@ for attempt, rd_ in enumerate(ROUNDS):
             last_v = v_
         CAM = cam_basis()
     cur = (0.0, 0.0)
-    for w_, dy_ in (class_cands if (attempt == 0 and class_cands) else cands if ((attempt < 2 and len(rd_) <= 3) or FORCE or TAUGHT) else ROLL_CANDS if len(rd_) > 3 else [(w2, dy2) for dy2 in (0, 12, -12, 24, -24, 36, -36) for w2 in ((0.70, 0.66, 0.74, 0.62, 0.78, 0.58, 0.82) if attempt == 2 else (0.567, 0.645, 0.70, 0.76, 0.82, 0.88, 0.95, 1.05))]):
+    for w_, dy_ in (class_cands if (attempt == 0 and class_cands) else wrounds.candidates(rd_, attempt, cands, bool(FORCE or TAUGHT)) or [(w2, dy2) for dy2 in (0, 12, -12, 24, -24, 36, -36) for w2 in ((0.70, 0.66, 0.74, 0.62, 0.78, 0.58, 0.82) if rd_[0] == 1.4 else (0.567, 0.645, 0.70, 0.76, 0.82, 0.88, 0.95, 1.05))]):
         if time.time() - T_START > ROUND_END: break
         W = w_
         sx, sy = node_px(path[0]); sy += dy_

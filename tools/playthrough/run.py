@@ -33,6 +33,7 @@ from group_config import configs
 from group_suite import replace_copy, digest, EXE_HASH, DLL_HASH
 
 RES = os.environ.get('WITNESS_RESOURCES', '')
+ONLY = {int(v, 16) for v in os.environ.get('PLAY_ONLY', '').split(',') if v.strip()}      # restrict the run to these panels (a short live check)
 
 
 def sh(args, timeout=120): return subprocess.run(list(map(str, args)), capture_output=True, text=True, timeout=timeout).stdout.strip()
@@ -407,6 +408,7 @@ class Playthrough:
             done0 = set().union(*(st[0] for st in [b.state() for b in self.bots]))
             r_ = route(self.logic, solved=frozenset(done0))
             if r_: self.planner.targets = r_; self.rec('route from start', solved=len(done0), route=len(r_), left=len(r_ - done0))
+        if ONLY: self.planner.targets = set(ONLY); self.rec('only these panels', panels=sorted('%#x' % h for h in ONLY))      # (a live check of one fix: PLAY_ONLY=0x9da6,0xa036)
         busy = {}      # bot id -> (future, panel)
         rounds = 0
         with cf.ThreadPoolExecutor(max_workers=self.n) as pool:
@@ -453,7 +455,7 @@ class Playthrough:
                     blockers = self.planner.blocked(solved) or [h for h in self.stalled_since]
                     # Before giving up: a detour round what the bots cannot do (another set of lasers, another way into an area).
                     self.avoid |= set(blockers)
-                    added = self.planner.reroute(solved, self.avoid) if blockers else None
+                    added = self.planner.reroute(solved, self.avoid) if blockers and not ONLY else None
                     if added is not None:
                         self.rec('reroute', avoiding=sorted('%#x' % h for h in self.avoid), added=len(added), route=len(self.planner.targets)); continue
                     # No detour: before giving up, every blocker gets one more round of tries (what made it fail may have changed since:
