@@ -6,9 +6,9 @@ The mutant no_model_depth=1 (figure drawn with no scene depth) must fail. usage:
 import os, subprocess, sys, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from witness import ROOT, TOOLS, DIR1, DIR2, PYW, RUN, pid, win, real_saves
-def video(profile=2, msaa=2, shading=2, reflection=2, texture=2, texture_detail=2, geometry=2):      # the same format as tools/playthrough/run.py video_options (1080p window)
-    return (':/launcher\nrender_profile %d\nfullscreen false\nvsync false\nhighdpi false\nresolution 1\nmultisampling %d\ncustom_width 1920\ncustom_height 1080\n'
-            'shading_quality %d\nreflection_quality %d\ntexture_quality %d\ntexture_detail %d\ngeometry_detail %d\n') % (profile, msaa, shading, reflection, texture, texture_detail, geometry)
+def video(profile=2, msaa=2, shading=2, reflection=2, texture=2, texture_detail=2, geometry=2, w=1920, h=1080):      # the same format as tools/playthrough/run.py video_options (1080p window)
+    return (':/launcher\nrender_profile %d\nfullscreen false\nvsync false\nhighdpi false\nresolution 1\nmultisampling %d\ncustom_width %d\ncustom_height %d\n'
+            'shading_quality %d\nreflection_quality %d\ntexture_quality %d\ntexture_detail %d\ngeometry_detail %d\n') % (profile, msaa, w, h, shading, reflection, texture, texture_detail, geometry)
 # name, Launcher.variables (None: no file, the game's automatic profile = the owner's "high"), cfg for A, must the check pass
 SCENARIOS = [
   ('occlusion: automatic high profile (4x MSAA)', None, 'see_through=0', True),
@@ -16,6 +16,7 @@ SCENARIOS = [
   ('occlusion: high, multisampling off', video(msaa=0), 'see_through=0', True),
   ('occlusion: high, 2x MSAA', video(msaa=1), 'see_through=0', True),
   ('occlusion: high, 8x MSAA', video(msaa=3), 'see_through=0', True),
+  ('occlusion: high, 2560x1440 window', video(w=2560, h=1440), 'see_through=0', True),
   ('occlusion: lowest options', video(profile=0, msaa=0, shading=0, reflection=0, texture=0, texture_detail=0, geometry=0), 'see_through=0', True),
   ('MUTANT: figure drawn without scene depth (automatic high)', None, 'see_through=0\nno_model_depth=1', False),
   ('MUTANT: figure drawn without scene depth (lowest options)', video(profile=0, msaa=0, shading=0, reflection=0, texture=0, texture_detail=0, geometry=0), 'see_through=0\nno_model_depth=1', False),

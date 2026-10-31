@@ -152,8 +152,10 @@ shadow off` (`model_shadow=0`) must fail the second.
 The other player's figure is occluded by comparing each pixel with the game's scene depth buffer, which the proxy finds by watching the depth-stencil
 views the game binds (`depth.cpp`). The shader read **four** samples of a multisampled depth buffer whatever the buffer had: with 2x multisampling
 the two missing samples read as zero (infinitely far), so a figure behind a wall stayed visible (measured: 60 094 of 444 211 pixels behind the tunnel
-door at 2x; 0 at 4x, 8x and without multisampling). The proxy now passes the buffer's real sample count. It also follows the back buffer's size
-every frame (the buffer is looked for at that size; a swap chain resized after start-up used to hide it for good), and when no scene depth is found it
+door at 2x; 0 at 4x, 8x and without multisampling; at the automatic high profile (4x), explicit high, and the lowest options the old build already hid the figure, `debug_depth=1`
+showing the scene buffer found at 1920x1080, 4 samples (automatic high) or 1 sample (lowest)). The proxy now passes the buffer's real sample count. It also follows the back buffer's size
+every frame (the buffer is looked for at that size; before, the size was read once at start-up, so a swap chain resized later could have hidden
+the scene buffer for good; not observed in the lab, where the back buffer never changes), and when no scene depth is found it
 logs a `model: WARNING scene depth not found` line every 5 s, and `modelstat` carries `scene_depth` (0 not found, 1 single sample, 2 multisampled,
 -1 switched off by the `no_model_depth=1` mutant). Gate: `tools/qa.sh occlusion` (`tools/qa_occlusion.py`; automatic high profile, explicit high,
 2x/4x/8x multisampling, multisampling off, lowest options, plus mutants with no scene depth), which asserts on the occlusion query that a figure
