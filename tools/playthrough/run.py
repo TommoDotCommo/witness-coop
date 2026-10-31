@@ -137,7 +137,7 @@ def attempt_env(lw, tries):
         # and the time after that close in front of it, 1.4 m out, where the person stood for the panels they were asked to solve (the
         # recordings of 2026-10-30: 1.1 to 2.3 m out; the bot's usual spot is 3 m out, where a small start circle is a few pixels).
         if tries % 2 == 1: env['WDRAW_FLIP_SIDE'] = '1'
-        else: env['WDRAW_STAND'] = '0,1.4'
+        else: env['WDRAW_STAND'] = '0,1.4'; env['WDRAW_RECENTRE'] = '1'      # (and turn the view onto the panel found in the depth grid: Symmetry Left 3 and Swamp's Sliding Bridge are seen in the lower part of the screen)
     if 'cannot be seen' in lw: env['WDRAW_RECENTRE'] = '1'      # (the panel's middle may be far from where the camera faces)
     # The line went wrong on the way (stuck, a wrong branch, short of the end): steer it by feedback instead of the projection
     # (Monastery Shutters Control was drawn that way after every projected attempt failed).
