@@ -12,7 +12,7 @@ with the walker's own step rules (tools/win/wnav.py: Map.steps, up/down/stairs, 
 (the planner may cross a few of them at triple cost; coverage asks what the map knows). Soft cells (bushes, a wall one cell thick) are crossed
 unless --strict. Per area it prints covered / total, then the panels that are cut off, and the share of the route's panels reached.
 The start area is the approach of the first tutorial panel (0x64) unless --root x,y,z (feet) is given. The manifest is the newest
-panels.json under the lab's run folders unless --panels is given. Exit 0 always (it measures); selftest exits 1 on failure."""
+panels.json from WITNESS_MANIFEST, WITNESS_RUN or a sibling run folder unless --panels is given. Exit 0 always (it measures); selftest exits 1 on failure."""
 import glob, json, math, os, sys, collections
 HERE = os.path.dirname(os.path.abspath(__file__)); ROOT = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(HERE, 'win')); sys.path.insert(0, os.path.join(HERE, 'playthrough'))
@@ -29,7 +29,11 @@ def load_route():
 
 
 def find_manifest():
-    found = sorted(glob.glob('/mnt/c/coop/lab/run/*/panels.json'), key=os.path.getmtime)
+    """WITNESS_MANIFEST, else panels.json of WITNESS_RUN (or local/run), else the newest one in a sibling run folder."""
+    if os.environ.get('WITNESS_MANIFEST'): return os.environ['WITNESS_MANIFEST']
+    run = os.environ.get('WITNESS_RUN', os.path.join(ROOT, 'local', 'run'))
+    if os.path.exists(os.path.join(run, 'panels.json')): return os.path.join(run, 'panels.json')
+    found = sorted(glob.glob(os.path.join(os.path.dirname(os.path.abspath(run)), '*', 'panels.json')), key=os.path.getmtime)
     return found[-1] if found else None
 
 
