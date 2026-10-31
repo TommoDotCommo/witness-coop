@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Score a walking map against placed-and-pushed probes (local/oracle/stuck_probe.jsonl: the game's own physics, W held 2 s at a place where a walker
+"""Score a walking map against placed-and-pushed probes (tools/testdata/oracle_stuck_probe.jsonl: the game's own physics, W held 2 s at a place where a walker
 once got stuck; `moved` is the metres gained along the yaw). A probe is blocked when it moved under 0.8 m. The map refuses the way when a cell within
 one step ahead (the cell 0.5 m on, or any of its neighbours that is nearer the heading) cannot be stepped into from the probe's floor.
 usage: oracle_probe_eval.py MAP.bin PROBES.jsonl [more maps...]"""

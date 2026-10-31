@@ -82,7 +82,11 @@ bool GroundQuery(float x, float y, float zfrom, float maxd, float* z) {
 }
 struct RealWorld {
     bool ground(float x, float y, float zfrom, float maxd, float* z) { return GroundQuery(x, y, zfrom, maxd, z); }
-    bool ray(const float o[3], const float d[3], float maxd, float* dist, float* nz = nullptr) { float n[3]; bool h = RayQuery(o, d, maxd, dist, n, nullptr, nullptr); if (h && nz) *nz = n[2]; return h; }
+    bool ray(const float o[3], const float d[3], float maxd, float* dist, float* nz = nullptr) {
+        float n[3]; uintptr_t ent = 0; bool h = RayQuery(o, d, maxd, dist, n, &ent, nullptr);
+        if (h && nz) { char tn[40]; TypeName(ent, tn, sizeof tn); *nz = !strcmp(tn, "Collision_Volume") ? 0.0f : n[2]; }      // (the flat top of an invisible collision volume is not water: only the lake's own plane is)
+        return h;
+    }
 };
 struct ScanJob { std::string id; int cx0 = 0, cy0 = 0, nx = 0, ny = 0; float ztop = 250, zbot = -60; int at = 0; std::vector<unsigned char> out; unsigned withGround = 0; DWORD t0 = 0; };
 std::deque<ScanJob> g_jobs;      // (a deque: the running job is referenced while the command thread adds more)

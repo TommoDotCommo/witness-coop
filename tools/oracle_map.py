@@ -2,7 +2,7 @@
 """Build a walking map (tools/win/wnav.py format) from the game's own collision, with the proxy's oracle (proxy/oracle.cpp). Needs a running game
 (from a lab lease: eval "$(lab env witness)"; python3 tools/oracle_live.py start SAVE) and its folder in WITNESS_DIR1.
 
-usage: python3 tools/oracle_map.py X0 Y0 X1 Y1 OUT.bin [--tile 50] [--wait 3.5] [--resume]     (metres, the rectangle to map)
+usage: python3 tools/oracle_map.py X0 Y0 X1 Y1 OUT.bin [--tile 50] [--wait 5] [--resume]     (metres, the rectangle to map)
 The collision exists only near the player (about 250 m for the ground, less for the small things), so the player is held (the proxy's `hover`) at
 the middle of each tile of the rectangle, in turn, nearest first, and the tile's cells are scanned (the `scan` command: per 0.5 m cell the
 surfaces of its column and what stands in the way of a body on each, see proxy/core/oracle_cell.h). The tile files go to the game folder
@@ -31,7 +31,7 @@ def ground_near(o, x, y, tries=((0, 0), (4, 0), (-4, 0), (0, 4), (0, -4), (8, 8)
 REC = struct.Struct('<hhfQB'); WATER = 16; ORACLE = 32; NO_GROUND = -100.0      # (ORACLE: tools/win/wnav.py)
 
 
-def finish(data, dilate=1):
+def finish(data, dilate=2):
     """The joined tile records -> the records for the planner: every cell flagged water (a lake: see proxy/core/oracle_cell.h) and every cell within
     `dilate` cells of one becomes ground-less (the game keeps the player a body width from the water's edge, where the bed is still dry)."""
     cells = {}
@@ -45,7 +45,7 @@ def finish(data, dilate=1):
     return b''.join(REC.pack(cx, cy, z, m, (fl & ~WATER) | ORACLE) for (cx, cy), (z, m, fl) in cells.items()), len(wet)
 
 
-def build(rect, out, tile=50.0, wait=3.5, game_dir=None, log=print, resume=False):
+def build(rect, out, tile=50.0, wait=5.0, game_dir=None, log=print, resume=False):
     d = game_dir or os.environ['WITNESS_DIR1']; o = Oracle(d); x0, y0, x1, y1 = rect
     home, ang = feet_of(o)
     tiles = [(x0 + (i + .5) * tile, y0 + (j + .5) * tile, i, j) for i in range(int(math.ceil((x1 - x0) / tile))) for j in range(int(math.ceil((y1 - y0) / tile)))]

@@ -65,16 +65,16 @@ def mutants(rec):
             ('the wall in front of a panel missed', m_wall_miss), ('the wall 9 m away', m_wall_far), ('the wall normal flipped', m_wall_flip), ('sky is solid', m_sky)]
 
 
-def check_finish(dilate=1):
+def check_finish(dilate=2):
     """tools/oracle_map.py finish(): water cells and their neighbours lose their ground, others keep it. -> list of failures"""
     import struct; sys.path.insert(0, HERE); import oracle_map
     R = struct.Struct('<hhfQB'); cells = {(x, y): (5.0, 1, 0) for x in range(10) for y in range(10)}; cells[(4, 4)] = (4.0, 1, oracle_map.WATER)
     out, wet = oracle_map.finish(b''.join(R.pack(x, y, *v) for (x, y), v in cells.items()), dilate)
     got = {(cx, cy): (z, fl) for cx, cy, z, m, fl in R.iter_unpack(out)}; bad = []
     if wet != 1: bad.append('one water cell counted as %d' % wet)
-    for c in [(4, 4), (3, 3), (5, 5), (4, 5)]:
+    for c in [(4, 4), (3, 3), (5, 5), (4, 5), (2, 2), (6, 6)]:
         if got[c][0] > -50: bad.append('cell %s next to the water keeps its ground' % (c,))
-    for c in [(2, 2), (6, 6), (0, 9)]:
+    for c in [(1, 1), (7, 7), (0, 9)]:
         if got[c][0] != 5.0: bad.append('dry cell %s lost its ground' % (c,))
     if any(fl & oracle_map.WATER for z, fl in got.values()): bad.append('the water flag is left in the planner records')
     return bad
