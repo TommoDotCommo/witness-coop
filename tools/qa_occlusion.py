@@ -24,7 +24,7 @@ only = sys.argv[1:]; results = []; saves0 = real_saves()
 for name, var, ca, expect in SCENARIOS:
     if only and not any(o in name for o in only): continue
     print('\n=== %s' % name, flush=True)
-    env = {**os.environ, 'CFG_A': ca, 'CFG_B': 'see_through=0', 'WITNESS_KEEP_VIDEO': '1'}
+    env = {**os.environ, 'CFG_A': ca + os.environ.get('QA_OCC_EXTRA', ''), 'CFG_B': 'see_through=0', 'WITNESS_KEEP_VIDEO': '1'}
     for d in (DIR1, DIR2):
         sd = os.path.join(d, 'appdata', 'The Witness'); os.makedirs(sd, exist_ok=True); vp = os.path.join(sd, 'Launcher.variables')
         if os.path.exists(vp): os.remove(vp)
@@ -35,8 +35,9 @@ for name, var, ca, expect in SCENARIOS:
     r = subprocess.run([PYW, '-I', win(os.path.join(TOOLS, 'win', 'wocc.py')), pid('A'), win(DIR1), pid('B'), win(DIR2), name.split(':', 1)[1].strip()], capture_output=True, text=True, timeout=300)
     print(r.stdout.strip(), flush=True)
     r2 = subprocess.run([PYW, '-I', win(os.path.join(TOOLS, 'win', 'wocc_out.py')), pid('A'), win(DIR1), pid('B'), win(DIR2), name.split(':', 1)[1].strip()], capture_output=True, text=True, timeout=600)      # the open world's terrain
-    print(r2.stdout.strip(), flush=True)
+    print(r2.stdout.strip(), r2.stderr.strip()[-600:], flush=True)
     log = open(os.path.join(DIR1, 'witness_proxy.log'), errors='ignore').read()
+    if os.environ.get('QA_OCC_KEEP'): import shutil; shutil.copy(os.path.join(DIR1, 'witness_proxy.log'), os.path.join(os.environ['QA_OCC_KEEP'], 'proxy_' + ''.join(c if c.isalnum() else '_' for c in name)[:60] + '.log'))      # evidence (QA_OCC_EXTRA='\ndebug_depth=1' adds the depth diagnostics)
     scene_lines = [l for l in log.splitlines() if 'depth: scene depth buffer' in l]
     print('  proxy log: %s' % (scene_lines[-1] if scene_lines else 'no "scene depth buffer" line'), flush=True)
     passed = r.returncode == 0 and r2.returncode == 0
