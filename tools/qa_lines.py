@@ -20,6 +20,8 @@ def linestat(gdir):
 def scenario(cfg_a='', cfg_b=''):
     manifest = {q['id']: q for q in sweep.load(sweep.MANIFEST, [])}
     if not manifest: sys.exit('no manifest: run tools/sweep.py inventory on a fresh game first')
+    # Follow native trace progress: the maze's projected first edge can stall.
+    os.environ['WDRAW_STEER'] = '1'; os.environ['WSLENV'] = os.environ.get('WSLENV', '') + ':WDRAW_STEER'
     qa_sweep.restart(cfg_a, cfg_b); qa_sweep.run_panels('A', PANELS, manifest)
     pyw('wcmd.py', win(DIR2), 'menusel 293'); pyw('wcmd.py', win(DIR2), 'menudo teleport'); time.sleep(3)
     t0 = time.time(); b = linestat(DIR2)
