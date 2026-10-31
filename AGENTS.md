@@ -49,6 +49,8 @@ prepare a reviewable diff before asking to publish. Never force-push.
   (28 scenarios took 48 minutes on 2026-10-24); `tools/qa.sh <filter>` runs matching scenarios serially. Shard planning is game-free:
   `python3 tools/test_shard.py`.
   A scenario whose bot never reached its precondition (game not in the world yet, a click missed under load) is run once more automatically; that is logged as `RETRY`. Report only what you ran.
+- One game without a partner: `tools/solo.sh` (one slot; a start whose cfg has no roster, as from Steam, must scan the world and stay alive;
+  `--mutant` sets `late_voice_lock=1`, the lock as before 2026-10-31, and the game must die).
 - For documentation changes, check links, paths and `git diff --check`; game runs are unnecessary.
 
 ## Compatibility constraints

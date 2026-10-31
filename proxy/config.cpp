@@ -98,6 +98,7 @@ const Cfg& GetCfg() {
             else if (sscanf(line, "no_voice_play=%d", &v) == 1) r.noVoicePlay = v != 0;
             else if (sscanf(line, "voice_no_pos=%d", &v) == 1) r.voiceNoPos = v != 0;
             else if (sscanf(line, "no_speaking_flag=%d", &v) == 1) r.noSpeakingFlag = v != 0;
+            else if (sscanf(line, "late_voice_lock=%d", &v) == 1) r.lateVoiceLock = v != 0;
             else if (sscanf(line, "no_game_volume=%d", &v) == 1) r.noGameVolume = v != 0;
             else if (sscanf(line, "mapgen_height=%f", &fv) == 1) r.mapgenHeight = std::max(30.0f, fv);
             else if (sscanf(line, "mapgen_res=%f", &fv) == 1) r.mapgenRes = std::max(0.1f, fv);

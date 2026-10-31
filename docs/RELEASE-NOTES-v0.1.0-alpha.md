@@ -23,6 +23,14 @@ First packaged build, for a first play test between two PCs. Extract the whole Z
   keeping the original as `AnselSDK64_real.dll`, adds the launcher and the model, and uninstalls
   by receipts (only files it installed are touched; originals are restored).
 
+## Fixed while packaging
+
+- A start without the launcher (from Steam, or with a `witness_coop.cfg` that has no player number and
+  ports) crashed a few seconds after the UI was ready: the overlay asked the voice module for its channel
+  text every frame and took a critical section that only the networking start had initialised. The voice
+  and race locks now exist from their first use. Found with the installed copy and a Windows crash dump
+  (an access violation writing address 0x24 inside `ntdll`: `EnterCriticalSection` on a zeroed section). `tools/solo.sh` is the regression check, with `late_voice_lock=1` as its mutant.
+
 ## Not yet
 
 - Lasers, bridges, pressure plates and a few special puzzles are not shared.
@@ -34,6 +42,8 @@ First packaged build, for a first play test between two PCs. Extract the whole Z
 Game-free: `make -C proxy/core test`, `make -C launcher test`, `tools/check_release_package.py`
 on the zip. Installer: `tools/qa_installer.sh` (disposable fixtures with a real exe; install,
 update, repair, modified-file refusal, uninstall restoring the original, wrong build refused,
-unowned files kept, setup window geometry). Live: the proxy loaded from a second copy of the
-supported build (hooks, Present, 594 panels and 327 doors stable); the full two-game QA suite of
-the repository was last run on 2026-10-22 on one machine.
+unowned files kept, setup window geometry). Live, on 2026-10-31 with this build: `tools/qa.sh lobby`
+(two real launchers and two real games: host, invite, join, chat, voice, start; ALL OK, its mutants caught),
+`tools/solo.sh` (a start without a roster scans the world and stays alive) and its mutant (the game dies with
+the old lock), and the proxy loaded from a second copy of the supported build installed by this setup
+(hooks, Present, 594 panels and 327 doors, settled). The full two-game suite was last run on 2026-10-22.

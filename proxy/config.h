@@ -59,6 +59,7 @@ struct Cfg {
     bool voiceMuteOutput = false;// voice_mute_output=1: the mixer runs but nothing is played (tests)
     bool noVoiceChannel = false, voiceNoSelf = false, noVoiceChannelKey = false;      // test mutants: the chosen channel is not sent / this listener does not know its own id (hears what was said to others) / the channel key does nothing
     bool noVoiceSend = false, noVoicePlay = false, voiceNoPos = false, noSpeakingFlag = false, noGameVolume = false;      // test mutants: nothing transmitted / received voices dropped / every player counted at distance 0 / the speaking flag never set / the game's volume never set
+    bool lateVoiceLock = false;      // test mutant (tools/solo.sh): the voice lock exists only from VoiceStart, as before 2026-10-31: a start without a roster then crashes in the overlay
     float mapgenHeight = 70.0f, mapgenRes = 0.5f; int mapgenSettleMs = 1500;      // mapgen_height= metres above the ground, mapgen_res= metres per pixel, mapgen_settle_ms= wait per tile
     bool mapgenBadScale = false, mapgenMirror = false, mapgenShowOverlay = false;      // test mutants: the projection has the wrong field of view / is mirrored / the mod keeps drawing during the capture
     bool noUnderlay = false;     // test mutant: the map has no picture under it

@@ -16,8 +16,9 @@
 void Log(const char* msg);
 
 namespace {
-CRITICAL_SECTION g_lk; bool g_init; wrace::Race* g_race; unsigned g_my; wrace::Goal g_goal; ULONGLONG g_lastTick; volatile LONG g_hudFrames; ULONGLONG g_goShown;
-struct Lock { Lock() { EnterCriticalSection(&g_lk); } ~Lock() { LeaveCriticalSection(&g_lk); } };
+CRITICAL_SECTION* Lk() { static struct Init { CRITICAL_SECTION cs; Init() { InitializeCriticalSection(&cs); } } init; return &init.cs; }   // from first use, not from RaceStart
+bool g_init; wrace::Race* g_race; unsigned g_my; wrace::Goal g_goal; ULONGLONG g_lastTick; volatile LONG g_hudFrames; ULONGLONG g_goShown;
+struct Lock { Lock() { EnterCriticalSection(Lk()); } ~Lock() { LeaveCriticalSection(Lk()); } };
 std::string NameOf(unsigned id) {
     if (id == g_my) return CoopMyName();
     for (const auto& rp : CoopGetRemotes()) if (rp.id == id && rp.name[0]) return rp.name;
@@ -28,7 +29,7 @@ const char* PhaseName(wrace::Phase p) { return p == wrace::kWaiting ? "loading" 
 }  // namespace
 
 void RaceStart(unsigned myId, const std::vector<unsigned>& others, const std::function<void(const std::vector<uint8_t>&)>& send) {
-    if (!g_init) { InitializeCriticalSection(&g_lk); g_init = true; }
+    g_init = true;
     const Cfg& c = GetCfg(); wrace::Goal g; if (!wrace::ParseGoal(c.raceGoal.c_str(), &g)) { char m[120]; snprintf(m, sizeof m, "race: goal '%s' not understood, using panel:9F7F", c.raceGoal.c_str()); Log(m); wrace::ParseGoal("panel:9F7F", &g); }
     Lock l; g_my = myId; g_goal = g; g_race = new wrace::Race(myId, g, (uint32_t)time(nullptr), send, (uint32_t)c.raceCountdownMs); g_race->SetRoster(others);
     char m[160]; snprintf(m, sizeof m, "race: %zu other players, goal %s", others.size(), wrace::GoalText(g).c_str()); Log(m);

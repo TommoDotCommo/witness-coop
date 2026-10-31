@@ -21,8 +21,12 @@
 void Log(const char* msg);
 
 namespace {
-CRITICAL_SECTION g_lk; bool g_lkInit;
-struct Lock { Lock() { EnterCriticalSection(&g_lk); } ~Lock() { LeaveCriticalSection(&g_lk); } };
+// The lock lives from its first use, not from VoiceStart: the overlay asks for the channel text every frame, and VoiceStart never
+// runs when networking is off (no roster in the cfg, a start from Steam), which crashed the game in an uninitialised critical section.
+CRITICAL_SECTION g_lkLate;      // the mutant late_voice_lock=1 (tools/solo.sh): the old lock, initialised only by VoiceStart
+CRITICAL_SECTION* Lk() { static struct Init { CRITICAL_SECTION cs; Init() { InitializeCriticalSection(&cs); } } init; return GetCfg().lateVoiceLock ? &g_lkLate : &init.cs; }
+struct Lock { Lock() { EnterCriticalSection(Lk()); } ~Lock() { LeaveCriticalSection(Lk()); } };
+bool g_lkInit;      // voice configured (VoiceSetChannel or VoiceStart ran); the functions that need a started voice check it
 wvoice::Mixer g_mixer; wvoice::Foley g_foley; volatile LONG g_proximityGesture = 0, g_ptt = 0, g_transmitting = 0, g_started = 0; volatile LONG g_sent = 0, g_captured = 0, g_received = 0, g_played = 0, g_micLevel = 0;
 volatile LONG g_radioHeld = 0, g_txChannel = 0;
 std::map<unsigned, float> g_playerVolume;
@@ -143,7 +147,7 @@ DWORD WINAPI VolumeThread(LPVOID) { CoInitializeEx(nullptr, COINIT_MULTITHREADED
 static std::string RemoteName(unsigned id) { for (const auto& rp : CoopGetRemotes()) if (rp.id == id && rp.name[0]) return rp.name; char b[24]; snprintf(b, sizeof b, "player %u", id); return b; }
 void VoiceSetChannel(const char* text) {
     wvoice::Channel ch; unsigned to = 0; char t[40]; snprintf(t, sizeof t, "%s", text); for (char* q = t; *q; ++q) if (*q == '\r' || *q == '\n') *q = 0;
-    if (!g_lkInit) { InitializeCriticalSection(&g_lk); g_lkInit = true; }
+    g_lkInit = true;
     if (!wvoice::ParseChannel(t, &ch, &to)) return; { Lock l; g_channel = ch; g_to = ch == wvoice::kDirect ? to : 0; }
     char m[120]; if (ch == wvoice::kDirect) snprintf(m, sizeof m, "voice: channel direct to %u", to); else snprintf(m, sizeof m, "voice: channel %s", wvoice::ChannelName(ch)); Log(m);
 }
@@ -161,7 +165,8 @@ void VoiceChannelText(char* out, size_t n) {
 
 void VoiceStart() {
     if (InterlockedExchange(&g_started, 1)) return;
-    if (!g_lkInit) { InitializeCriticalSection(&g_lk); g_lkInit = true; }
+    if (GetCfg().lateVoiceLock) InitializeCriticalSection(&g_lkLate);
+    g_lkInit = true;
     { const Cfg& c0 = GetCfg(); VoiceSetChannel(c0.voiceChannel.c_str()); }
     const Cfg& c = GetCfg();
     if (c.voiceMode != 0 || !c.voiceTestTone.empty()) { HANDLE t = CreateThread(nullptr, 0, CaptureThread, nullptr, 0, nullptr); if (t) CloseHandle(t); }
