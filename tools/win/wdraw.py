@@ -276,9 +276,9 @@ def other_standing_points():
         if walker is None: walker = wnav.Walker(p, c, gdir, log=dbg)
         near = wlos.spread(wlos.standing_places(walker.map.cells, (px_, py_, pz_), NORMAL))
         stamp('map: %d places with a clear line to the panel' % len(near))
-        pts += [(x_, y_) for x_, y_, _ in near]
+        pts = pts[:2] + [(x_, y_) for x_, y_, _ in near] + pts[2:]      # (two straight-out tries, then the places the map vouches for, then the rest)
     except Exception as e_: stamp('standing places from the map skipped: %r' % e_)
-    return pts
+    return pts[:8]      # (each place costs a walk of up to two minutes or a teleport: a panel that cannot be seen from eight is reported, not chased for ever; one panel spent 12 minutes on them)
 
 def centre_on_panel():
     """The panel's middle may not be its entity's origin (Quarry Boat Spawn sits well below where the camera aims): find it on the screen in the
