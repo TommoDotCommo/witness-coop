@@ -160,3 +160,21 @@ logs a `model: WARNING scene depth not found` line every 5 s, and `modelstat` ca
 -1 switched off by the `no_model_depth=1` mutant). Gate: `tools/qa.sh occlusion` (`tools/qa_occlusion.py`; automatic high profile, explicit high,
 2x/4x/8x multisampling, multisampling off, lowest options, plus mutants with no scene depth), which asserts on the occlusion query that a figure
 behind the closed door shows under 2 % of the pixels of one in front of it and, in the open world, that a figure buried under the terrain is hidden.
+
+Player name tags, speaking bars and radio labels, typing/chat bubbles, emote captions,
+and the aimed-player watch/deploy prompts hide when scene geometry covers the player's
+head. They sample the same scene depth used by the body, including every MSAA sample;
+a 10 cm plus 0.5% depth bias avoids flicker at doorways. They stay hidden while depth is
+unavailable. `tags_through_walls=1` opts into the old marker behavior (default `0`);
+it also supplies the occlusion test mutant. The legacy body/facing markers use this
+check if the character model cannot load; ghost transparency does not bypass body depth.
+The player roster, chat history, partner-view picture, watch reminders, deployed-TV
+controls and race standings remain HUD information. Map player icons stay visible on
+the map for navigation; no separate world-space roster pointer or ghost marker exists.
+Location pings and their edge arrows deliberately remain visible navigation aids: they mark a chosen destination rather than a player's current position.
+
+`tools/qa.sh --serial tags_occlusion` checks GPU-counted tag fragments in the open
+and behind the closed tutorial wall, with a `tags_through_walls=1` mutant that must
+fail the wall check. `tagstat` includes `visible_px`, `query_ready` and `scene_depth`;
+`onscreen` continues to mean the tag projects into the viewport. The query counts
+fragments after scene-depth and transparent-atlas discard, rather than queued UI quads.

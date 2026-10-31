@@ -278,7 +278,7 @@ static void DrawMarkers(IDXGISwapChain* sc) {
     if (FAILED(g_dev->CreateRenderTargetView(bb, nullptr, &rtv))) { bb->Release(); return; }
     uintptr_t base = (uintptr_t)GetModuleHandleA(nullptr);
     const float* cam = (const float*)(base + kCamPos); const float* ang = (const float*)(base + kCamAng); ViewCamera(cam, ang);
-    float rects[32][4] = {}, cols[32][4] = {}; int n = 0; float aspect = (float)td.Width / (float)td.Height; const float vfov = GameProjection().vfovDeg;
+    float rects[32][4] = {}, cols[32][4] = {}, anchors[32][3] = {}; int n = 0; float aspect = (float)td.Width / (float)td.Height; const float vfov = GameProjection().vfovDeg;
     uintptr_t glob = Readable((void*)(base + kGlobals), 8) ? *(uintptr_t*)(base + kGlobals) : 0;
     uintptr_t arr = glob && Readable((void*)(glob + 0x18), 8) ? *(uintptr_t*)(glob + 0x18) : 0;
     auto remotes = CoopGetRemotes();
@@ -326,27 +326,28 @@ static void DrawMarkers(IDXGISwapChain* sc) {
             float hh = fabsf(nhy - nfy) * 0.5f; if (hh < 2.0f / td.Height) hh = 2.0f / td.Height;
             int bodyIndex = n;
             rects[n][0] = (nfx + nhx) * 0.5f; rects[n][1] = (nfy + nhy) * 0.5f; rects[n][2] = hh * ((float)td.Height / td.Width) * 0.45f; rects[n][3] = hh;
-            cols[n][0] = 0.1f; cols[n][1] = 0.9f; cols[n][2] = 0.2f; cols[n][3] = 1; n++;          // body: green
+            memcpy(anchors[n],rp.pos,12); cols[n][0] = 0.1f; cols[n][1] = 0.9f; cols[n][2] = 0.2f; cols[n][3] = 1; n++;          // body: green
             float nose[3] = {rp.pos[0] + 0.7f*cosf(rp.ang[1])*cosf(rp.ang[0]), rp.pos[1] + 0.7f*cosf(rp.ang[1])*sinf(rp.ang[0]), rp.pos[2] + 0.7f*sinf(rp.ang[1])};
             float nnx, nny;
             if (Project(cam, ang[0], ang[1], nose, aspect, &nnx, &nny)) {
                 rects[n][0] = nnx; rects[n][1] = nny; rects[n][2] = 6.0f / td.Width * 2; rects[n][3] = 6.0f / td.Height * 2;
-                cols[n][0] = 1; cols[n][1] = 0.9f; cols[n][2] = 0; cols[n][3] = 1; n++;               // facing: yellow
+                memcpy(anchors[n],rp.pos,12); cols[n][0] = 1; cols[n][1] = 0.9f; cols[n][2] = 0; cols[n][3] = 1; n++;               // facing: yellow
             }
             if (g_frames % 300 == 1) { char m[200]; snprintf(m, sizeof m, "overlay: remote id %u age %lums at (%.2f,%.2f,%.2f) body ndc (%.3f,%.3f)", rp.id, rp.ageMs, rp.pos[0], rp.pos[1], rp.pos[2], rects[bodyIndex][0], rects[bodyIndex][1]); Log(m); }
         }
     }
-    if (n) {
-        float cbdata[64][4] = {}; memcpy(cbdata, rects, sizeof rects); memcpy(cbdata + 32, cols, sizeof cols);
-        g_ctx->UpdateSubresource(g_cb, 0, nullptr, cbdata, 0, 0);
-        D3D11_VIEWPORT vp = {0, 0, (float)td.Width, (float)td.Height, 0, 1};
-        g_ctx->OMSetRenderTargets(1, &rtv, nullptr); g_ctx->RSSetViewports(1, &vp);
-        g_ctx->RSSetState(g_rs); g_ctx->OMSetBlendState(g_blend, nullptr, 0xffffffff); g_ctx->OMSetDepthStencilState(g_ds, 0);
-        g_ctx->IASetInputLayout(nullptr); g_ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
-        g_ctx->VSSetShader(g_vs, nullptr, 0); g_ctx->PSSetShader(g_ps, nullptr, 0);
-        g_ctx->VSSetConstantBuffers(0, 1, &g_cb); g_ctx->PSSetConstantBuffers(0, 1, &g_cb);
-        g_ctx->GSSetShader(nullptr, nullptr, 0); g_ctx->HSSetShader(nullptr, nullptr, 0); g_ctx->DSSetShader(nullptr, nullptr, 0);
-        g_ctx->DrawInstanced(4, n, 0, 0);
+    // The legacy body/facing markers must obey the same head visibility as tags if model loading fails.
+    if (n && g_uiReady) {
+        UiBegin(float(td.Width),float(td.Height));
+        for(int i=0;i<n;++i) {
+            UiPlayerAnchor(cam,ang,anchors[i]);
+            UiRect((rects[i][0]-rects[i][2]+1)*td.Width/2,
+                   (1-rects[i][1]-rects[i][3])*td.Height/2,
+                   rects[i][2]*td.Width,rects[i][3]*td.Height,
+                   Rgba(cols[i][0],cols[i][1],cols[i][2],cols[i][3]));
+            UiPlayerAnchorEnd();
+        }
+        UiEnd(rtv);
     }
     rtv->Release(); bb->Release();
 }
@@ -377,7 +378,7 @@ static void InstallDevWndProc(HWND w) {
     g_origWndProc = (WNDPROC)(g_wndUnicode ? SetWindowLongPtrW(w, GWLP_WNDPROC, (LONG_PTR)DevWndProc) : SetWindowLongPtrA(w, GWLP_WNDPROC, (LONG_PTR)DevWndProc));
     Log(g_origWndProc ? "devmenu: window procedure hooked" : "devmenu: window procedure hook FAILED");
 }
-// Name tags: every other player's name and ping over their head, in their colour, visible through walls (so a friend can always be found).
+// Name tags: every other player's name and ping over their head, hidden when the scene occludes their head.
 static volatile LONG g_povBox, g_povPic;      // frames the other player's screen was drawn, and of those the ones with a real picture in it (the test reads them)
 void OverlayPovDrawn(unsigned* box, unsigned* pic) { *box = (unsigned)g_povBox; *pic = (unsigned)g_povPic; }
 static std::atomic<unsigned> g_aimed{0},g_tvAimed{0};          // the player the crosshair is on (0: none), set while drawing, read by the key handler
@@ -488,7 +489,7 @@ void PovPanelStat() {      // witness_cmd.txt `panelstat`: the state and, for th
     snprintf(m + n, sizeof m - n, " leavex %d leavey %d tagsx %d tagsy %d voiceupx %d voiceupy %d copyx %d copyy %d", cx(L.leave), cy(L.leave), cx(L.tags), cy(L.tags), cx(L.voiceUp), cy(L.voiceUp), cx(L.copyInvite), cy(L.copyInvite));
     Log(m);
 }
-struct TagInfo { unsigned id; char name[25]; int ping; bool onScreen; float dist; };
+struct TagInfo { unsigned id; char name[25]; int ping; bool onScreen; float dist; unsigned long long pixels; bool queryReady; int sceneDepth; };
 static CRITICAL_SECTION g_tagLock; static bool g_tagLockInit; static std::vector<TagInfo> g_tags;
 static bool TagsWanted() { return !GetCfg().noNameTags && !g_tagsOff.load(); }
 // One warm prompt chip (the shared look of the guide and dev menu): dark surface, thin border, accent bar, cream text.
@@ -514,7 +515,12 @@ static void DrawNameTags(float W, float H) {
         float head[3] = {rp.pos[0], rp.pos[1], rp.pos[2] + 0.38f}, nx, ny, d[3] = {rp.pos[0] - cam[0], rp.pos[1] - cam[1], rp.pos[2] - cam[2]};
         t.dist = sqrtf(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
         if (Project(cam, ang[0], ang[1], head, W / H, &nx, &ny) && fabsf(nx) < 1.05f && fabsf(ny) < 1.05f) {
-            t.onScreen = true; float col[3]; PlayerColor(rp.id, col);
+            t.onScreen = true;
+            ID3D11ShaderResourceView* scene=nullptr; bool ms=false;
+            t.sceneDepth=DepthScene(&scene,&ms) ? (ms ? 2 : 1) : 0;
+            t.queryReady=UiPlayerPixels(rp.id,&t.pixels);
+            UiPlayerAnchor(cam,ang,rp.pos,rp.id);
+            float col[3]; PlayerColor(rp.id, col);
             float k = std::max(1.0f, H / 1080.0f) * std::min(1.0f, std::max(0.7f, 10.0f / std::max(t.dist, 1.0f)));
             char b[64]; if (t.ping >= 0) snprintf(b, sizeof b, "%s  %d ms", t.name, t.ping); else snprintf(b, sizeof b, "%s  - ms", t.name);
             float tw = UiTextWidth(b, k), th = UiLineHeight(k); bool talking = rp.speaking;      // talking: the voice bars go beside the ping, inside the box (ui/tag_layout.h; social.cpp animates them there)
@@ -522,15 +528,16 @@ static void DrawNameTags(float W, float H) {
             UiRect(L.back.x, L.back.y, L.back.w, L.back.h, Rgba(0, 0, 0, 0.55f)); UiRect(L.under.x, L.under.y, L.under.w, L.under.h, Rgba(col[0], col[1], col[2], 1));
             UiText(L.textX, L.textY, b, Rgba(col[0], col[1], col[2], 1), k);
             if (talking && g_tagBarsN < 16) g_tagBars[g_tagBarsN++] = {rp.id, L.bars, k};
+            UiPlayerAnchorEnd();
         }
         now.push_back(t);
     }
     // the player the crosshair is on: close to the screen centre and not too far; the nearest such player gets the "press V" prompt
-    unsigned aimed = 0; float best = 1e9f; std::string aimedName; int aimedPing = -1;
+    unsigned aimed = 0; float best = 1e9f; std::string aimedName; int aimedPing = -1; float aimedEye[3]={};
     if (TagsWanted() && !GamePaused() && !IsBadReadPtr(cam, 12) && !IsBadReadPtr(ang, 8)) for (const auto& rp : CoopGetRemotes()) if (rp.ageMs < 2000) {
         float body[3] = {rp.pos[0], rp.pos[1], rp.pos[2] - 0.55f}, nx, ny, d[3] = {rp.pos[0] - cam[0], rp.pos[1] - cam[1], rp.pos[2] - cam[2]};
         float dist = sqrtf(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
-        if (dist < 60.0f && Project(cam, ang[0], ang[1], body, W / H, &nx, &ny) && fabsf(nx) < 0.07f * 9.0f / std::max(dist, 9.0f) + 0.035f && fabsf(ny) < 0.35f * 9.0f / std::max(dist, 9.0f) + 0.10f && dist < best) { best = dist; aimed = rp.id; aimedName = rp.name; aimedPing = rp.pingMs; }
+        if (dist < 60.0f && Project(cam, ang[0], ang[1], body, W / H, &nx, &ny) && fabsf(nx) < 0.07f * 9.0f / std::max(dist, 9.0f) + 0.035f && fabsf(ny) < 0.35f * 9.0f / std::max(dist, 9.0f) + 0.10f && dist < best) { best = dist; aimed = rp.id; aimedName = rp.name; aimedPing = rp.pingMs; memcpy(aimedEye,rp.pos,sizeof aimedEye); }
     }
     g_aimed = g_rosterOpen.load() ? 0 : aimed; g_tvAimed = g_rosterOpen.load() || best>12 ? 0 : aimed;
     VideoUpdatePlayers(PlayerIds());
@@ -538,7 +545,7 @@ static void DrawNameTags(float W, float H) {
         float col[3]; PlayerColor(aimed, col); bool watching = VideoWatching() == aimed; float k = std::max(1.0f, H / 1080.0f);
         char b[96]; snprintf(b, sizeof b, watching ? "[V] stop watching %s" : "[V] watch %s's view", aimedName.empty() ? "player" : aimedName.c_str()); (void)aimedPing;
         float tw = UiTextWidth(b, k), th = UiLineHeight(k), x = W / 2 - tw / 2, y = H / 2 + 70 * k;
-        (void)th; PromptChip(x, y, b, k, Rgba(col[0], col[1], col[2], 1));
+        (void)th; UiPlayerAnchor(cam,ang,aimedEye); PromptChip(x, y, b, k, Rgba(col[0], col[1], col[2], 1)); UiPlayerAnchorEnd();
     }
     if((TvSeated() || TvSeatAvailable()) && !GamePaused()) {
         char b[128]; snprintf(b,sizeof b,TvSeated()?"[%s] stand up; movement exits":"[%s] sit and watch",guide::KeyName(GetCfg().keyTvSeat).c_str());
@@ -550,7 +557,7 @@ static void DrawNameTags(float W, float H) {
         std::string name="player"; for(const auto& r:CoopGetRemotes()) if(r.id==tvTarget && r.name[0]) name=r.name;
         char b[160]; snprintf(b,sizeof b,deployed?"[%s] retract %s's sky TV":"[%s] deploy %s's sky TV",guide::KeyName(GetCfg().keyTvDeploy).c_str(),name.c_str());
         float k=std::max(1.f,H/1080.f),tw=UiTextWidth(b,k),th=UiLineHeight(k),x=W/2-tw/2,y=H/2+100*k;
-        (void)th; (void)tw; PromptChip(x,y,b,k,uitheme::Accent);
+        (void)th; (void)tw; if(!deployed) UiPlayerAnchor(cam,ang,aimedEye); PromptChip(x,y,b,k,uitheme::Accent); if(!deployed) UiPlayerAnchorEnd();
     }
     if (!aimed && !g_rosterOpen.load() && !VideoWatching() && !GamePaused()) {      // a quiet reminder that the other players' screens can be watched
         std::vector<unsigned> ids = PlayerIds(); if (!ids.empty()) {
@@ -604,7 +611,7 @@ void OverlayLogTags() {       // witness_cmd.txt: tagstat -> one log line per re
     if (!g_tagLockInit) return;
     EnterCriticalSection(&g_tagLock); std::vector<TagInfo> t = g_tags; LeaveCriticalSection(&g_tagLock);
     char m[200]; snprintf(m, sizeof m, "tagstat: players %zu", t.size()); Log(m);
-    for (const auto& x : t) { snprintf(m, sizeof m, "tagstat: id %u name %s ping %d onscreen %d dist %.1f", x.id, x.name, x.ping, (int)x.onScreen, x.dist); Log(m); }
+    for (const auto& x : t) { snprintf(m, sizeof m, "tagstat: id %u name %s ping %d onscreen %d dist %.1f visible_px %llu query_ready %d scene_depth %d", x.id, x.name, x.ping, (int)x.onScreen, x.dist, x.pixels, (int)x.queryReady, x.sceneDepth); Log(m); }
 }
 
 void SaveMetaTick();      // savemeta_game.cpp

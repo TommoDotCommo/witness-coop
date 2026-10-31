@@ -10,6 +10,10 @@
 #include <cstdio>
 #include <cstring>
 #include <vector>
+#include <deque>
+#include <map>
+#include "depth.h"
+#include "gamecam.h"
 #include "ui.h"
 #include "ui/text.h"
 #include "config.h"
@@ -24,20 +28,35 @@ const int kAtlasW = 1024, kAtlasH = 384, kLineHeight = 24, kPitchWide = 56, kFir
 struct Glyph { float advance, x, y, w, h; } g_glyph[kLast - kFirst + 1];
 bool g_tight;
 const char* kHlsl = R"(
-cbuffer C : register(b0) { float2 scr; float2 pad; };
+cbuffer C : register(b0) { float2 scr; float2 pad; float4 anchor; float4 depth; };
+Texture2D<float> scene1 : register(t1); Texture2DMS<float> sceneMS : register(t2);
 Texture2D tex : register(t0); SamplerState smp : register(s0);
 struct VI { float2 p : POSITION; float2 t : TEXCOORD; float4 c : COLOR; };
 struct O { float4 p : SV_POSITION; float2 t : TEXCOORD; float4 c : COLOR; };
 O VS(VI i) { O o; o.p = float4(i.p.x / scr.x * 2 - 1, 1 - i.p.y / scr.y * 2, 0, 1); o.t = i.t; o.c = i.c; return o; }
-float4 PS(O i) : SV_TARGET { float a = tex.Sample(smp, i.t).r; return float4(i.c.rgb, i.c.a * a); }
-float4 PSI(O i) : SV_TARGET { return tex.Sample(smp, i.t) * i.c; }
+void PlayerVisibility() {
+  if (anchor.w < 0.5) return;
+  // Fail closed while the scene buffer is unavailable. Reversed depth: near / view distance.
+  if (depth.x < 0.5 || anchor.z <= 0 || any(anchor.xy < 0) || any(anchor.xy >= scr)) discard;
+  int2 p = int2(anchor.xy); float z = depth.z / max(0.01, anchor.z - 0.10) * 1.005;
+  float visible = 0;
+  if (depth.x < 1.5) visible = scene1.Load(int3(p, 0)) <= z;
+  else for (int n = 0; n < (int)depth.y; ++n) visible += sceneMS.Load(p, n) <= z;
+  if (visible < 0.5) discard;
+}
+float4 PS(O i) : SV_TARGET { PlayerVisibility(); float a = tex.Sample(smp, i.t).r; clip(i.c.a * a - 0.001); return float4(i.c.rgb, i.c.a * a); }
+float4 PSI(O i) : SV_TARGET { PlayerVisibility(); return tex.Sample(smp, i.t) * i.c; }
 )";
 struct Vtx { float x, y, u, v; uint32_t c; };
-struct Seg { size_t first; bool clip; D3D11_RECT r; ID3D11ShaderResourceView* img; };
+struct Seg { size_t first; bool clip; D3D11_RECT r; ID3D11ShaderResourceView* img; float anchor[4] = {}; unsigned queryId = 0; };
 
 ID3D11Device* g_dev; ID3D11DeviceContext* g_ctx;
 ID3D11VertexShader* g_vs; ID3D11PixelShader *g_ps, *g_psi; ID3D11InputLayout* g_il; ID3D11Buffer *g_vb, *g_cb;
 ID3D11ShaderResourceView* g_srv; ID3D11SamplerState* g_smp; ID3D11BlendState* g_blend; ID3D11RasterizerState* g_rs; ID3D11DepthStencilState* g_ds;
+struct PixelQuery { ID3D11Query* q; unsigned id; };
+std::deque<PixelQuery> g_pending;
+std::vector<ID3D11Query*> g_freeQueries;
+std::map<unsigned, unsigned long long> g_playerPixels;
 const size_t kMaxVerts = 60000;
 unsigned g_textCalls = 0, g_textOverflow = 0, g_smallTargets = 0, g_clippedActions = 0;
 float g_smallestText = 0;
@@ -155,7 +174,7 @@ bool UiInit(ID3D11Device* dev, ID3D11DeviceContext* ctx) {
     dev->CreateInputLayout(el, 3, vsb->GetBufferPointer(), vsb->GetBufferSize(), &g_il);
     D3D11_BUFFER_DESC bd = {}; bd.ByteWidth = (UINT)(kMaxVerts * sizeof(Vtx)); bd.Usage = D3D11_USAGE_DYNAMIC; bd.BindFlags = D3D11_BIND_VERTEX_BUFFER; bd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
     dev->CreateBuffer(&bd, nullptr, &g_vb);
-    bd = {}; bd.ByteWidth = 16; bd.Usage = D3D11_USAGE_DEFAULT; bd.BindFlags = D3D11_BIND_CONSTANT_BUFFER; dev->CreateBuffer(&bd, nullptr, &g_cb);
+    bd = {}; bd.ByteWidth = 48; bd.Usage = D3D11_USAGE_DEFAULT; bd.BindFlags = D3D11_BIND_CONSTANT_BUFFER; dev->CreateBuffer(&bd, nullptr, &g_cb);
     D3D11_SAMPLER_DESC sm = {}; sm.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR; sm.AddressU = sm.AddressV = sm.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP; dev->CreateSamplerState(&sm, &g_smp);
     D3D11_BLEND_DESC bl = {}; auto& rt = bl.RenderTarget[0]; rt.BlendEnable = TRUE; rt.SrcBlend = D3D11_BLEND_SRC_ALPHA; rt.DestBlend = D3D11_BLEND_INV_SRC_ALPHA; rt.BlendOp = D3D11_BLEND_OP_ADD;
     rt.SrcBlendAlpha = D3D11_BLEND_ONE; rt.DestBlendAlpha = D3D11_BLEND_INV_SRC_ALPHA; rt.BlendOpAlpha = D3D11_BLEND_OP_ADD; rt.RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL; dev->CreateBlendState(&bl, &g_blend);
@@ -166,10 +185,36 @@ bool UiInit(ID3D11Device* dev, ID3D11DeviceContext* ctx) {
     return g_ok;
 }
 
-void UiBegin(float w, float h) { g_w = w; g_h = h; g_textCalls = g_textOverflow = g_smallTargets = g_clippedActions = 0; g_smallestText = h; g_v.clear(); g_seg.clear(); g_seg.push_back({0, false, {}, nullptr}); }
+void UiBegin(float w, float h) {
+    while (!g_pending.empty()) {
+        auto q = g_pending.front(); UINT64 px = 0;
+        HRESULT hr = g_ctx->GetData(q.q, &px, sizeof px, D3D11_ASYNC_GETDATA_DONOTFLUSH);
+        if (hr == S_FALSE) break;
+        if (hr == S_OK) g_playerPixels[q.id] = px;
+        g_freeQueries.push_back(q.q); g_pending.pop_front();
+    }
+ g_w = w; g_h = h; g_textCalls = g_textOverflow = g_smallTargets = g_clippedActions = 0; g_smallestText = h; g_v.clear(); g_seg.clear(); g_seg.push_back({0, false, {}, nullptr}); }
 void UiClip(float x, float y, float w, float h) {
-    Seg s = {g_v.size(), w > 0, {(LONG)x, (LONG)y, (LONG)(x + w), (LONG)(y + h)}, nullptr};
+    Seg s = g_seg.back(); s.first = g_v.size(); s.clip = w > 0; s.r = {(LONG)x, (LONG)y, (LONG)(x + w), (LONG)(y + h)}; s.img = nullptr;
     if (g_seg.back().first == s.first) g_seg.back() = s; else g_seg.push_back(s);
+}
+void UiPlayerAnchor(const float* cam, const float* ang, const float* eye, unsigned queryId) {
+    float dx=eye[0]-cam[0], dy=eye[1]-cam[1], dz=eye[2]-cam[2];
+    float ct=cosf(ang[0]), st=sinf(ang[0]), cp=cosf(ang[1]), sp=sinf(ang[1]);
+    float f=cp*(ct*dx+st*dy)+sp*dz, r=st*dx-ct*dy, u=-sp*(ct*dx+st*dy)+cp*dz;
+    float tv=tanf(GameProjection().vfovDeg*3.14159265f/360.f);
+    Seg s=g_seg.back(); s.first=g_v.size(); s.queryId=queryId;
+    s.anchor[0]=(0.5f+r/(2*std::max(f,0.01f)*tv*(g_w/g_h)))*g_w;
+    s.anchor[1]=(0.5f-u/(2*std::max(f,0.01f)*tv))*g_h;
+    s.anchor[2]=f; s.anchor[3]=GetCfg().tagsThroughWalls ? 0.f : 1.f;
+    if (g_seg.back().first==s.first) g_seg.back()=s; else g_seg.push_back(s);
+}
+void UiPlayerAnchorEnd() {
+    Seg s=g_seg.back(); s.first=g_v.size(); memset(s.anchor,0,sizeof s.anchor); s.queryId=0;
+    if (g_seg.back().first==s.first) g_seg.back()=s; else g_seg.push_back(s);
+}
+bool UiPlayerPixels(unsigned id, unsigned long long* pixels) {
+    auto it=g_playerPixels.find(id); if(it==g_playerPixels.end()) return false; *pixels=it->second; return true;
 }
 ID3D11ShaderResourceView* UiMakeTexture(const uint8_t* bgra, int w, int h) {
     if (!g_dev || w <= 0 || h <= 0) return nullptr; D3D11_TEXTURE2D_DESC td = {}; td.Width = w; td.Height = h; td.MipLevels = 1; td.ArraySize = 1; td.Format = DXGI_FORMAT_B8G8R8A8_UNORM; td.SampleDesc.Count = 1; td.BindFlags = D3D11_BIND_SHADER_RESOURCE;
@@ -220,21 +265,35 @@ void UiEnd(ID3D11RenderTargetView* rtv) {
     D3D11_MAPPED_SUBRESOURCE ms;
     if (FAILED(g_ctx->Map(g_vb, 0, D3D11_MAP_WRITE_DISCARD, 0, &ms))) return;
     memcpy(ms.pData, g_v.data(), g_v.size() * sizeof(Vtx)); g_ctx->Unmap(g_vb, 0);
-    float cb[4] = {g_w, g_h, 0, 0}; g_ctx->UpdateSubresource(g_cb, 0, nullptr, cb, 0, 0);
+    ID3D11ShaderResourceView* scene=nullptr; bool msaa=false; unsigned samples=1;
+    bool have=DepthScene(&scene,&msaa,&samples);
+    float cb[12] = {g_w, g_h, 0, 0, 0,0,0,0, have ? (msaa ? 2.f : 1.f) : 0.f, (float)samples, GetCfg().depthNear, 0};
     D3D11_VIEWPORT vp = {0, 0, g_w, g_h, 0, 1};
     g_ctx->OMSetRenderTargets(1, &rtv, nullptr); g_ctx->RSSetViewports(1, &vp); g_ctx->RSSetState(g_rs);
     g_ctx->OMSetBlendState(g_blend, nullptr, 0xffffffff); g_ctx->OMSetDepthStencilState(g_ds, 0);
     g_ctx->IASetInputLayout(g_il); g_ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     UINT stride = sizeof(Vtx), off = 0; g_ctx->IASetVertexBuffers(0, 1, &g_vb, &stride, &off);
     g_ctx->VSSetShader(g_vs, nullptr, 0); g_ctx->PSSetShader(g_ps, nullptr, 0); g_ctx->VSSetConstantBuffers(0, 1, &g_cb);
+    g_ctx->PSSetConstantBuffers(0, 1, &g_cb);
+    ID3D11ShaderResourceView* scenes[2]={msaa ? nullptr : scene, msaa ? scene : nullptr};
+    g_ctx->PSSetShaderResources(1, 2, scenes);
     g_ctx->PSSetShaderResources(0, 1, &g_srv); g_ctx->PSSetSamplers(0, 1, &g_smp);
     g_ctx->GSSetShader(nullptr, nullptr, 0); g_ctx->HSSetShader(nullptr, nullptr, 0); g_ctx->DSSetShader(nullptr, nullptr, 0);
     for (size_t i = 0; i < g_seg.size(); i++) {
         size_t a = g_seg[i].first, b = i + 1 < g_seg.size() ? g_seg[i + 1].first : g_v.size(); if (b <= a) continue;
         D3D11_RECT r = g_seg[i].clip ? g_seg[i].r : D3D11_RECT{0, 0, (LONG)g_w, (LONG)g_h}; g_ctx->RSSetScissorRects(1, &r);
         if (g_seg[i].img) { g_ctx->PSSetShader(g_psi, nullptr, 0); g_ctx->PSSetShaderResources(0, 1, &g_seg[i].img); } else { g_ctx->PSSetShader(g_ps, nullptr, 0); g_ctx->PSSetShaderResources(0, 1, &g_srv); }
+        memcpy(cb+4,g_seg[i].anchor,4*sizeof(float)); g_ctx->UpdateSubresource(g_cb,0,nullptr,cb,0,0);
+        ID3D11Query* query=nullptr;
+        if(g_seg[i].queryId && g_pending.size()<128) {
+            if(!g_freeQueries.empty()) { query=g_freeQueries.back(); g_freeQueries.pop_back(); }
+            else { D3D11_QUERY_DESC qd={D3D11_QUERY_OCCLUSION,0}; g_dev->CreateQuery(&qd,&query); }
+        }
+        if(query) g_ctx->Begin(query);
         g_ctx->Draw((UINT)(b - a), (UINT)a);
+        if(query) { g_ctx->End(query); g_pending.push_back({query,g_seg[i].queryId}); }
     }
+    ID3D11ShaderResourceView* clear[2]={nullptr,nullptr}; g_ctx->PSSetShaderResources(1,2,clear);
 }
 
 void UiDumpAtlas(const char* name) {      // test command: the glyph atlas as shots\<name>.bmp (grey = alpha)

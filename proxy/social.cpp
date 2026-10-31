@@ -352,23 +352,27 @@ void SocialFrame(float W, float H, const float* cam, const float* ang) {
         if (!ToScreen(cam, ang[0], ang[1], head, W, H, &sx, &sy)) continue;
         float col[3]; PlayerColor(rp.id, col); float dist = sqrtf((rp.pos[0] - cam[0]) * (rp.pos[0] - cam[0]) + (rp.pos[1] - cam[1]) * (rp.pos[1] - cam[1]) + (rp.pos[2] - cam[2]) * (rp.pos[2] - cam[2]));
         float kk = k * std::min(1.0f, std::max(0.7f, 10.0f / std::max(dist, 1.0f))); float bottom = sy - UiLineHeight(kk) - 14 * kk;
+        UiPlayerAnchor(cam,ang,rp.pos);
         auto bi = g_bubbles.find(rp.id);
         if (rp.typing) { Bubbled(sx, bottom, {}, true, col, kk, now); ++g_dotsDrawn; }
         else if (bi != g_bubbles.end()) { Bubbled(sx, bottom, Wrap(bi->second.text, std::min(W - 40 * kk, 280 * kk), 4, .9f * kk), false, col, kk, now); ++g_bubblesDrawn; }
+        UiPlayerAnchorEnd();
     }
     for (const auto& rp : rem) {      // a player who is talking: three bars moving beside the top of the head, in their colour
         if (!rp.speaking || rp.ageMs > 2000) continue;
         float col[3]; PlayerColor(rp.id, col);
         float bx, by, bw, bh, bk; if (OverlayTagBars(rp.id, &bx, &by, &bw, &bh, &bk)) {      // a name tag is drawn: the bars beside its ping, inside its box (ui/tag_layout.h)
+            UiPlayerAnchor(cam,ang,rp.pos);      // (hidden with the tag when a wall is in front of the player's head)
             for (int b = 0; b < 3; ++b) { float ph = float(now % 500) / 500.0f * 6.2831853f + b * 2.1f, hgt = wtag::BarHeight(0.5f + 0.5f * sinf(ph), bk, bh); UiRect(bx + b * wtag::kBarStep * bk, by + bh - hgt, wtag::kBarW * bk, hgt, Rgba(col[0], col[1], col[2], 0.95f)); }
             if (rp.radioTx && cfg.RadioOn()) UiText(bx, by + bh + 8 * bk, "RADIO", Rgba(1,.7f,.3f), bk*.7f);
-            ++g_speakDrawn; continue;
+            UiPlayerAnchorEnd(); ++g_speakDrawn; continue;
         }
         float head[3] = {rp.pos[0], rp.pos[1], rp.pos[2] + 0.30f}, sx, sy; if (!ToScreen(cam, ang[0], ang[1], head, W, H, &sx, &sy)) continue; float dist = sqrtf((rp.pos[0] - cam[0]) * (rp.pos[0] - cam[0]) + (rp.pos[1] - cam[1]) * (rp.pos[1] - cam[1]) + (rp.pos[2] - cam[2]) * (rp.pos[2] - cam[2]));
         float kk = k * std::min(1.0f, std::max(0.6f, 10.0f / std::max(dist, 1.0f)));
+        UiPlayerAnchor(cam,ang,rp.pos);
         for (int b = 0; b < 3; ++b) { float ph = float(now % 500) / 500.0f * 6.2831853f + b * 2.1f, hgt = (7 + 9 * (0.5f + 0.5f * sinf(ph))) * kk; UiRect(sx + (30 + b * 7) * kk, sy - 6 * kk - hgt, 4.5f * kk, hgt, Rgba(col[0], col[1], col[2], 0.95f)); }
         if (rp.radioTx && cfg.RadioOn()) UiText(sx + 30 * kk, sy + 4 * kk, "RADIO", Rgba(1,.7f,.3f), kk*.7f);
-        ++g_speakDrawn;
+        UiPlayerAnchorEnd(); ++g_speakDrawn;
     }
     if (cfg.voiceMode != 0) {      // my own microphone: what the key does, and a bar that follows the level while it is open
         bool talk = VoiceSpeaking(); int lvl = VoiceMicLevel(); char b[80];
@@ -384,7 +388,9 @@ void SocialFrame(float W, float H, const float* cam, const float* ang) {
         auto it = g_remoteEmotes.find(rp.id); if (it == g_remoteEmotes.end() || !it->second.id || !EmoteAlive(it->second.id,now-it->second.start) || rp.ageMs > 2000) continue;
         float head[3] = {rp.pos[0], rp.pos[1], rp.pos[2] + 0.8f}, sx, sy; if (!ToScreen(cam, ang[0], ang[1], head, W, H, &sx, &sy)) continue;
         float col[3]; PlayerColor(rp.id, col); char b[40]; snprintf(b, sizeof b, "~ %s ~", SocialEmoteName(it->second.id)); float tw = UiTextWidth(b, 1.0f * k);
+        UiPlayerAnchor(cam,ang,rp.pos);
         float up = float(now - it->second.start) / 1000.0f * 14 * k; UiText(sx - tw / 2, sy - 26 * k - up, b, Rgba(col[0], col[1], col[2], 1), 1.0f * k);
+        UiPlayerAnchorEnd();
     }
     // pings: a marker over the point with the sender's name and the distance; off screen, an arrow at the edge of the screen pointing the way
     if (!cfg.noPingMarks) for (const auto& m : g_marks) {

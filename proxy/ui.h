@@ -27,3 +27,9 @@ void UiLogStats(); // test oracle: previous frame text bounds and smallest font
 
 void UiCheckReachable(float x, float y, float w, float h); // test oracle: counts action buttons and information lines that are not fully inside the visible area
 void UiCheckTarget(float width, float height, float scale); // accessible target-size oracle
+
+// Scope subsequent UI to the visibility of this player's head (eye position). End before drawing HUD elements.
+void UiPlayerAnchor(const float* cam, const float* ang, const float* eye, unsigned queryId = 0);
+void UiPlayerAnchorEnd();
+// Last completed GPU query of the actual name-tag fragments; false until a query completes.
+bool UiPlayerPixels(unsigned id, unsigned long long* pixels);

@@ -1,0 +1,73 @@
+#!/usr/bin/env python3
+"""Name-tag occlusion against the closed tutorial wall, with GPU pixel counts and a through-wall mutant.
+Run through tools/qa.sh --serial tags_occlusion [scenario substring]."""
+import json, os, shutil, subprocess, sys, time
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from witness import TOOLS, DIR1, DIR2, PYW, RUN, pid, win, real_saves
+def video(profile=2, msaa=2, shading=2, reflection=2, texture=2, texture_detail=2, geometry=2, w=1920, h=1080):      # the same format as tools/playthrough/run.py video_options (1080p window)
+    return (':/launcher\nrender_profile %d\nfullscreen false\nvsync false\nhighdpi false\nresolution 1\nmultisampling %d\ncustom_width %d\ncustom_height %d\n'
+            'shading_quality %d\nreflection_quality %d\ntexture_quality %d\ntexture_detail %d\ngeometry_detail %d\n') % (profile, msaa, w, h, shading, reflection, texture, texture_detail, geometry)
+# name, Launcher.variables (None: no file, the game's automatic profile = the owner's "high"), cfg for A, must the check pass
+SCENARIOS = [
+  ('tags: automatic high (4x MSAA)', None, '', True),
+  ('tags: multisampling off', video(msaa=0), '', True),
+  ('tags: lowest options', video(profile=0,msaa=0,shading=0,reflection=0,texture=0,texture_detail=0,geometry=0), '', True),
+  ('MUTANT tags: lowest options', video(profile=0,msaa=0,shading=0,reflection=0,texture=0,texture_detail=0,geometry=0), 'tags_through_walls=1', False),
+  ('tags: low 2x MSAA', video(profile=0,msaa=1,shading=0,reflection=0,texture=0,texture_detail=0,geometry=0), '', True),
+  ('tags: low 4x MSAA', video(profile=0,msaa=2,shading=0,reflection=0,texture=0,texture_detail=0,geometry=0), '', True),
+  ('tags: low 8x MSAA', video(profile=0,msaa=3,shading=0,reflection=0,texture=0,texture_detail=0,geometry=0), '', True),
+  ('tags: 2x MSAA', video(msaa=1), '', True),
+  ('tags: 8x MSAA', video(msaa=3), '', True),
+  ('MUTANT tags: automatic high', None, 'tags_through_walls=1', False),
+  ('MUTANT tags: multisampling off', video(msaa=0), 'tags_through_walls=1', False),
+]
+def verdict(returncode, output, expect):
+    """A mutant succeeds only by failing the wall assertion; startup/oracle failures are never catches."""
+    try:
+        data = json.loads(next(l[len('TAG_OCC_RESULT '):] for l in output.splitlines() if l.startswith('TAG_OCC_RESULT ')))
+        checks = data['checks']; wall = 'a name tag behind the wall has zero visible pixels'
+        if not checks or wall not in checks: return False
+        if expect: return returncode == 0 and all(checks.values())
+        return (returncode == 1 and not checks[wall] and all(v for k,v in checks.items() if k != wall)
+                and data['behind']['drawn'] == 1 and data['behind']['vis'] > 100)
+    except (ValueError, StopIteration, KeyError, TypeError):
+        return False
+
+
+def main():
+    only = sys.argv[1:]; results = []; saves0 = real_saves()
+    evidence = os.environ.get('QA_TAGS_KEEP')
+    if evidence: os.makedirs(evidence, exist_ok=True)
+    for name, var, ca, expect in SCENARIOS:
+        if only and not any(o in name for o in only): continue
+        print('\n=== %s' % name, flush=True)
+        env = {**os.environ, 'CFG_A': 'name=Alpha\n' + ca, 'CFG_B': 'name=Beta', 'WITNESS_KEEP_VIDEO': '1'}
+        for d in (DIR1, DIR2):
+            sd = os.path.join(d, 'appdata', 'The Witness'); os.makedirs(sd, exist_ok=True); vp = os.path.join(sd, 'Launcher.variables')
+            if os.path.exists(vp): os.remove(vp)
+            if var: open(vp, 'w').write(var)
+        label = ''.join(c if c.isalnum() else '_' for c in name)[:60]
+        launch = subprocess.run([os.path.join(TOOLS, 'restart.sh')], env=env, capture_output=True, text=True, timeout=600)
+        if evidence: open(os.path.join(evidence, label + '_launch.txt'), 'w').write(launch.stdout + launch.stderr)
+        if launch.returncode: raise RuntimeError('client startup failed: ' + launch.stderr[-1200:])
+        time.sleep(40)
+        open(os.path.join(RUN, 'guard.stop'), 'w').write('bot starting')
+        r = subprocess.run([PYW, '-I', win(os.path.join(TOOLS, 'win', 'wtags_occ.py')), pid('A'), win(DIR1), pid('B'), win(DIR2), name.split(':', 1)[1].strip()], capture_output=True, text=True, timeout=300)
+        print(r.stdout.strip(), r.stderr.strip(), flush=True)
+        if evidence:
+            for side, directory in (('A', DIR1), ('B', DIR2)):
+                shutil.copy(os.path.join(directory, 'witness_proxy.log'), os.path.join(evidence, label + '_' + side + '.log'))
+            open(os.path.join(evidence, label + '_result.txt'), 'w').write(r.stdout + r.stderr)
+        safe = real_saves() == saves0; print('  hygiene: real saves untouched %s' % ('ok' if safe else 'FAILED'))
+        ok = verdict(r.returncode, r.stdout, expect) and safe
+        print('RESULT: %s%s' % ('PASS' if ok else 'FAIL', '' if expect else ' (mutant must fail only the wall check)'), flush=True)
+        results.append((name, ok))
+    for d in (DIR1, DIR2):
+        vp = os.path.join(d, 'appdata', 'The Witness', 'Launcher.variables')
+        if os.path.exists(vp): os.remove(vp)
+    print('\n==== SUMMARY')
+    for n, ok in results: print('%-62s %s' % (n, 'PASS' if ok else 'FAIL'))
+    print('ALL OK' if results and all(ok for _, ok in results) else 'SOME FAILED')
+    return 0 if results and all(ok for _, ok in results) else 1
+
+if __name__ == '__main__': sys.exit(main())
