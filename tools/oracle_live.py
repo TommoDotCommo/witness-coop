@@ -43,7 +43,8 @@ def record(o, spots, record_path=None, log=print):
     for sp in spots:
         x, y = sp['spot']; pz = sp['ppos'][2]; got = None
         for attempt in range(3):
-            o.send('tp %.4f %.4f %.4f %.5f 0.0' % (x, y, pz + 0.3, math.atan2(sp['ppos'][1] - y, sp['ppos'][0] - x))); time.sleep(3.5)
+            o.send('hover %.4f %.4f %.4f %.5f 0.0' % (x, y, pz + 0.3, math.atan2(sp['ppos'][1] - y, sp['ppos'][0] - x))); time.sleep(4.0)      # (a plain tp to a far place is undone: no collision there yet; held in place it loads, then the game's own physics keeps the player)
+            o.send('hover off'); time.sleep(0.6)
             w = o.batch(['where'])[0]; f = [float(v) for v in w.split('feet=')[1].split()[0].split(',')]
             if math.hypot(f[0] - x, f[1] - y) < 1.0: got = w; break
         if not got: log('panel %s: the player did not stay at the spot (no collision there yet)' % sp['panel']); continue
@@ -53,6 +54,7 @@ def record(o, spots, record_path=None, log=print):
                        'ray %.4f %.4f %.4f %.5f %.5f 0 8' % (c[0], c[1], c[2], dx, dy), 'ray %.4f %.4f %.4f %.5f %.5f 0 8' % (c[0], c[1], c[2], -dx, -dy)])
         if stand is None: stand = dict(where=got, ground=res[0], down=res[1]); sky = res[2]
         walls.append(dict(panel=sp['panel'], spot=sp['spot'], ppos=sp['ppos'], toward=res[3], away=res[4]))
+    if stand is None: raise RuntimeError('no spot could be stood on')
     rec = dict(note='recorded from a live game by tools/oracle_live.py check; build 11370412', stand=stand, sky=sky, walls=walls)
     if record_path: json.dump(rec, open(record_path, 'w'), indent=1)
     return rec

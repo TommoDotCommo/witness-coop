@@ -1,0 +1,67 @@
+{
+ "note": "recorded from a live game by tools/oracle_live.py check; build 11370412",
+ "stand": {
+  "where": "where feet=-33.5204,1.0444,9.3635 cam=-33.5204,1.0444,11.0535 yaw=0.4032 pitch=0.0000",
+  "ground": "ground z=9.3635 type=Inanimate",
+  "down": "ray hit dist=1.6587 at=-33.5204,1.0444,9.3948 n=0.000,-0.000,1.000 type=Inanimate ent=0x1d74a9608 cand=16"
+ },
+ "sky": "ray miss cand=15",
+ "walls": [
+  {
+   "panel": "0x28998",
+   "spot": [
+    -33.52041134214943,
+    1.0444440524682321
+   ],
+   "ppos": [
+    -30.761005401611328,
+    2.221592664718628,
+    11.187787055969238
+   ],
+   "toward": "ray hit dist=2.8857 at=-30.8661,2.1768,11.0535 n=1.000,0.000,-0.000 type=Collision_Volume ent=0x1d88b4f20 cand=51",
+   "away": "ray miss cand=17"
+  },
+  {
+   "panel": "0x28a79",
+   "spot": [
+    -19.468418947100254,
+    -24.39594259499387
+   ],
+   "ppos": [
+    -16.68697738647461,
+    -23.2718505859375,
+    11.817550659179688
+   ],
+   "toward": "ray hit dist=3.0015 at=-16.6915,-23.2737,11.9389 n=1.000,0.000,-0.000 type=Machine_Panel ent=0x1d71136e0 cand=31",
+   "away": "ray hit dist=6.0651 at=-25.0954,-26.6760,11.9389 n=0.000,-1.000,0.000 type=Collision_Volume ent=0x1d6ec0928 cand=27"
+  },
+  {
+   "panel": "0xb10",
+   "spot": [
+    12.061161874682485,
+    -44.601331364617984
+   ],
+   "ppos": [
+    12.690099716186523,
+    -41.667999267578125,
+    16.60449981689453
+   ],
+   "toward": "ray hit dist=2.0873 at=12.4988,-42.5604,16.7476 n=0.000,-1.000,0.000 type=Door ent=0x1c8ed1a28 cand=49",
+   "away": "ray miss cand=26"
+  },
+  {
+   "panel": "0x139",
+   "spot": [
+    54.324773649714885,
+    106.99150845549805
+   ],
+   "ppos": [
+    57.25920867919922,
+    106.36773681640625,
+    20.887516021728516
+   ],
+   "toward": "ray hit dist=2.9788 at=57.2385,106.3722,20.8849 n=1.000,0.000,0.000 type=Collision_Volume ent=0x1d8bb5330 cand=22",
+   "away": "ray hit dist=1.9314 at=52.4356,107.3931,20.8849 n=1.000,-0.000,0.000 type=Door ent=0x1d8d9be08 cand=21"
+  }
+ ]
+}

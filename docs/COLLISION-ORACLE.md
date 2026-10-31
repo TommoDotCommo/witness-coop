@@ -46,10 +46,30 @@ the commands). A scan gets 10 ms of each frame.
   own "can stand here", so it is what the map wants.
 - `ray` hits everything with collision, including panels (`Machine_Panel`) and doors. Foliage has none.
 
-## The map (`proxy/core/oracle_cell.h`)
+## The map (`proxy/core/oracle_cell.h`, `tools/oracle_map.py`)
 
-Per 0.5 m cell: the surfaces in the column of the cell centre (top-down enumeration with `ground`, lowest 4 kept), a mask bit for each; for each
-surface a ray up (2 m: a ceiling), and rays from the centre to the cell's edge and corners (8 directions) at 0.55, 0.8, 1.3 and 1.8 m above it: whatever
-is hit sets the bit of that height. `wnav.py` stands on a bit with nothing in the three to seven bins above it, so a thin wall or a post inside the
-footprint makes the floor unstandable and a kerb (0.55 m) stays a step. A cell with no ground gets a floor of -100 m (below the planner's sea level: never walkable,
-unlike a cell never seen, which the planner crosses at triple cost). `python3 -I`-free T0 test: `make -C proxy/core test` (`oracle-cell`, with four mutants).
+Per 0.5 m cell: the surfaces in the column of the cell centre (top-down with `ground`, the lowest 4 kept). For each surface a ray up (2 m: a ceiling)
+and rays from the centre to the cell's edge and corners (8 directions) at 0.55, 0.8, 1.3 and 1.8 m above it (0.26 m: the player's radius, measured at
+walls it pressed against, is about 0.22 m). A hit in the planner's band (0.75 to 2 m up) drops that level: it is a collision, not foliage. A cell with no
+level left is `no ground`, floor -100 m, and with the `ORACLE` flag (`tools/win/wnav.py`) the planner never enters it: without the flag a band-filled cell
+is "soft" (bushes) and crossed at 25 times the cost, and a floor 100 m down is read as "not seen yet". Cells with the flag are not changed by depth
+pictures. Kerbs (the 0.55 m ray) stay steps.
+
+Lakes: the player cannot walk into one (an invisible wall at the shore that no ray finds; the bed itself is walkable if the player is put there). A lake is
+a flat plane (`n = (0, 0, 1)`) above the bed that `ground` skips and a ray down meets (the flat tops of `Collision_Volume`s are excluded). Such cells are
+flagged and, with a 2 cell buffer (`finish()` in `oracle_map.py`), have no ground.
+
+## Measured (2026-10-31, probes: `tools/testdata/oracle_stuck_probe.jsonl`)
+
+47 places where a walker once got stuck were rebuilt with the game's own physics (the player held there to load the collision, then released, W held 2 s):
+36 blocked (under 0.8 m gained), 11 free. A map refuses the way when the cell 0.5 m or 1 m ahead cannot be stepped into
+(`tools/oracle_probe_eval.py`): the depth map refuses 10 of 36 blocked and 2 of 11 free, the oracle map 32 of 36 and 5 of 11. Of the 36, 24 had a ray hit
+0.1 to 0.5 m ahead (walls, `Collision_Volume`, `Door`), 12 had none (lake shores 6, drops of 1 m and more 3, steep rock faces 3). A step down of about 1 m
+or more is refused by the game's physics, the planner allows 1.2 m (`DOWN`). The false refusals are near shores, under `Collision_Volume` tops and at a
+door the player walked through while rays still hit it (an open door).
+
+## Not known
+
+- How the game keeps the player out of lakes (a polygon test, not a ray): only its effect is modelled.
+- Whether the first-person walk speed ramp matters for the map (it does not).
+- The walking benchmark with the oracle map has not been run (see `local/progress.md` of the session that built this; the island scan takes about 20 minutes).
