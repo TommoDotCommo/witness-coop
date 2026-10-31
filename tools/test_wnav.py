@@ -197,6 +197,19 @@ check('hit', blocked and mid in w.hit and xs and all(y < 3.0 or y > 8.1 for _, y
 pts_ = ground(None, 0, 12, 0, 10, 0.0) + wall(10.1, 0, 10, 0.25, 3.0) + wall(8.0, 4.0, 6.0, 0.25, 3.0)
 cs = wnav.pressed(pts_, (9.6, 5.0, E), 0.0); ys = sorted(wnav.centre(c)[1] for c in cs); xs_ = {wnav.centre(c)[0] for c in cs}
 check('pressed', ys and ys[0] <= 1.3 and ys[-1] >= 8.7 and xs_ == {10.25}, 'bumped %d cells, y %s..%s, x %s' % (len(cs), ys[:1], ys[-1:], sorted(xs_)))
+# stuck_class: a flat wall (also slanted), scattered foliage, and nothing in the band (a kerb or invisible collision) are told apart
+def _sheet(slope, noise, n=30):
+    out = []
+    for i in range(n):
+        for j in range(n):
+            c = -0.5 + i / (n - 1); z = E - 1.65 + 0.8 + 1.0 * j / (n - 1)      # (feet at E - EYE here: q[2] - EYE)
+            out.append((1.0 + slope * c + (noise if (i * 7 + j * 3) % 2 else -noise), c, z))
+    return out
+Q = (0.0, 0.0, 1.65)
+check('stuck_class', wnav.stuck_class(_sheet(0.0, 0.0), Q, 0.0) == 'wall' and wnav.stuck_class(_sheet(1.0, 0.0), Q, 0.0) == 'wall' and wnav.stuck_class(_sheet(0.0, 0.0, 6), Q, 0.0) == 'open'
+      and wnav.stuck_class(_sheet(0.0, 0.3), Q, 0.0) == 'foliage' and wnav.stuck_class([], Q, 0.0) == 'open'
+      and wnav.stuck_class([(1.0, 0.0, 0.2)] * 400, Q, 0.0) == 'open', 'flat/slanted/scattered/empty/below the band')
+
 # wall_rule: the whole wall goes from the second stuck near here, not at the first (a leg that walks without it was spoilt), 1 always, 0 never
 check('wall_rule', not wnav.wall_rule([], (0, 0, E)) and wnav.wall_rule([(3.0, 0.0)], (0, 0, E)) and not wnav.wall_rule([(30.0, 0.0)], (0, 0, E))
       and wnav.wall_rule([], (0, 0, E), '1') and not wnav.wall_rule([(1.0, 0.0)], (0, 0, E), '0'), 'first/second/far/forced/never')
@@ -232,6 +245,9 @@ MUTANTS = [      # (file text, replacement): each removes one protection
     ("elif r.get('event') in ('task', 'skip'): out.append(None)", "pass"),      # a teleport between tasks taken for a walk
     ("run += math.dist(a[:2], b[:2]); out.append(b)\n        if run >= metres: break", "out.append(b)"),      # backs out along all of the trail
     ("rec[2] &= ~BUMPED; n += 1", "n += 1"),      # an open door stays bumped
+    ("b = sum((c - mc) * (a - ma) for a, c in zip(a_, c_)) / vc if vc > 1e-9 else 0.0", "b = 0.0"),      # a slanted wall taken for foliage
+    ("return 'wall' if res <= flat else 'foliage'", "return 'wall'"),      # scattered foliage taken for a wall
+    ("if len(a_) < need: return 'open'", "if len(a_) < 1: return 'open'"),      # a few points ahead taken for a wall
     ("return abs(wrap(y1 - y0)) <= ang and abs(q1 - q0) <= ang and", "return"),      # a look taken while turning is used
 ]
 

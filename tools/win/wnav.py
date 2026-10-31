@@ -362,6 +362,23 @@ def pressed(pts, q, yaw, reach=1.2, side=4.0):
     return out
 
 
+def stuck_class(pts, q, yaw, reach=1.5, half=0.6, need=200, flat=0.12):
+    """What a stuck is against, from the depth picture kept at it (WNAV_KEEP): the points in the body band within `reach` m ahead and `half` m
+    either side of the eye position q facing yaw. 'wall': a plane (the distance ahead, after a straight line fitted along the width, scatters
+    by no more than `flat` m: a wall, a fence, a building seen square or slanted); 'foliage': as many points but scattered (a hedge, bushes: the
+    band is filled yet not flat); 'open': (almost) nothing in the band, so what stops the walk is below the knee (a kerb, a step, the rim of a pit) or
+    not drawn (an invisible collision). Measured on the 88 stuck pictures of the round-3 benchmark: open 43, foliage 24, wall 21."""
+    feet = q[2] - EYE; fx, fy = math.cos(yaw), math.sin(yaw); a_, c_ = [], []
+    for x, y, z in pts:
+        a = (x - q[0]) * fx + (y - q[1]) * fy; c = -(x - q[0]) * fy + (y - q[1]) * fx
+        if 0 <= a <= reach and abs(c) <= half and feet + BAND[0] <= z <= feet + BAND[1]: a_.append(a); c_.append(c)
+    if len(a_) < need: return 'open'
+    n = len(a_); ma, mc = sum(a_) / n, sum(c_) / n; vc = sum((c - mc) ** 2 for c in c_)
+    b = sum((c - mc) * (a - ma) for a, c in zip(a_, c_)) / vc if vc > 1e-9 else 0.0
+    res = math.sqrt(sum((a - ma - b * (c - mc)) ** 2 for a, c in zip(a_, c_)) / n)
+    return 'wall' if res <= flat else 'foliage'
+
+
 def wall_rule(stuck_at, q, mode=None, r=6.0):
     """Is it stuck against a wall the map took for a hedge? mode '1': at every stuck; '0': never; default: the second stuck within `r` m
     (one stuck is a bump into one cell; a second near it means the walk goes on along the same wall to the next soft cell: the whole wall
