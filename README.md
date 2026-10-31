@@ -84,6 +84,26 @@ The game opens on the monitor the launcher is on (windowed: centred there; full 
 passes the work area of its monitor in `WITNESS_MONITOR`, and the mod places the game's window when the game creates it.
 `tools/qa.sh launcher` checks it with the launcher moved off the primary monitor, and a mutant launcher that does not pass it must fail.
 
+## Install and play with a friend
+
+Players do not build anything: [Releases](https://github.com/TommoDotCommo/witness-coop/releases) has a zip with
+`Witness-Coop-Setup.exe`. It finds The Witness in the Steam libraries (or takes a folder), checks that the exe is the supported
+build (SHA-256 above; any other build is refused and nothing is changed), renames the game's `AnselSDK64.dll` to
+`AnselSDK64_real.dll`, puts the proxy in its place, and adds `witness_launcher.exe` and `witness_models\`. Every file it writes
+gets a `.coop-receipt.json` beside it, so Uninstall restores the game's own files and never removes a file it did not install;
+`witness_coop.cfg`, the log and the saves stay. Setup is a windowless stub that runs the PowerShell in `dist/`
+(`installer-gui.ps1`, `witness-coop.ps1`, `install-state.ps1`; the pure decisions are `dist/install-policy.h`).
+Then both players start the game from the launcher: Lobby, host (send the invite `address:port/CODE`) or join; the host's
+lobby port is UDP 47100 and the games use 47001 and 47002. The player's own copy of the instructions is `dist/README.txt`.
+
+Making a release: `tools/release.sh v0.x.y` builds `local/release/witness-coop-v0.x.y.zip` and its `.sha256`
+(proxy, launcher, model, setup, scripts, `README.txt` with the version, `LICENSE.txt`); `tools/check_release_package.py <zip>`
+checks the inventory, the checksum and that the zip holds the proxy; `tools/qa_installer.sh <folder of the supported build>`
+builds a test package and runs `tools/test_installer.ps1` on disposable fixtures on the Windows side (install, update, repair,
+a modified file refused, uninstall restoring the original, another build refused, unowned files kept, the setup window's
+geometry and actions). Publishing is `gh release create v0.x.y --prerelease local/release/witness-coop-v0.x.y.zip*`
+(the notes go in `docs/RELEASE-NOTES-v0.x.y.md`).
+
 ## Try it (two copies on one PC)
 
 Requirements: Windows with the Steam build above; WSL2 with `make` and MinGW-w64 (`x86_64-w64-mingw32-g++`); Windows Python 3

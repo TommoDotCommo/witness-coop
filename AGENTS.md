@@ -27,7 +27,11 @@ prepare a reviewable diff before asking to publish. Never force-push.
 - Teaching by a person: `tools/record.sh` (one game, a person solves the panels the bot cannot; `tools/win/wrecord.py` records),
   `tools/playthrough/teach.py` (recordings -> `data/taught.json`: line, node world positions, where they stood), used by `run.py` and
   `wdraw.py` (`WDRAW_TAUGHT`); `python3 tools/playthrough/test_teach.py` (game-free, with mutants).
-- `local/`: ignored private configuration, disposable test copies and QA evidence.
+- `dist/`: the player installer (`installer.c` stub -> `Witness-Coop-Setup.exe`, `installer-gui.ps1`, `witness-coop.ps1`, the
+  ownership journal `install-state.ps1` with the pure decisions in `install-policy.h`), and the player's `README.txt`.
+  `tools/release.sh <version>` builds the zip, `tools/check_release_package.py` checks it, `tools/qa_installer.sh <game folder>`
+  runs `tools/test_installer.ps1` on disposable Windows fixtures. Release notes: `docs/RELEASE-NOTES-<version>.md`.
+- `local/`: ignored private configuration, disposable test copies, release zips (`local/release/`) and QA evidence.
 
 ## Build and validation
 
