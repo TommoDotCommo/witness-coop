@@ -5,7 +5,8 @@ Usage: Windows Python wnav.py <pid> <game folder> x y z [tolerance m]      (or i
        python3 tools/win/wnav.py --merge-recordings MAP.bin SESSION.jsonl ...   (a person's recorded walks into a map file, game-free)
 Prints one JSON line {"ok", "why", "seconds", "walked", "stuck", "replans", "looks", "backouts", "sidesteps", "blurred", "from", "to"}.
 Environment: WNAV_MAPS (more maps to read, ';' separated), WNAV_RECORDINGS (session.jsonl files of tools/win/wrecord.py, ';' separated:
-their walks are known-good cells), WNAV_STUCKS (stucks before giving up, 12), WNAV_TRACE (a trace in <game folder>/wnav_trace.jsonl).
+their walks are known-good cells), WNAV_STUCKS (stucks before giving up, 12), WNAV_TRACE (a trace in <game folder>/wnav_trace.jsonl),
+WNAV_PRESSED (bump all of the wall it is pressed against, experimental), WNAV_KEEP (a depth picture kept at each stuck as <game folder>/wnav_<Walker.tag>stuck<N>.bin).
 
 Measured (build 11370412): a mouse count turns the camera 0.0025 rad (positive dx turns right: the yaw at CAM_ANG goes down), dy the same in
 pitch; W walks about 1.8 m/s along the yaw (atan2 of the view direction, as `hover` and `tp` take it). A command takes about 11 ms.
@@ -32,11 +33,15 @@ How it finds the way (a robot with a depth camera, as a person uses their eyes):
      is not seen yet (the ground over a tunnel); a level more than WINDOW above a cell's floor is not seen yet either (junk points far below
      the ground filled a third of the town's cells and hid the street);
    * a WALKED cell costs 0.8 (a person's recorded walk, the bot's own), a BUMPED one 40; no corner cutting past a cell that cannot be entered;
+ - a plan that cannot reach the target ends at the cell nearest it across AND in height (LEVEL cells per metre of height: the ground below
+   a ledge is not near the ledge), when that is a metre nearer than here;
  - it walks the plan, looking again every half second (the camera faces the way it walks) and planning again when the way ahead is no
-   longer free; at the start and after being stuck it looks all round (four looks);
+   longer free (the cells found blocked stay dear for the rest of the walk: a look from another side finds them open again, and the walker
+   turned back at them to and fro); at the start and after being stuck it looks all round (four looks);
  - stuck (W held but under 0.5 m moved in 2 s, or no nearer the target in 25 s): something unseen is in the way (the game has invisible walls
    at the shore and on steep slopes): the cells just ahead are marked bumped (dear, not forbidden: a door may open later), it steps aside
-   (A, else D; else back with S) and plans again;
+   (A, else D; else back with S) and plans again; with WNAV_PRESSED=1 it looks once more first: the band-filled points up to 1.2 m ahead and 4 m either side are
+   what it is pressed against (a wall the map took for a hedge), and all those cells are bumped, not only the one ahead;
  - a pocket (stuck a third time within 3 m, or no way on the map from here): it walks back out along its own trail (10 m), keeps out of the
    cells round that place for this walk (and makes all within POCKET 5 m of it dear: a U of unseen walls is wider than one bump), unbumps the cells near doors the game says are open, and plans again (3 times at most); only then
    does it give up, and the caller may teleport (the last resort).
@@ -59,6 +64,7 @@ WALKED, BUMPED = 1, 2          # cell flags
 WINDOW = 64 * BIN              # a cell describes 16 m above its floor (its 64-bit mask): a level higher than that is not in the cell
 STAIR = UP + BIN               # a rise up to this is a stair step when the step before or after it climbs too (surfaces are bin starts: up to 0.25 m low)
 POCKET = 5.0                   # after backing out of a pocket, the cells this near it (m) cost as much as bumped ones for the rest of the walk
+LEVEL = 1.0                    # (m per m) the height difference counts this much in how near a cell is to a target the plan cannot reach
 DROP = 16.0                    # (8 m of walking) extra cost of a step down that cannot be stepped back up (more than UP): a one-way drop leads into pockets
 REC = struct.Struct('<hhfQB')  # cell x, cell y, floor z, height mask, flags
 DOOR_TYPE = 0x62DE70           # the door entities' type descriptor (module-relative, as TI_DOOR in wlib.py; build 11370412)
@@ -73,7 +79,7 @@ HEAD_MASK = (1 << int(math.ceil(BAND[1] / BIN))) - 1      # the bins above a sur
 
 class Map:
     """cell -> [floor z, mask of the height bins above the floor that hold something, flags]"""
-    def __init__(self): self.cells = {}; self.reached = False; self.soft = set(); self.covered = False      # reached: the last plan got to the target (else only near it)
+    def __init__(self): self.cells = {}; self.reached = False; self.soft = set(); self.covered = False; self.blocked_cell = None      # reached: the last plan got to the target (else only near it)
 
     @staticmethod
     def add_point(rec, z):
@@ -202,7 +208,8 @@ class Map:
         s0 = key(sa, a[2] - EYE); floor = {s0: a[2] - EYE}
         r0 = self.cells.get(sa)      # the player is under cover: something is known above its head where it stands (out in the open a surface that high is a plateau)
         self.covered = bool(r0) and r0[0] > -1e3 and any(r0[0] + b * BIN > a[2] - EYE + BAND[1] for b in range(64) if r0[1] >> b & 1)
-        g = {s0: 0.0}; prev = {}; heap = [(0.0, s0)]; n = 0; best, best_h = s0, math.hypot(sa[0] - sb[0], sa[1] - sb[1])
+        def near(c, f): return math.hypot(c[0] - sb[0], c[1] - sb[1]) + LEVEL * abs(f - fb) / CELL      # how near a cell is to the target (in cells): across, plus LEVEL per metre of height (the nearest ground below a ledge is not near it)
+        g = {s0: 0.0}; prev = {}; heap = [(0.0, s0)]; n = 0; best, best_h = s0, near(sa, a[2] - EYE)
         def back(u):
             out = [u]
             while out[-1] in prev: out.append(prev[out[-1]])
@@ -215,7 +222,7 @@ class Map:
             _, u = heapq.heappop(heap); n += 1
             fu = floor[u]
             if abs(u[0] - sb[0]) <= 1 and abs(u[1] - sb[1]) <= 1 and abs(fu - fb) < 2.0: self.reached = True; return back(u)
-            hu = math.hypot(u[0] - sb[0], u[1] - sb[1])
+            hu = near(u, fu)
             if hu < best_h: best, best_h = u, hu
             for dx in (-1, 0, 1):
                 for dy in (-1, 0, 1):
@@ -238,7 +245,7 @@ class Map:
         # no way to the target itself (it stands inside something, or the map does not reach it yet): the way to the reachable cell nearest
         # to it, when that is nearer than here by a metre or more (from there the next look may show more)
         self.reached = False
-        if best_h < math.hypot(sa[0] - sb[0], sa[1] - sb[1]) - 1.0 / CELL: return back(best)
+        if best_h < near(sa, a[2] - EYE) - 1.0 / CELL: return back(best)
         return None
 
     def blocked_along(self, q, cells, dist=8.0):
@@ -252,7 +259,7 @@ class Map:
                 st = self.steps(c, f, STAIR)
                 if st and c not in self.soft: st = [q_ for q_ in st if q_[1] != SOFT]
                 nxt |= {f} if st is None else {round(z if z is not None else f, 2) for z, _ in st}
-            if not nxt: return True
+            if not nxt: self.blocked_cell = c; return True      # (which cell: the walker keeps it dear, see Walker.ahead_blocked)
             floors = set(sorted(nxt)[:6]); run += CELL * math.hypot(c[0] - p_[0], c[1] - p_[1])
             if run > dist: break
         return False
@@ -344,6 +351,17 @@ def trail_back(trail, metres):
     return out
 
 
+def pressed(pts, q, yaw, reach=1.2, side=4.0):
+    """Cells of what the player is pressed against: points in the body band (0.75 m to 1.9 m above the feet) up to `reach` m ahead of the eye
+    position q (x, y, z) facing yaw and `side` m to either side. Stuck at a wall the map took for a hedge (band filled: soft), only the one
+    cell ahead was bumped, and the walk went on along the wall to the next soft cell, stuck again 12 times: the whole wall in sight goes at once."""
+    fx, fy = math.cos(yaw), math.sin(yaw); feet = q[2] - EYE; out = set()
+    for x, y, z in pts:
+        ahead = (x - q[0]) * fx + (y - q[1]) * fy; across = -(x - q[0]) * fy + (y - q[1]) * fx
+        if -0.2 <= ahead <= reach and abs(across) <= side and feet + BAND[0] <= z <= feet + BAND[1]: out.add(cell_of(x, y))
+    return out
+
+
 def pocket(stuck_at, q, r=3.0, n=2):
     """Stuck here n times already (within r m): a pocket, back out of it."""
     return sum(1 for s in stuck_at if math.dist(s[:2], q[:2]) < r) >= n
@@ -372,7 +390,8 @@ class Walker:
         self.recorded = 0      # cells known-good from a person's recorded walks (WNAV_RECORDINGS: ';' separated session.jsonl files)
         for q in [q for q in (os.environ.get('WNAV_RECORDINGS') or '').split(';') if q]:
             for w in walks(load_recording(q)): self.recorded += self.map.walk_line(w)
-        self.trail = []; self.dear = set(); self.backouts = 0; self.sidesteps = 0; self.doors = None; self.blurred = 0      # where this walker has been (newest last); open doors, read once
+        self.last_pts = []; self.pressed_n = 0; self.tag = ''      # a prefix for the kept pictures (the benchmark sets one per leg)
+        self.trail = []; self.dear = set(); self.hit = set(); self.backouts = 0; self.sidesteps = 0; self.doors = None; self.blurred = 0      # where this walker has been (newest last); open doors, read once
 
     def pos(self): return self.p.camera()[0]
     def yaw(self): return self.p.camera()[1][0]
@@ -409,7 +428,7 @@ class Walker:
         except (ValueError, struct.error): return False
         if not still(cam0, self.p.camera()):      # (the camera turned or moved while the picture was taken)
             self.blurred += 1; time.sleep(0.1); return self.look(again - 1) if again > 0 else False
-        self.map.integrate(pts); self.looks += 1
+        self.map.integrate(pts); self.looks += 1; self.last_pts = pts
         q = self.pos(); self.map.stand(q[0], q[1], q[2] - EYE)
         return True
 
@@ -466,14 +485,14 @@ class Walker:
     def keep_depth(self, name):
         """WNAV_KEEP=1: the last depth picture (and the camera it was taken from) kept as <game folder>/wnav_<name>.bin, to see what a stuck is against."""
         if os.environ.get('WNAV_KEEP'):
-            try: self.look(0); open(os.path.join(self.game_dir, 'wnav_%s.bin' % name), 'wb').write(open(self.depth, 'rb').read())
+            try: self.look(0); open(os.path.join(self.game_dir, 'wnav_%s%s.bin' % (self.tag, name)), 'wb').write(open(self.depth, 'rb').read())
             except OSError: pass
 
     def note(self, **kv):
         if self.trace: self.trace.write(json.dumps(dict(t=round(time.monotonic(), 2), **kv)) + '\n'); self.trace.flush()
 
     def plan(self, target):
-        q = self.pos(); cells = self.map.plan(q, target, avoid=self.avoid, dear=self.dear)
+        q = self.pos(); cells = self.map.plan(q, target, avoid=self.avoid, dear=self.dear | self.hit)
         if cells is None: return None
         self.replans += 1; self.cells, self.ci = cells, 0
         way = simplify(cells, target[2]) or [tuple(target)]      # (a plan of one cell: the target is next to the player)
@@ -484,7 +503,10 @@ class Walker:
         q = self.pos(); cells = self.cells
         if not cells: return False
         near = min(range(self.ci, min(len(cells), self.ci + 16)), key=lambda i: math.dist(centre(cells[i]), q[:2]))
-        self.ci = near; return self.map.blocked_along(q, cells[near:], dist)
+        self.ci = near
+        if not self.map.blocked_along(q, cells[near:], dist): return False
+        c = self.map.blocked_cell      # the way is blocked here: the next plan keeps off it (else a look from another side finds it open again, the walker turns back at it and round again: it went to and fro 40 times at a ramp)
+        self.hit |= {(c[0] + dx, c[1] + dy) for dx in (-1, 0, 1) for dy in (-1, 0, 1)}; return True
 
     def settle(self, target, tol=0.12, seconds=8.0):
         """Shuffle onto an exact spot after a walk (where a line is drawn from matters to within a few tens of cm): face it, tap W for a
@@ -508,7 +530,7 @@ class Walker:
 
     def go(self, target, tol=0.8, seconds=240, ztol=2.0):
         """Walk to `target` (x, y, z: the eye there) until within `tol` across and `ztol` in height. Returns a dict like the JSON line."""
-        t0 = time.monotonic(); deadline = t0 + seconds
+        t0 = time.monotonic(); deadline = t0 + seconds; self.hit = set()
         self.c.send(['hover off'])
         if not self.free_look(): return {'ok': False, 'why': 'stuck in a puzzle: the mouse does not turn the camera', 'seconds': round(time.monotonic() - t0, 1), 'walked': 0.0, 'stuck': 0, 'replans': 0, 'looks': 0, 'from': list(self.pos()), 'to': list(self.pos())}
         self.pitch_to(-0.25)
@@ -548,6 +570,10 @@ class Walker:
                     for side in range(-again, again + 1):
                         x = q[0] + r * math.cos(y) - side * CELL * math.sin(y); yy = q[1] + r * math.sin(y) + side * CELL * math.cos(y)
                         self.map.bump(x, yy); self.avoid.add(cell_of(x, yy))
+                if os.environ.get('WNAV_PRESSED') and self.look(0):      # (what it is pressed against: all of it, not only the cell ahead; off by default: in the benchmark it bumped the way of a leg that walks without it)
+                    wall = pressed(self.last_pts, q, y)
+                    for c_ in wall: self.map.bump(*centre(c_))
+                    self.pressed_n += len(wall)
                 self.note(stuck=[round(q[0], 2), round(q[1], 2)], again=again, yaw=round(y, 2), z=round(q[2], 2)); self.keep_depth('stuck%d' % self.stuck)
                 self.log('stuck %d at %.1f %.1f: bumped, planning again' % (self.stuck, q[0], q[1]))
                 if pocketed and self.back_out('stuck %d times here' % (again + 1)): way = None; continue
@@ -558,7 +584,7 @@ class Walker:
         try: self.map.save(self.map_path)
         except OSError: pass
         return {'ok': ok, 'why': why, 'seconds': round(time.monotonic() - t0, 1), 'walked': round(self.walked, 1), 'stuck': self.stuck,
-                'replans': self.replans, 'looks': self.looks, 'backouts': self.backouts, 'sidesteps': self.sidesteps, 'blurred': self.blurred, 'from': [round(v, 2) for v in start], 'to': [round(v, 2) for v in self.pos()]}
+                'replans': self.replans, 'looks': self.looks, 'backouts': self.backouts, 'sidesteps': self.sidesteps, 'pressed': self.pressed_n, 'blurred': self.blurred, 'from': [round(v, 2) for v in start], 'to': [round(v, 2) for v in self.pos()]}
 
 
 if __name__ == '__main__' and sys.argv[1:2] == ['--merge-maps']:      # OUT.bin A.bin B.bin ...: the maps added together (the walkers' learnt walls and walked cells)

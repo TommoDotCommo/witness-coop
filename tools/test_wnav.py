@@ -174,10 +174,37 @@ m = wnav.Map(); m.integrate(ground(None, -5, 25, -15, 30, 0.0)); avoid = set()
 for y in range(-30, 61): m.bump(10.1, y * 0.5)
 n_ = m.unbump_near([(10.1, 5.0)], 2.0)
 check('doors', n_ >= 6 and not m.cells[wnav.cell_of(10.1, 5.1)][2] & wnav.BUMPED and m.cells[wnav.cell_of(10.1, 12.1)][2] & wnav.BUMPED, '%d unbumped' % n_)
+# lvlfall: the target stands on an island 3 m up that nothing leads to; the low ground reaches within 2.3 m of it, a plateau up stairs
+# (3 m up too) within 4.8 m: the way goes to the plateau, the target's level, not to the low cell nearest across
+pts = ground(None, -5, 30, -15, 9.9, 0.0) + ground(None, -5, 9.9, 10, 20, 0.0) + ground(None, 17.3, 19.9, 10, 20, 0.0) + ground(None, 25.1, 30, 10, 20, 0.0) + ground(None, -5, 30, 20.1, 30, 0.0) + ground(None, 10, 17.2, 10, 20, 3.0) + ground(None, 20, 25, 10, 20, 3.0)      # (no ground under the island or the plateau)
+for k in range(12): pts += ground(None, 4 + k * 0.5, 4 + k * 0.5 + 0.49, 14, 16, (k + 1) * 0.25)
+m = wnav.Map(); m.integrate(pts)
+p = m.plan((5, 15, E), (22, 15, 3 + E), margin=12); last = wnav.centre(p[-1]) if p else (0, 0)
+check('lvlfall', p is not None and not m.reached and 10 < last[0] < 17.6 and abs(last[1] - 15) < 6, 'the plan ends at %s (on the low ground below the island if x > 17.6)' % (last,))
+# hit: a way found blocked on a look is dear for the rest of the walk (a look from another side finds it open again, and the walker turned
+# back at it again and again): the walker keeps the blocked cell and its neighbours, and the next plan goes round them
+m = wnav.Map(); m.integrate(ground(None, -5, 25, -15, 30, 0.0)); w = object.__new__(wnav.Walker)
+class P_:
+    def camera(self): return ((5.0, 5.0, E), (0.0, 0.0))
+w.p = P_(); w.map = m; w.hit = set(); w.dear = set(); w.avoid = set(); w.replans = 0; w.trace = None
+first = m.plan((5, 5, E), (15, 5, E), margin=12); w.cells, w.ci = first, 0
+m.integrate(wall(10.1, 3.0, 8.0, 0.25, 3.0))      # a look sees a wall across the way
+blocked = w.ahead_blocked(99)
+mid = [c for c in first if abs(wnav.centre(c)[0] - 10.25) < 0.3][0]
+p = w.plan((15, 5, E)); xs = [wnav.centre(c) for c in w.cells if abs(wnav.centre(c)[0] - 10.25) < 0.3]
+check('hit', blocked and mid in w.hit and xs and all(y < 3.0 or y > 8.1 for _, y in xs), 'blocked %s, %d cells kept dear, crossed the wall line at y %s' % (blocked, len(w.hit), [round(y, 1) for _, y in xs]))
+# pressed: stuck against a long wall: all of it in reach is bumped (not only the cell ahead); the ground and what is behind are not
+pts_ = ground(None, 0, 12, 0, 10, 0.0) + wall(10.1, 0, 10, 0.25, 3.0) + wall(8.0, 4.0, 6.0, 0.25, 3.0)
+cs = wnav.pressed(pts_, (9.6, 5.0, E), 0.0); ys = sorted(wnav.centre(c)[1] for c in cs); xs_ = {wnav.centre(c)[0] for c in cs}
+check('pressed', ys and ys[0] <= 1.3 and ys[-1] >= 8.7 and xs_ == {10.25}, 'bumped %d cells, y %s..%s, x %s' % (len(cs), ys[:1], ys[-1:], sorted(xs_)))
 sys.exit(1 if fails else 0)
 '''
 
 MUTANTS = [      # (file text, replacement): each removes one protection
+    ("and abs(across) <= side and feet + BAND[0]", "and abs(across) <= 0.3 and feet + BAND[0]"),      # only the cell ahead is bumped at a wall
+    ("if -0.2 <= ahead <= reach and", "if ahead <= reach and"),      # what is behind counts as pressed against too
+    ("self.hit |= {(c[0] + dx, c[1] + dy) for dx in (-1, 0, 1) for dy in (-1, 0, 1)}; return True", "return True"),      # a blocked way is forgotten at the next plan
+    ("LEVEL = 1.0 ", "LEVEL = 0.0 "),      # the fallback goes to the cell nearest across, whatever its level
     ("return [z0 + b * BIN for b in range(64) if m >> b & 1 and not (m >> b) & BAND_MASK]", "return [z0 + b * BIN for b in range(64) if m >> b & 1]"),      # nothing in the way counts
     ("fit = [(z, 1.0) for z in surf if (z > SEA or walked) and -DOWN <= z - fu <= up]", "fit = [(z, 1.0) for z in surf[:1] if (z > SEA or walked) and -DOWN <= z - fu <= up]"),      # one level a cell (stairs over ground, decks)
     ("if -DOWN <= r[0] - fu <= UP and r[0] > SEA: return [(r[0], SOFT)]", "if r[0] > SEA: return [(r[0], SOFT)]"),      # a cliff face is soft, any height
