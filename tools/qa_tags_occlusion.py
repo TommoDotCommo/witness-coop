@@ -45,7 +45,9 @@ def main():
         for d in (DIR1, DIR2):
             sd = os.path.join(d, 'appdata', 'The Witness'); os.makedirs(sd, exist_ok=True); vp = os.path.join(sd, 'Launcher.variables')
             if os.path.exists(vp): os.remove(vp)
-            if var: open(vp, 'w').write(var)
+            # Only A's depth buffer is under test; the sending peer can use the lowest options.
+            options = var if d == DIR1 else video(profile=0,msaa=0,shading=0,reflection=0,texture=0,texture_detail=0,geometry=0)
+            if options: open(vp, 'w').write(options)
         label = ''.join(c if c.isalnum() else '_' for c in name)[:60]
         launch = subprocess.run([os.path.join(TOOLS, 'restart.sh')], env=env, capture_output=True, text=True, timeout=600)
         if evidence: open(os.path.join(evidence, label + '_launch.txt'), 'w').write(launch.stdout + launch.stderr)
