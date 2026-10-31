@@ -20,15 +20,17 @@ t_all = time.monotonic()
 
 
 def tp(x, y, feet, yaw=0.0):
-    """Put the player above the known ground and let it fall onto what is really there. The player is held there (hover) for a moment first:
-    in an area whose collision is not loaded yet the game sends a free-falling player back to the spawn point, and the map's floors can be
-    junk below the ground. True when the player stands still within 3 m of (x, y) afterwards."""
+    """Put the player above the known ground and let it fall onto what is really there. The player is held there (hover) first, long
+    enough for the collision to load: a free-falling player over unloaded collision is sent back to the spawn point, and the map's floors
+    can be junk below the ground. True when the player stands still within 3 m of (x, y) afterwards."""
     c.send(['hover off'])
-    for rise in (3.0, 8.0, 14.0):
+    for rise, hold in ((3.0, 4.0), (8.0, 6.0), (14.0, 8.0)):
         c.send(['hover %.4f %.4f %.4f %.5f 0.0' % (x, y, feet + rise, yaw)], 3.0)
-        time.sleep(2.4)
-        c.send(['hover off'], 0.5); time.sleep(1.5)
+        time.sleep(hold)
+        held = p.camera()[0]
+        c.send(['hover off'], 0.5); time.sleep(1.0 + rise / 8.0)
         q = p.camera()[0]
+        print('tp %.1f %.1f %.1f +%.0f: held %s, after %s' % (x, y, feet, rise, [round(v, 1) for v in held], [round(v, 1) for v in q]), file=sys.stderr, flush=True)
         if math.dist(q[:2], (x, y)) < 3.0:
             time.sleep(1.0); q2 = p.camera()[0]
             if abs(q2[2] - q[2]) < 0.05 and math.dist(q2[:2], (x, y)) < 3.0: return True      # (fallen and at rest)
