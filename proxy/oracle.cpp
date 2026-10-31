@@ -62,43 +62,37 @@ struct ListGuard {      // a game array the destructor frees with the game's own
 };
 
 // one ray against the world: the nearest hit, or false (the same queries as the ray command)
+int g_rayMask = 4, g_boxMask = 0xC980001, g_rayFlags = -1;      // (the ray command can change them: `mask=0x404 box=0x4980001 flags=-1`; tests of what blocks the player)
 bool RayQuery(const float* o, const float* dir, float maxd, float* dist, float* nrm, uintptr_t* entOut, int* cand) {
     void* w = World(); float end[3] = {o[0] + dir[0] * maxd, o[1] + dir[1] * maxd, o[2] + dir[2] * maxd};
     ListGuard lg; Hit hit; ((HitInitFn)(Base() + kHitInit))(&hit);
-    ((BoxFn)(Base() + kBox))(w, o, end, 0xC980001, &lg.l, 0.0f, 0.0f);
+    ((BoxFn)(Base() + kBox))(w, o, end, g_boxMask, &lg.l, 0.0f, 0.0f);
     if (cand) *cand = lg.l.count;
-    ((RayFn)(Base() + kRay))(o, dir, maxd, -1, 4, &hit, &lg.l);
+    ((RayFn)(Base() + kRay))(o, dir, maxd, g_rayFlags, g_rayMask, &hit, &lg.l);
     float dd; uintptr_t ent; memcpy(&dd, hit.b, 4); memcpy(&ent, hit.b + 8, 8);
     if (entOut) *entOut = ent; if (nrm) memcpy(nrm, hit.b + 0x28, 12);
     if (!ent || !(dd < maxd + 1e-3f)) return false;
     *dist = dd; return true;
 }
+int g_groundFlags = 3;      // bits: a=1, b=2, c=4 of the game's own call (true, true, false); `ground ... flags=N`
 bool GroundQuery(float x, float y, float zfrom, float maxd, float* z) {
     Hit hit; ((HitInitFn)(Base() + kHitInit))(&hit); float pos[3] = {x, y, zfrom}, out[3] = {0, 0, 0};
-    if (!((GroundFn)(Base() + kGround))(pos, out, &hit, true, true, false, maxd)) return false;
+    if (!((GroundFn)(Base() + kGround))(pos, out, &hit, (g_groundFlags & 1) != 0, (g_groundFlags & 2) != 0, (g_groundFlags & 4) != 0, maxd)) return false;
     *z = out[2]; return true;
 }
 struct RealWorld {
     bool ground(float x, float y, float zfrom, float maxd, float* z) { return GroundQuery(x, y, zfrom, maxd, z); }
-    bool ray(const float o[3], const float d[3], float maxd, float* dist) { return RayQuery(o, d, maxd, dist, nullptr, nullptr, nullptr); }
+    bool ray(const float o[3], const float d[3], float maxd, float* dist, float* nz = nullptr) { float n[3]; bool h = RayQuery(o, d, maxd, dist, n, nullptr, nullptr); if (h && nz) *nz = n[2]; return h; }
 };
 struct ScanJob { std::string id; int cx0 = 0, cy0 = 0, nx = 0, ny = 0; float ztop = 250, zbot = -60; int at = 0; std::vector<unsigned char> out; unsigned withGround = 0; DWORD t0 = 0; };
 std::deque<ScanJob> g_jobs;      // (a deque: the running job is referenced while the command thread adds more)
 
 std::string DoRay(const float* o, const float* d, float maxd, bool raw) {
-    void* w = World(); char m[512];
     float len = std::sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]); if (len < 1e-6f || maxd <= 0) return "ray bad";
-    float dir[3] = {d[0] / len, d[1] / len, d[2] / len}, end[3] = {o[0] + dir[0] * maxd, o[1] + dir[1] * maxd, o[2] + dir[2] * maxd};
-    ListGuard lg; Hit hit; ((HitInitFn)(Base() + kHitInit))(&hit);
-    ((BoxFn)(Base() + kBox))(w, o, end, 0xC980001, &lg.l, 0.0f, 0.0f);
-    int cand = lg.l.count;
-    ((RayFn)(Base() + kRay))(o, dir, maxd, -1, 4, &hit, &lg.l);
-    float dist; uintptr_t ent; memcpy(&dist, hit.b, 4); memcpy(&ent, hit.b + 8, 8);
-    if (!ent || !(dist < maxd + 1e-3f)) { snprintf(m, sizeof m, "ray miss cand=%d", cand); return m; }
-    char tn[40]; float nrm[3]; memcpy(nrm, hit.b + 0x28, 12);      // (the surface normal sits at +0x28: a floor reads (0.0, 0.0, 1.0) up to its slope)
-    int k = snprintf(m, sizeof m, "ray hit dist=%.4f at=%.4f,%.4f,%.4f n=%.3f,%.3f,%.3f type=%s ent=%#llx cand=%d", dist, o[0] + dir[0] * dist, o[1] + dir[1] * dist, o[2] + dir[2] * dist, nrm[0], nrm[1], nrm[2], TypeName(ent, tn, sizeof tn), (unsigned long long)ent, cand);
-    if (raw) { k += snprintf(m + k, sizeof m - k, " raw="); for (int i = 0; i < 28 && k < (int)sizeof m - 12; i++) { unsigned v; memcpy(&v, hit.b + 4 * i, 4); k += snprintf(m + k, sizeof m - k, "%s%08x", i ? "," : "", v); } }
-    return m;
+    float dir[3] = {d[0] / len, d[1] / len, d[2] / len}, dist, nrm[3]; uintptr_t ent = 0; int cand = 0; char m[512], tn[40];
+    if (!RayQuery(o, dir, maxd, &dist, nrm, &ent, &cand)) { snprintf(m, sizeof m, "ray miss cand=%d", cand); return m; }
+    snprintf(m, sizeof m, "ray hit dist=%.4f at=%.4f,%.4f,%.4f n=%.3f,%.3f,%.3f type=%s ent=%#llx cand=%d", dist, o[0] + dir[0] * dist, o[1] + dir[1] * dist, o[2] + dir[2] * dist, nrm[0], nrm[1], nrm[2], TypeName(ent, tn, sizeof tn), (unsigned long long)ent, cand);
+    (void)raw; return m;      // (the raw hit struct dump went when the layout was settled: distance +0, entity +8, normal +0x28)
 }
 
 std::string DoGround(float x, float y, float zfrom, float maxd) {
@@ -113,11 +107,13 @@ std::string DoGround(float x, float y, float zfrom, float maxd) {
 std::string Run(const std::string& line) {
     float f[7]; int n;
     if (!strncmp(line.c_str(), "ray ", 4)) {
+        const char* t; if ((t = strstr(line.c_str(), "mask="))) g_rayMask = (int)strtol(t + 5, nullptr, 0); if ((t = strstr(line.c_str(), "box="))) g_boxMask = (int)strtol(t + 4, nullptr, 0); if ((t = strstr(line.c_str(), "flags="))) g_rayFlags = (int)strtol(t + 6, nullptr, 0);
         n = sscanf(line.c_str(), "ray %f %f %f %f %f %f %f", &f[0], &f[1], &f[2], &f[3], &f[4], &f[5], &f[6]); if (n < 6) return "ray bad";
         return DoRay(f, f + 3, n >= 7 ? f[6] : 100.0f, line.find(" raw") != std::string::npos);
     }
     if (!strncmp(line.c_str(), "ground ", 7)) {
         f[2] = 400; f[3] = 800; n = sscanf(line.c_str(), "ground %f %f %f %f", &f[0], &f[1], &f[2], &f[3]); if (n < 2) return "ground bad";
+        const char* t; if ((t = strstr(line.c_str(), "flags="))) g_groundFlags = (int)strtol(t + 6, nullptr, 0);
         return DoGround(f[0], f[1], f[2], f[3]);
     }
     if (line == "where") {      // the player's feet (entity +0x24) and the camera (position and angles), as the teleport writes them
