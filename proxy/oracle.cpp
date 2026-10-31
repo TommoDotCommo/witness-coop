@@ -7,6 +7,7 @@
 //   exe+0x2E7FA0  Reserve(&data, &cap, n, elemSize), exe+0x2E7F90  Free(&data)   (the game's array: int count, int cap, T* data)
 // Commands (witness_cmd.txt, lines; or `oracle` = run the lines of witness_oracle_in.txt):
 //   ray x y z dx dy dz [maxdist] [raw]    -> "ray hit dist=.. at=x,y,z ent=0x.. type=0x.." or "ray miss"
+//   where                                 -> "where feet=x,y,z cam=x,y,z yaw=.. pitch=.."
 //   ground x y [zfrom] [maxdist]          -> "ground z=.." or "ground none"   (zfrom: where the ray starts, default 400; maxdist default 800)
 // Results: witness_oracle_out.txt, replaced whole after each batch, first line "# seq N n=COUNT" (a tool waits for a new seq).
 #define WIN32_LEAN_AND_MEAN
@@ -30,6 +31,11 @@ typedef bool(__fastcall* GroundFn)(const float*, float*, Hit*, bool, bool, bool,
 typedef void(__fastcall* BoxFn)(void*, const float*, const float*, int, List*, float, float);
 typedef void(__fastcall* RayFn)(const float*, const float*, float, int, int, Hit*, List*);
 typedef Hit*(__fastcall* HitInitFn)(Hit*);
+const char* TypeName(uintptr_t ent, char* buf, size_t n) {      // the entity's type descriptor holds a pointer to its name at +8 ("Inanimate", "Collision_Volume", "Machine_Panel", ...)
+    buf[0] = 0; if (!ent || IsBadReadPtr((void*)(ent + 8), 8)) return buf; uintptr_t ti = *(uintptr_t*)(ent + 8); if (IsBadReadPtr((void*)(ti + 8), 8)) return buf;
+    const char* nm = *(const char**)(ti + 8); if (!nm || IsBadReadPtr(nm, 2)) return buf;
+    size_t i = 0; for (; i + 1 < n && nm[i] >= 32 && nm[i] < 127 && !IsBadReadPtr(nm + i, 1); i++) buf[i] = nm[i]; buf[i] = 0; return buf;
+}
 typedef void(__fastcall* ReserveFn)(void*, void*, int, int);
 typedef void(__fastcall* FreeFn)(void*);
 
@@ -62,8 +68,8 @@ std::string DoRay(const float* o, const float* d, float maxd, bool raw) {
     ((RayFn)(Base() + kRay))(o, dir, maxd, -1, 4, &hit, &lg.l);
     float dist; uintptr_t ent; memcpy(&dist, hit.b, 4); memcpy(&ent, hit.b + 8, 8);
     if (!ent || !(dist < maxd + 1e-3f)) { snprintf(m, sizeof m, "ray miss cand=%d", cand); return m; }
-    uintptr_t ti = !IsBadReadPtr((void*)(ent + 8), 8) ? *(uintptr_t*)(ent + 8) : 0;
-    int k = snprintf(m, sizeof m, "ray hit dist=%.4f at=%.4f,%.4f,%.4f ent=%#llx type=%#llx cand=%d", dist, o[0] + dir[0] * dist, o[1] + dir[1] * dist, o[2] + dir[2] * dist, (unsigned long long)ent, (unsigned long long)(ti ? ti - Base() : 0), cand);
+    char tn[40]; float nrm[3]; memcpy(nrm, hit.b + 0x28, 12);      // (the surface normal sits at +0x28: a floor reads (0.0, 0.0, 1.0) up to its slope)
+    int k = snprintf(m, sizeof m, "ray hit dist=%.4f at=%.4f,%.4f,%.4f n=%.3f,%.3f,%.3f type=%s ent=%#llx cand=%d", dist, o[0] + dir[0] * dist, o[1] + dir[1] * dist, o[2] + dir[2] * dist, nrm[0], nrm[1], nrm[2], TypeName(ent, tn, sizeof tn), (unsigned long long)ent, cand);
     if (raw) { k += snprintf(m + k, sizeof m - k, " raw="); for (int i = 0; i < 28 && k < (int)sizeof m - 12; i++) { unsigned v; memcpy(&v, hit.b + 4 * i, 4); k += snprintf(m + k, sizeof m - k, "%s%08x", i ? "," : "", v); } }
     return m;
 }
@@ -72,9 +78,9 @@ std::string DoGround(float x, float y, float zfrom, float maxd) {
     ListGuard unused; (void)unused; Hit hit; ((HitInitFn)(Base() + kHitInit))(&hit);
     float pos[3] = {x, y, zfrom}, out[3] = {0, 0, 0}; char m[200];
     bool ok = ((GroundFn)(Base() + kGround))(pos, out, &hit, true, true, false, maxd);
-    uintptr_t ent; memcpy(&ent, hit.b + 8, 8); uintptr_t ti = ent && !IsBadReadPtr((void*)(ent + 8), 8) ? *(uintptr_t*)(ent + 8) : 0;
+    uintptr_t ent; memcpy(&ent, hit.b + 8, 8); char tn[40];
     if (!ok) return "ground none";
-    snprintf(m, sizeof m, "ground z=%.4f type=%#llx", out[2], (unsigned long long)(ti ? ti - Base() : 0)); return m;
+    snprintf(m, sizeof m, "ground z=%.4f type=%s", out[2], TypeName(ent, tn, sizeof tn)); return m;
 }
 
 std::string Run(const std::string& line) {
@@ -86,6 +92,12 @@ std::string Run(const std::string& line) {
     if (!strncmp(line.c_str(), "ground ", 7)) {
         f[2] = 400; f[3] = 800; n = sscanf(line.c_str(), "ground %f %f %f %f", &f[0], &f[1], &f[2], &f[3]); if (n < 2) return "ground bad";
         return DoGround(f[0], f[1], f[2], f[3]);
+    }
+    if (line == "where") {      // the player's feet (entity +0x24) and the camera (position and angles), as the teleport writes them
+        uintptr_t pl = GameEntity(0x1E465); float* cam = (float*)(Base() + 0x6304C0); float* ang = (float*)(Base() + 0x6303EC); char m[300];
+        if (!pl || IsBadReadPtr((void*)(pl + 0x24), 12) || IsBadReadPtr(cam, 12) || IsBadReadPtr(ang, 8)) return "where none";
+        float* ft = (float*)(pl + 0x24); snprintf(m, sizeof m, "where feet=%.4f,%.4f,%.4f cam=%.4f,%.4f,%.4f yaw=%.4f pitch=%.4f", ft[0], ft[1], ft[2], cam[0], cam[1], cam[2], ang[0], ang[1]);
+        return m;
     }
     return "bad";
 }

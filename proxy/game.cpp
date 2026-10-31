@@ -144,7 +144,7 @@ static DWORD WINAPI CmdThread(LPVOID) {
             else if (!strncmp(line, "voicestat", 9)) VoiceStat();
             else if (!strncmp(line, "racestat", 8)) RaceStat();
             else if (!strncmp(line, "voicechannel ", 13)) VoiceSetChannel(line + 13);
-            else if (!strncmp(line, "ray ", 4) || !strncmp(line, "ground ", 7) || !strncmp(line, "oracle", 6)) OracleCommand(line);
+            else if (!strncmp(line, "ray ", 4) || !strncmp(line, "ground ", 7) || !strncmp(line, "oracle", 6) || !strncmp(line, "where", 5)) OracleCommand(line);
             else if (!strncmp(line, "mapgen ", 7)) MapGenCommand(line + 7);
             else if (!strncmp(line, "mapstat", 7)) DevMenuCommand("mapstat", 0);
             else if (!strncmp(line, "notice ", 7)) DevMenuNotice(line + 7);      // a message on the screen (tools/win/wrecord.py: what to do next)
