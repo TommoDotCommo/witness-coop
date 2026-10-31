@@ -14,6 +14,9 @@
 #include <cmath>
 #include <cstring>
 #include <algorithm>
+#include <array>
+#include <map>
+#include <vector>
 
 void Log(const char* msg);   // from ansel_proxy.cpp
 extern HWND g_gameWnd;       // hooks.cpp
@@ -25,6 +28,7 @@ static const uintptr_t kPauseDimA = 0x630070, kPauseDimB = 0x62FF3C;      // two
 static const uintptr_t kPausedOld = 0x62DAC4;      // the first candidate, WRONG: it flips with F6 / F7 and with entering a puzzle; only kept for the mutant pause_wrong_flag=1
 #include "gamecam.h"
 #include "thirdperson.h"
+#include "frame/mirror.h"
 #include "coop.h"
 #include "game.h"
 #include "state.h"
@@ -173,7 +177,27 @@ static bool InitResources(IDXGISwapChain* sc) {
 
 static volatile LONG g_lineCaptureRequested = 0;
 
+// The second line of a symmetry panel. The game keeps one traced path per panel and a table that names every node's mirror node (+0x438); it draws the reflection of the one path
+// (see proxy/frame/mirror.h). So the other game gets one path and makes the reflection here, from this game's own copy of the panel's grid (+0x3b4 nodes, +0x3c0 grid places, +0x3c8 flags).
+struct PanelMirror { uintptr_t entity = 0; bool ok = false, twoColour = false; int n = 0; std::vector<float> uv; wmirror::Flip flip; wmirror::Fit fit; };      // fit: the panel's surface, remembered from the last line that showed it exactly
+static std::map<unsigned, PanelMirror> g_mirror;
+static unsigned g_mirroredLines = 0; static volatile LONG g_mirrorOff = 0;
+void OverlaySetLineMirror(bool on) { InterlockedExchange(&g_mirrorOff, on ? 0 : 1); }      // test command linemirror 0|1: the same lines with and without their reflection, in one game
+static PanelMirror* MirrorOf(unsigned panel, uintptr_t e) {
+    PanelMirror& m = g_mirror[panel];
+    if (m.entity == e) return m.ok ? &m : nullptr;
+    m.entity = e; m.ok = false; m.uv.clear();      // (the world was reloaded: the surface fit stays, it is in the panel's own frame)
+    if (!Readable((void*)(e + 0x3b4), 4) || !Readable((void*)(e + 0x438), 8) || !Readable((void*)(e + 0x3c0), 8) || !Readable((void*)(e + 0x3c8), 8)) return nullptr;
+    unsigned n = *(unsigned*)(e + 0x3b4); uintptr_t mp = *(uintptr_t*)(e + 0x438), up = *(uintptr_t*)(e + 0x3c0), fp = *(uintptr_t*)(e + 0x3c8);
+    if (n < 2 || n > 2000 || mp < 0x10000 || up < 0x10000 || !Readable((void*)mp, n * 4) || !Readable((void*)up, n * 8) || !Readable((void*)fp, n * 4)) return nullptr;      // no table: not a symmetry panel
+    std::vector<int> mir(n); memcpy(mir.data(), (void*)mp, n * 4); m.uv.resize(n * 2); memcpy(m.uv.data(), (void*)up, n * 8);
+    m.n = (int)n; m.flip = wmirror::DetectFlip((int)n, m.uv.data(), mir.data());
+    m.twoColour = false; const unsigned* fl = (const unsigned*)fp; for (unsigned k = 0; k < n; ++k) if (fl[k] & 0x300) m.twoColour = true;      // coloured dots (0x100 / 0x200): the two lines have two colours
+    m.ok = m.flip.ok; return m.ok ? &m : nullptr;
+}
+
 // The other players' lines: each is a list of points in bounded local units from its panel's position; drawn as 1.2 cm ribbons in the panel surface, centered on the native trace without endpoint extensions.
+// On a symmetry panel the reflection is drawn too (a second set of ribbons, in the second colour when the panel has two).
 static unsigned BuildLineVerts(const float cam[3], std::vector<LineVert>& out) {
     FILE* capture = nullptr;
     if (InterlockedExchange(&g_lineCaptureRequested, 0)) {
@@ -181,37 +205,59 @@ static unsigned BuildLineVerts(const float cam[3], std::vector<LineVert>& out) {
         wchar_t* slash = wcsrchr(path, L'\\'); if (slash) *(slash + 1) = 0;
         wcscat_s(path, L"witness_line_geometry.jsonl"); capture = _wfopen(path, L"w");
     }
-    unsigned lines = 0;
+    unsigned lines = 0; g_mirroredLines = 0;
     for (const auto& r : CoopGetRemoteLines()) {
         uintptr_t e = r.panel < 0x40000 ? GameEntity(r.panel) : 0; if (!e || !Readable((void*)(e + 0x24), 12)) continue;
         const float* pp = (const float*)(e + 0x24); float col[3]; PlayerColor(r.from, col); bool any = false;
         if (!Readable((void*)(e + 0x34), 16)) continue; const float* qp = (const float*)(e + 0x34); wframe::Q pq = {qp[0], qp[1], qp[2], qp[3]};      // this game's panel, where it is now and how it is turned (a door may have swung it): the line is in the panel's frame
-        for (size_t i = 0; i + 1 < r.pts.size(); ++i) {
-            float a[3], b[3], la[3], lb[3];
-            for (int k = 0; k < 3; ++k) { la[k] = r.pts[i].d[k] * witness::LineUnit(r.fine); lb[k] = r.pts[i + 1].d[k] * witness::LineUnit(r.fine); }
-            wframe::ToWorld(pp, pq, la, a); wframe::ToWorld(pp, pq, lb, b);
-            float d[3] = {b[0] - a[0], b[1] - a[1], b[2] - a[2]}, len = sqrtf(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
-            if (len < 1e-5f || len > 3.0f) continue;
-            float q[4][3];
-            if (!wframe::Ribbon(a, b, pq, 0.006f, q)) continue;
-            // Capture the exact geometry this render submits, with its source units
-            // and current panel frame; QA compares it with native process records.
-            if (capture) {
-                fprintf(capture, "{\"panel\":%u,\"from\":%u,\"seq\":%u,\"segment\":%zu,\"fine\":%s,\"pose\":[%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g],\"ends\":[", r.panel, r.from, r.seq, i, r.fine ? "true" : "false", pp[0],pp[1],pp[2],qp[0],qp[1],qp[2],qp[3]);
-                for (int j=0;j<2;++j) { const float* p=j?b:a; fprintf(capture,"%s[%.9g,%.9g,%.9g]",j?",":"",p[0],p[1],p[2]); }
-                fprintf(capture, "],\"quad\":[");
-                for (int j=0;j<4;++j) fprintf(capture,"%s[%.9g,%.9g,%.9g]",j?",":"",q[j][0],q[j][1],q[j][2]);
-                fprintf(capture,"]}\n");
+        std::vector<std::array<float, 3>> local(r.pts.size());      // the points in the panel's frame, in metres
+        for (size_t i = 0; i < r.pts.size(); ++i) for (int k = 0; k < 3; ++k) local[i][k] = r.pts[i].d[k] * witness::LineUnit(r.fine);
+        auto emit = [&](const std::vector<std::array<float, 3>>& pts, const float* color, bool record) {
+            bool drew = false;
+            for (size_t i = 0; i + 1 < pts.size(); ++i) {
+                float a[3], b[3];
+                wframe::ToWorld(pp, pq, pts[i].data(), a); wframe::ToWorld(pp, pq, pts[i + 1].data(), b);
+                float d[3] = {b[0] - a[0], b[1] - a[1], b[2] - a[2]}, len = sqrtf(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+                if (len < 1e-5f || len > 3.0f) continue;
+                float q[4][3];
+                if (!wframe::Ribbon(a, b, pq, 0.006f, q)) continue;
+                // Capture the exact geometry this render submits, with its source units
+                // and current panel frame; QA compares it with native process records. (The reflection has no native record: it is not captured.)
+                if (capture && record) {
+                    fprintf(capture, "{\"panel\":%u,\"from\":%u,\"seq\":%u,\"segment\":%zu,\"fine\":%s,\"pose\":[%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g],\"ends\":[", r.panel, r.from, r.seq, i, r.fine ? "true" : "false", pp[0],pp[1],pp[2],qp[0],qp[1],qp[2],qp[3]);
+                    for (int j=0;j<2;++j) { const float* p=j?b:a; fprintf(capture,"%s[%.9g,%.9g,%.9g]",j?",":"",p[0],p[1],p[2]); }
+                    fprintf(capture, "],\"quad\":[");
+                    for (int j=0;j<4;++j) fprintf(capture,"%s[%.9g,%.9g,%.9g]",j?",":"",q[j][0],q[j][1],q[j][2]);
+                    fprintf(capture,"]}\n");
+                }
+                static const int idx[6] = {0, 1, 2, 1, 3, 2};
+                for (int k : idx) { LineVert lv; memcpy(lv.p, q[k], 12); lv.c[0] = color[0]; lv.c[1] = color[1]; lv.c[2] = color[2]; lv.c[3] = 1; out.push_back(lv); }
+                drew = true;
             }
-            static const int idx[6] = {0, 1, 2, 1, 3, 2};
-            for (int k : idx) { LineVert lv; memcpy(lv.p, q[k], 12); lv.c[0] = col[0]; lv.c[1] = col[1]; lv.c[2] = col[2]; lv.c[3] = 1; out.push_back(lv); }
-            any = true;
+            return drew;
+        };
+        PanelMirror* pm = GetCfg().noLineMirror || g_mirrorOff ? nullptr : MirrorOf(r.panel, e);
+        float colA[3] = {col[0], col[1], col[2]}, colB[3] = {col[0], col[1], col[2]};
+        if (pm && pm->twoColour) { static const float cyan[3] = {0.25f, 0.85f, 1.0f}, yellow[3] = {1.0f, 0.82f, 0.15f}; memcpy(colA, cyan, 12); memcpy(colB, yellow, 12); }
+        any = emit(local, colA, true);
+        if (pm && any && local.size() >= 2) {
+            std::vector<wmirror::Sample> samples;      // the nodes of the line (the tip of a line still being drawn is between nodes: not a sample)
+            for (size_t i = 0; i < r.pts.size(); ++i) {
+                if (i + 1 == r.pts.size() && !r.final) break; unsigned nd = r.pts[i].node; if (nd >= (unsigned)pm->n) continue;
+                wmirror::Sample sm; sm.u = pm->uv[nd * 2]; sm.v = pm->uv[nd * 2 + 1]; memcpy(sm.p, local[i].data(), 12); samples.push_back(sm);
+            }
+            wmirror::Fit f = wmirror::FitSamples(samples, pm->fit.ok ? &pm->fit : nullptr);
+            if (f.exact) { float worst = 0; for (const auto& sm : samples) { float t[3]; wmirror::At(f, sm.u, sm.v, t); for (int k = 0; k < 3; ++k) worst = std::max(worst, fabsf(t[k] - sm.p[k])); } if (worst < 0.006f) pm->fit = f; }
+            std::vector<std::array<float, 3>> twin(local.size()); bool good = f.ok;
+            for (size_t i = 0; i < local.size() && good; ++i) good = wmirror::Reflect(f, pm->flip, local[i].data(), twin[i].data());
+            if (good && emit(twin, colB, false)) ++g_mirroredLines;
         }
         if (any) ++lines;
     }
     if (capture) fclose(capture);
     return lines;
 }
+unsigned OverlayMirroredLines() { return g_mirroredLines; }
 
 void OverlayLineDump() {      // test command linedump: every line another player has on a panel, as this game holds it, and where that panel is now
     InterlockedExchange(&g_lineCaptureRequested, 1); // the next rendered frame also writes a geometry bridge dump

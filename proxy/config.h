@@ -89,6 +89,7 @@ struct Cfg {
     bool noNameTags = false;       // twin: no name tags over the other players
     bool oldProjection = false;    // twin: world drawing assumes a 60 degree vertical field of view instead of the game's own
     bool noLineDraw = false;       // twin: remote lines are received but not drawn
+    bool noLineMirror = false;     // twin: on a symmetry panel only the one traced path is drawn, not its reflection (the owner's report)
     bool noLineDepth = false;      // twin: remote lines are drawn without the depth test (they show through walls)
     bool noTeleportHold = false;   // twin: the menu teleport does not hold the player (the old 12-frame write): far panels end at the spawn point
     bool noTargetDispatch = false; // twin: a remote solve does not run the game's target dispatcher for other target types

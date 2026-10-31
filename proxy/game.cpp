@@ -123,7 +123,7 @@ static DWORD WINAPI CmdThread(LPVOID) {
         char line[8192];      // (a tracer command lists every edge of a line)
         while (fgets(line, sizeof line, f)) {
             unsigned id; float amt = 1.0f; int wheelDelta = 0;
-            char a[16], b[16], a2[64], nm[64]; int dx, dy;
+            char a[16], b[16], a2[64], nm[64]; int dx, dy, iv;
             if (sscanf(line, "door %x %f", &id, &amt) >= 1) GameEnqueueDoorOpen(id, amt);
             else if (sscanf(line, "cableoff %x", &id) == 1) GameEnqueueCableOff(id);
             else if (sscanf(line, "partnershot %15s", a) == 1) VideoSavePartnerShot(a);
@@ -191,6 +191,7 @@ static DWORD WINAPI CmdThread(LPVOID) {
             else if (sscanf(line, "pov %15s", a) == 1) { if (!strcmp(a, "off")) VideoClear(); else if (!strcmp(a, "next")) { std::vector<unsigned> ids; for (const auto& r : CoopGetRemotes()) if (r.valid) ids.push_back(r.id); VideoNext(ids); } else VideoWatch((unsigned)atoi(a)); }
             else if (!strncmp(line, "linestat", 8)) ModelGpuLogLineStats();
             else if (!strncmp(line, "linedump", 8)) OverlayLineDump();
+            else if (sscanf(line, "linemirror %d", &iv) == 1) OverlaySetLineMirror(iv != 0);
             else if (!strncmp(line, "cursorstat", 10)) { unsigned c, p; HooksCursorStat(&c, &p); char m[120]; snprintf(m, sizeof m, "cursorstat: unfocused_clip %u unfocused_setpos %u", c, p); Log(m); }
             else if (!strncmp(line, "modelstat", 9)) {
                 if (GetCfg().noModelStatQueue) ModelGpuLogStats(); // mutant: old command-thread read

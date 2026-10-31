@@ -37,3 +37,15 @@ test-gamecam: $(BUILD)/gamecam-test $(BUILD)/gamecam-mutant-OLD $(BUILD)/gamecam
 	@for m in OLD SWAP; do if $(BUILD)/gamecam-mutant-$$m >/dev/null 2>&1; then echo "MUTANT $$m SURVIVED"; exit 1; else echo "mutant $$m killed"; fi; done
 test: test-gamecam
 .PHONY: test-gamecam
+
+$(BUILD)/mirror-test: mirror_test.cpp mirror.h
+	mkdir -p $(BUILD)
+	g++ -std=c++17 -O2 -Wall -Wextra -o $@ mirror_test.cpp
+$(BUILD)/mirror-mutant-%: mirror_test.cpp mirror.h
+	mkdir -p $(BUILD)
+	g++ -std=c++17 -O2 -DWM_MUT_$* -o $@ mirror_test.cpp
+test-mirror: $(BUILD)/mirror-test $(BUILD)/mirror-mutant-NO_FLIP $(BUILD)/mirror-mutant-WRONG_AXIS $(BUILD)/mirror-mutant-FLAT
+	$(BUILD)/mirror-test
+	@ulimit -c 0; for m in NO_FLIP WRONG_AXIS FLAT; do if $(BUILD)/mirror-mutant-$$m >/dev/null 2>&1; then echo "MUTANT $$m SURVIVED"; exit 1; else echo "mutant $$m killed"; fi; done
+test: test-mirror
+.PHONY: test-mirror

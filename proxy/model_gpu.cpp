@@ -719,7 +719,7 @@ bool ModelGpuDrawLines(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Ca
     return true;
 }
 LineDrawStats ModelGpuLineStats() { return g_lineStats; }
-void ModelGpuLogLineStats() { char m[160]; snprintf(m, sizeof m, "linestat: lines %u verts %u visible_px %u frames %u", g_lineStats.lines, g_lineStats.verts, g_lineStats.visiblePixels, g_lineStats.frames); Log(m); }
+void ModelGpuLogLineStats() { char m[200]; snprintf(m, sizeof m, "linestat: lines %u verts %u visible_px %u frames %u mirrored %u", g_lineStats.lines, g_lineStats.verts, g_lineStats.visiblePixels, g_lineStats.frames, OverlayMirroredLines()); Log(m); }
 
 void ModelGpuDumpPlayers() {
     wchar_t path[MAX_PATH]; GetModuleFileNameW(g_selfModule(), path, MAX_PATH);
