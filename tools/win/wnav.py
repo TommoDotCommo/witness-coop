@@ -63,6 +63,7 @@ SEA = -50.0                    # (no sea level: the sea has no depth, and the be
 HW = 1.5                       # A* heuristic weight: a little longer ways, many fewer cells searched (a plan of 100 m took 5 s at 1.0)
 SOFT = 25.0                    # cost factor of a cell whose band is filled at a step's height (foliage, or a wall: see walkable); a wall a cell thick costs a 12 m detour
 WALKED, BUMPED = 1, 2          # cell flags
+ORACLE = 32                    # a cell built from the game's own collision (tools/oracle_map.py): authoritative, see steps and integrate
 WINDOW = 64 * BIN              # a cell describes 16 m above its floor (its 64-bit mask): a level higher than that is not in the cell
 STAIR = UP + BIN               # a rise up to this is a stair step when the step before or after it climbs too (surfaces are bin starts: up to 0.25 m low)
 POCKET = 5.0                   # after backing out of a pocket, the cells this near it (m) cost as much as bumped ones for the rest of the walk
@@ -103,6 +104,7 @@ class Map:
         for c, f in fresh.items():
             old = self.cells.get(c)
             if old is None: self.cells[c] = f; continue
+            if old[2] & ORACLE: continue      # the engine's own answer is not changed by what a depth picture seems to show (see steps)
             if abs(f[0] - old[0]) < 2 * BIN and not (f[1] & BAND_MASK): self.cells[c] = [f[0], f[1], old[2]]; continue
             if f[0] - old[0] > WINDOW - BAND[1]: self.cells[c] = [f[0], f[1], old[2]]; continue      # above all the cell can hold (junk far below, see steps)
             rec = [old[0], old[1], old[2]]
@@ -146,7 +148,9 @@ class Map:
             for cx in range(int(math.floor((x - r) / CELL)), int(math.floor((x + r) / CELL)) + 1):
                 for cy in range(int(math.floor((y - r) / CELL)), int(math.floor((y + r) / CELL)) + 1):
                     rec = self.cells.get((cx, cy))
-                    if rec and rec[2] & BUMPED and math.dist(centre((cx, cy)), (x, y)) <= r:
+                    if rec and rec[2] & ORACLE and rec[0] < SEA and not rec[2] & WALKED and math.dist(centre((cx, cy)), (x, y)) <= r:
+                        del self.cells[(cx, cy)]; n += 1      # the engine said "no ground" while the door was shut: the next look decides
+                    elif rec and rec[2] & BUMPED and math.dist(centre((cx, cy)), (x, y)) <= r:
                         rec[2] &= ~BUMPED; n += 1
                         if rec[0] < -1e3: del self.cells[(cx, cy)]      # (known only from the bump)
         return n
@@ -179,6 +183,8 @@ class Map:
         while the ground beside them stays, both are kept), else the soft floor (see walkable); [] when it cannot; None: never seen."""
         r = self.cells.get(c)
         if r is None: return None
+        if r[2] & ORACLE and not r[2] & WALKED:      # built from collision queries: its surfaces are all of its ground, no soft cell, never "not seen yet"; a cell with no surface cannot be entered
+            return [(z, 1.0) for z in (self.surfaces(c) or []) if z is not None and z > SEA and -DOWN <= z - fu <= up]
         if self.covered and r[0] > fu + BAND[1] and not r[2] & BUMPED: return None      # under cover (a tunnel, a roof) all that is known there may be above it (the ground over the tunnel, seen from the air): down here it is not seen yet
         if r[0] > -1e3 and fu - r[0] > WINDOW - BAND[1]: return None      # this level is above all the cell can hold (its floor was seen 16 m and more below:
                                                                           # junk points under the town filled a third of its cells): not seen here yet
@@ -280,6 +286,8 @@ class Map:
         for cx, cy, z, m, fl in REC.iter_unpack(data[:len(data) - len(data) % REC.size]):
             c = (cx, cy); old = self.cells.get(c); n += 1
             if old is None: self.cells[c] = [z, m, fl]; continue
+            if fl & ORACLE or old[2] & ORACLE:      # the engine's answer wins over what was seen (flags kept)
+                self.cells[c] = [z, m, fl | (old[2] & WALKED)] if fl & ORACLE else old; continue
             rec = [old[0], old[1], old[2] | fl]
             if z > -1e3 and old[0] > -1e3 and abs(z - old[0]) > WINDOW - BAND[1]:      # two levels too far apart for one cell: the higher one is kept (see integrate)
                 self.cells[c] = [z, m, old[2] | fl] if z > old[0] else rec; continue

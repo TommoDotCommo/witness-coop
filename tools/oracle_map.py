@@ -28,7 +28,7 @@ def ground_near(o, x, y, tries=((0, 0), (4, 0), (-4, 0), (0, 4), (0, -4), (8, 8)
     return None
 
 
-REC = struct.Struct('<hhfQB'); WATER = 16; NO_GROUND = -100.0
+REC = struct.Struct('<hhfQB'); WATER = 16; ORACLE = 32; NO_GROUND = -100.0      # (ORACLE: tools/win/wnav.py)
 
 
 def finish(data, dilate=1):
@@ -42,7 +42,7 @@ def finish(data, dilate=1):
             for dy in range(-dilate, dilate + 1):
                 r = cells.get((cx + dx, cy + dy))
                 if r is not None: r[0], r[1] = NO_GROUND, 1
-    return b''.join(REC.pack(cx, cy, z, m, fl & ~WATER) for (cx, cy), (z, m, fl) in cells.items()), len(wet)
+    return b''.join(REC.pack(cx, cy, z, m, (fl & ~WATER) | ORACLE) for (cx, cy), (z, m, fl) in cells.items()), len(wet)
 
 
 def build(rect, out, tile=50.0, wait=3.5, game_dir=None, log=print, resume=False):
