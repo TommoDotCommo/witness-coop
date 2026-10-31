@@ -72,4 +72,48 @@ door the player walked through while rays still hit it (an open door).
 
 - How the game keeps the player out of lakes (a polygon test, not a ray): only its effect is modelled.
 - Whether the first-person walk speed ramp matters for the map (it does not).
-- The walking benchmark with the oracle map has not been run (see `local/progress.md` of the session that built this; the island scan takes about 20 minutes).
+- Why the engine's answer is missing at some places a person stood on (see the benchmark below): the column's upper levels (the `kKeepLevels` cap keeps the
+  lowest four), collision that is not streamed in at 25 to 35 m from the held player, or the scan's own filters. Needs a live column probe at the cells listed below.
+
+## The walking benchmark on the oracle maps (2026-11-01)
+
+`tools/test_walk_bench.sh 1 <checkpoint-0850 save> --compare local/bench/before_after5a.jsonl` (15 legs from one save, one game, the recorded walks of the
+owner loaded as known-good cells), once per start map (`WALK_BENCH_MAP`). The baseline is the depth map: 6 walked, 7 teleported, 2 failed, 1587 s.
+
+| start map | walked | teleported | failed | seconds | note |
+|---|---|---|---|---|---|
+| depth map (baseline) | 6 | 7 | 2 | 1587 | |
+| `island2.bin` (v2 oracle) | 0 | 13 | 2 | 652 | every leg that walked before is now "no way on the map" after 1 s |
+| island2 + depth map (`--merge-maps`: the oracle wins where it has a cell) | 0 | 8 | 1 | 441 (9 legs) | same legs as island2; the game crashed in leg 9 (see below) |
+| `island1_oracle.bin` (v1 oracle) | 4 | 9 | 2 | 1727 | walks 0x28a79, 0x698, 0xb0, 0x1a54; loses 0x28998 and 0xb10 |
+| island2 with the depth map's cells where the oracle has no ground (`tools/oracle_merge.py`) | YIELD_WALKED | YIELD_TELE | YIELD_FAILED | YIELD_SECONDS | YIELD_NOTE |
+
+Result: **the oracle map does not help the walker as it stands.** It teleports sooner (so the seconds fall), but only because the planner gives up. No leg
+that failed or teleported on the depth map walked on an oracle map. The merge with `--merge-maps` changes nothing: `Map.load` lets an ORACLE cell win over any
+other, so the false refusals survive it. `tools/oracle_merge.py` is the merge that recovers them (`yield`: a depth cell replaces an oracle cell without ground).
+
+Where the oracle map is wrong, from `tools/oracle_recorded_eval.py` (every position of the owner's three recorded walks, 2798, looked up in the map; the
+recordings hold eye heights, the feet are 1.65 m lower): `island2.bin` has **no ground at 1740 of them (62 %)**, a surface within 0.6 m of the feet at 783;
+`island1_oracle.bin` has no ground at none and a level near the feet at 1991 (the rest: another level only, or no cell). By place (40 m blocks, centre x,y):
+
+| place | positions | what the v2 map says | notes |
+|---|---|---|---|
+| (0, 200), z -0.8 to 5.9 | 956 | no ground at 925 | the northern shore (the standing places of 0x34d4 and 0x21b3 are here): lake flag plus the 2-cell buffer, or the sea |
+| (-40, 0), z 8.5 to 11 | 230 | no ground at 228 | the standing place of 0x28998 and 0x28a79 (-33.5, 1.0), a 13 x 13 cell neighbourhood of ground-less cells with a few strips of ground |
+| (-200, 40), (0, -40), (-40, -40), z 8.5 to 12 | 414 | no ground at all of them | stationary positions at panel standing places, e.g. the starts of 0xb10 (-19.5, -24.4) and 0x28998 (-36.8, -33.8) |
+| (160, -80), z 8.9 | 112 | no cell | outside the scanned rectangle |
+
+Two further faults show in island1_oracle, which has the v1 rules: at (-36.8, -33.8) (the start of 0x28998, feet 11.7) both oracle maps and the depth map hold
+only a floor at -12 m, and at (-33.5, 1.0) the oracle holds 9.4 where the depth map also has 11.4 (the player stood at 11.2): the level the player stands on is missing
+from the column (the cap of four levels, or a surface that is not streamed in at that distance from the held player). So the suspects, in order: (1) the v2 body
+filter and the water flag drop whole neighbourhoods round the panels' standing places and along the shore (a Collision_Volume round a panel, or a ray starting
+inside a volume, would do it: every ray then hits at distance 0), (2) missing upper levels, (3) the 6 tiles that were not held (4,0; 3,1; 5,0; 3,0; 5,8; 6,0).
+None of this was probed live: it needs the oracle `ray` at (-33.52, 1.04) and (-19.47, -24.4), printing the hit types.
+
+Proposal (not merged): do not make an oracle map the default. Use it as a **veto-only layer**: keep the depth map as the base, and let the oracle refuse a cell only
+where it has a level that a body-height ray hits, never where it merely has no ground (shore, FAR tile, missing level); and fix the three causes above and
+re-run this benchmark before trusting it. `tools/oracle_recorded_eval.py` is the quick gate: a map that has no ground at more than a few percent of the
+recorded positions cannot be a default.
+
+The game crashed once during the merged-map run (leg 9, 0x3678, write access violation at the game's code +0x2d03ec); the walker was bumping at (-3.3, 185.6)
+before. Not seen in the other three runs; not investigated.
