@@ -295,7 +295,7 @@ std::wstring g_diagOut;                     // --diag-out <folder> (tests): writ
 HANDLE g_diagProc; std::wstring g_diagResult, g_diagScript;
 std::wstring LogsFolder() {
     std::string d = LoadCfg().Get("diag_dir");
-    if (d == "instance") return g_dir + L"\\logs";
+    if (d == "instance") return g_dir + L"\\witness-coop-logs";
     if (!d.empty()) return W(d);
     return diag::DefaultLogsDir();
 }

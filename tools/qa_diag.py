@@ -20,6 +20,7 @@ LDIR = os.path.join(ROOT, 'launcher', 'build')
 EVID = os.path.join(ROOT, 'local', 'qa', time.strftime('%Y%m%d-%H%M%S') + '-diag'); os.makedirs(EVID, exist_ok=True)
 WITNESS_RESOURCES = os.environ.get('WITNESS_RESOURCES', '')
 CFG = 'diag_dir=instance\ntest_crash=1\n'
+LOGS = 'witness-coop-logs'      # diag_dir=instance: beside the DLL, not in the game's own logs folder
 
 def send(d, lines):
     cmd = os.path.join(d, 'witness_cmd.txt'); t = time.time()
@@ -29,7 +30,7 @@ def send(d, lines):
     while os.path.exists(cmd) and time.time() - t < 8: time.sleep(0.05)
 
 def log(d): return open(os.path.join(d, 'witness_proxy.log'), errors='ignore').read()
-def files(d, suffix): return sorted(f for f in os.listdir(os.path.join(d, 'logs')) if f.endswith(suffix)) if os.path.isdir(os.path.join(d, 'logs')) else []
+def files(d, suffix): return sorted(f for f in os.listdir(os.path.join(d, LOGS)) if f.endswith(suffix)) if os.path.isdir(os.path.join(d, LOGS)) else []
 def session_log(d):
     """This run's session log (the game's, not the launcher's), as text."""
     fs = [f for f in files(d, '.log') if '_launcher_' not in f]
@@ -76,7 +77,7 @@ def scenario(label, cfg_a, cfg_b, bundle):
     def check(name, ok, detail=''):
         r[name] = bool(ok); print(('  PASS  ' if ok else '  FAIL  ') + name + ('' if ok else '   ' + str(detail)[:200]), flush=True)
     print('=== diag: %s' % label, flush=True)
-    for d in (DIR1, DIR2): subprocess.run(['rm', '-rf', os.path.join(d, 'logs')])
+    for d in (DIR1, DIR2): subprocess.run(['rm', '-rf', os.path.join(d, LOGS)])
     qa_sweep.restart(cfg_a=CFG + cfg_a, cfg_b=CFG + cfg_b)
     pa, pb = int(pid('A')), int(pid('B'))
     check('both games started with their own session log', len(files(DIR1, '.log')) == 1 and len(files(DIR2, '.log')) == 1, (files(DIR1, '.log'), files(DIR2, '.log')))
@@ -92,7 +93,7 @@ def scenario(label, cfg_a, cfg_b, bundle):
     check('B heard the marker', wait(lambda: 'MARK 1 (from player 1)' in log(DIR2), 15), log(DIR2)[-300:])
     check('A saved a flight recording of the marker', wait(lambda: files(DIR1, '.flight-1-mark.txt'), 10))
     check('B saved one of the same moment', wait(lambda: files(DIR2, '.flight-1-markp1.txt'), 10))
-    fa = open(os.path.join(DIR1, 'logs', files(DIR1, '.flight-1-mark.txt')[0]), errors='ignore').read() if files(DIR1, '.flight-1-mark.txt') else ''
+    fa = open(os.path.join(DIR1, LOGS, files(DIR1, '.flight-1-mark.txt')[0]), errors='ignore').read() if files(DIR1, '.flight-1-mark.txt') else ''
     srows = [l for l in fa.splitlines() if l.startswith('S ')]
     check('the recording has 10 samples a second with the other player and a round trip', len(srows) >= 15 and any(re.search(r'\| 2 \d+ \d+ [\d.]+ ', l) for l in srows) and any('| 2 -1 ' not in l for l in srows[-5:]), srows[-2:])
     check('the recording carries the log tail', '# log tail' in fa and 'applied as solved' in fa or 'solved -> event' in fa)
@@ -111,13 +112,13 @@ def scenario(label, cfg_a, cfg_b, bundle):
     time.sleep(1)
     sl = session_log(DIR2)
     check('B left a crash marker', len(files(DIR2, '.crash')) == 1, files(DIR2, '.crash'))
-    check('B left a minidump', any(os.path.getsize(os.path.join(DIR2, 'logs', f)) > 10000 for f in files(DIR2, '.dmp')), files(DIR2, '.dmp'))
+    check('B left a minidump', any(os.path.getsize(os.path.join(DIR2, LOGS, f)) > 10000 for f in files(DIR2, '.dmp')), files(DIR2, '.dmp'))
     m = re.search(r'crash: unhandled exception (0x[0-9a-f]+) at (\S+)\+0x([0-9a-f]+)', sl)
     check('the session log names the exception, module and offset', m and m.group(2) == 'AnselSDK64.dll', sl[-400:])
     check('the crashed session has no clean exit line', 'session end: clean exit' not in sl)
     if m and files(DIR2, '.dmp'):
         try:
-            dmp = minidump.Minidump(open(os.path.join(DIR2, 'logs', files(DIR2, '.dmp')[0]), 'rb').read())
+            dmp = minidump.Minidump(open(os.path.join(DIR2, LOGS, files(DIR2, '.dmp')[0]), 'rb').read())
             check('the dump agrees with the log (exception code, module and offset)', dmp.exception['code'] == int(m.group(1), 16) and dmp.locate(dmp.exception['address']) == 'AnselSDK64.dll+0x' + m.group(3), dmp.locate(dmp.exception['address']))
             mp = os.path.join(ROOT, 'proxy', 'AnselSDK64.map')
             if os.path.exists(mp):

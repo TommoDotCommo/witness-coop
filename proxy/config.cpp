@@ -109,7 +109,7 @@ const Cfg& GetCfg() {
             else if (sscanf(line, "no_underlay=%d", &v) == 1) r.noUnderlay = v != 0;
             else if (sscanf(line, "no_key_swallow=%d", &v) == 1) r.noKeySwallow = v != 0;
             else if (sscanf(line, "no_save_meta=%d", &v) == 1) r.noSaveMeta = v != 0;
-            else if (!strncmp(line, "diag_dir=", 9)) { std::string t = line + 9; while (!t.empty() && (t.back() == '\r' || t.back() == '\n')) t.pop_back(); if (t == "instance") r.diagDir = DllDir() + L"logs"; else { int n = MultiByteToWideChar(CP_UTF8, 0, t.c_str(), -1, nullptr, 0); if (n > 1) { r.diagDir.resize(n - 1); MultiByteToWideChar(CP_UTF8, 0, t.c_str(), -1, &r.diagDir[0], n); } } }
+            else if (!strncmp(line, "diag_dir=", 9)) { std::string t = line + 9; while (!t.empty() && (t.back() == '\r' || t.back() == '\n')) t.pop_back(); if (t == "instance") r.diagDir = DllDir() + L"witness-coop-logs"; else { int n = MultiByteToWideChar(CP_UTF8, 0, t.c_str(), -1, nullptr, 0); if (n > 1) { r.diagDir.resize(n - 1); MultiByteToWideChar(CP_UTF8, 0, t.c_str(), -1, &r.diagDir[0], n); } } }
             else if (sscanf(line, "max_log_mb=%d", &v) == 1) r.maxLogMb = std::max(5, std::min(2000, v));
             else if (sscanf(line, "crash_handler=%d", &v) == 1) r.noCrashHandler = v == 0;
             else if (sscanf(line, "test_crash=%d", &v) == 1) r.testCrash = v != 0;

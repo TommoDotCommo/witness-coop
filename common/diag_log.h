@@ -53,6 +53,20 @@ inline std::string FormatLine(uint64_t* chain, unsigned n, uint64_t utcMs, const
     return head + hex + " " + body + "\n";
 }
 
+// "2026-10-26T10-00-00Z_..." : a file this library wrote
+inline bool IsSessionFile(const wchar_t* n) {
+#ifdef DIAG_MUT_PRUNE_ALL
+    (void)n; return true;
+#else
+    static const char* pat = "dddd-dd-ddTdd-dd-ddZ_";
+    for (int i = 0; pat[i]; i++) {
+        if (!n[i]) return false;
+        if (pat[i] == 'd' ? !(n[i] >= L'0' && n[i] <= L'9') : n[i] != (wchar_t)pat[i]) return false;
+    }
+    return true;
+#endif
+}
+
 struct FileEntry { std::wstring name; unsigned long long size; };
 
 inline std::wstring KeyOf(const std::wstring& name) { return name.substr(0, name.find(L'.')); }
@@ -65,6 +79,7 @@ inline int Prune(const std::wstring& dir, unsigned long long capBytes, const std
     if (h == INVALID_HANDLE_VALUE) return 0;
     do {
         if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+        if (!IsSessionFile(fd.cFileName)) continue;      // only our own files: a logs folder shared with something else (the game's own logs) is left alone
         unsigned long long sz = ((unsigned long long)fd.nFileSizeHigh << 32) | fd.nFileSizeLow;
         files.push_back({fd.cFileName, sz}); total += sz;
     } while (FindNextFileW(h, &fd));

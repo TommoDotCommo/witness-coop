@@ -83,8 +83,16 @@ int main() {
         CHECK(total <= 3000 || Exists(d + L"\\2026-10-03T00-00-00Z_p3.log") == false, "folder still over the cap: %llu", total);
         CHECK(total <= 4000, "cap not honoured: %llu", total);       // crashed + running stay: 2000 + 1000
     }
+    // --- a folder shared with other files (the game's own logs): only our session files are ever counted or deleted
+    {
+        std::wstring d = root + L"\\shared"; CreateDirectoryW(d.c_str(), nullptr);
+        Put(d + L"\\log_2026-11-01_21h30m.txt", 5000); Put(d + L"\\nvmesh_2026-11-01_21h30m.txt", 5000); Put(d + L"\\2026-10-01T00-00-00Z_p1.log", 100);
+        diag::Prune(d, 10, L"2026-10-09T00-00-00Z_p9");
+        CHECK(Exists(d + L"\\log_2026-11-01_21h30m.txt") && Exists(d + L"\\nvmesh_2026-11-01_21h30m.txt"), "a file that is not ours was pruned");
+        CHECK(!Exists(d + L"\\2026-10-01T00-00-00Z_p1.log"), "our own old session was kept although the cap is tiny");
+    }
     // --- a name with no dot, and a folder with a subfolder, do not break pruning
-    { std::wstring d = root + L"\\odd"; CreateDirectoryW(d.c_str(), nullptr); CreateDirectoryW((d + L"\\sub").c_str(), nullptr); Put(d + L"\\noext", 100); diag::Prune(d, 10, L"zzz"); CHECK(!Exists(d + L"\\noext"), "noext stayed"); }
+    { std::wstring d = root + L"\\odd"; CreateDirectoryW(d.c_str(), nullptr); CreateDirectoryW((d + L"\\sub").c_str(), nullptr); Put(d + L"\\noext", 100); diag::Prune(d, 10, L"zzz"); CHECK(Exists(d + L"\\noext"), "a file that is not a session file was deleted"); }
     printf(g_fail ? "diag_test: %d FAILED\n" : "diag_test: all passed\n", g_fail);
     return g_fail ? 1 : 0;
 }

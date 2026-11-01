@@ -14,7 +14,7 @@ test: $(BUILD)/core-test.exe $(addsuffix .exe,$(addprefix $(BUILD)/mutant-,$(MUT
 	@for m in $(MUTANTS); do if $(BUILD)/mutant-$$m.exe >/dev/null; then echo "MUTANT $$m SURVIVED (the test cannot fail for it)"; exit 1; else echo "mutant $$m killed"; fi; done
 
 # the session logs shared with the proxy (common/diag_log.h), game-free, with mutants
-DIAG_MUTANTS = WEAK_CHAIN NO_CHAIN PRUNE_CRASHED
+DIAG_MUTANTS = WEAK_CHAIN NO_CHAIN PRUNE_CRASHED PRUNE_ALL
 $(BUILD)/diag-test.exe: ../common/diag_test.cpp ../common/diag_log.h
 	mkdir -p $(BUILD)
 	$(CXX) -std=c++17 -O2 -Wall -Wextra -static -o $@ ../common/diag_test.cpp

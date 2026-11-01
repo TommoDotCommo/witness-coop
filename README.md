@@ -208,7 +208,7 @@ hash chains, lists the sessions, crashes (a proxy crash is mapped to the object 
 writes; keep the map and DLL of every release), desyncs and markers, summarises the flight recordings, and with two zips lines up the
 shared marker (`--timeline merged.txt --align`). Game-free tests: `python3 -B tools/test_diag.py` (anonymisation with mutants: a computer name, a
 user name, a username path, an IP address, a Steam ID and the dump masking, each left in, must fail), `make -C launcher test` (log chain, pruning, crash
-dump of a child process, with mutants). Test-only settings in `witness_coop.cfg`: `diag_dir=instance` (logs beside the DLL, for test copies),
+dump of a child process, with mutants). Test-only settings in `witness_coop.cfg`: `diag_dir=instance` (logs in `witness-coop-logs` beside the DLL, for test copies),
 `test_crash=1` (the command `testcrash` really crashes the game; `testhandled` raises a handled exception), `crash_handler=0` (mutant: the handler does nothing).
 
 ## How it works

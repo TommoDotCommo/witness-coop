@@ -351,6 +351,13 @@ public static class WitChain {
             $len = $lit.Length
             $text = [regex]::Replace($text, $ascii, { param($m) $counts.dump++; '#' * $m.Length }, 'IgnoreCase')
             $text = [regex]::Replace($text, $u16, { param($m) $counts.dump++; ('#' + [char]0) * ($m.Length / 2) }, 'IgnoreCase')
+            # a name cut short where a block of memory in the dump ends ("...\Users\tomd"): its first three characters go too
+            if ($lit.Length -ge 4) {
+                $pre = $lit.Substring(0, 3)
+                $text = [regex]::Replace($text, [regex]::Escape($pre), { param($m) $counts.dump++; '#' * $m.Length }, 'IgnoreCase')
+                $pre16 = (($pre.ToCharArray() | ForEach-Object { [regex]::Escape([string]$_) + '\x00' }) -join '')
+                $text = [regex]::Replace($text, $pre16, { param($m) $counts.dump++; ('#' + [char]0) * ($m.Length / 2) }, 'IgnoreCase')
+            }
         }
         $text = [regex]::Replace($text, '(?<![A-Za-z0-9])7656119\d{10}(?![0-9])', { param($m) $counts.dump++; '#' * $m.Length })
         $text = [regex]::Replace($text, '(?<![0-9.])(?:(?:25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])(?![0-9]|\.[0-9])', {

@@ -72,7 +72,8 @@ if crash_dump is None:
     crash_dump = next((here / "launcher/build/crash-out/av").glob("*.dmp"), None)
 dump = bytearray(crash_dump.read_bytes()) if crash_dump else bytearray(b"MDMP" + b"\0" * 4000)
 # plant the strings in the dump the ways memory holds them: ASCII and UTF-16, and the profile path
-dump += b"\0\0" + user.encode() + b"\0" + user.encode("utf-16-le") + b"\0\0" + host.encode() + b"\0" + host.encode("utf-16-le") + b"\0" + planted_path + b"\0" + b"192.168.1.20\0" + b"76561198012345678\0"
+cut = user[:-1]       # a name cut short by the end of a block of memory in the dump
+dump += b"\0\0" + b"\\Users\\" + cut.encode() + b"\0\0" + ("\\Users\\" + cut).encode("utf-16-le") + b"\0\0" + b"\0\0" + user.encode() + b"\0" + user.encode("utf-16-le") + b"\0\0" + host.encode() + b"\0" + host.encode("utf-16-le") + b"\0" + planted_path + b"\0" + b"192.168.1.20\0" + b"76561198012345678\0"
 (logs / "2026-10-26T10-00-00Z_p1.log").write_bytes(session([b"session a: mod v-test", planted, b"crash: unhandled exception 0xc0000005 at AnselSDK64.dll+0x2a30 (thread 1, writing 0000000000000000)"], clean=False))
 (logs / "2026-10-26T10-00-00Z_p1.crash").write_bytes(b"")
 (logs / "2026-10-26T10-00-00Z_p1.dmp").write_bytes(bytes(dump))
@@ -111,7 +112,7 @@ def run_bundle(text, tag):
 
 NEEDLES = (("the Windows user name", user.encode()), ("the computer name", host.encode()), ("a username path", planted_path),
            ("a LAN address", b"192.168.1.20"), ("a Tailscale address", b"100.101.102.103"), ("a public address", b"8.8.4.4"),
-           ("a Steam id", b"76561198012345678"), ("an e-mail address", b"someone@example.com"))
+           ("a Steam id", b"76561198012345678"), ("an e-mail address", b"someone@example.com"), ("a cut username", ("\\Users\\" + user[:-1]).encode()))
 
 
 def leaks(zpath):
@@ -192,6 +193,7 @@ MUTANTS = [
     ("IP addresses", "if ($ips) {", "if ($false) {", "a LAN address"),
     ("Steam IDs", "7656119\\d{10}(?![0-9])', {\n            param($m)\n            if (-not $steamIds", "7656118\\d{10}(?![0-9])', {\n            param($m)\n            if (-not $steamIds", "a Steam id"),
     ("dump masking", "if ($rel -like '*.dmp') {", "if ($false) {", "the Windows user name"),
+    ("cut name masking", "if ($lit.Length -ge 4) {", "if ($false) {", "a cut username"),
 ]
 for name, old, new, expect in MUTANTS:
     if name == "username path":
