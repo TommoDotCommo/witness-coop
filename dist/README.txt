@@ -27,26 +27,31 @@ installer-gui.ps1 and witness-coop.ps1.)
 
 Playing with a friend
 ---------------------
-One of you hosts, the other joins. Both open witness_launcher.exe.
+One of you hosts, the other joins. Both open witness_launcher.exe, with Steam running and online.
 
+Over the internet (Steam, nothing to forward):
 Host:
-1. Lobby tab > Host a lobby. The lobby port is 47100 (UDP). Leave "Friends reach this PC at"
-   blank unless you know your public address.
-2. Send your friend the invite shown (address:port/CODE), with the Copy button.
-3. When your friend is in the lobby, choose Co-op (or a race), tick Ready, press Start.
+1. Lobby tab > Host on Steam. The launcher makes a friends-only Steam lobby and shows its number.
+2. Invite your friend: "Invite (overlay)" opens Steam's invite window if the overlay is there;
+   or pick your friend in the list next to it and click "Invite friend" (a Steam chat invite);
+   or tell them the lobby number.
+3. When your friend is in the lobby, choose Co-op (or a race) and press Start the game.
    A countdown runs and both games start by themselves.
-
 Joining:
-1. Lobby tab > paste the invite > Join. You see the host, can chat and talk.
+1. Accept the invite in Steam (or "Join Game" on the host in your friends list). If the launcher
+   is closed, Steam starts The Witness, which opens the launcher in the host's lobby instead.
+   Or paste the lobby number into the Invite field and press Join.
 2. Tick Ready. The host starts; your game starts with it.
+If something is wrong the launcher says so in plain words (Steam not running, offline, lobby full
+or gone, a different version of the mod). Everyone needs the same version of the mod.
 
+On a LAN, or by hand (Direct):
+Host: Lobby tab > Host direct (LAN). Send your friend the invite shown (address:port/CODE) with the
+Copy button. Joining: paste the invite > Join.
 Ports and firewall: Windows asks once to allow witness_launcher.exe and the game through
-the firewall: allow them on private networks. Over the internet the host forwards UDP 47100
-(the lobby) and UDP 47001 (the host's game) on their router to their PC. The joining player's
-game uses UDP 47002; most home routers let the reply through by themselves, so try without
-forwarding first and forward 47002 if the two games never see each other. A VPN between the two
-PCs (Tailscale, ZeroTier, Hamachi) is the simplest alternative: use that address in the invite.
-On a LAN nothing needs forwarding.
+the firewall: allow them on private networks. Direct play over the internet needs the host to
+forward UDP 47100 (the lobby) and UDP 47001 (the host's game), and sometimes the joiner 47002;
+use the Steam lobby instead. On a LAN nothing needs forwarding.
 
 A new game or continue: the host chooses in the lobby. "New game" can start with parts of the
 island already done. Saves are the game's own, in %APPDATA%\The Witness, as usual.

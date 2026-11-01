@@ -23,6 +23,7 @@
 #include "theme.h"
 #include "lobby.h"
 #include "lobby_win.h"
+#include "../common/steam_ids.h"
 #include "../proxy/progress/progress.h"
 
 namespace {
@@ -349,7 +350,8 @@ void BuildPages(HWND parent) {
     th::MarkMuted(Make(g_pages[5], L"STATIC", L"These are the game's own options; they live inside each save. A copy of the save as it was is kept once (.before-launcher).", SS_LEFT, 16, 362, 640, 36, 0));
 }
 // ---- the lobby page: host or join, see who is there, chat by text and voice, choose what to play, start; and be back here when the game is over
-enum { ID_LB_HOST = 600, ID_LB_JOIN, ID_LB_INVITE, ID_LB_COPY, ID_LB_LEAVE, ID_LB_READY, ID_LB_START, ID_LB_MEMBERS, ID_LB_LOG, ID_LB_CHAT, ID_LB_SEND, ID_LB_MODE, ID_LB_GOAL, ID_LB_NEWGAME, ID_LB_PARTS, ID_LB_STATUS, ID_LB_PORT, ID_LB_ADVERTISE, ID_LB_MUTE, ID_LB_DEAF, ID_LB_RESULT, ID_LB_LEVEL, ID_LB_PARTSINFO, ID_LB_WHO };
+enum { ID_LB_HOST = 600, ID_LB_JOIN, ID_LB_INVITE, ID_LB_COPY, ID_LB_LEAVE, ID_LB_READY, ID_LB_START, ID_LB_MEMBERS, ID_LB_LOG, ID_LB_CHAT, ID_LB_SEND, ID_LB_MODE, ID_LB_GOAL, ID_LB_NEWGAME, ID_LB_PARTS, ID_LB_STATUS, ID_LB_PORT, ID_LB_ADVERTISE, ID_LB_MUTE, ID_LB_DEAF, ID_LB_RESULT, ID_LB_LEVEL, ID_LB_PARTSINFO, ID_LB_WHO, ID_LB_STEAM_HOST, ID_LB_STEAM_INVITE, ID_LB_STEAM_FRIENDS, ID_LB_STEAM_SEND };
+uint64_t g_autoJoin;      // a Steam lobby to join at start (an invite accepted in Steam while the launcher was closed)
 lw::Session g_sess; lw::Voice g_voice; wlobby::State g_shown; std::wstring g_chatLog; HANDLE g_game; DWORD g_gamePid; std::string g_lobbySpec, g_cfgBackup, g_lastResult; bool g_gameWasRace;
 std::wstring g_statFile, g_cmdFile; ULONGLONG g_statAt, g_launchedAt; unsigned g_launches; std::string g_lastLaunchCfg; bool g_voiceWanted = true; std::set<unsigned> g_everHeard;
 HWND LB(int id) { return GetDlgItem(g_pages[0], id); }
@@ -388,9 +390,30 @@ void HostLobby() {
     if (!g_sess.Host(name, gp, (uint16_t)port, EditText(LB(ID_LB_ADVERTISE)), &err)) { LobbyStatus(W(err)); return; }
     SetWindowTextW(LB(ID_LB_INVITE), W(g_sess.Invite()).c_str()); g_chatLog.clear(); SetWindowTextW(LB(ID_LB_LOG), L""); PushSettings(); StartVoice(); RefreshLobbyUi();
 }
-void JoinLobby() {
+std::vector<std::pair<uint64_t, std::string>> g_friends;
+void FillFriends() {      // the friends who are online, for an invite through Steam chat (works without the Steam overlay)
+    HWND cb = LB(ID_LB_STEAM_FRIENDS); SendMessageW(cb, CB_RESETCONTENT, 0, 0); g_friends = g_sess.SteamFriends();
+    if (g_friends.empty()) SendMessageW(cb, CB_ADDSTRING, 0, (LPARAM)L"(no friends online)");
+    for (const auto& f : g_friends) SendMessageW(cb, CB_ADDSTRING, 0, (LPARAM)W(f.second).c_str());
+    SendMessageW(cb, CB_SETCURSEL, 0, 0);
+}
+void HostSteamLobby() {
     wl::CfgFile c = LoadCfg(); std::string err; uint16_t gp = (uint16_t)atoi(c.Get("listen", "47001").c_str());
-    if (!g_sess.Join(EditText(LB(ID_LB_INVITE)), c.Get("name", "Player"), gp, &err)) { LobbyStatus(W(err)); return; }
+    if (!g_sess.HostSteam(c.Get("name", "Player"), gp, g_dir, &err)) { LobbyStatus(W(err)); return; }
+    SetWindowTextW(LB(ID_LB_INVITE), L""); g_chatLog.clear(); SetWindowTextW(LB(ID_LB_LOG), L""); PushSettings(); FillFriends(); LobbyStatus(W(g_sess.SteamStatus())); RefreshLobbyUi();
+}
+void JoinSteamLobby(uint64_t id) {
+    wl::CfgFile c = LoadCfg(); std::string err; uint16_t gp = (uint16_t)atoi(c.Get("listen", "47001").c_str());
+    if (g_sess.Active() && g_sess.SteamMode() && g_sess.SteamLobbyId() == id) return;
+    if (g_game) { LobbyStatus(L"Close the game first, then accept the invite again."); return; }
+    if (!g_sess.JoinSteam(id, c.Get("name", "Player"), gp, g_dir, &err)) { LobbyStatus(W(err)); return; }
+    SetWindowTextW(LB(ID_LB_INVITE), W(steamids::Text(id)).c_str()); g_chatLog.clear(); SetWindowTextW(LB(ID_LB_LOG), L""); LobbyStatus(W(g_sess.SteamStatus())); RefreshLobbyUi();
+}
+void JoinLobby() {      // the invite field: a Steam lobby number, or address:port/CODE (direct)
+    std::string text = EditText(LB(ID_LB_INVITE)); uint64_t lobby = 0;
+    if (steamids::ParseLobby(text, &lobby)) { JoinSteamLobby(lobby); return; }
+    wl::CfgFile c = LoadCfg(); std::string err; uint16_t gp = (uint16_t)atoi(c.Get("listen", "47001").c_str());
+    if (!g_sess.Join(text, c.Get("name", "Player"), gp, &err)) { LobbyStatus(W(err + "  (or paste the host's Steam lobby number)")); return; }
     g_chatLog.clear(); SetWindowTextW(LB(ID_LB_LOG), L""); LobbyStatus(L"Joining..."); RefreshLobbyUi();
 }
 void LeaveLobby() { g_voice.Stop(); g_sess.Stop(); g_shown = wlobby::State(); SendMessageW(LB(ID_LB_MEMBERS), LB_RESETCONTENT, 0, 0); SendMessageW(LB(ID_LB_READY), BM_SETCHECK, BST_UNCHECKED, 0); RefreshLobbyUi(); LobbyStatus(L"You left the lobby."); }
@@ -434,7 +457,8 @@ void GameEnded() {
 }
 void RefreshLobbyUi() {
     bool act = g_sess.Active(), host = act && g_sess.IsHost(), joined = act && g_sess.Joined(); bool lobby = g_shown.phase == wlobby::kLobby;
-    EnableWindow(LB(ID_LB_HOST), !act); EnableWindow(LB(ID_LB_JOIN), !act); EnableWindow(LB(ID_LB_LEAVE), act); EnableWindow(LB(ID_LB_COPY), host);
+    EnableWindow(LB(ID_LB_HOST), !act); EnableWindow(LB(ID_LB_JOIN), !act); EnableWindow(LB(ID_LB_STEAM_HOST), !act);
+    bool steamHost = host && g_sess.SteamMode(); EnableWindow(LB(ID_LB_STEAM_INVITE), steamHost); EnableWindow(LB(ID_LB_STEAM_FRIENDS), steamHost); EnableWindow(LB(ID_LB_STEAM_SEND), steamHost); EnableWindow(LB(ID_LB_LEAVE), act); EnableWindow(LB(ID_LB_COPY), host);
     SendMessageW(LB(ID_LB_INVITE), EM_SETREADONLY, act ? TRUE : FALSE, 0); EnableWindow(LB(ID_LB_PORT), !act); EnableWindow(LB(ID_LB_ADVERTISE), !act);
     EnableWindow(LB(ID_LB_READY), joined && !host && lobby); EnableWindow(LB(ID_LB_START), host && lobby); EnableWindow(LB(ID_LB_SEND), joined); EnableWindow(LB(ID_LB_CHAT), joined);
     EnableWindow(LB(ID_LB_MODE), !act || host); EnableWindow(LB(ID_LB_GOAL), !act || host); EnableWindow(LB(ID_LB_NEWGAME), !act || host); EnableWindow(LB(ID_LB_PARTS), !act || host);
@@ -445,6 +469,7 @@ void ApplyRemoteSettings(const wlobby::State& st) {      // a guest sees what th
 }
 void LobbyTick() {
     if (g_game && WaitForSingleObject(g_game, 0) == WAIT_OBJECT_0) GameEnded();
+    g_sess.Idle(); if (uint64_t req = g_sess.SteamJoinRequest()) JoinSteamLobby(req);      // an invite accepted (or Join Game) in Steam while the launcher runs
     if (g_sess.Active()) {
         bool joined = g_sess.Joined();
         if (joined) {
@@ -457,7 +482,7 @@ void LobbyTick() {
                 RefreshLobbyUi();
             }
             InvalidateRect(LB(ID_LB_MEMBERS), nullptr, FALSE);
-            std::wstring t; if (g_sess.IsHost()) t = L"Hosting.  Send friends the invite above."; else t = L"In the lobby of " + W(MemberName(1)) + L".";
+            std::wstring t; if (g_sess.IsHost()) t = g_sess.SteamMode() ? L"Hosting a Steam lobby (number " + W(g_sess.Invite()) + L"). Invite friends: overlay, the list, or the number." : L"Hosting.  Send friends the invite above."; else t = L"In the lobby of " + W(MemberName(1)) + (g_sess.SteamMode() ? L" (Steam)." : L".");
             if (st.phase == wlobby::kStarting) t = L"The game starts in " + std::to_wstring((st.startInMs + 999) / 1000) + L" ...";
             else if (st.phase == wlobby::kInGame) t = g_game ? L"The game is running." : L"A game is running (you were not in it).";
             LobbyStatus(t); StartVoice();
@@ -465,7 +490,8 @@ void LobbyTick() {
             wlobby::Launch l; if (g_sess.TakeLaunch(&l)) LaunchFromLobby(l);
         } else {
             wlobby::JoinResult r = g_sess.Refused();
-            if (!g_sess.IsHost()) LobbyStatus(r == wlobby::kBadToken ? L"The invite is wrong (the code does not match)." : r == wlobby::kFull ? L"The lobby is full." : r == wlobby::kBadVersion ? L"This launcher is a different version from the host's." : L"Looking for the host ...");
+            if (g_sess.SteamMode() && (g_sess.SteamFailed() || r == wlobby::kPending)) LobbyStatus(W(g_sess.SteamFailed() || !g_sess.SteamLobbyId() ? g_sess.SteamStatus() : std::string("In the Steam lobby. Waiting for the host's launcher ...")));
+            else if (!g_sess.IsHost()) LobbyStatus(r == wlobby::kBadToken ? L"The invite is wrong (the code does not match)." : r == wlobby::kFull ? L"The lobby is full." : r == wlobby::kBadVersion ? L"This launcher is a different version from the host's." : L"Looking for the host ...");
             if (g_voice.Running()) g_voice.Stop();
         }
     }
@@ -492,12 +518,17 @@ LRESULT CALLBACK ChatEditProc(HWND h, UINT m, WPARAM w, LPARAM l, UINT_PTR, DWOR
 void SendChatLine() { std::string t = EditText(LB(ID_LB_CHAT)); if (t.empty() || !g_sess.Active() || !g_sess.Joined()) return; g_sess.SendChat(t); SetWindowTextW(LB(ID_LB_CHAT), L""); }
 void BuildLobbyPage() {
     HWND pg = g_pages[0]; wl::CfgFile c = LoadCfg();
-    auto mk = [&](const wchar_t* cls, const wchar_t* text, DWORD style, int x, int y, int w, int h, int id) { HWND k = CreateWindowExW(0, cls, text, WS_CHILD | WS_VISIBLE | style, x, y, w, h, pg, (HMENU)(INT_PTR)id, GetModuleHandleW(nullptr), nullptr); th::Style(k); return k; };
+    int dy = 0;      // the Steam row first; everything under it moves down by one row
+    auto mk = [&](const wchar_t* cls, const wchar_t* text, DWORD style, int x, int y, int w, int h, int id) { HWND k = CreateWindowExW(0, cls, text, WS_CHILD | WS_VISIBLE | style, x, y + dy, w, h, pg, (HMENU)(INT_PTR)id, GetModuleHandleW(nullptr), nullptr); th::Style(k); return k; };
     auto label = [&](const wchar_t* t, int x, int y, int w, bool muted = false) { HWND k = mk(L"STATIC", t, SS_LEFT, x, y, w, 20, 0); if (muted) th::MarkMuted(k); return k; };
-    mk(L"BUTTON", L"Host a lobby", BS_DEFPUSHBUTTON, 16, 12, 150, 32, ID_LB_HOST); label(L"Lobby port", 184, 19, 80, true); mk(L"EDIT", W(c.Get("lobby_port", "47100")).c_str(), WS_BORDER | ES_AUTOHSCROLL | ES_NUMBER, 266, 16, 66, 24, ID_LB_PORT);
+    mk(L"BUTTON", L"Host on Steam", BS_DEFPUSHBUTTON, 16, 12, 150, 32, ID_LB_STEAM_HOST); mk(L"BUTTON", L"Invite (overlay)", BS_PUSHBUTTON, 176, 12, 130, 32, ID_LB_STEAM_INVITE);
+    { HWND fc = mk(L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_VSCROLL, 316, 16, 200, 300, ID_LB_STEAM_FRIENDS); SendMessageW(fc, CB_ADDSTRING, 0, (LPARAM)L"(host first)"); SendMessageW(fc, CB_SETCURSEL, 0, 0); }
+    mk(L"BUTTON", L"Invite friend", BS_PUSHBUTTON, 526, 12, 110, 32, ID_LB_STEAM_SEND); label(L"Steam: no port forwarding", 646, 19, 190, true);
+    dy = 36;
+    mk(L"BUTTON", L"Host direct (LAN)", BS_PUSHBUTTON, 16, 12, 150, 32, ID_LB_HOST); label(L"Lobby port", 184, 19, 80, true); mk(L"EDIT", W(c.Get("lobby_port", "47100")).c_str(), WS_BORDER | ES_AUTOHSCROLL | ES_NUMBER, 266, 16, 66, 24, ID_LB_PORT);
     label(L"Friends reach this PC at", 350, 19, 160, true); mk(L"EDIT", W(c.Get("lobby_advertise", "")).c_str(), WS_BORDER | ES_AUTOHSCROLL, 512, 16, 170, 24, ID_LB_ADVERTISE); label(L"(blank: automatic)", 690, 19, 160, true);
     label(L"Invite", 16, 60, 50, true); mk(L"EDIT", L"", WS_BORDER | ES_AUTOHSCROLL, 70, 56, 360, 26, ID_LB_INVITE); mk(L"BUTTON", L"Join", BS_PUSHBUTTON, 442, 54, 84, 30, ID_LB_JOIN); mk(L"BUTTON", L"Copy invite", BS_PUSHBUTTON, 534, 54, 110, 30, ID_LB_COPY); mk(L"BUTTON", L"Leave", BS_PUSHBUTTON, 652, 54, 84, 30, ID_LB_LEAVE);
-    HWND st = label(L"Host a lobby and send friends the invite, or paste an invite and join.", 16, 94, 800); SetWindowLongPtrW(st, GWLP_ID, ID_LB_STATUS);
+    HWND st = label(L"Host on Steam and invite friends, or accept a Steam invite. Join takes a Steam lobby number, or a direct invite (address:port/CODE).", 16, 94, 800); SetWindowLongPtrW(st, GWLP_ID, ID_LB_STATUS);
     label(L"IN THE LOBBY", 16, 126, 200, true); mk(L"LISTBOX", L"", LBS_OWNERDRAWFIXED | LBS_NOTIFY | WS_VSCROLL | LBS_HASSTRINGS, 16, 148, 330, 230, ID_LB_MEMBERS); SendMessageW(LB(ID_LB_MEMBERS), LB_SETITEMHEIGHT, 0, 30);
     label(L"CHAT", 362, 126, 200, true); mk(L"EDIT", L"", WS_BORDER | ES_MULTILINE | ES_READONLY | WS_VSCROLL | ES_AUTOVSCROLL, 362, 148, 462, 190, ID_LB_LOG);
     HWND ce = mk(L"EDIT", L"", WS_BORDER | ES_AUTOHSCROLL, 362, 346, 372, 28, ID_LB_CHAT); SetWindowSubclass(ce, ChatEditProc, 3, 0); mk(L"BUTTON", L"Send", BS_PUSHBUTTON, 742, 344, 82, 32, ID_LB_SEND);
@@ -515,6 +546,8 @@ void PollCommands() {      // tests: one command per line in launcher_cmd.txt, t
         std::string cmd = line.substr(0, line.find(' ')), arg = line.find(' ') == std::string::npos ? "" : line.substr(line.find(' ') + 1);
         if (cmd == "host") { if (!arg.empty()) SetWindowTextW(LB(ID_LB_PORT), W(arg).c_str()); HostLobby(); }
         else if (cmd == "join") { SetWindowTextW(LB(ID_LB_INVITE), W(arg).c_str()); JoinLobby(); }
+        else if (cmd == "steamhost") HostSteamLobby();
+        else if (cmd == "steamjoin") { uint64_t id = 0; if (steamids::ParseLobby(arg, &id)) JoinSteamLobby(id); else LobbyStatus(L"Not a Steam lobby number."); }
         else if (cmd == "leave") LeaveLobby();
         else if (cmd == "ready") { SendMessageW(LB(ID_LB_READY), BM_SETCHECK, arg == "1" ? BST_CHECKED : BST_UNCHECKED, 0); g_sess.SetReady(arg == "1"); }
         else if (cmd == "chat") { SetWindowTextW(LB(ID_LB_CHAT), W(arg).c_str()); SendChatLine(); }
@@ -535,6 +568,8 @@ void WriteStat() {      // tests: what the lobby is, as text lines, rewritten ev
     snprintf(b, sizeof b, "tabpaints %u\nlobby active %d host %d joined %d id %u phase %d start_in %d refused %d\n", th::TabPaintCount(), g_sess.Active() ? 1 : 0, g_sess.IsHost() ? 1 : 0, g_sess.Joined() ? 1 : 0, g_sess.MyId(), (int)st.phase, st.startInMs, (int)g_sess.Refused()); o += b;
     o += std::string("guide ") + (g_guideHold.Open() ? "1\n" : "0\n");
     snprintf(b, sizeof b, "invite %s\n", g_sess.Invite().c_str()); o += b;
+    { uint64_t lid = g_sess.SteamLobbyId(); std::string mod = lid ? g_sess.SteamReadData(lsteam::kModKey) : "", proto = lid ? g_sess.SteamReadData(lsteam::kProtocolKey) : "", code = lid ? g_sess.SteamReadData(lsteam::kTokenKey) : "";
+      snprintf(b, sizeof b, "steam mode %d lobby %llu members %u limit %u mod %s protocol %s code_set %d failed %d status %s\n", g_sess.SteamMode() ? 1 : 0, (unsigned long long)lid, g_sess.SteamMemberCount(), lid ? g_sess.SteamMemberLimit() : 0u, mod.c_str(), proto.c_str(), code.empty() ? 0 : 1, g_sess.SteamFailed() ? 1 : 0, g_sess.SteamStatus().c_str()); o += b; }
     for (const auto& m : st.members) { snprintf(b, sizeof b, "member %u name %s host %d ready %d ingame %d speaking %d playing %d port %u ip %s\n", m.id, m.name.c_str(), m.host, m.ready, m.inGame, m.speaking, m.playing, m.gamePort, wlobby::IpText(m.ip).c_str()); o += b; }
     snprintf(b, sizeof b, "settings mode %d goal %s newgame %d progress %s\n", (int)st.settings.mode, st.settings.raceGoal.c_str(), st.settings.newGame ? 1 : 0, st.settings.progress.c_str()); o += b;
     { std::string chat = U(g_chatLog); for (size_t i; (i = chat.find("\r\n")) != std::string::npos;) chat.replace(i, 2, " | "); o += "result " + st.lastResult + "\n"; o += "chat " + chat + "\n"; }
@@ -605,6 +640,9 @@ LRESULT CALLBACK MainProc(HWND h, UINT m, WPARAM w, LPARAM l) {
         int id = LOWORD(w);
         if (id == ID_APPLY) { std::wstring msg; ApplyAll(&msg); Status(msg); LoadAll(); }
         else if (id == ID_LB_HOST) HostLobby();
+        else if (id == ID_LB_STEAM_HOST) HostSteamLobby();
+        else if (id == ID_LB_STEAM_INVITE) { if (!g_sess.SteamInviteDialog()) LobbyStatus(W(g_sess.SteamStatus())); }
+        else if (id == ID_LB_STEAM_SEND) { int i = (int)SendMessageW(LB(ID_LB_STEAM_FRIENDS), CB_GETCURSEL, 0, 0); if (i >= 0 && i < (int)g_friends.size()) { g_sess.SteamInviteFriend(g_friends[i].first); LobbyStatus(W(g_sess.SteamStatus())); } else FillFriends(); }
         else if (id == ID_LB_JOIN) JoinLobby();
         else if (id == ID_LB_LEAVE) LeaveLobby();
         else if (id == ID_LB_COPY) { std::wstring inv = W(g_sess.Invite()); if (!inv.empty() && OpenClipboard(h)) { EmptyClipboard(); HGLOBAL g = GlobalAlloc(GMEM_MOVEABLE, (inv.size() + 1) * 2); if (g) { memcpy(GlobalLock(g), inv.c_str(), (inv.size() + 1) * 2); GlobalUnlock(g); SetClipboardData(CF_UNICODETEXT, g); } CloseClipboard(); LobbyStatus(L"The invite is on the clipboard."); } }
@@ -639,7 +677,7 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, LPWSTR cmdline, int show) {
     INITCOMMONCONTROLSEX ic = {sizeof ic, ICC_TAB_CLASSES | ICC_LISTVIEW_CLASSES}; InitCommonControlsEx(&ic); CoInitialize(nullptr);
     int argc; LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc); std::wstring dumpTo; int startPage = 0; bool openNew = false;
     wchar_t self[MAX_PATH]; GetModuleFileNameW(nullptr, self, MAX_PATH); g_dir = Dir(self);
-    for (int i = 1; i < argc; ++i) { std::wstring a = argv[i]; if (a == L"--dir" && i + 1 < argc) g_dir = argv[++i]; else if (a == L"--dump-controls" && i + 1 < argc) dumpTo = argv[++i]; else if (a == L"--no-activate") g_noActivate = true; else if (a == L"--page" && i + 1 < argc) startPage = _wtoi(argv[++i]); else if (a == L"--stat-file" && i + 1 < argc) g_statFile = argv[++i]; else if (a == L"--cmd-file" && i + 1 < argc) g_cmdFile = argv[++i]; else if (a == L"--new-game-window") openNew = true; }
+    for (int i = 1; i < argc; ++i) { std::wstring a = argv[i]; if (a == L"--dir" && i + 1 < argc) g_dir = argv[++i]; else if (a == L"--dump-controls" && i + 1 < argc) dumpTo = argv[++i]; else if (a == L"--no-activate") g_noActivate = true; else if (a == L"--page" && i + 1 < argc) startPage = _wtoi(argv[++i]); else if (a == L"--stat-file" && i + 1 < argc) g_statFile = argv[++i]; else if (a == L"--cmd-file" && i + 1 < argc) g_cmdFile = argv[++i]; else if (a == L"--new-game-window") openNew = true; else if ((a == L"+connect_lobby" || a == L"--connect-lobby") && i + 1 < argc) { steamids::ParseLobby(U(argv[++i]), &g_autoJoin); } }
     if (!Exists(g_dir + L"\\witness64_d3d11.exe") && !Exists(g_dir + L"\\witness_d3d11.exe") && Exists(Dir(g_dir) + L"\\witness64_d3d11.exe")) g_dir = Dir(g_dir);
     th::Init(); AddFields();
     WNDCLASSW wc = {}; wc.lpfnWndProc = MainProc; wc.hInstance = hi; wc.lpszClassName = L"WitnessLauncher"; wc.hbrBackground = th::BgBrush(); wc.hCursor = LoadCursorW(nullptr, IDC_ARROW); wc.hIcon = LoadIconW(nullptr, IDI_APPLICATION); RegisterClassW(&wc);
@@ -648,9 +686,9 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, LPWSTR cmdline, int show) {
     g_tab = CreateWindowExW(0, WC_TABCONTROLW, L"", WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN, 8, 88, rc.right - 16, rc.bottom - 88 - 64, g_main, (HMENU)ID_TAB, hi, nullptr); SendMessageW(g_tab, WM_SETFONT, (WPARAM)GetStockObject(DEFAULT_GUI_FONT), TRUE);
     BuildPages(g_main);
     Make(g_main, L"BUTTON", L"Save settings", BS_PUSHBUTTON, 12, rc.bottom - 52, 150, 34, ID_APPLY); g_status = Make(g_main, L"STATIC", L"", SS_LEFT, 176, rc.bottom - 46, rc.right - 190, 24, ID_STATUS); th::MarkMuted(g_status);
-    LoadAll(); SetTimer(g_main, 1, 100, nullptr); if (startPage < 0 || startPage >= g_npages) startPage = 0; TabCtrl_SetCurSel(g_tab, startPage); ShowPage(startPage); if (openNew) OpenNewGame();
+    LoadAll(); SetTimer(g_main, 1, 100, nullptr); if (g_autoJoin) { JoinSteamLobby(g_autoJoin); startPage = 0; } if (startPage < 0 || startPage >= g_npages) startPage = 0; TabCtrl_SetCurSel(g_tab, startPage); ShowPage(startPage); if (openNew) OpenNewGame();
     if (!dumpTo.empty()) { std::string t = std::to_string(ID_STATUS) + " status\n"; for (auto& f : g_fields) t += std::to_string(f.id) + " " + f.key + "\n"; t += std::to_string(ID_APPLY) + " apply\n" + std::to_string(ID_SAVEPICK) + " savepick\n" + std::to_string(ID_LAUNCH) + " launch\n";
-        const std::pair<int, const char*> lb[] = {{ID_LB_HOST, "lobby:host"}, {ID_LB_JOIN, "lobby:join"}, {ID_LB_INVITE, "lobby:invite"}, {ID_LB_COPY, "lobby:copy"}, {ID_LB_LEAVE, "lobby:leave"}, {ID_LB_READY, "lobby:ready"}, {ID_LB_START, "lobby:start"}, {ID_LB_MEMBERS, "lobby:members"}, {ID_LB_LOG, "lobby:log"}, {ID_LB_CHAT, "lobby:chat"}, {ID_LB_SEND, "lobby:send"}, {ID_LB_MODE, "lobby:mode"}, {ID_LB_GOAL, "lobby:goal"}, {ID_LB_NEWGAME, "lobby:newgame"}, {ID_LB_PARTS, "lobby:parts"}, {ID_LB_STATUS, "lobby:status"}, {ID_LB_PORT, "lobby:port"}, {ID_LB_ADVERTISE, "lobby:advertise"}, {ID_LB_MUTE, "lobby:mute"}, {ID_LB_DEAF, "lobby:deaf"}, {ID_LB_RESULT, "lobby:result"}};
+        const std::pair<int, const char*> lb[] = {{ID_LB_HOST, "lobby:host"}, {ID_LB_JOIN, "lobby:join"}, {ID_LB_INVITE, "lobby:invite"}, {ID_LB_COPY, "lobby:copy"}, {ID_LB_LEAVE, "lobby:leave"}, {ID_LB_READY, "lobby:ready"}, {ID_LB_START, "lobby:start"}, {ID_LB_MEMBERS, "lobby:members"}, {ID_LB_LOG, "lobby:log"}, {ID_LB_CHAT, "lobby:chat"}, {ID_LB_SEND, "lobby:send"}, {ID_LB_MODE, "lobby:mode"}, {ID_LB_GOAL, "lobby:goal"}, {ID_LB_NEWGAME, "lobby:newgame"}, {ID_LB_PARTS, "lobby:parts"}, {ID_LB_STATUS, "lobby:status"}, {ID_LB_PORT, "lobby:port"}, {ID_LB_ADVERTISE, "lobby:advertise"}, {ID_LB_MUTE, "lobby:mute"}, {ID_LB_DEAF, "lobby:deaf"}, {ID_LB_RESULT, "lobby:result"}, {ID_LB_STEAM_HOST, "lobby:steamhost"}, {ID_LB_STEAM_INVITE, "lobby:steaminvite"}, {ID_LB_STEAM_FRIENDS, "lobby:steamfriends"}, {ID_LB_STEAM_SEND, "lobby:steamsend"}};
         for (const auto& k : lb) t += std::to_string(k.first) + " " + k.second + "\n";
         WriteFile8(dumpTo, t); }
     MSG msg; while (GetMessageW(&msg, nullptr, 0, 0) > 0) {

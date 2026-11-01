@@ -4,6 +4,7 @@
 // swap-chain vtable, then draws the remote player as a puppet at its world position using the camera read from game memory.
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <vector>
 #include <d3d11.h>
 #include <dxgi.h>
 #include <d3dcompiler.h>
@@ -536,7 +537,59 @@ static void HoldPictureWhileProbing(IDXGISwapChain* sc) {
 }
 
 void TracerTick();      // tracer.cpp: the bot's in-game line tracer
+// The Steam overlay (in the game whenever its Steam API is up and the overlay is on: started from Steam, or from a Steam lobby) inline-patches both
+// dxgi's Present and the function the swap chain's vtable points to (the mod's HookPresent), and calls one saved original from both detours:
+// game -> HookPresent -> overlay -> HookPresent's body -> dxgi Present -> overlay -> HookPresent's body -> ... until the stack overflows (0xC00000FD a
+// few seconds after the first frame, measured 2026-11-01 with "presentdiag": both functions began with e9 jumps). The cure: when HookPresent is
+// entered again from inside itself, the mod calls dxgi's Present through its own trampoline, built from the function's untouched first instructions
+// in dxgi.dll on disk (then a jump past the overlay's patch): the chain becomes game -> overlay -> HookPresent -> Present, once per frame.
+static PresentFn g_bypass; static volatile LONG g_presentDepth; static bool g_useBypass;      // (Present runs on the render thread only)
+static size_t PrologueLen(const unsigned char* p) {      // the length of one instruction of a few common, position-independent prologue forms; 0: unknown
+    if (p[0] == 0x48 && p[1] == 0x89 && (p[2] == 0x5C || p[2] == 0x6C || p[2] == 0x74 || p[2] == 0x7C || p[2] == 0x4C || p[2] == 0x54) && p[3] == 0x24) return 5;      // mov [rsp+imm8], reg
+    if (p[0] == 0x4C && p[1] == 0x89 && (p[2] == 0x44 || p[2] == 0x4C) && p[3] == 0x24) return 5;                                                               // mov [rsp+imm8], r8/r9
+    if (p[0] == 0x48 && p[1] == 0x8B && p[2] == 0xC4) return 3;                                                                                                  // mov rax, rsp
+    if (p[0] == 0x48 && p[1] == 0x89 && (p[2] == 0x58 || p[2] == 0x68 || p[2] == 0x70 || p[2] == 0x78 || p[2] == 0x48 || p[2] == 0x50)) return 4;            // mov [rax+imm8], reg
+    if ((p[0] == 0x40 || p[0] == 0x41) && p[1] >= 0x50 && p[1] <= 0x57) return 2;                                                                                // push r
+    if (p[0] >= 0x50 && p[0] <= 0x57) return 1;                                                                                                                  // push reg
+    if (p[0] == 0x48 && p[1] == 0x83 && p[2] == 0xEC) return 4;                                                                                                  // sub rsp, imm8
+    if (p[0] == 0x48 && p[1] == 0x81 && p[2] == 0xEC) return 7;                                                                                                  // sub rsp, imm32
+    return 0;
+}
+static PresentFn MakeBypass(void** vtbl) {      // dxgi's own Present (from the untouched vtable in the file on disk), reachable without passing any inline patch
+    HMODULE m = nullptr; if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCWSTR)&vtbl[8], &m) || !m) return nullptr;
+    wchar_t path[MAX_PATH]; if (!GetModuleFileNameW(m, path, MAX_PATH)) return nullptr;
+    HANDLE h = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr); if (h == INVALID_HANDLE_VALUE) return nullptr;
+    std::vector<unsigned char> f(GetFileSize(h, nullptr)); DWORD got = 0; bool ok = f.size() > 4096 && ReadFile(h, f.data(), (DWORD)f.size(), &got, nullptr) && got == f.size(); CloseHandle(h);
+    if (!ok) return nullptr;
+    const IMAGE_DOS_HEADER* dos = (const IMAGE_DOS_HEADER*)f.data(); if (dos->e_magic != IMAGE_DOS_SIGNATURE || (size_t)dos->e_lfanew + sizeof(IMAGE_NT_HEADERS64) > f.size()) return nullptr;
+    const IMAGE_NT_HEADERS64* nt = (const IMAGE_NT_HEADERS64*)(f.data() + dos->e_lfanew); if (nt->Signature != IMAGE_NT_SIGNATURE) return nullptr;
+    const IMAGE_SECTION_HEADER* sec = IMAGE_FIRST_SECTION(nt);
+    auto at = [&](uintptr_t rva, size_t len) -> const unsigned char* {      // the file's bytes of an RVA range, or null
+        for (unsigned i = 0; i < nt->FileHeader.NumberOfSections; ++i) { uintptr_t va = sec[i].VirtualAddress, raw = sec[i].SizeOfRawData;
+            if (rva >= va && rva + len <= va + raw && sec[i].PointerToRawData + (rva - va) + len <= f.size()) return f.data() + sec[i].PointerToRawData + (rva - va); }
+        return nullptr; };
+    uintptr_t slotRva = (uintptr_t)&vtbl[8] - (uintptr_t)m; const unsigned char* slot = at(slotRva, 8); if (!slot) return nullptr;
+    uint64_t entry; memcpy(&entry, slot, 8); uint64_t fnRva = entry - nt->OptionalHeader.ImageBase;
+    const unsigned char* disk = entry > nt->OptionalHeader.ImageBase ? at((uintptr_t)fnRva, 32) : nullptr; if (!disk) return nullptr;
+    const unsigned char* live = (const unsigned char*)m + fnRva; size_t n = 0;
+    while (n < 5) { size_t k = PrologueLen(disk + n); if (!k) { n = 0; break; } n += k; }
+    { char d[200]; int k = snprintf(d, sizeof d, "overlay: Present at %s+%#llx, prologue n=%zu, disk", "dxgi", (unsigned long long)fnRva, n); for (int i = 0; i < 8; ++i) k += snprintf(d + k, sizeof d - k, " %02x", disk[i]); k += snprintf(d + k, sizeof d - k, " live"); for (int i = 0; i < 8; ++i) k += snprintf(d + k, sizeof d - k, " %02x", live[i]); Log(d); }
+    if (!n || memcmp(disk + n, live + n, 16)) return nullptr;      // only the first n bytes may differ (a patch); the rest of the function must be intact
+    unsigned char* t = (unsigned char*)VirtualAlloc(nullptr, 64, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE); if (!t) return nullptr;
+    memcpy(t, disk, n); t[n] = 0xFF; t[n + 1] = 0x25; memset(t + n + 2, 0, 4); uint64_t back = (uint64_t)(live + n); memcpy(t + n + 6, &back, 8);      // the first instructions, then jmp [rip+0] -> Present+n
+    FlushInstructionCache(GetCurrentProcess(), t, 64); return (PresentFn)t;
+}
+static HRESULT HookPresentBody(IDXGISwapChain* sc, UINT sync, UINT flags);
 static HRESULT STDMETHODCALLTYPE HookPresent(IDXGISwapChain* sc, UINT sync, UINT flags) {
+    if (g_presentDepth > 0) {      // entered again from inside itself: another hook (the Steam overlay) routes Present back here
+#ifndef WP_MUT_PRESENT_LOOP
+        if (g_bypass) { if (!g_useBypass) { g_useBypass = true; Log("overlay: another Present hook (the Steam overlay) routes Present back into the mod: Present now goes through the mod's own trampoline"); } return g_bypass(sc, sync, flags); }
+#endif
+        return g_origPresent(sc, sync, flags);
+    }
+    InterlockedIncrement(&g_presentDepth); HRESULT hr = HookPresentBody(sc, sync, flags); InterlockedDecrement(&g_presentDepth); return hr;
+}
+static HRESULT HookPresentBody(IDXGISwapChain* sc, UINT sync, UINT flags) {
     LONG f = InterlockedIncrement(&g_frames);
     GameRunQueued();
     StateApplyRemote();
@@ -570,7 +623,7 @@ static HRESULT STDMETHODCALLTYPE HookPresent(IDXGISwapChain* sc, UINT sync, UINT
     }
     { DXGI_SWAP_CHAIN_DESC d; if (SUCCEEDED(sc->GetDesc(&d))) { g_gameWnd = d.OutputWindow; InstallDevWndProc(d.OutputWindow); TracerTick(); InputPump(d.OutputWindow); } }
     if (g_shotName[0] && g_ready) { char n[64]; strcpy(n, g_shotName); g_shotName[0] = 0; TakeShot(sc, n); }
-    HRESULT hr = g_origPresent(sc, sync, flags);
+    HRESULT hr = (g_useBypass && g_bypass ? g_bypass : g_origPresent)(sc, sync, flags);
     if (int cap = GetCfg().capFps; cap > 0) {   // frame cap: sleep out the rest of the frame (Sleep(1) until close, then spin)
         static LARGE_INTEGER freq, next; if (!freq.QuadPart) { QueryPerformanceFrequency(&freq); QueryPerformanceCounter(&next); }
         LARGE_INTEGER now; QueryPerformanceCounter(&now);
@@ -591,7 +644,8 @@ void OverlayInstall() {
     HRESULT hr = D3D11CreateDeviceAndSwapChain(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, 0, nullptr, 0, D3D11_SDK_VERSION, &sd, &sc, &dev, &fl, &ctx);
     if (FAILED(hr)) { char m[100]; snprintf(m, sizeof m, "overlay: dummy swap chain failed hr=%08lx", (unsigned long)hr); Log(m); return; }
     void** vtbl = *(void***)sc;
-    g_origPresent = (PresentFn)vtbl[8];
+    g_origPresent = (PresentFn)vtbl[8]; g_bypass = MakeBypass(vtbl);
+    Log(g_bypass ? "overlay: a trampoline to the game's own Present is ready (used only if another hook loops Present back into the mod)" : "overlay: no trampoline to the game's own Present (unknown prologue)");
     DWORD old;
     VirtualProtect(&vtbl[8], sizeof(void*), PAGE_READWRITE, &old);
     vtbl[8] = (void*)HookPresent;

@@ -1,6 +1,7 @@
 // See lobby.h.
 #include "lobby.h"
 #include "core.h"
+#include "../common/steam_ids.h"
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
@@ -8,13 +9,14 @@
 namespace wlobby {
 namespace {
 enum Type : uint8_t { T_JOIN = 1, T_WELCOME = 2, T_HELLO = 3, T_STATE = 4, T_CHAT = 5, T_LEAVE = 7 };
-constexpr uint8_t kVersion = 1;
+constexpr uint8_t kVersion = 2;      // 2: members carry a SteamID (Steam lobbies)
 uint32_t Fnv(const uint8_t* d, size_t n) { uint32_t h = 2166136261u; for (size_t i = 0; i < n; ++i) { h ^= d[i]; h *= 16777619u; } return h; }
 struct W {
     Bytes b; explicit W(Type t) { b = {'W', 'T', 'L', '1', (uint8_t)t}; }
     W& u8(unsigned v) { b.push_back(uint8_t(v)); return *this; }
     W& u16(unsigned v) { u8(v & 255); u8(v >> 8); return *this; }
     W& u32(uint32_t v) { for (int i = 0; i < 4; ++i) b.push_back(uint8_t(v >> (8 * i))); return *this; }
+    W& u64(uint64_t v) { u32(uint32_t(v)); return u32(uint32_t(v >> 32)); }
     W& str(const std::string& s, size_t max) { size_t n = std::min(s.size(), max); u8((unsigned)n); b.insert(b.end(), s.begin(), s.begin() + n); return *this; }      // (max < 256)
     W& lstr(const std::string& s, size_t max) { size_t n = std::min(s.size(), max); u16((unsigned)n); b.insert(b.end(), s.begin(), s.begin() + n); return *this; }
     Bytes done() { uint32_t h = Fnv(b.data(), b.size()); u32(h); return b; }
@@ -25,6 +27,7 @@ struct R {
     unsigned u8() { if (!take(1)) return 0; return d[at++]; }
     unsigned u16() { unsigned a = u8(); return a | u8() << 8; }
     uint32_t u32() { uint32_t v = 0; if (!take(4)) return 0; for (int i = 0; i < 4; ++i) v |= uint32_t(d[at + i]) << (8 * i); at += 4; return v; }
+    uint64_t u64() { uint64_t lo = u32(); return lo | uint64_t(u32()) << 32; }
     std::string str() { unsigned k = u8(); if (!take(k)) return ""; std::string s((const char*)d + at, k); at += k; return s; }
     std::string lstr() { unsigned k = u16(); if (!take(k)) return ""; std::string s((const char*)d + at, k); at += k; return s; }
 };
@@ -72,7 +75,7 @@ void Lobby::Leave() { if (host_ || !joined_) return; W w(T_LEAVE); w.u8(id_); se
 std::vector<ChatLine> Lobby::TakeChat() { auto r = std::move(chatIn_); chatIn_.clear(); return r; }
 
 void Lobby::Rebuild() {      // host: the member list from the peers (the host first, then by id)
-    Member me; me.id = 1; me.name = name_; me.host = true; me.ready = true; me.inGame = inGame_; me.speaking = speaking_; me.gamePort = gamePort_; me.playing = st_.phase != kLobby;
+    Member me; me.id = 1; me.name = name_; me.host = true; me.ready = true; me.inGame = inGame_; me.speaking = speaking_; me.gamePort = gamePort_; me.playing = st_.phase != kLobby; me.steamId = steamId_;
     std::vector<Member> v = {me}; for (auto& kv : peers_) v.push_back(kv.second.m);
     std::sort(v.begin() + 1, v.end(), [](const Member& a, const Member& b) { return a.id < b.id; });
     for (auto& m : v) if (m.host) m.ready = true;
@@ -108,7 +111,7 @@ void Lobby::Tick(uint64_t now) {
         if (now >= nextState_) {
             st_.startInMs = st_.phase == kStarting ? int32_t(std::max<int64_t>(0, int64_t(startAt_) - int64_t(now))) : 0; Rebuild();
             W w(T_STATE); w.u32(session_).u32(st_.seq).u8(st_.phase).u32((uint32_t)st_.startInMs).u8(st_.settings.mode).u8(st_.settings.newGame ? 1 : 0).str(st_.settings.raceGoal, 23).lstr(st_.settings.progress, 160).lstr(st_.lastResult, 200).u8((unsigned)st_.members.size());
-            for (const auto& m : st_.members) w.u8(m.id).u8((m.host ? 1 : 0) | (m.ready ? 2 : 0) | (m.inGame ? 4 : 0) | (m.speaking ? 8 : 0) | (m.playing ? 16 : 0)).u16(m.gamePort).u32(m.ip).u32(m.ackedChat).str(m.name, 23);
+            for (const auto& m : st_.members) w.u8(m.id).u8((m.host ? 1 : 0) | (m.ready ? 2 : 0) | (m.inGame ? 4 : 0) | (m.speaking ? 8 : 0) | (m.playing ? 16 : 0)).u16(m.gamePort).u32(m.ip).u32(m.ackedChat).str(m.name, 23).u64(m.steamId);
             Bytes b = w.done(); for (auto& kv : peers_) send_(kv.first, b); nextState_ = now + kStateMs;
         }
         for (auto& kv : peers_) {      // chat the client has not acknowledged yet, oldest first, a few at a time
@@ -117,7 +120,7 @@ void Lobby::Tick(uint64_t now) {
             p.outboxAt = now + 400;
         }
     } else {
-        if (hostAddr_.port == 0) return;
+        if (!hostAddr_.valid()) return;
         if (!joined_) { if (now >= nextHello_) { W w(T_JOIN); w.u8(kVersion).str(token_, 8).str(name_, 23).u16(gamePort_); send_(hostAddr_, w.done()); nextHello_ = now + kHelloMs; } return; }
         if (!twins.noTimeout && now - lastHost_ > kStaleMs) { joined_ = false; refused_ = kPending; id_ = 0; hostSession_ = 0; nextHello_ = 0; return; }      // the host is gone (or dropped us): ask again
         if (now >= nextHello_) SendHello(now);
@@ -157,7 +160,7 @@ void Lobby::OnPacket(const Addr& from, const uint8_t* d, size_t n, uint64_t now)
             auto it = peers_.find(from);
             if (it == peers_.end()) {
                 if (st_.members.size() >= kMaxMembers) { reply(kFull, 0); return; }
-                Peer p; p.addr = from; p.m.id = nextId_++; p.m.name = Clean(nm, 23); if (p.m.name.empty()) p.m.name = "Player"; p.m.gamePort = (uint16_t)port; p.m.ip = from.ip; p.at = now;
+                Peer p; p.addr = from; p.m.id = nextId_++; p.m.name = Clean(nm, 23); if (p.m.name.empty()) p.m.name = "Player"; p.m.gamePort = (uint16_t)port; p.m.ip = from.ip; p.m.steamId = from.steam; p.at = now;
                 it = peers_.emplace(from, p).first; Refresh();
             }
             it->second.at = now; reply(kJoinOk, it->second.m.id); return;
@@ -181,7 +184,7 @@ void Lobby::OnPacket(const Addr& from, const uint8_t* d, size_t n, uint64_t now)
     if (!joined_) return;
     if (t == T_STATE) {
         State s; uint32_t session = r.u32(); s.seq = r.u32(); s.phase = Phase(r.u8()); s.startInMs = int32_t(r.u32()); s.settings.mode = Mode(r.u8()); s.settings.newGame = r.u8() != 0; s.settings.raceGoal = r.str(); s.settings.progress = r.lstr(); s.lastResult = r.lstr();
-        unsigned cnt = r.u8(); for (unsigned i = 0; i < cnt && !r.bad; ++i) { Member m; m.id = r.u8(); unsigned f = r.u8(); m.host = f & 1; m.ready = f & 2; m.inGame = f & 4; m.speaking = f & 8; m.playing = f & 16; m.gamePort = (uint16_t)r.u16(); m.ip = r.u32(); m.ackedChat = r.u32(); m.name = r.str(); s.members.push_back(m); }
+        unsigned cnt = r.u8(); for (unsigned i = 0; i < cnt && !r.bad; ++i) { Member m; m.id = r.u8(); unsigned f = r.u8(); m.host = f & 1; m.ready = f & 2; m.inGame = f & 4; m.speaking = f & 8; m.playing = f & 16; m.gamePort = (uint16_t)r.u16(); m.ip = r.u32(); m.ackedChat = r.u32(); m.name = r.str(); m.steamId = r.u64(); s.members.push_back(m); }
         if (r.bad || s.phase > kInGame) return;
         bool newHost = hostSession_ != session;
         if (!twins.noStateSeq && !newHost && s.seq <= stateSeq_) { lastHost_ = now; return; }      // an older state arrived late
@@ -205,8 +208,14 @@ std::string BuildGameCfg(const std::string& base, const Launch& l, uint32_t host
     wl::CfgFile cfg = wl::CfgFile::Parse(base); const Member* me = nullptr; for (const auto& m : l.state.members) if (m.id == l.myId) me = &m;
     if (!me) return base;
     cfg.Set("id", std::to_string(me->id)); cfg.Set("listen", std::to_string(me->gamePort)); cfg.Set("name", me->name);
-    std::vector<std::string> peers; for (const auto& m : l.state.members) { if (m.id == me->id || !m.playing) continue; uint32_t ip = m.host ? (me->host ? m.ip : hostDialIp) : m.ip; if (m.host && me->host) continue; peers.push_back(std::to_string(m.id) + "," + IpText(ip) + "," + std::to_string(m.gamePort)); }
+    std::vector<std::string> peers;
+    for (const auto& m : l.state.members) {
+        if (m.id == me->id || !m.playing) continue;
+        if (me->steamId) { if (m.steamId) peers.push_back(std::to_string(m.id) + ",steam:" + steamids::Text(m.steamId)); continue; }      // a Steam lobby: every game is named by its SteamID
+        uint32_t ip = m.host ? (me->host ? m.ip : hostDialIp) : m.ip; if (m.host && me->host) continue; peers.push_back(std::to_string(m.id) + "," + IpText(ip) + "," + std::to_string(m.gamePort));
+    }
     cfg.SetAll("peer", peers); cfg.Unset("peer_host");
+    if (me->steamId) cfg.Set("transport", "steam"); else cfg.Unset("transport");      // a Steam lobby's game uses Steam even with nobody else in it: never an old peer=<port> line
     cfg.Set("game_mode", l.state.settings.mode == kRace ? "race" : "coop");
     if (l.state.settings.mode == kRace) cfg.Set("race_goal", l.state.settings.raceGoal); else cfg.Unset("race_goal");
     if (l.state.settings.newGame && !l.state.settings.progress.empty()) cfg.Set("start_progress", l.state.settings.progress); else cfg.Unset("start_progress");

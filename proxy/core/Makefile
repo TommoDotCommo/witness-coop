@@ -8,7 +8,7 @@ HUB := $(patsubst %/tools/fuzz/src,%,$(HUB))
 FUZZ = $(HUB)/tools/fuzz
 BUILD = build
 CXXF = -std=c++17 -O2 -Wall -Wextra
-TESTS = pov ping-names social-sync line-sync group-sync apply-retry power-sync reload-sync cable-sync cable-off race-isolation resend-count unsolve-sync propagation-latency
+TESTS = pov ping-names social-sync line-sync group-sync apply-retry power-sync reload-sync cable-sync cable-off race-isolation resend-count unsolve-sync propagation-latency peers
 
 $(BUILD)/sync_core.o: sync_core.cpp sync_core.h line_precision.h appearance.h emotes.h pov.h ../radio/radio.h
 	@mkdir -p $(BUILD)
@@ -16,7 +16,7 @@ $(BUILD)/sync_core.o: sync_core.cpp sync_core.h line_precision.h appearance.h em
 
 # one binary and one run stamp per test: build/<name>, build/<name>.ok (the log is build/<name>.log)
 define TEST
-$$(BUILD)/$(1): tests/$(subst -,_,$(1)).cpp $$(BUILD)/sync_core.o sync_core.h pov.h
+$$(BUILD)/$(1): tests/$(subst -,_,$(1)).cpp $$(BUILD)/sync_core.o sync_core.h pov.h peers.h ../../common/steam_ids.h
 	@mkdir -p $$(BUILD)
 	g++ $$(CXXF) -o $$@ tests/$(subst -,_,$(1)).cpp $$(BUILD)/sync_core.o
 $$(BUILD)/$(1).ok: $$(BUILD)/$(1)
@@ -48,9 +48,9 @@ retest:
 clean:
 	rm -rf $(BUILD)
 .PHONY: test retest clean
-$(BUILD)/group-transport.exe: tests/group_transport.cpp ../coop.cpp ../coop.h sync_core.cpp sync_core.h
+$(BUILD)/group-transport.exe: tests/group_transport.cpp ../coop.cpp ../coop.h ../steam_net.cpp ../steam_net.h peers.h sync_core.cpp sync_core.h
 	mkdir -p $(BUILD)
-	x86_64-w64-mingw32-g++ -std=c++17 -O2 -D_WIN32_WINNT=0x0601 -static -o $@ tests/group_transport.cpp ../coop.cpp sync_core.cpp -lws2_32
+	x86_64-w64-mingw32-g++ -std=c++17 -O2 -D_WIN32_WINNT=0x0601 -static -o $@ tests/group_transport.cpp ../coop.cpp ../steam_net.cpp sync_core.cpp -lws2_32
 transport-test: $(BUILD)/group-transport.exe
 	python3 tests/run_group_transport.py
 .PHONY: transport-test
@@ -126,3 +126,12 @@ line-capture-test:
 	python3 ../../tools/test_line_capture_pixels.py
 test: line-capture-test
 .PHONY: line-capture-test
+
+# the roster's receive filter over a fake Steam link: two mutants that must fail (tests/peers.cpp)
+PEER_MUTANTS = STEAM_ANY_SENDER STEAM_ANY_MEMBER SILENT_LOSS
+$(BUILD)/peers-mutant-%: tests/peers.cpp peers.h ../../common/steam_ids.h $(BUILD)/sync_core.o
+	@mkdir -p $(BUILD)
+	g++ $(CXXF) -Wno-unused-parameter -DWP_MUT_$* -o $@ tests/peers.cpp $(BUILD)/sync_core.o
+$(BUILD)/peers-mutants.ok: $(addprefix $(BUILD)/peers-mutant-,$(PEER_MUTANTS))
+	@for m in $(PEER_MUTANTS); do if $(BUILD)/peers-mutant-$$m > /dev/null; then echo "MUTANT $$m SURVIVED (the peers test cannot fail for it)"; exit 1; else echo "peers mutant $$m killed"; fi; done; touch $@
+test: $(BUILD)/peers-mutants.ok

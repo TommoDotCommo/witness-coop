@@ -2,6 +2,7 @@
 // members that go away, a host that restarts, on a link that loses, delays and reorders packets. Every protection has a twin (Lobby::twins) that must fail here.
 #include "lobby.h"
 #include "core.h"
+#include "../common/steam_ids.h"
 #include <cmath>
 #include <cstdio>
 #include <memory>
@@ -12,15 +13,18 @@ static void check(const char* what, bool ok) { ++checks; if (!ok) { ++fails; pri
 
 struct Msg { uint64_t at; Addr to, from; Bytes d; };
 struct Net {
-    std::vector<std::unique_ptr<Lobby>> n; std::vector<Addr> addr; std::vector<bool> alive; std::vector<Msg> q; uint64_t now = 1000; unsigned lossPct = 0, jitter = 0, seed = 7, delay = 40, corruptPct = 0; Addr hostAddr;
+    std::vector<std::unique_ptr<Lobby>> n; std::vector<Addr> addr; std::vector<bool> alive; std::vector<Msg> q; uint64_t now = 1000; unsigned lossPct = 0, jitter = 0, seed = 7, delay = 40, corruptPct = 0, dupPct = 0; Addr hostAddr;
+    bool steam = false; Gate gate; unsigned gateDropped = 0;      // a fake Steam link: members are addressed by SteamID, and only members of the Steam lobby get through
     std::vector<std::vector<wvoice::Packet>> heard; std::vector<uint64_t> deadSince;
     unsigned rnd(unsigned m) { seed = seed * 1103515245u + 12345u; return m ? (seed >> 16) % m : 0; }
-    Net(unsigned loss = 0, unsigned jit = 0) : lossPct(loss), jitter(jit) { hostAddr = {0x0A000001, 47100}; }
+    Net(unsigned loss = 0, unsigned jit = 0, bool overSteam = false) : lossPct(loss), jitter(jit), steam(overSteam) { hostAddr = steam ? SteamAddr(Sid(0)) : Addr{0x0A000001, 47100}; }
+    static uint64_t Sid(unsigned i) { return 76561197960265728ull + 500 + i; }
     unsigned add(bool host, const std::string& name, const std::string& token = "ABC123", Lobby::Twins tw = {}, uint16_t gamePort = 0) {
-        unsigned i = (unsigned)n.size(); Addr a = host ? hostAddr : Addr{0x0A000001 + i, uint16_t(50000 + i)}; addr.push_back(a); alive.push_back(true); heard.emplace_back();
-        n.push_back(std::make_unique<Lobby>(host, name, gamePort ? gamePort : uint16_t(47001 + i), token, [this, i](const Addr& to, const Bytes& b0) { if (lossPct && rnd(100) < lossPct) return; Bytes b = b0; if (corruptPct && rnd(100) < corruptPct) b[5 + rnd(unsigned(b.size() - 9))] ^= uint8_t(1 + rnd(255)); q.push_back({now + delay + rnd(jitter + 1), to, addr[i], b}); }));
+        unsigned i = (unsigned)n.size(); Addr a = host ? hostAddr : steam ? SteamAddr(Sid(i)) : Addr{0x0A000001 + i, uint16_t(50000 + i)}; addr.push_back(a); alive.push_back(true); heard.emplace_back();
+        n.push_back(std::make_unique<Lobby>(host, name, gamePort ? gamePort : uint16_t(47001 + i), token, [this, i](const Addr& to, const Bytes& b0) { if (lossPct && rnd(100) < lossPct) return; Bytes b = b0; if (corruptPct && rnd(100) < corruptPct) b[5 + rnd(unsigned(b.size() - 9))] ^= uint8_t(1 + rnd(255)); q.push_back({now + delay + rnd(jitter + 1), to, addr[i], b}); if (dupPct && rnd(100) < dupPct) q.push_back({now + delay + rnd(jitter + 1), to, addr[i], b}); }));
         n[i]->twins = tw; n[i]->onVoice = [this, i](const wvoice::Packet& p) { heard[i].push_back(p); };
         if (host) n[i]->SetSession(unsigned(now)); else n[i]->Join(hostAddr);
+        if (steam) n[i]->SetSteamId(a.steam);
         return i;
     }
     void advance(uint64_t ms) {
@@ -28,7 +32,11 @@ struct Net {
         while (now < end) {
             now += 10; for (size_t i = 0; i < n.size(); ++i) if (alive[i]) n[i]->Tick(now);
             auto cur = std::move(q); q.clear();
-            for (auto& m : cur) { if (m.at <= now) { for (size_t i = 0; i < n.size(); ++i) if (alive[i] && addr[i] == m.to) n[i]->OnPacket(m.from, m.d.data(), m.d.size(), now); } else q.push_back(std::move(m)); }
+            for (auto& m : cur) {
+                if (m.at > now) { q.push_back(std::move(m)); continue; }
+                if (steam && !gate.Allowed(m.from.steam)) { ++gateDropped; continue; }
+                for (size_t i = 0; i < n.size(); ++i) if (alive[i] && addr[i] == m.to) n[i]->OnPacket(m.from, m.d.data(), m.d.size(), now);
+            }
         }
     }
 };
@@ -120,5 +128,33 @@ int main() {
     // 6. packets
     { Net net; net.add(true, "Host"); unsigned a = net.add(false, "A"); net.advance(2000); Bytes junk = {'W', 'T', 'L', '1', 3, 1, 2, 3, 4, 5, 6, 7, 8}; net.n[0]->OnPacket(net.addr[a], junk.data(), junk.size(), net.now);
       check("packets: garbage and a bad checksum are ignored", net.n[0]->state().members.size() == 2); }
+    // 7. a Steam lobby: the same lobby over SteamIDs on a link that loses, duplicates and reorders; the gate lets in only members of the Steam lobby
+    { Net net(20, 150, true); net.dupPct = 15; for (unsigned i = 0; i < 3; ++i) net.gate.members.insert(Net::Sid(i));      // host, Alpha, Beta (not the stranger, index 3)
+      unsigned h = net.add(true, "Host", "ABC123", {}, 47001); unsigned a = net.add(false, "Alpha", "ABC123", {}, 47002), b = net.add(false, "Beta", "ABC123", {}, 47003);
+      unsigned stranger = net.add(false, "Mallory", "ABC123");      // has the right code (it is in the Steam lobby's data) but is not in the Steam lobby
+      net.advance(6000);
+      check("steam: members join by SteamID over a lossy, duplicating, reordering link", net.n[a]->joined() && net.n[b]->joined() && net.n[h]->state().members.size() == 3);
+      check("steam: a Steam user who is not in the Steam lobby never gets in, even with the right code (the gate drops it)", !net.n[stranger]->joined() && net.gateDropped > 0);
+      auto sidOf = [&](unsigned memberId) { for (unsigned i : {h, a, b}) if (net.n[i]->myId() == memberId) return net.addr[i].steam; return uint64_t(0); };      // (ids follow the join order, which the lossy link shuffles)
+      bool sids = true; for (unsigned i : {h, a, b}) for (const auto& m : net.n[i]->state().members) sids = sids && m.steamId && m.steamId == sidOf(m.id);
+      check("steam: every member knows every member's SteamID", sids && net.n[a]->state().members.size() == 3);
+      for (int k = 0; k < 10; ++k) { net.n[a]->SendChat("a" + std::to_string(k)); net.n[h]->SendChat("h" + std::to_string(k)); net.advance(200); } net.advance(15000);
+      auto ca = net.n[a]->TakeChat(), cb = net.n[b]->TakeChat(); bool chat = ca.size() == 20 && cb.size() == 20; for (size_t k = 0; chat && k < 20; ++k) chat = ca[k].text == cb[k].text;
+      check("steam: chat arrives once and in the same order for everybody (duplicates on the link are not shown twice)", chat);
+      net.n[a]->SetReady(true); net.n[b]->SetReady(true); net.advance(3000); check("steam: start accepted", net.n[h]->Start(net.now));
+      std::vector<Launch> L(3); for (int step = 0; step < 600; ++step) { net.advance(10); for (unsigned i : {h, a, b}) { Launch l; if (net.n[i]->TakeLaunch(net.now, &l)) L[i] = l; } }
+      std::string cfgA = BuildGameCfg("listen=1\npeer=9,10.0.0.9,47009\n", L[a], 0), cfgH = BuildGameCfg("", L[h], 0);
+      wl::CfgFile ca2 = wl::CfgFile::Parse(cfgA), ch2 = wl::CfgFile::Parse(cfgH); auto pa = ca2.GetAll("peer"), ph = ch2.GetAll("peer");
+      auto has = [](const std::vector<std::string>& v, const std::string& x) { for (auto& y : v) if (y == x) return true; return false; };
+      check("steam cfg: each game names the others by SteamID (peer=<id>,steam:<steamid64>), not itself, and no UDP line is left", pa.size() == 2 && has(pa, "1,steam:" + steamids::Text(Net::Sid(0))) && has(pa, std::to_string(net.n[b]->myId()) + ",steam:" + steamids::Text(Net::Sid(2)))
+            && ph.size() == 2 && has(ph, std::to_string(net.n[a]->myId()) + ",steam:" + steamids::Text(Net::Sid(1))) && cfgA.find("10.0.0.9") == std::string::npos && ca2.Get("transport", "") == "steam");
+      Net u; u.add(true, "H", "T"); unsigned ua = u.add(false, "A", "T"); u.advance(3000); check("udp: a member's SteamID is 0 and its cfg keeps the UDP form", u.n[ua]->joined() && u.n[0]->state().members[1].steamId == 0);
+      Net g(10, 80, true); for (unsigned i = 0; i < 16; ++i) g.gate.members.insert(Net::Sid(i)); g.add(true, "H", "T"); for (unsigned i = 1; i < 16; ++i) g.add(false, "P" + std::to_string(i), "T"); g.advance(8000);
+      for (unsigned i = 1; i < 16; ++i) g.n[i]->SetReady(true); g.advance(3000); bool gs = g.n[0]->Start(g.now); Launch gl; bool got = false; for (int step = 0; step < 600 && !got; ++step) { g.advance(10); got = g.n[7]->TakeLaunch(g.now, &gl); }
+      wl::CfgFile gc = wl::CfgFile::Parse(BuildGameCfg("", gl, 0)); auto gp = gc.GetAll("peer"); bool allSteam = gp.size() == 15; for (auto& x : gp) allSteam = allSteam && x.find(",steam:") != std::string::npos;
+      check("steam group: 16 players in one Steam lobby, each game's cfg names the 15 others by SteamID", g.n[0]->state().members.size() == 16 && gs && got && allSteam);
+      Launch solo; solo.myId = 1; Member m; m.id = 1; m.host = true; m.playing = true; m.steamId = Net::Sid(0); solo.state.members.push_back(m);
+      wl::CfgFile cs = wl::CfgFile::Parse(BuildGameCfg("peer=47002\ntransport=udp\n", solo, 0));
+      check("steam cfg: alone in a Steam lobby the game still uses Steam (transport=steam), and the old peer=<port> line is gone", cs.Get("transport", "") == "steam" && cs.GetAll("peer").empty()); }
     printf("%d checks, %d failed\n", checks, fails); return fails ? 1 : 0;
 }
