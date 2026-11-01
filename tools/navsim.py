@@ -219,12 +219,16 @@ def hedge_pocket():
     inside; the base is thin, so walking through looks cheaper than the way out and round. Bumping the cell ahead is not enough: the wall rule bumps the
     hedge on either side."""
     return Level('hedge_pocket', [Block(10, -9, 10.6, 9, 'foliage', solid=True), Block(-6, 8, 10.6, 9, 'foliage', solid=True), Block(-6, -9, 10.6, -8, 'foliage', solid=True)], (2, 0), (18, 0), ('arrives', 150), 'solid hedge on three sides: a pocket')
+def hedge_long():
+    """A solid hedge 64 m long and one cell thick, the target straight behind it: crossing it looks cheaper (one soft cell) than the way round, so the
+    walk is stuck against it again and again. Only the wall rule (all of the hedge in sight bumped at once) gets round it in time."""
+    return Level('hedge_long', [Block(14, -32, 14.5, 32, 'foliage', solid=True)], (0, 0), (30, 0), ('arrives', 120), 'a long thin solid hedge: the wall rule', seconds=240)
 def locked_view(): return Level('locked_view', [], (0, 0), (20, 0), ('gives up', {'view does not turn'}, 6), 'a puzzle holds the mouse: the view does not turn, the walk says so at once', locked=True, seconds=60, yaw0=math.pi)
 def locked_mid(): return Level('locked_mid', [], (0, 0), (20, 0), ('gives up', {'view does not turn'}, 5), 'the view stops turning after the walk began: within 2 s of the turn that did not happen', locks_at=0.9, seconds=60, yaw0=math.pi)
 def ledge_spot():
     """A panel's standing place on a ledge: a strip of ground (the ledge) with pits and an invisible collision along its edges, reached by a 1.5 m causeway."""
     return Level('ledge_spot', [Block(10, -20, 20, 20, 'pit'), Block(20, -20, 40, -2, 'pit'), Block(20, 2, 40, 20, 'pit'), Block(10, -20, 11, -0.8, 'open'), Block(10, 0.8, 11, 20, 'open')], (0, 0), (36, 0), ('arrives', 150), 'a causeway across a pit to the ledge the panel stands on')
-LEVELS = [open_field, wide_wall, wall_80, dead_end, room_far_door, zigzag, wall_gap, pit, pillars, narrow_door, closed_room, shore_bay, hedge_pocket, ledge_spot, locked_view, locked_mid]
+LEVELS = [open_field, wide_wall, wall_80, dead_end, room_far_door, zigzag, wall_gap, pit, pillars, narrow_door, closed_room, shore_bay, hedge_pocket, ledge_spot, hedge_long, locked_view, locked_mid]
 BY_NAME = {f.__name__: f for f in LEVELS}
 
 

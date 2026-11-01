@@ -99,7 +99,7 @@ def run_levels(names, quiet=False, fail_fast=False):
 
 # one-line changes of wnav.py, each of which must make a level fail
 MUTANTS = [
-    ("                if self.map.bump(*centre(c_)): n += 1\n                self.avoid.add(c_)\n", "                pass\n"),      # a walker that ignores bumps
+    ("                if self.map.bump(*centre(c_)): n += 1\n                if forbid: self.avoid.add(c_)\n", "                pass\n"),      # a walker that ignores bumps
     ("    if mode == '1': return True\n", "    return False\n"),      # a planner without the wall rule
     ("    return any(math.dist(s[:2], q[:2]) < r for s in stuck_at)\n", "    return False\n"),      # a planner without the wall rule (the default of the second stuck near here)
     ("            if now - prog_t > window or (bumps_near >= 4 and now - near_t > 3 * stall):", "            if False:"),      # a watchdog that never fires

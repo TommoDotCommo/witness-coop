@@ -57,7 +57,7 @@ How it finds the way (a robot with a depth camera, as a person uses their eyes):
    timed out | view does not turn), detail (the words), distance_left, last_way (the cells of the last plan), stuck_class, tried (replans, bumps, wall rules,
    sidesteps, pocket escapes in order), and the counters. Every giveup also goes to the typed trace (<game folder>/trace.jsonl, see wtrace.py) with the walk_start,
    replan, bump, progress and stall lines; a caller that teleports after a failed walk writes a teleport line (always after a giveup).
- - tested without a game: tools/test_navsim.py walks this code against 16 simulated levels (tools/navsim.py) with mutants; a planner or walker change merges
+ - tested without a game: tools/test_navsim.py walks this code against 17 simulated levels (tools/navsim.py) with mutants; a planner or walker change merges
    only with that passing and a before/after of tools/test_walk_bench.sh on the 15 legs (docs/WALKER.md).
 The map is kept in <game folder>/wnav_map.bin and read with the maps in WNAV_MAPS (the other bots' and the shared one): it is learnt once
 and shared (the orchestrator merges the bots' maps). Doors open and close: a cell whose floor is seen with the band above it empty takes
