@@ -38,6 +38,13 @@ and for the test lab: "Host direct (LAN)" in the launcher's Lobby tab. A game ne
 * **Messages**: `ISteamNetworkingMessages`, unreliable + no Nagle + auto-restart-broken-session, one virtual channel per process (the launcher's lobby
   on channel 1, the game on channel 2), every packet class keeping its own magic. The sync core's events, chat, voice and pictures keep their own
   acknowledgements and resends exactly as over UDP: Steam adds no second layer of reliability. Voice in the lobby is still relayed by the host.
+* **The Steam overlay in the game**: once the game's Steam API is up (started from Steam, or from the launcher's Steam lobby), Steam puts its overlay
+  (`gameoverlayrenderer64.dll`) into the game, and into the launcher too. The overlay inline-patches dxgi's `Present` *and* the function the swap
+  chain's vtable points to (the mod's `HookPresent`) and calls one saved original from both; before 2026-11-01 the two called each other until the
+  stack overflowed (`0xC00000FD` a few seconds after the first frame, every time the game rendered with the overlay; the earlier "starting it from
+  Steam works" had only been seen at the game's config window). The mod now notices being entered again from inside itself and then calls dxgi's
+  `Present` through its own trampoline, built from the function's untouched first instructions in `dxgi.dll` on disk (`proxy/overlay.cpp`).
+  A stack overflow leaves its innermost frames (module+offset) in `witness_crash_stack.txt` beside the game.
 * **One process per player on Steam at a time**: while a player's game runs, that player's launcher stops sending and reading Steam messages and
   closes its sessions (its lobby clock stands still, so nobody times out); it carries on when the game ends.
 
@@ -85,7 +92,8 @@ own SteamID is refused and the game plays alone, saying why. Up to 15 peers (16 
 * Live, one game: `tools/qa.sh steam` (one slot; Steam running and logged in). A) a game started without Steam's environment reports the Steam
   transport down and opens no UDP socket; B) the launcher hosts a Steam lobby whose id, mod key, protocol key, code and member limit read back
   through the Steam API, starts its game from it (`transport=steam`), the mod reports the game's own Steam connection up (app 210970), and the
-  launcher is back in the same lobby after the game.
+  launcher is back in the same lobby after the game; the game (with Steam's overlay in it) is still running a minute later. Mutant: a proxy whose
+  Present loop with the overlay is not broken (`make -C proxy build/AnselSDK64_PRESENT_LOOP.dll`) must be seen to crash there.
 * Not provable on one PC with one Steam account: two members in one Steam lobby, and two games exchanging messages through Steam. That is the
   owner's two-account test below.
 
