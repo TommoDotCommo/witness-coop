@@ -104,6 +104,29 @@ the scripts are readable, and signing the exe and dll files (below) is what make
 
 Then both players start the game from the launcher (Lobby tab). The player's own copy of the instructions is `dist/README.txt`.
 
+### Updating
+
+Every player must run the same mod version. The version (from `git describe`, the release tag) is stamped into the launcher and the proxy by the Makefiles. It shows in the launcher's
+window title, on the Play page under *About and updates*, and next to every name in the lobby list. A player on another version cannot join: the host answers with its own version and
+yours (*"The host is on v0.2.0, you are on v0.1.0: update both to the same version."*) and the lobby page shows an **Update the launcher** button. A launcher of an older lobby protocol is told to update.
+If two games with different versions are started without the lobby (a hand-written `witness_coop.cfg`), the first packet of the other version from a configured peer is said once
+in the game and the log (*"Player 2 is on v0.1.0, you are on v0.2.0: update both"*; the launcher's roster supplies the version, `peer_version=<id>,<version>`) instead of being dropped in silence.
+
+**The launcher updates itself from GitHub releases** (`launcher/update.h`, `update_win.h`; ported from the MDK2 launcher's updater). At start it asks for the latest release of
+`TommoDotCommo/witness-coop` (at most once a day; nothing about you is sent: one plain request for the public release list, and one per file if you press Update; failures are only written to the
+launcher's log). When a newer release exists the bottom bar shows *Update available: vX (first line of the notes)* with **Update** and **Later**; the Play page has the full notes, a *Check for
+updates* button, and the two settings (also in `witness_launcher_update.cfg` next to the launcher: `update_check=0` turns the automatic check off, `update_prereleases=auto|1|0`;
+*auto* offers pre-releases only to an installed pre-release). **Update** downloads `witness-coop-<tag>.zip` and its `.sha256`, checks the size and SHA-256, opens the archive in memory
+(CRC of every file, no path may leave its folder, the executables must be 64-bit), and then replaces `AnselSDK64.dll`, `witness_launcher.exe` and `witness_models\*` through **the
+installer's own receipt rules** (`dist/install-policy.h`): a file is replaced only if its `.coop-receipt.json` says the installer put exactly that file there, with the receipt journal
+(`pending`, replace, `installed`) the installer writes. A copy that was not installed by Setup, a file changed by hand, a leftover `.coop-stage` or an unsettled earlier update are refused
+whole, with a plain message and nothing changed. All files are staged and backed up first and put back together if anything fails; if the launcher is killed half-way the next start rolls
+back (`witness_update.state`). The proxy DLL is replaced only while the game is not running; the running launcher is renamed to `witness_launcher.exe.coop-old` and replaced (reopen it after the update).
+The game's own Ansel DLL (`AnselSDK64_real.dll`, `AnselSDK64.dll.coop-original`) is never touched. A development build (a version like `v0.1.0-3-gabc1234`, or a dirty tree) neither
+checks nor updates. A downgrade (a release that is not newer) is refused. Tests: `make -C launcher test` (includes `tools/test_launcher_update.py`: fake GitHub responses, corrupt and
+truncated archives, hash mismatch, interrupted apply, downgrade, 36 source mutants), `python3 tools/test_launcher_update_win.py --mutants` (the Windows code against a local fake release server),
+`python3 tools/qa_lobby_version.py` (real launchers, three versions), `python3 tools/test_update_installer.py <game build folder> --mutant` (a folder installed by the real PowerShell installer is updated by the Windows updater; the new package's installer must then call every file current and uninstall must restore the original). The maintenance rules for publishing a release the updater accepts are in [docs/UPDATER.md](docs/UPDATER.md).
+
 ### Play over the internet (Steam, no port forwarding)
 
 With Steam running, the host clicks **Host on Steam** (a friends-only Steam lobby for up to 16) and invites friends through the Steam
@@ -174,7 +197,7 @@ Microsoft's false-positive submission). `tools/qa_installer.sh <folder of the su
 fixtures (install, update, repair, refusals in plain words, uninstall), the one-file setup (hash, planted links, exclusive folder, zip location, a real run), `install-linux.sh`, and the
 mutants (an unknown exe installing, an unchecked payload hash, a followed link, a reused folder, a missing zip message, an Ansel DLL overwritten without a backup, an uninstall removing an
 unowned file) that must fail. `tools/test_release_signing.sh` tests the signing hook with a stand-in signer. Publishing is `gh release create v0.x.y --prerelease <the Setup.exe, the zip and their .sha256>`
-(the notes go in `docs/RELEASE-NOTES-v0.x.y.md`).
+(the notes go in `docs/RELEASE-NOTES-v0.x.y.md`). The launcher's updater only accepts a release with the exact asset names and tag shape in [docs/UPDATER.md](docs/UPDATER.md).
 
 ## Try it (two copies on one PC)
 

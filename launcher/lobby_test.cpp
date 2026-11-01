@@ -19,9 +19,10 @@ struct Net {
     unsigned rnd(unsigned m) { seed = seed * 1103515245u + 12345u; return m ? (seed >> 16) % m : 0; }
     Net(unsigned loss = 0, unsigned jit = 0, bool overSteam = false) : lossPct(loss), jitter(jit), steam(overSteam) { hostAddr = steam ? SteamAddr(Sid(0)) : Addr{0x0A000001, 47100}; }
     static uint64_t Sid(unsigned i) { return 76561197960265728ull + 500 + i; }
-    unsigned add(bool host, const std::string& name, const std::string& token = "ABC123", Lobby::Twins tw = {}, uint16_t gamePort = 0) {
+    unsigned add(bool host, const std::string& name, const std::string& token = "ABC123", Lobby::Twins tw = {}, uint16_t gamePort = 0, const std::string& ver = "") {
         unsigned i = (unsigned)n.size(); Addr a = host ? hostAddr : steam ? SteamAddr(Sid(i)) : Addr{0x0A000001 + i, uint16_t(50000 + i)}; addr.push_back(a); alive.push_back(true); heard.emplace_back();
         n.push_back(std::make_unique<Lobby>(host, name, gamePort ? gamePort : uint16_t(47001 + i), token, [this, i](const Addr& to, const Bytes& b0) { if (lossPct && rnd(100) < lossPct) return; Bytes b = b0; if (corruptPct && rnd(100) < corruptPct) b[5 + rnd(unsigned(b.size() - 9))] ^= uint8_t(1 + rnd(255)); q.push_back({now + delay + rnd(jitter + 1), to, addr[i], b}); if (dupPct && rnd(100) < dupPct) q.push_back({now + delay + rnd(jitter + 1), to, addr[i], b}); }));
+        if (!ver.empty()) n[i]->SetModVersion(ver);
         n[i]->twins = tw; n[i]->onVoice = [this, i](const wvoice::Packet& p) { heard[i].push_back(p); };
         if (host) n[i]->SetSession(unsigned(now)); else n[i]->Join(hostAddr);
         if (steam) n[i]->SetSteamId(a.steam);
@@ -156,5 +157,23 @@ int main() {
       Launch solo; solo.myId = 1; Member m; m.id = 1; m.host = true; m.playing = true; m.steamId = Net::Sid(0); solo.state.members.push_back(m);
       wl::CfgFile cs = wl::CfgFile::Parse(BuildGameCfg("peer=47002\ntransport=udp\n", solo, 0));
       check("steam cfg: alone in a Steam lobby the game still uses Steam (transport=steam), and the old peer=<port> line is gone", cs.Get("transport", "") == "steam" && cs.GetAll("peer").empty()); }
+    // 8. the mod version: JOIN carries it, a host on another version refuses and names both, the member list shows every version, an older launcher gets kBadVersion
+    { Net net; unsigned h = net.add(true, "Host", "ABC123", {}, 47001, "v0.2.0"); unsigned a = net.add(false, "Alpha", "ABC123", {}, 47002, "v0.2.0"); unsigned old = net.add(false, "Old", "ABC123", {}, 47003, "v0.1.0"); net.advance(3000);
+      check("version: a client on the host's version joins", net.n[a]->joined() && net.n[a]->refused() == kJoinOk);
+      check("version: a client on another version is refused with its own result, not as a bad invite or bad protocol", !net.n[old]->joined() && net.n[old]->refused() == kVersionMismatch && net.n[h]->state().members.size() == 2);
+      check("version: the refusal names both versions (the host's v0.2.0; this launcher knows its own v0.1.0)", net.n[old]->hostVersion() == "v0.2.0" && net.n[old]->modVersion() == "v0.1.0");
+      bool listed = net.n[a]->state().members.size() == 2 && net.n[a]->state().members[0].version == "v0.2.0" && net.n[a]->state().members[1].version == "v0.2.0" && net.n[h]->state().members[1].version == "v0.2.0";
+      check("version: the lobby list shows each member's version, on the host and on the client", listed);
+      Net wt; wt.add(true, "H", "RIGHT1", {}, 47001, "v0.2.0"); unsigned m = wt.add(false, "M", "WRONG1", {}, 47002, "v0.1.0"); wt.advance(3000);
+      check("version: a stranger with a wrong invite learns the invite is wrong, not the host's version", wt.n[m]->refused() == kBadToken && wt.n[m]->hostVersion().empty());
+      // a JOIN of the previous lobby protocol (2): version byte 2 and no mod version
+      Bytes j = {'W', 'T', 'L', '1', 1, 2, 6, 'A', 'B', 'C', '1', '2', '3', 1, 'O', 0x01, 0xB7}; { uint32_t h2 = 2166136261u; for (uint8_t c : j) { h2 ^= c; h2 *= 16777619u; } for (int i = 0; i < 4; ++i) j.push_back(uint8_t(h2 >> (8 * i))); }
+      std::vector<Bytes> replies; Addr oa{0x0A000009, 50009};
+      Lobby probe(true, "P", 47009, "ABC123", [&](const Addr&, const Bytes& b) { replies.push_back(b); }); probe.SetModVersion("v0.2.0"); probe.OnPacket(oa, j.data(), j.size(), 1000);
+      check("version: an older launcher (lobby protocol 2) is answered kBadVersion, not left waiting and not let in", replies.size() == 1 && replies[0].size() > 6 && replies[0][4] == 2 && replies[0][5] == kBadVersion && probe.state().members.size() == 1);
+      Net cfgn; unsigned ch = cfgn.add(true, "H", "T", {}, 47001, "v0.2.0"); unsigned ca = cfgn.add(false, "A", "T", {}, 47002, "v0.2.0"); cfgn.advance(3000); cfgn.n[ca]->SetReady(true); cfgn.advance(1500); cfgn.n[ch]->Start(cfgn.now);
+      Launch lh, la; for (int step = 0; step < 600; ++step) { cfgn.advance(10); cfgn.n[ch]->TakeLaunch(cfgn.now, &lh); cfgn.n[ca]->TakeLaunch(cfgn.now, &la); }
+      wl::CfgFile cf = wl::CfgFile::Parse(BuildGameCfg("", la, 0x0A000001)); auto pv = cf.GetAll("peer_version");
+      check("version: each game's cfg lists the other members' versions (peer_version=<id>,<version>)", pv.size() == 1 && pv[0] == "1,v0.2.0"); }
     printf("%d checks, %d failed\n", checks, fails); return fails ? 1 : 0;
 }

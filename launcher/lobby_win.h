@@ -33,6 +33,8 @@ public:
     bool SteamInviteDialog(); bool SteamInviteFriend(uint64_t f); std::vector<std::pair<uint64_t, std::string>> SteamFriends(); std::string SteamName();
     uint64_t SteamJoinRequest();      // a lobby the player chose in Steam (an accepted invite, Join Game): the UI joins it
     void Idle();                      // the UI's timer: Steam callbacks while no lobby session runs (invites accepted in Steam)
+    void SetModVersion(const std::string& v) { modVersion_ = v; }      // this launcher's mod version, given to every lobby it makes (before Host / Join)
+    std::string HostVersion();                                          // after a refusal for another version: the version the host runs
     void Stop();
     bool Active() const { return active_; }
     bool IsHost() const { return host_; }
@@ -49,7 +51,7 @@ private:
     void MakeSteamLobby();
     std::unique_ptr<lsteam::SteamLobby> steam_; bool steamMode_ = false; std::string steamName_, steamCode_; uint16_t steamGamePort_ = 0; uint64_t pausedSince_ = 0, pausedTotal_ = 0;
     Mutex mu_; std::unique_ptr<wlobby::Lobby> lobby_; SOCKET sock_ = INVALID_SOCKET; HANDLE th_ = nullptr; static DWORD WINAPI Run(LPVOID p) { ((Session*)p)->Loop(); return 0; } std::atomic<bool> active_{false}, stop_{false}; bool host_ = false; std::string invite_; uint32_t hostIp_ = 0;
-    std::function<void(const wvoice::Packet&)> sink_;
+    std::function<void(const wvoice::Packet&)> sink_; std::string modVersion_ = "dev";
 };
 
 class Voice {

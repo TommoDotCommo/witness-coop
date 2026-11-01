@@ -14,7 +14,7 @@
 
 namespace lsteam {
 constexpr const char* kModKey = "witness_mod"; constexpr const char* kModValue = "witness-coop";
-constexpr const char* kProtocolKey = "witness_protocol"; constexpr const char* kProtocolValue = "lobby2-net1";      // the lobby protocol (lobby.cpp kVersion) and the games' peer syntax
+constexpr const char* kProtocolKey = "witness_protocol"; constexpr const char* kProtocolValue = "lobby3-net1";      // the lobby protocol (lobby.cpp kVersion) and the games' peer syntax
 constexpr const char* kTokenKey = "witness_code";
 constexpr int kLobbyChannel = 1;
 

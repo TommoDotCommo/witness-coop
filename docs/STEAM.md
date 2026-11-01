@@ -29,7 +29,7 @@ and for the test lab: "Host direct (LAN)" in the launcher's Lobby tab. A game ne
   `SteamAPI_Init`, `SteamAPI_RunCallbacks`, `SteamAPI_Shutdown`) succeeds. The mod in the game borrows the game's connection
   (`proxy/steam_net.cpp`): it never initialises or shuts down the API; it waits up to a minute for `SteamAPI_GetHSteamUser()`.
   A game started *without* that environment (from a plain shortcut, or by the launcher before Steam lobbies) has no Steam connection at all.
-* **Lobby keys**: `witness_mod=witness-coop`, `witness_protocol=lobby2-net1` (the launcher's lobby protocol and the games' peer syntax), and
+* **Lobby keys**: `witness_mod=witness-coop`, `witness_protocol=lobby3-net1` (the launcher's lobby protocol and the games' peer syntax), and
   `witness_code` (the join code the lobby logic checks). A joiner refuses a lobby without the mod key, and one with another protocol, with a message
   naming both versions. The host's launcher sets rich presence `connect` to `+connect_lobby <number>` so Join Game works.
 * **Membership**: the Steam lobby's member list is the door. The launcher's Steam transport only sends to lobby members and drops what anybody else

@@ -37,7 +37,7 @@ bool Session::Host(const std::string& name, uint16_t gamePort, uint16_t lobbyPor
     Stop(); if (!Open(lobbyPort, err)) return false;
     std::string tok = Token(); uint32_t ip = advertise.empty() ? LocalIp() : HostByName(advertise); if (!ip) { *err = "Cannot find the address \"" + advertise + "\""; closesocket(sock_); sock_ = INVALID_SOCKET; return false; }
     SOCKET s = sock_;
-    lobby_ = std::make_unique<wlobby::Lobby>(true, name, gamePort, tok, [s](const wlobby::Addr& to, const wlobby::Bytes& b) { sockaddr_in a = {}; a.sin_family = AF_INET; a.sin_addr.s_addr = htonl(to.ip); a.sin_port = htons(to.port); sendto(s, (const char*)b.data(), (int)b.size(), 0, (sockaddr*)&a, sizeof a); });
+    lobby_ = std::make_unique<wlobby::Lobby>(true, name, gamePort, tok, [s](const wlobby::Addr& to, const wlobby::Bytes& b) { sockaddr_in a = {}; a.sin_family = AF_INET; a.sin_addr.s_addr = htonl(to.ip); a.sin_port = htons(to.port); sendto(s, (const char*)b.data(), (int)b.size(), 0, (sockaddr*)&a, sizeof a); }); lobby_->SetModVersion(modVersion_);
     lobby_->SetSession((uint32_t)GetTickCount64() ^ 0x5bd1e995u);
     lobby_->onVoice = [this](const wvoice::Packet& p) { if (sink_) sink_(p); };
     char b[80]; snprintf(b, sizeof b, "%s:%u/%s", wlobby::IpText(ip).c_str(), lobbyPort, tok.c_str()); invite_ = b; host_ = true; hostIp_ = ip; stop_ = false; active_ = true; th_ = CreateThread(nullptr, 0, Run, this, 0, nullptr); return true;
@@ -49,7 +49,7 @@ bool Session::Join(const std::string& invite, const std::string& name, uint16_t 
     if (host.empty() || port < 1 || port > 65535 || tok.empty()) { *err = "The invite looks like 192.168.1.20:47100/ABC123"; return false; }
     Wsa(); uint32_t ip = HostByName(host); if (!ip) { *err = "Cannot find the address \"" + host + "\""; return false; }
     if (!Open(0, err)) return false; SOCKET s = sock_;
-    lobby_ = std::make_unique<wlobby::Lobby>(false, name, gamePort, tok, [s](const wlobby::Addr& to, const wlobby::Bytes& b) { sockaddr_in a = {}; a.sin_family = AF_INET; a.sin_addr.s_addr = htonl(to.ip); a.sin_port = htons(to.port); sendto(s, (const char*)b.data(), (int)b.size(), 0, (sockaddr*)&a, sizeof a); });
+    lobby_ = std::make_unique<wlobby::Lobby>(false, name, gamePort, tok, [s](const wlobby::Addr& to, const wlobby::Bytes& b) { sockaddr_in a = {}; a.sin_family = AF_INET; a.sin_addr.s_addr = htonl(to.ip); a.sin_port = htons(to.port); sendto(s, (const char*)b.data(), (int)b.size(), 0, (sockaddr*)&a, sizeof a); }); lobby_->SetModVersion(modVersion_);
     lobby_->onVoice = [this](const wvoice::Packet& p) { if (sink_) sink_(p); };
     lobby_->Join({ip, (uint16_t)port}); invite_ = inv; host_ = false; hostIp_ = ip; stop_ = false; active_ = true; th_ = CreateThread(nullptr, 0, Run, this, 0, nullptr); return true;
 }
@@ -61,7 +61,7 @@ void Session::Stop() {
 uint64_t Session::VNow() { uint64_t t = GetTickCount64(); return t - pausedTotal_ - (pausedSince_ ? t - pausedSince_ : 0); }
 void Session::MakeSteamLobby() {      // (locked) the Steam lobby is entered: the lobby logic starts on it, as host if this player owns the Steam lobby
     bool host = steam_->IsOwner(); std::string code = host ? steamCode_ : steam_->Code(); lsteam::SteamLobby* st = steam_.get();
-    lobby_ = std::make_unique<wlobby::Lobby>(host, steamName_, steamGamePort_, code, [st](const wlobby::Addr& to, const wlobby::Bytes& b) { if (to.steam) st->Send(to.steam, b.data(), b.size()); });
+    lobby_ = std::make_unique<wlobby::Lobby>(host, steamName_, steamGamePort_, code, [st](const wlobby::Addr& to, const wlobby::Bytes& b) { if (to.steam) st->Send(to.steam, b.data(), b.size()); }); lobby_->SetModVersion(modVersion_);
     lobby_->SetSteamId(steam_->Self()); lobby_->onVoice = [this](const wvoice::Packet& p) { if (sink_) sink_(p); };
     if (host) lobby_->SetSession((uint32_t)GetTickCount64() ^ 0x5bd1e995u); else lobby_->Join(wlobby::SteamAddr(steam_->Owner()));
     host_ = host; invite_ = steamids::Text(steam_->LobbyId());
@@ -119,6 +119,7 @@ uint64_t Session::SteamJoinRequest() { Guard l(mu_); return steam_ ? steam_->Tak
 wlobby::State Session::State() { LOCKED(lobby_->state(), wlobby::State()); }
 unsigned Session::MyId() { LOCKED(lobby_->myId(), 0); }
 bool Session::Joined() { LOCKED(lobby_->joined(), false); }
+std::string Session::HostVersion() { LOCKED(lobby_->hostVersion(), std::string()); }
 wlobby::JoinResult Session::Refused() { LOCKED(lobby_->refused(), wlobby::kPending); }
 std::vector<wlobby::ChatLine> Session::TakeChat() { LOCKED(lobby_->TakeChat(), std::vector<wlobby::ChatLine>()); }
 bool Session::TakeLaunch(wlobby::Launch* out) { LOCKED(lobby_->TakeLaunch(VNow(), out), false); }

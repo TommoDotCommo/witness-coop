@@ -8,7 +8,7 @@ Project page and bug reports: https://github.com/TommoDotCommo/witness-coop
 
 You need The Witness on Steam, build 11370412 (the current one). Setup checks the game's
 exe and refuses any other build: the mod uses that build's addresses. Every player needs
-their own copy and this same mod version. If Setup says your build is not supported, see
+their own copy and this same mod version (the launcher shows it, and offers to update itself when a newer release is out: Play page, "About and updates"). If Setup says your build is not supported, see
 "Setup says my build is not supported" below.
 
 

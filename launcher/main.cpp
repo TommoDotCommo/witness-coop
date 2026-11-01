@@ -28,6 +28,7 @@
 #include "../common/diag_log.h"
 #include "../common/crash_handler.h"
 #include "version.h"
+#include "update_win.h"
 #include "diag_ps1.h"
 
 namespace {
@@ -38,7 +39,7 @@ bool WriteFile8(const std::wstring& p, const std::string& t) { FILE* f = _wfopen
 std::wstring Dir(const std::wstring& p) { size_t s = p.find_last_of(L"\\/"); return s == std::wstring::npos ? L"" : p.substr(0, s); }
 bool Exists(const std::wstring& p) { return GetFileAttributesW(p.c_str()) != INVALID_FILE_ATTRIBUTES; }
 
-enum { ID_TAB = 100, ID_APPLY, ID_LAUNCH, ID_NEWGAME, ID_BROWSE, ID_GAMEDIR, ID_STATUS, ID_REFRESH, ID_OPENSAVES, ID_BACKUP, ID_TRASH, ID_SAVELIST, ID_SAVEINFO, ID_SAVEPICK, ID_DIAG, ID_NG_OK = 300, ID_NG_LASERS, ID_NG_PRESET, ID_NG_INFO, ID_NG_AREAS = 400, ID_FIELD = 1000 };
+enum { ID_TAB = 100, ID_APPLY, ID_LAUNCH, ID_NEWGAME, ID_BROWSE, ID_GAMEDIR, ID_STATUS, ID_REFRESH, ID_OPENSAVES, ID_BACKUP, ID_TRASH, ID_SAVELIST, ID_SAVEINFO, ID_SAVEPICK, ID_DIAG, ID_UP_VER, ID_UP_STATUS, ID_UP_NOTES, ID_UP_CHECK, ID_UP_APPLY, ID_UP_LATER, ID_UP_AUTO, ID_UP_PRE, ID_UP_BANNER, ID_UP_BANNER_APPLY, ID_UP_BANNER_LATER, ID_NG_OK = 300, ID_NG_LASERS, ID_NG_PRESET, ID_NG_INFO, ID_NG_AREAS = 400, ID_FIELD = 1000 };
 enum Kind { kCheck, kCombo, kEdit, kMulti };
 struct Field { int id; int page; std::string label, key; Kind kind; std::vector<std::string> choices; std::string def, hint; HWND h = nullptr; };
 guide::Hold g_guideHold;
@@ -362,6 +363,7 @@ LRESULT CALLBACK PageProc(HWND h, UINT m, WPARAM w, LPARAM l) {
     if (m == WM_NOTIFY) { NMHDR* n = (NMHDR*)l; if (n->idFrom == ID_SAVELIST && n->code == LVN_ITEMCHANGED) { NMLISTVIEW* nl = (NMLISTVIEW*)l; if (nl->uNewState & LVIS_SELECTED) ShowSaveInfo(nl->iItem); } return 0; }
     return DefWindowProcW(h, m, w, l);
 }
+wup::Updater g_upd; bool g_updFromLobby;
 void BuildLobbyPage();
 void BuildPages(HWND parent) {
     WNDCLASSW wc = {}; wc.lpfnWndProc = PageProc; wc.hInstance = GetModuleHandleW(nullptr); wc.lpszClassName = L"WitnessLauncherPage"; wc.hbrBackground = th::BgBrush(); wc.hCursor = LoadCursorW(nullptr, IDC_ARROW); RegisterClassW(&wc);
@@ -374,6 +376,14 @@ void BuildPages(HWND parent) {
     int y = 16; Make(g_pages[1], L"STATIC", L"Game folder:", SS_LEFT, 16, y + 3, 100, 20, 0); Make(g_pages[1], L"EDIT", g_dir.c_str(), WS_BORDER | ES_AUTOHSCROLL | ES_READONLY, 120, y, 420, 24, ID_GAMEDIR); Make(g_pages[1], L"BUTTON", L"Browse...", BS_PUSHBUTTON, 550, y, 90, 24, ID_BROWSE);
     y += 50; Make(g_pages[1], L"BUTTON", L"Continue (start the game)", BS_DEFPUSHBUTTON, 16, y, 240, 40, ID_LAUNCH); Make(g_pages[1], L"BUTTON", L"New game...", BS_PUSHBUTTON, 270, y, 160, 40, ID_NEWGAME);
     Make(g_pages[1], L"STATIC", L"Continue starts the game with the settings of every page, on your latest save. New game asks what is already completed and starts a fresh world; your saves stay where they are.", SS_LEFT, 16, y + 56, 620, 40, 0);
+    // About and updates: the version, the check (once a day, no telemetry), Update and Later
+    y += 112; th::MarkMuted(Make(g_pages[1], L"STATIC", L"About and updates", SS_LEFT, 16, y, 300, 20, 0)); y += 26;
+    Make(g_pages[1], L"STATIC", (L"Version " + W(MOD_VERSION)).c_str(), SS_LEFT, 16, y + 3, 330, 20, ID_UP_VER); Make(g_pages[1], L"BUTTON", L"Check for updates", BS_PUSHBUTTON, 360, y, 150, 26, ID_UP_CHECK);
+    Make(g_pages[1], L"BUTTON", L"Update", BS_PUSHBUTTON, 520, y, 90, 26, ID_UP_APPLY); Make(g_pages[1], L"BUTTON", L"Later", BS_PUSHBUTTON, 620, y, 80, 26, ID_UP_LATER); y += 34;
+    Make(g_pages[1], L"STATIC", L"", SS_LEFT, 16, y, 650, 20, ID_UP_STATUS); y += 24;
+    Make(g_pages[1], L"EDIT", L"", WS_BORDER | ES_MULTILINE | ES_READONLY | WS_VSCROLL | ES_AUTOVSCROLL, 16, y, 650, 70, ID_UP_NOTES); y += 78;
+    Make(g_pages[1], L"BUTTON", L"Check for updates when the launcher starts (once a day at most; nothing about you is sent)", BS_AUTOCHECKBOX, 16, y, 650, 22, ID_UP_AUTO); y += 24;
+    Make(g_pages[1], L"BUTTON", L"Also offer pre-releases (otherwise only if this version is one)", BS_AUTOCHECKBOX, 16, y, 650, 22, ID_UP_PRE);
     // fields
     for (auto& f : g_fields) {
         HWND pg = g_pages[f.page]; static int rowY[9]; if (!rowY[f.page]) rowY[f.page] = 12; int ry = rowY[f.page]; int lw = 300;
@@ -404,12 +414,26 @@ void BuildPages(HWND parent) {
     th::MarkMuted(Make(g_pages[5], L"STATIC", L"These are the game's own options; they live inside each save. A copy of the save as it was is kept once (.before-launcher).", SS_LEFT, 16, 362, 640, 36, 0));
 }
 // ---- the lobby page: host or join, see who is there, chat by text and voice, choose what to play, start; and be back here when the game is over
-enum { ID_LB_HOST = 600, ID_LB_JOIN, ID_LB_INVITE, ID_LB_COPY, ID_LB_LEAVE, ID_LB_READY, ID_LB_START, ID_LB_MEMBERS, ID_LB_LOG, ID_LB_CHAT, ID_LB_SEND, ID_LB_MODE, ID_LB_GOAL, ID_LB_NEWGAME, ID_LB_PARTS, ID_LB_STATUS, ID_LB_PORT, ID_LB_ADVERTISE, ID_LB_MUTE, ID_LB_DEAF, ID_LB_RESULT, ID_LB_LEVEL, ID_LB_PARTSINFO, ID_LB_WHO, ID_LB_STEAM_HOST, ID_LB_STEAM_INVITE, ID_LB_STEAM_FRIENDS, ID_LB_STEAM_SEND };
+enum { ID_LB_HOST = 600, ID_LB_JOIN, ID_LB_INVITE, ID_LB_COPY, ID_LB_LEAVE, ID_LB_READY, ID_LB_START, ID_LB_MEMBERS, ID_LB_LOG, ID_LB_CHAT, ID_LB_SEND, ID_LB_MODE, ID_LB_GOAL, ID_LB_NEWGAME, ID_LB_PARTS, ID_LB_STATUS, ID_LB_PORT, ID_LB_ADVERTISE, ID_LB_MUTE, ID_LB_DEAF, ID_LB_RESULT, ID_LB_LEVEL, ID_LB_PARTSINFO, ID_LB_WHO, ID_LB_STEAM_HOST, ID_LB_STEAM_INVITE, ID_LB_STEAM_FRIENDS, ID_LB_STEAM_SEND, ID_LB_UPDATE };
 uint64_t g_autoJoin;      // a Steam lobby to join at start (an invite accepted in Steam while the launcher was closed)
 lw::Session g_sess; lw::Voice g_voice; wlobby::State g_shown; std::wstring g_chatLog; HANDLE g_game; DWORD g_gamePid; std::string g_lobbySpec, g_cfgBackup, g_lastResult; bool g_gameWasRace;
 std::wstring g_statFile, g_cmdFile; ULONGLONG g_statAt, g_launchedAt; unsigned g_launches; std::string g_lastLaunchCfg; bool g_voiceWanted = true; std::set<unsigned> g_everHeard;
 HWND LB(int id) { return GetDlgItem(g_pages[0], id); }
 std::string EditText(HWND h) { wchar_t b[1000] = {}; GetWindowTextW(h, b, 1000); return U(b); }
+// The update banner (bottom bar, every page) and the About block on the Play page follow the updater's state.
+void UpdateUi() {
+    static std::string lastMsg; static int lastState = -1; static bool lastRefused;
+    wup::Snapshot s = g_upd.Get(); bool refused = g_sess.Active() && !g_sess.IsHost() && g_sess.Refused() == wlobby::kVersionMismatch;
+    if (s.message == lastMsg && (int)s.state == lastState && refused == lastRefused) return; lastMsg = s.message; lastState = (int)s.state; lastRefused = refused;
+    bool avail = s.state == wup::kAvailable; HWND pg = g_pages[1];
+    SetWindowTextW(GetDlgItem(pg, ID_UP_STATUS), W(s.message).c_str()); SetWindowTextW(GetDlgItem(pg, ID_UP_NOTES), W(avail || s.state == wup::kApplied ? s.tag + "\r\n" + std::string(s.notes) : "").c_str());
+    for (int id : {ID_UP_APPLY, ID_UP_LATER}) ShowWindow(GetDlgItem(pg, id), avail ? SW_SHOW : SW_HIDE);
+    EnableWindow(GetDlgItem(pg, ID_UP_CHECK), !g_upd.Busy()); SendMessageW(GetDlgItem(pg, ID_UP_AUTO), BM_SETCHECK, s.autoCheck ? BST_CHECKED : BST_UNCHECKED, 0); SendMessageW(GetDlgItem(pg, ID_UP_PRE), BM_SETCHECK, s.prereleases == 1 ? BST_CHECKED : BST_UNCHECKED, 0);
+    std::string first = s.notes.substr(0, s.notes.find_first_of("\r\n")); if (first.size() > 60) first = first.substr(0, 57) + "...";
+    SetWindowTextW(GetDlgItem(g_main, ID_UP_BANNER), avail ? W("Update available: " + s.tag + (first.empty() ? "" : " (" + first + ")")).c_str() : L"");
+    for (int id : {ID_UP_BANNER, ID_UP_BANNER_APPLY, ID_UP_BANNER_LATER}) ShowWindow(GetDlgItem(g_main, id), avail ? SW_SHOW : SW_HIDE);
+    ShowWindow(GetDlgItem(g_pages[0], ID_LB_UPDATE), refused ? SW_SHOW : SW_HIDE);
+}
 void LobbyStatus(const std::wstring& s) { SetWindowTextW(LB(ID_LB_STATUS), s.c_str()); }
 std::string CfgGet(const char* k, const char* d = "") { return LoadCfg().Get(k, d); }
 lw::VoiceCfg VoiceCfgNow() {
@@ -546,7 +570,7 @@ void LobbyTick() {
         } else {
             wlobby::JoinResult r = g_sess.Refused();
             if (g_sess.SteamMode() && (g_sess.SteamFailed() || r == wlobby::kPending)) LobbyStatus(W(g_sess.SteamFailed() || !g_sess.SteamLobbyId() ? g_sess.SteamStatus() : std::string("In the Steam lobby. Waiting for the host's launcher ...")));
-            else if (!g_sess.IsHost()) LobbyStatus(r == wlobby::kBadToken ? L"The invite is wrong (the code does not match)." : r == wlobby::kFull ? L"The lobby is full." : r == wlobby::kBadVersion ? L"This launcher is a different version from the host's." : L"Looking for the host ...");
+            else if (!g_sess.IsHost()) LobbyStatus(r == wlobby::kBadToken ? L"The invite is wrong (the code does not match)." : r == wlobby::kFull ? L"The lobby is full." : r == wlobby::kBadVersion ? L"This launcher is an older version than the host's lobby needs: update it (Play page: Check for updates)." : r == wlobby::kVersionMismatch ? W("The host is on " + g_sess.HostVersion() + ", you are on " + std::string(MOD_VERSION) + ": update both to the same version.") : r == wlobby::kPending && false ? L"" : L"Looking for the host ...");
             if (g_voice.Running()) g_voice.Stop();
         }
     }
@@ -557,7 +581,8 @@ void DrawMember(DRAWITEMSTRUCT* d) {
     HDC dc = d->hDC; RECT r = d->rcItem; HBRUSH bg = CreateSolidBrush((d->itemState & ODS_SELECTED) ? th::kSurface2 : th::kSurface); FillRect(dc, &r, bg); DeleteObject(bg);
     if (d->itemID == (UINT)-1 || d->itemID >= g_shown.members.size()) return; const auto& m = g_shown.members[d->itemID]; SetBkMode(dc, TRANSPARENT);
     th::DrawDot(dc, r.left + 16, (r.top + r.bottom) / 2, 6, m.speaking ? th::kAccent : (m.ready || m.host ? th::kWarm : th::kMuted), m.speaking || m.ready || m.host);
-    SelectObject(dc, m.host ? th::Bold() : th::Body()); SetTextColor(dc, th::kText); RECT nr = r; nr.left += 34; nr.right -= 120; DrawTextW(dc, W(m.name + (m.id == g_sess.MyId() ? "  (you)" : "")).c_str(), -1, &nr, DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+    SelectObject(dc, m.host ? th::Bold() : th::Body()); SetTextColor(dc, th::kText); RECT nr = r; nr.left += 34; nr.right -= 230; DrawTextW(dc, W(m.name + (m.id == g_sess.MyId() ? "  (you)" : "")).c_str(), -1, &nr, DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+    { bool differs = !m.version.empty() && m.version != MOD_VERSION; SelectObject(dc, th::Small()); SetTextColor(dc, differs ? th::kAccent : th::kMuted); RECT vr = r; vr.right -= 120; vr.left = r.right - 230; DrawTextW(dc, W(m.version).c_str(), -1, &vr, DT_VCENTER | DT_SINGLELINE | DT_RIGHT | DT_END_ELLIPSIS); }
     const wchar_t* st = m.inGame ? L"in game" : m.host ? L"host" : m.ready ? L"ready" : L"not ready"; SelectObject(dc, th::Small()); SetTextColor(dc, m.inGame ? th::kAccent : m.ready || m.host ? th::kWarm : th::kMuted); RECT sr = r; sr.right -= 12; DrawTextW(dc, st, -1, &sr, DT_VCENTER | DT_SINGLELINE | DT_RIGHT);
 }
 void DrawLevel(DRAWITEMSTRUCT* d) {
@@ -583,7 +608,8 @@ void BuildLobbyPage() {
     mk(L"BUTTON", L"Host direct (LAN)", BS_PUSHBUTTON, 16, 12, 150, 32, ID_LB_HOST); label(L"Lobby port", 184, 19, 80, true); mk(L"EDIT", W(c.Get("lobby_port", "47100")).c_str(), WS_BORDER | ES_AUTOHSCROLL | ES_NUMBER, 266, 16, 66, 24, ID_LB_PORT);
     label(L"Friends reach this PC at", 350, 19, 160, true); mk(L"EDIT", W(c.Get("lobby_advertise", "")).c_str(), WS_BORDER | ES_AUTOHSCROLL, 512, 16, 170, 24, ID_LB_ADVERTISE); label(L"(blank: automatic)", 690, 19, 160, true);
     label(L"Invite", 16, 60, 50, true); mk(L"EDIT", L"", WS_BORDER | ES_AUTOHSCROLL, 70, 56, 360, 26, ID_LB_INVITE); mk(L"BUTTON", L"Join", BS_PUSHBUTTON, 442, 54, 84, 30, ID_LB_JOIN); mk(L"BUTTON", L"Copy invite", BS_PUSHBUTTON, 534, 54, 110, 30, ID_LB_COPY); mk(L"BUTTON", L"Leave", BS_PUSHBUTTON, 652, 54, 84, 30, ID_LB_LEAVE);
-    HWND st = label(L"Host on Steam and invite friends, or accept a Steam invite. Join takes a Steam lobby number, or a direct invite (address:port/CODE).", 16, 94, 800); SetWindowLongPtrW(st, GWLP_ID, ID_LB_STATUS);
+    { HWND ub = mk(L"BUTTON", L"Update the launcher", BS_PUSHBUTTON, 690, 90, 150, 28, ID_LB_UPDATE); ShowWindow(ub, SW_HIDE); }
+    HWND st = label(L"Host on Steam and invite friends, or accept a Steam invite. Join takes a Steam lobby number, or a direct invite (address:port/CODE).", 16, 94, 660); SetWindowLongPtrW(st, GWLP_ID, ID_LB_STATUS);
     label(L"IN THE LOBBY", 16, 126, 200, true); mk(L"LISTBOX", L"", LBS_OWNERDRAWFIXED | LBS_NOTIFY | WS_VSCROLL | LBS_HASSTRINGS, 16, 148, 330, 230, ID_LB_MEMBERS); SendMessageW(LB(ID_LB_MEMBERS), LB_SETITEMHEIGHT, 0, 30);
     label(L"CHAT", 362, 126, 200, true); mk(L"EDIT", L"", WS_BORDER | ES_MULTILINE | ES_READONLY | WS_VSCROLL | ES_AUTOVSCROLL, 362, 148, 462, 190, ID_LB_LOG);
     HWND ce = mk(L"EDIT", L"", WS_BORDER | ES_AUTOHSCROLL, 362, 346, 372, 28, ID_LB_CHAT); SetWindowSubclass(ce, ChatEditProc, 3, 0); mk(L"BUTTON", L"Send", BS_PUSHBUTTON, 742, 344, 82, 32, ID_LB_SEND);
@@ -615,6 +641,8 @@ void PollCommands() {      // tests: one command per line in launcher_cmd.txt, t
         else if (cmd == "deaf") { SendMessageW(LB(ID_LB_DEAF), BM_SETCHECK, arg == "1" ? BST_CHECKED : BST_UNCHECKED, 0); g_voice.SetDeaf(arg == "1"); }
         else if (cmd == "voicestart") { g_voiceWanted = true; StartVoice(); } else if (cmd == "voicestop") { g_voiceWanted = false; g_voice.Stop(); }
         else if (cmd == "diag") SendDiagnostics();
+        else if (cmd == "updatecheck") g_upd.StartManual();
+        else if (cmd == "updateapply") g_upd.StartApply();
         else if (cmd == "quit") PostMessageW(g_main, WM_CLOSE, 0, 0);
     }
 }
@@ -622,11 +650,13 @@ void WriteStat() {      // tests: what the lobby is, as text lines, rewritten ev
     if (g_statFile.empty() || GetTickCount64() - g_statAt < 250) return; g_statAt = GetTickCount64(); char b[600]; std::string o;
     wlobby::State st = g_sess.Active() ? g_sess.State() : wlobby::State(); lw::VoiceStats v = g_voice.Stats();
     snprintf(b, sizeof b, "tabpaints %u\nlobby active %d host %d joined %d id %u phase %d start_in %d refused %d\n", th::TabPaintCount(), g_sess.Active() ? 1 : 0, g_sess.IsHost() ? 1 : 0, g_sess.Joined() ? 1 : 0, g_sess.MyId(), (int)st.phase, st.startInMs, (int)g_sess.Refused()); o += b;
+    { wup::Snapshot us = g_upd.Get(); snprintf(b, sizeof b, "version mod %s host %s\nupdate state %d tag %s busy %d auto %d\n", MOD_VERSION, g_sess.HostVersion().empty() ? "-" : g_sess.HostVersion().c_str(), (int)us.state, us.tag.empty() ? "-" : us.tag.c_str(), g_upd.Busy() ? 1 : 0, us.autoCheck ? 1 : 0); o += b; }
+    { wchar_t sb[400] = {}; GetWindowTextW(LB(ID_LB_STATUS), sb, 400); o += "lobbystatus " + U(sb) + "\n"; }
     o += std::string("guide ") + (g_guideHold.Open() ? "1\n" : "0\n");
     snprintf(b, sizeof b, "invite %s\n", g_sess.Invite().c_str()); o += b;
     { uint64_t lid = g_sess.SteamLobbyId(); std::string mod = lid ? g_sess.SteamReadData(lsteam::kModKey) : "", proto = lid ? g_sess.SteamReadData(lsteam::kProtocolKey) : "", code = lid ? g_sess.SteamReadData(lsteam::kTokenKey) : "";
       snprintf(b, sizeof b, "steam mode %d lobby %llu members %u limit %u mod %s protocol %s code_set %d failed %d status %s\n", g_sess.SteamMode() ? 1 : 0, (unsigned long long)lid, g_sess.SteamMemberCount(), lid ? g_sess.SteamMemberLimit() : 0u, mod.c_str(), proto.c_str(), code.empty() ? 0 : 1, g_sess.SteamFailed() ? 1 : 0, g_sess.SteamStatus().c_str()); o += b; }
-    for (const auto& m : st.members) { snprintf(b, sizeof b, "member %u name %s host %d ready %d ingame %d speaking %d playing %d port %u ip %s\n", m.id, m.name.c_str(), m.host, m.ready, m.inGame, m.speaking, m.playing, m.gamePort, wlobby::IpText(m.ip).c_str()); o += b; }
+    for (const auto& m : st.members) { snprintf(b, sizeof b, "member %u name %s host %d ready %d ingame %d speaking %d playing %d port %u ip %s\n", m.id, m.name.c_str(), m.host, m.ready, m.inGame, m.speaking, m.playing, m.gamePort, wlobby::IpText(m.ip).c_str()); o += b; snprintf(b, sizeof b, "member_version %u %s\n", m.id, m.version.c_str()); o += b; }
     snprintf(b, sizeof b, "settings mode %d goal %s newgame %d progress %s\n", (int)st.settings.mode, st.settings.raceGoal.c_str(), st.settings.newGame ? 1 : 0, st.settings.progress.c_str()); o += b;
     { std::string chat = U(g_chatLog); for (size_t i; (i = chat.find("\r\n")) != std::string::npos;) chat.replace(i, 2, " | "); o += "result " + st.lastResult + "\n"; o += "chat " + chat + "\n"; }
     snprintf(b, sizeof b, "voice running %d sent %u received %u level %u speaking %d muted_ui %d\n", g_voice.Running() ? 1 : 0, v.sent, v.received, v.level, v.speaking ? 1 : 0, (int)SendMessageW(LB(ID_LB_MUTE), BM_GETCHECK, 0, 0)); o += b;
@@ -690,7 +720,7 @@ LRESULT CALLBACK MainProc(HWND h, UINT m, WPARAM w, LPARAM l) {
     case WM_PAINT: { PAINTSTRUCT ps; HDC dc = BeginPaint(h, &ps); RECT rc; GetClientRect(h, &rc); th::PaintHeader(dc, rc, 84, L"Hold F1: quick guide   |   lobby, race, voice, saves"); EndPaint(h, &ps); return 0; }
     case WM_CTLCOLORSTATIC: case WM_CTLCOLOREDIT: case WM_CTLCOLORLISTBOX: case WM_CTLCOLORBTN: return th::CtlColor(m, (HDC)w, (HWND)l);
     case WM_DRAWITEM: { DRAWITEMSTRUCT* d = (DRAWITEMSTRUCT*)l; if (d->CtlID == ID_LB_MEMBERS) DrawMember(d); else if (d->CtlID == ID_LB_LEVEL) DrawLevel(d); return TRUE; }
-    case WM_TIMER: if (w == 1) { PollCommands(); LobbyTick(); WriteStat(); DiagPoll(); } return 0;
+    case WM_TIMER: if (w == 1) { PollCommands(); LobbyTick(); WriteStat(); DiagPoll(); UpdateUi(); if (g_updFromLobby && g_upd.Available()) { g_updFromLobby = false; g_upd.StartApply(); } } return 0;
     case WM_CLOSE: g_voice.Stop(); g_sess.Stop(); DestroyWindow(h); return 0;
     case WM_COMMAND: {
         int id = LOWORD(w);
@@ -721,6 +751,12 @@ LRESULT CALLBACK MainProc(HWND h, UINT m, WPARAM w, LPARAM l) {
             std::wstring dir = SaveFolder(LoadCfg()) + L"\\launcher-backup\\" + Stamp();
             if (BackupSave(g_saves[i], id == ID_TRASH, dir)) Status(std::wstring(id == ID_TRASH ? L"Moved to " : L"Copied to ") + dir); else Status(L"Could not do that."); LoadAll();
         }
+        else if (id == ID_UP_CHECK) g_upd.StartManual();
+        else if (id == ID_UP_APPLY || id == ID_UP_BANNER_APPLY) g_upd.StartApply();
+        else if (id == ID_UP_LATER || id == ID_UP_BANNER_LATER) g_upd.Later();
+        else if (id == ID_UP_AUTO && HIWORD(w) == BN_CLICKED) g_upd.SetAutoCheck(SendMessageW(GetDlgItem(g_pages[1], ID_UP_AUTO), BM_GETCHECK, 0, 0) == BST_CHECKED);
+        else if (id == ID_UP_PRE && HIWORD(w) == BN_CLICKED) g_upd.SetPrereleases(SendMessageW(GetDlgItem(g_pages[1], ID_UP_PRE), BM_GETCHECK, 0, 0) == BST_CHECKED ? 1 : -1);
+        else if (id == ID_LB_UPDATE) { if (g_upd.Available()) g_upd.StartApply(); else { g_updFromLobby = true; g_upd.StartManual(); } }      // (the mismatch's Update button: the same check, then the same apply)
         else if (id == ID_BROWSE) { BROWSEINFOW bi = {}; bi.hwndOwner = h; bi.lpszTitle = L"The Witness game folder"; PIDLIST_ABSOLUTE p = SHBrowseForFolderW(&bi); if (p) { wchar_t b[MAX_PATH]; if (SHGetPathFromIDListW(p, b)) { g_dir = b; SetDlgItemTextW(g_pages[1], ID_GAMEDIR, b); LoadAll(); } CoTaskMemFree(p); } }
         return 0; }
     case WM_NOTIFY: { NMHDR* n = (NMHDR*)l; if (n->idFrom == ID_TAB && n->code == TCN_SELCHANGE) ShowPage(TabCtrl_GetCurSel(g_tab)); return 0; }
@@ -741,12 +777,15 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, LPWSTR cmdline, int show) {
         diag::CrashOptions co; co.session = &g_log; co.dataModule = GetModuleHandleW(nullptr); co.log = Dlog; diag::InstallCrashHandler(co); } }
     th::Init(); AddFields();
     WNDCLASSW wc = {}; wc.lpfnWndProc = MainProc; wc.hInstance = hi; wc.lpszClassName = L"WitnessLauncher"; wc.hbrBackground = th::BgBrush(); wc.hCursor = LoadCursorW(nullptr, IDC_ARROW); wc.hIcon = LoadIconW(nullptr, IDI_APPLICATION); RegisterClassW(&wc);
-    g_main = CreateWindowExW(0, L"WitnessLauncher", (std::wstring(L"The Witness co-op: launcher ") + W(MOD_VERSION)).c_str(), WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_VISIBLE | WS_CLIPCHILDREN, CW_USEDEFAULT, CW_USEDEFAULT, 880, 790, nullptr, nullptr, hi, nullptr);
+    g_main = CreateWindowExW(0, L"WitnessLauncher", (std::wstring(L"The Witness co-op: launcher ") + W(MOD_VERSION)).c_str(), WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_VISIBLE | WS_CLIPCHILDREN, CW_USEDEFAULT, CW_USEDEFAULT, 880, 826, nullptr, nullptr, hi, nullptr);
     RECT rc; GetClientRect(g_main, &rc);
-    g_tab = CreateWindowExW(0, WC_TABCONTROLW, L"", WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN, 8, 88, rc.right - 16, rc.bottom - 88 - 64, g_main, (HMENU)ID_TAB, hi, nullptr); SendMessageW(g_tab, WM_SETFONT, (WPARAM)GetStockObject(DEFAULT_GUI_FONT), TRUE);
+    g_tab = CreateWindowExW(0, WC_TABCONTROLW, L"", WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN, 8, 88, rc.right - 16, rc.bottom - 88 - 64 - 36, g_main, (HMENU)ID_TAB, hi, nullptr); SendMessageW(g_tab, WM_SETFONT, (WPARAM)GetStockObject(DEFAULT_GUI_FONT), TRUE);
     BuildPages(g_main);
+    th::MarkMuted(Make(g_main, L"STATIC", L"", SS_LEFT, 16, rc.bottom - 90, rc.right - 260, 22, ID_UP_BANNER)); Make(g_main, L"BUTTON", L"Update", BS_PUSHBUTTON, rc.right - 230, rc.bottom - 94, 90, 28, ID_UP_BANNER_APPLY); Make(g_main, L"BUTTON", L"Later", BS_PUSHBUTTON, rc.right - 130, rc.bottom - 94, 80, 28, ID_UP_BANNER_LATER);
+    for (int id : {ID_UP_BANNER, ID_UP_BANNER_APPLY, ID_UP_BANNER_LATER}) ShowWindow(GetDlgItem(g_main, id), SW_HIDE);
+    g_sess.SetModVersion(MOD_VERSION); g_upd.Init(g_dir, MOD_VERSION, [](const std::string& l) { Dlog(l.c_str()); });
     Make(g_main, L"BUTTON", L"Save settings", BS_PUSHBUTTON, 12, rc.bottom - 52, 150, 34, ID_APPLY); Make(g_main, L"BUTTON", L"Send diagnostics", BS_PUSHBUTTON, 172, rc.bottom - 52, 160, 34, ID_DIAG); g_status = Make(g_main, L"STATIC", L"", SS_LEFT, 346, rc.bottom - 46, rc.right - 360, 24, ID_STATUS); th::MarkMuted(g_status);
-    LoadAll(); SetTimer(g_main, 1, 100, nullptr); if (g_autoJoin) { JoinSteamLobby(g_autoJoin); startPage = 0; } if (startPage < 0 || startPage >= g_npages) startPage = 0; TabCtrl_SetCurSel(g_tab, startPage); ShowPage(startPage); if (openNew) OpenNewGame();
+    LoadAll(); g_upd.StartAuto(); SetTimer(g_main, 1, 100, nullptr); if (g_autoJoin) { JoinSteamLobby(g_autoJoin); startPage = 0; } if (startPage < 0 || startPage >= g_npages) startPage = 0; TabCtrl_SetCurSel(g_tab, startPage); ShowPage(startPage); if (openNew) OpenNewGame();
     if (!dumpTo.empty()) { std::string t = std::to_string(ID_STATUS) + " status\n"; for (auto& f : g_fields) t += std::to_string(f.id) + " " + f.key + "\n"; t += std::to_string(ID_APPLY) + " apply\n" + std::to_string(ID_DIAG) + " diag\n" + std::to_string(ID_SAVEPICK) + " savepick\n" + std::to_string(ID_LAUNCH) + " launch\n";
         const std::pair<int, const char*> lb[] = {{ID_LB_HOST, "lobby:host"}, {ID_LB_JOIN, "lobby:join"}, {ID_LB_INVITE, "lobby:invite"}, {ID_LB_COPY, "lobby:copy"}, {ID_LB_LEAVE, "lobby:leave"}, {ID_LB_READY, "lobby:ready"}, {ID_LB_START, "lobby:start"}, {ID_LB_MEMBERS, "lobby:members"}, {ID_LB_LOG, "lobby:log"}, {ID_LB_CHAT, "lobby:chat"}, {ID_LB_SEND, "lobby:send"}, {ID_LB_MODE, "lobby:mode"}, {ID_LB_GOAL, "lobby:goal"}, {ID_LB_NEWGAME, "lobby:newgame"}, {ID_LB_PARTS, "lobby:parts"}, {ID_LB_STATUS, "lobby:status"}, {ID_LB_PORT, "lobby:port"}, {ID_LB_ADVERTISE, "lobby:advertise"}, {ID_LB_MUTE, "lobby:mute"}, {ID_LB_DEAF, "lobby:deaf"}, {ID_LB_RESULT, "lobby:result"}, {ID_LB_STEAM_HOST, "lobby:steamhost"}, {ID_LB_STEAM_INVITE, "lobby:steaminvite"}, {ID_LB_STEAM_FRIENDS, "lobby:steamfriends"}, {ID_LB_STEAM_SEND, "lobby:steamsend"}};
         for (const auto& k : lb) t += std::to_string(k.first) + " " + k.second + "\n";

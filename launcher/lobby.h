@@ -21,7 +21,7 @@ constexpr uint32_t kStaleMs = 6000;          // a member not heard from for this
 constexpr uint32_t kStateMs = 400, kHelloMs = 400, kStartMs = 3000;
 enum Phase : uint8_t { kLobby = 0, kStarting = 1, kInGame = 2 };
 enum Mode : uint8_t { kCoop = 0, kRace = 1 };
-enum JoinResult : uint8_t { kJoinOk = 0, kBadToken = 1, kFull = 2, kBadVersion = 3, kPending = 255 };
+enum JoinResult : uint8_t { kJoinOk = 0, kBadToken = 1, kFull = 2, kBadVersion = 3, kVersionMismatch = 4, kPending = 255 };      // kBadVersion: another lobby protocol (an old launcher); kVersionMismatch: the same protocol but another MOD version (named in words: HostVersion())
 
 struct Addr {      // UDP: ip and port (host byte order), steam 0. Steam: the member's SteamID64, ip and port 0.
     uint32_t ip = 0; uint16_t port = 0; uint64_t steam = 0;
@@ -41,7 +41,7 @@ struct Gate {
     }
 };
 struct Settings { Mode mode = kCoop; bool newGame = true; std::string raceGoal = "panel:9F7F", progress; };      // progress: the new game's spec ("area:X;lasers:N", progress/progress.h), empty: nothing done
-struct Member { unsigned id = 0; std::string name; bool host = false, ready = false, inGame = false, speaking = false, playing = false; uint16_t gamePort = 0; uint32_t ip = 0; uint32_t ackedChat = 0; uint64_t steamId = 0; };      // steamId: in a Steam lobby      // playing: was in the lobby when the game was started: only these are in the game
+struct Member { unsigned id = 0; std::string name; bool host = false, ready = false, inGame = false, speaking = false, playing = false; uint16_t gamePort = 0; uint32_t ip = 0; uint32_t ackedChat = 0; uint64_t steamId = 0; std::string version; };      // version: the member's mod version (git describe); steamId: in a Steam lobby      // playing: was in the lobby when the game was started: only these are in the game
 struct ChatLine { unsigned seq = 0, from = 0; std::string text; };
 struct State { uint32_t seq = 0; Phase phase = kLobby; int32_t startInMs = 0; Settings settings; std::vector<Member> members; std::string lastResult; };
 struct Launch { unsigned myId = 0; State state; };      // what the game is started from: the same on every member (apart from myId)
@@ -55,6 +55,7 @@ public:
     Lobby(bool host, const std::string& name, uint16_t gamePort, const std::string& token, Send send);
     void Join(const Addr& host);
     void SetSession(uint32_t s) { session_ = s; }
+    void SetModVersion(const std::string& v);              // this launcher's mod version (a build stamp); before Join / the first Tick. Players on different versions cannot play together.
     void SetSteamId(uint64_t id) { steamId_ = id; if (host_) Refresh(); }      // a Steam lobby: this member's own SteamID (the host lists it for the games' cfg)          // host: a number that is different on every start of the lobby (the clock), so clients can tell a restarted host from a late packet
     void Tick(uint64_t now);
     void OnPacket(const Addr& from, const uint8_t* d, size_t n, uint64_t now);
@@ -71,6 +72,8 @@ public:
     // what the player sees
     bool joined() const { return joined_; }
     JoinResult refused() const { return refused_; }
+    const std::string& hostVersion() const { return hostVersion_; }      // after kVersionMismatch: the version the host runs
+    const std::string& modVersion() const { return modVersion_; }
     bool isHost() const { return host_; }
     unsigned myId() const { return id_; }
     const State& state() const { return st_; }
@@ -87,14 +90,14 @@ private:
     void PushChat(unsigned from, const std::string& text);
     void Refresh();
     void Rebuild();
-    bool host_; uint64_t steamId_ = 0; std::string name_, token_; uint16_t gamePort_; Send send_; Addr hostAddr_;
+    bool host_; uint64_t steamId_ = 0; std::string name_, token_, modVersion_ = "dev", hostVersion_; uint16_t gamePort_; Send send_; Addr hostAddr_;
     bool joined_ = false, ready_ = false, inGame_ = false, speaking_ = false, launched_ = false; JoinResult refused_ = kPending; unsigned id_ = 0; State st_; uint64_t startAt_ = 0, nextState_ = 0, nextHello_ = 0, lastHost_ = 0, backSince_ = 0;
     std::map<Addr, Peer> peers_; unsigned nextId_ = 2; uint32_t chatNext_ = 1;         // host
     std::vector<std::pair<uint32_t, std::string>> out_; uint32_t outSeq_ = 0, outAcked_ = 0, seenChat_ = 0, stateSeq_ = 0, session_ = 0, hostSession_ = 0; bool seenInGame_ = false; uint64_t startedAt_ = 0;   // client (session_: the host's)
     std::vector<ChatLine> chatIn_; std::map<uint32_t, ChatLine> pendingIn_;
 };
 
-// The cfg of one member's game from the roster: id, game port, every other member as peer=<id>,<ip>,<port> (or peer=<id>,steam:<steamid64> when the lobby is a Steam lobby: every
+// The cfg of one member's game from the roster: id, game port, every other member as peer=<id>,<ip>,<port> (and peer_version=<id>,<version>, so the game can say whose version differs) (or peer=<id>,steam:<steamid64> when the lobby is a Steam lobby: every
 // member then has a SteamID), the mode and its goal, the name, the new game's progress. `base` is the member's
 // current witness_coop.cfg text (every line it does not set is kept). `dialAddr`: the address the client used to reach the host (the host's own address as the others know it).
 std::string BuildGameCfg(const std::string& base, const Launch& l, uint32_t hostDialIp);
