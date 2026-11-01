@@ -46,6 +46,9 @@ by = {r['leg']: r for r in rows}
 check('giveups', by[2]['giveup']['why'] in ('stuck', 'no way') and by[3]['giveup']['why'] == 'view does not turn' and by[5]['giveup']['stuck_class'] == 'wall' and by[0]['giveups'] == 0, 'closed room %s, locked view %s, wall_80 against %s' % (by[2]['giveup'], by[3]['giveup']['why'], by[5]['giveup']['stuck_class']))
 check('why', by[2]['why'] == by[2]['giveup']['why'] and by[3]['why'] == 'view does not turn' and by[0]['why'] in ('', 'arrived'), 'row why %r %r' % (by[2]['why'], by[3]['why']))
 check('counts', by[2]['stalls'] >= 1 and by[2]['bumps'] >= 3 and by[0]['replans'] >= 1 and by[1]['teleports'] == 0 and by[2]['teleports'] == 1, 'stalls %d bumps %d' % (by[2]['stalls'], by[2]['bumps']))
+# a teleport helper: a giveup first when there is none, nothing doubled when there is
+t = wtrace.Trace(None); wtrace.teleport(t, 'a'); t.emit('giveup', why='stuck', dist_left=3.0, stuck_class='wall', last_way=[]); wtrace.teleport(t, 'b')
+check('teleport', [r['kind'] for r in t.lines] == ['giveup', 'teleport', 'giveup', 'teleport'], str([r['kind'] for r in t.lines]))
 # a teleport without a giveup before it, and a walked leg with a giveup, are named
 broken = [dict(t=1.0, kind='walk_start', leg=7, **{'from': [0, 0, 1], 'to': [1, 1, 1]}), dict(t=2.0, kind='teleport', reason='x'), dict(t=3.0, kind='verdict', leg=7, outcome='teleported', seconds=2.0)]
 _, pr = trace_summary.summarize(broken)
@@ -65,6 +68,7 @@ MUTANTS = [
     ('tools/trace_summary.py', "    elif v['outcome'] == 'walked' and any(r['kind'] == 'giveup' for r in L): bad.append(", "    elif False: bad.append("),
     ('tools/trace_summary.py', "result=(verdict or {}).get('outcome') or", "result='unknown' or"),      # (the verdict is not read)
     ('tools/trace_summary.py', "why=(last['why'] if last else '') or (verdict or {}).get('why', '')", "why=''"),
+    ('tools/win/wtrace.py', "    if not tr.lines or tr.lines[-1]['kind'] != 'giveup': tr.emit(", "    if False: tr.emit("),      # a teleport without a giveup before it
     ('tools/win/wtrace.py', "    if missing: raise ValueError(", "    if False: raise ValueError("),      # a line without its fields is accepted
     ('tools/win/wtrace.py', "    if k not in KINDS: raise ValueError(", "    if False: raise ValueError("),
     ('tools/win/wtrace.py', "        if self.f: self.f.write(json.dumps(rec) + '\\n'); self.f.flush()", "        if self.f: self.f.write(json.dumps(rec) + '\\n')"),      # not flushed (checked below by a file read before close)

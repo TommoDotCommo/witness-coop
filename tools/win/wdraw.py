@@ -112,9 +112,7 @@ def teleported(why):
     MOVES.append({'how': 'teleport', 'why': why}); stamp('TELEPORT (last resort): %s' % why)
     import wtrace
     tr = walker.tr if walker is not None else wtrace.Trace(os.path.join(gdir, 'trace.jsonl'))
-    if not tr.lines or tr.lines[-1]['kind'] != 'giveup':
-        tr.emit('giveup', why='walking is off' if not WALK else 'not at the standing place', dist_left=0.0, stuck_class='', last_way=[])
-    tr.emit('teleport', reason=why)
+    wtrace.teleport(tr, why, 'walking is off' if not WALK else 'not at the standing place')
 def hover_to(hx, hy, hz, yaw, why):
     """Walk to (hx, hy); when that fails, the old way: held there (a teleport) and let go to settle."""
     if walk_to(hx, hy, hz): return

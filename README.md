@@ -270,6 +270,14 @@ and where the person stood. For a taught panel, `run.py` draws that line instead
 and looks at the start circle. After entering the puzzle (which turns the camera to the panel), it projects the taught positions from the
 new view and clicks the start, with no size search. `python3 tools/playthrough/test_teach.py` is game-free, with 3 mutants.
 
+The bot walks to a panel (`tools/win/wnav.py`: a depth camera, a map of cells, A\*) and teleports only as the last resort. A walk returns a
+`WalkResult` (`ok`, `why` = arrived | stuck | no way | timed out | view does not turn, `distance_left`, the last planned way, what the stuck was
+against, what was tried); a stall clock gives up when the walk makes no progress, and every teleport follows such a give-up. The run writes a
+typed trace (`<run>/trace.jsonl`, `tools/trace_summary.py` turns it into the benchmark rows) and `summary.json` counts the teleports after a
+give-up under `movement`. **Held-out rule:** a change to the planner or the walker merges only with `python3 tools/test_navsim.py` passing (the
+real code on 16 simulated levels, with mutants, no game) and a before/after of `tools/test_walk_bench.sh` on its 15 legs, the table pasted in the
+note ([docs/WALKER.md](docs/WALKER.md)).
+
 Co-op is checked on every solve: the panel must turn solved in every other world, and the time each peer took is recorded. The worlds are
 compared every few rounds; a difference still there 5 s later is a persistent divergence, otherwise in flight (a door moving).
 `python3 tools/playthrough/divergence.py <run folder>` checks a run: a persistent divergence that a later comparison no longer shows has
@@ -294,6 +302,13 @@ they do not demonstrate a late-loading entity or a refused call in the real game
 Power-on regressions also run in T0: dropped first sends, refused power-on calls, no echo, keeping the target unsolved,
 and restoring power to a restarted receiver after the original events were acknowledged. Disabled power sync, no retry,
 no echo guard and no restart resync each have a twin the regression must catch.
+
+**Walker, no game needed:** `python3 tools/test_navsim.py` walks the real planner and walk loop (`tools/win/wnav.py`) against 16 simulated levels
+(`tools/navsim.py`: wall, foliage, drop, shore and door blockers, a simulated depth look and clock; open field, wide wall, dead end, room with a far
+door, zigzag, gap, pit, pillars, narrow door, closed room that must give up, three island shapes from real stuck legs, a view that stops turning),
+8 random clutter worlds and 9 mutants (a walker that ignores bumps, no wall rule, a watchdog that never fires, ...); `tools/test_wnav.py` (map and
+planner scenes, 31 mutants), `tools/test_wnav_walk.py` (unseen walls, 4 mutants) and `tools/test_trace.py` (the typed trace and its summary, recorded
+traces in `tools/testdata/`, 8 mutants) are the other game-free walker checks.
 
 **Model code, no game needed:** `make -C proxy/model test` (also run by `make -C proxy/core test`) loads the bundled adventurer and checks skinning against the bind pose, that the walk loops, quaternion interpolation, that the camera matrix agrees with the projection the puppet always used, the placement of the figure (feet, height, facing, left/right), the walk state (speed, idle, teleports, clip choice by name) and that the normal and material maps load; 15 mutants cover matrix order, looping, quaternion normalisation, placement, gait, blending, run timing, joint limits, eye fitting, skins, flat colours and emote matching. The life test (`life_test.cpp`, 14 mutants) covers the blink, the glance, the view pitch, breathing, the cloth pendulums, the coat's skirt clearing the legs through the walk, the fidget scheduler, the brows' acting with emotes, the mouth moving with speech, the arm reaching for a panel being traced, and the body's turn lag, sideways half-turn and reverse walk ([docs/LIFE.md](docs/LIFE.md)). `proxy/core/tests/run_protocol.py` additionally checks protocol migration with three mutants.
 

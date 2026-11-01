@@ -54,6 +54,13 @@ class Trace:
         if self.f: self.f.close(); self.f = None
 
 
+def teleport(tr, reason, why='not at the standing place', dist_left=0.0):
+    """Write a teleport line to the trace `tr`, always after a giveup: when its last line is not one (walking is off, or the walker arrived but not
+    at the place wanted) the giveup is written first, with `why`. Returns the teleport line."""
+    if not tr.lines or tr.lines[-1]['kind'] != 'giveup': tr.emit('giveup', why=why, dist_left=dist_left, stuck_class='', last_way=[])
+    return tr.emit('teleport', reason=reason)
+
+
 def read(path):
     """The well-formed lines of a trace file, in order (a half-written last line is skipped; a malformed one raises ValueError)."""
     out = []
