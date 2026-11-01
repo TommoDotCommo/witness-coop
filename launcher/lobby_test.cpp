@@ -147,7 +147,10 @@ int main() {
       wl::CfgFile ca2 = wl::CfgFile::Parse(cfgA), ch2 = wl::CfgFile::Parse(cfgH); auto pa = ca2.GetAll("peer"), ph = ch2.GetAll("peer");
       auto has = [](const std::vector<std::string>& v, const std::string& x) { for (auto& y : v) if (y == x) return true; return false; };
       check("steam cfg: each game names the others by SteamID (peer=<id>,steam:<steamid64>), not itself, and no UDP line is left", pa.size() == 2 && has(pa, "1,steam:" + steamids::Text(Net::Sid(0))) && has(pa, std::to_string(net.n[b]->myId()) + ",steam:" + steamids::Text(Net::Sid(2)))
-            && ph.size() == 2 && has(ph, std::to_string(net.n[a]->myId()) + ",steam:" + steamids::Text(Net::Sid(1))) && cfgA.find("10.0.0.9") == std::string::npos);
-      Net u; u.add(true, "H", "T"); unsigned ua = u.add(false, "A", "T"); u.advance(3000); check("udp: a member's SteamID is 0 and its cfg keeps the UDP form", u.n[ua]->joined() && u.n[0]->state().members[1].steamId == 0); }
+            && ph.size() == 2 && has(ph, std::to_string(net.n[a]->myId()) + ",steam:" + steamids::Text(Net::Sid(1))) && cfgA.find("10.0.0.9") == std::string::npos && ca2.Get("transport", "") == "steam");
+      Net u; u.add(true, "H", "T"); unsigned ua = u.add(false, "A", "T"); u.advance(3000); check("udp: a member's SteamID is 0 and its cfg keeps the UDP form", u.n[ua]->joined() && u.n[0]->state().members[1].steamId == 0);
+      Launch solo; solo.myId = 1; Member m; m.id = 1; m.host = true; m.playing = true; m.steamId = Net::Sid(0); solo.state.members.push_back(m);
+      wl::CfgFile cs = wl::CfgFile::Parse(BuildGameCfg("peer=47002\ntransport=udp\n", solo, 0));
+      check("steam cfg: alone in a Steam lobby the game still uses Steam (transport=steam), and the old peer=<port> line is gone", cs.Get("transport", "") == "steam" && cs.GetAll("peer").empty()); }
     printf("%d checks, %d failed\n", checks, fails); return fails ? 1 : 0;
 }

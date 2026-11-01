@@ -215,6 +215,7 @@ std::string BuildGameCfg(const std::string& base, const Launch& l, uint32_t host
         uint32_t ip = m.host ? (me->host ? m.ip : hostDialIp) : m.ip; if (m.host && me->host) continue; peers.push_back(std::to_string(m.id) + "," + IpText(ip) + "," + std::to_string(m.gamePort));
     }
     cfg.SetAll("peer", peers); cfg.Unset("peer_host");
+    if (me->steamId) cfg.Set("transport", "steam"); else cfg.Unset("transport");      // a Steam lobby's game uses Steam even with nobody else in it: never an old peer=<port> line
     cfg.Set("game_mode", l.state.settings.mode == kRace ? "race" : "coop");
     if (l.state.settings.mode == kRace) cfg.Set("race_goal", l.state.settings.raceGoal); else cfg.Unset("race_goal");
     if (l.state.settings.newGame && !l.state.settings.progress.empty()) cfg.Set("start_progress", l.state.settings.progress); else cfg.Unset("start_progress");

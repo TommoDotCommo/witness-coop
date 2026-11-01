@@ -48,7 +48,7 @@ static void Msg(const char* fmt, ...) {      // a message shown in the game for 
 }
 void CoopNetStat() {      // witness_cmd.txt `netstat` / `steamstat`: which transport this game uses and how its sessions are
     char m[160]; snprintf(m, sizeof m, "netstat: transport %s up %d peers %zu", g_steam ? "steam" : "udp", g_peerSet.load() ? 1 : 0, g_table.empty() ? (size_t)1 : g_table.peers().size()); Log(m);
-    if (!g_steam || !g_peerSet) return;
+    if (!g_steam) return;
     std::vector<uint64_t> sids; std::vector<unsigned> ids; for (const auto& kv : g_table.peers()) { ids.push_back(kv.first); sids.push_back(kv.second.steam); }
     wsteam::Stat(sids.data(), ids.data(), ids.size());
 }
@@ -126,7 +126,7 @@ static DWORD WINAPI NetThread(LPVOID) {
     FILE* f = _wfopen(wp, L"r");
     if (!f) { Log("coop: no witness_coop.cfg, networking off"); return 0; }
     witness::Flags flags; int id = 0, listenPort = 0, peerPort = 0; char host[64] = "127.0.0.1", line[200], name[32] = ""; int dropPct = 0; uint32_t dropState = 1;
-    wpeers::PeerTable table;
+    wpeers::PeerTable table; std::string transport;      // transport=steam (the launcher writes it for a Steam lobby) | udp | (none: from the peer lines)
     while (fgets(line, sizeof line, f)) {
         if (table.ParseLine(line, 0, [](const char* h) { return (uint32_t)inet_addr(h); })) continue;      // peer=<id>,<ip>,<port> | peer=<id>,steam:<steamid64>
         { char nm[64]; if (sscanf(line, "name=%23[^\r\n]", nm) == 1) strncpy(name, nm, sizeof name - 1); }
@@ -156,12 +156,14 @@ static DWORD WINAPI NetThread(LPVOID) {
         if (sscanf(line, "no_social_order=%d", &v) == 1) flags.noSocialOrder = v;
         if (sscanf(line, "no_presence_send=%d", &v) == 1) flags.noPresenceSend = v;
         { char gm[16]; if (sscanf(line, "game_mode=%15s", gm) == 1) flags.raceMode = !strcmp(gm, "race"); }
+        { char tr[16]; if (sscanf(line, "transport=%15s", tr) == 1) transport = tr; }
         if (sscanf(line, "race_emits=%d", &v) == 1) flags.raceEmits = v;
         if (sscanf(line, "race_applies=%d", &v) == 1) flags.raceApplies = v;
     }
     fclose(f);
-    const bool steam = table.steam();
-    if (id < 1 || (!steam && (listenPort < 1 || listenPort > 65535)) || !table.ok() || (table.empty() && (peerPort < 1 || peerPort > 65535))) {
+    const bool steam = table.steam() || transport == "steam";
+    if (steam && !table.empty() && !table.steam()) { Log("coop: transport=steam with UDP peers; networking off"); Msg("Co-op is off: the cfg mixes Steam and direct players. Start again from the launcher."); return 0; }
+    if (id < 1 || (!steam && (listenPort < 1 || listenPort > 65535)) || !table.ok() || (!steam && table.empty() && (peerPort < 1 || peerPort > 65535))) {
         char m[160]; snprintf(m, sizeof m, "coop: invalid id, port or peer roster (%s); networking off", table.ok() ? "id or port" : table.error().c_str()); Log(m); return 0;
     }
     table.CheckSelf((unsigned)id, 0); if (!table.ok()) { Log("coop: this game's id is in its own roster; networking off"); return 0; }
@@ -171,6 +173,7 @@ static DWORD WINAPI NetThread(LPVOID) {
         if (!wsteam::Open(60000, &self, why, sizeof why)) { snprintf(m, sizeof m, "coop: steam transport down: %s; networking off", why); Log(m); for (int k = 0; k < 6; ++k) { Msg("Co-op over Steam is off: %s", why); Sleep(6000); } return 0; }
         table.CheckSelf((unsigned)id, self); if (!table.ok()) { Log("coop: this game's own SteamID is in its roster; networking off"); Msg("Co-op over Steam is off: the lobby's roster lists this player twice."); return 0; }
         snprintf(m, sizeof m, "coop: id=%d over Steam (relayed, channel %d), %zu peers", id, wsteam::kGameChannel, table.peers().size()); Log(m);
+        if (table.empty()) { g_steam = true; Log("coop: alone in a Steam lobby: nobody to talk to"); return 0; }
     } else {
         WSADATA wd; WSAStartup(MAKEWORD(2, 2), &wd);
         s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
