@@ -52,6 +52,7 @@ and shared (the orchestrator merges the bots' maps). Doors open and close: a cel
 that newer view."""
 import os, sys, math, time, json, heapq, struct
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
+from wtrace import Trace
 
 RAD_PER_COUNT = 0.0025
 CELL, BIN = 0.5, 0.25          # map cell (m), height bin (m)
@@ -70,6 +71,27 @@ LEVEL = 1.0                    # (m per m) the height difference counts this muc
 DROP = 16.0                    # (8 m of walking) extra cost of a step down that cannot be stepped back up (more than UP): a one-way drop leads into pockets
 REC = struct.Struct('<hhfQB')  # cell x, cell y, floor z, height mask, flags
 DOOR_TYPE = 0x62DE70           # the door entities' type descriptor (module-relative, as TI_DOOR in wlib.py; build 11370412)
+
+
+class RealClock:
+    """The walker's time: tools/navsim.py passes a simulated one (monotonic() and sleep() on the simulated world's clock)."""
+    @staticmethod
+    def monotonic(): return time.monotonic()
+    @staticmethod
+    def sleep(s): time.sleep(s)
+
+
+class WalkResult(dict):
+    """What Walker.go returns (a dict, so `r['ok']` works as before; every key is also an attribute).
+    ok: there; why: 'arrived' | 'stuck' | 'no way' | 'timed out' | 'view does not turn'; detail: the old free text (what exactly);
+    distance_left: m across to the target; last_way: the cells of the last plan from where the player was (at most 60);
+    stuck_class: what the last stuck was against ('wall' | 'foliage' | 'open', see stuck_class; '' when it never was stuck);
+    tried: what was done about being stuck, in order ('replan', 'wall rule', 'pocket escape', 'sidestep', 'turn', ...);
+    and the counters walked, stuck, replans, looks, backouts, sidesteps, pressed, blurred, seconds, from, to."""
+    WHYS = ('arrived', 'stuck', 'no way', 'timed out', 'view does not turn')
+    def __getattr__(self, k):
+        try: return self[k]
+        except KeyError: raise AttributeError(k)
 
 
 def wrap(a): return (a + math.pi) % (2 * math.pi) - math.pi
@@ -123,9 +145,11 @@ class Map:
         self.cells[c] = self.add_point(rec, feet)
 
     def bump(self, x, y):
+        """Mark the cell bumped. True when that changed the map (a cell not bumped before, and not one someone walked)."""
         c = cell_of(x, y); old = self.cells.get(c)
-        if old is None: self.cells[c] = [-1e4, 0, BUMPED]
-        elif not old[2] & WALKED: old[2] |= BUMPED
+        if old is None: self.cells[c] = [-1e4, 0, BUMPED]; return True
+        if old[2] & (WALKED | BUMPED): return False
+        old[2] |= BUMPED; return True
 
     def walk_line(self, points, gap=3.0):
         """A walk someone made (eye positions in order, a person's recording or the bot's own): every cell on the way between two points
@@ -407,11 +431,14 @@ def simplify(cells, z):
 
 
 class Walker:
-    def __init__(self, p, c, game_dir, log=lambda m: None):
+    def __init__(self, p, c, game_dir, log=lambda m: None, clock=None, stall=None):
         self.p, self.c, self.log, self.game_dir = p, c, log, game_dir
+        self.clock = clock or RealClock(); self.now = self.clock.monotonic; self.nap = self.clock.sleep
+        self.stall_seconds = float(stall or os.environ.get('WNAV_STALL') or 20.0)      # the progress clock (see go)
+        self.tr = Trace(os.path.join(game_dir, 'trace.jsonl'), clock=time.time if clock is None else self.now)      # the typed trace (tools/win/wtrace.py)
         self.map = Map(); self.down = set(); self.stuck = 0; self.walked = 0.0; self.replans = 0; self.looks = 0
         self.avoid = set(); self.stuck_at = []      # cells bumped on this walk (not entered again), where the stucks were
-        self.cells, self.ci = [], 0                   # the plan's cells, the one the player is at
+        self.cells, self.ci, self.cell_set = [], 0, set()                   # the plan's cells, the one the player is at
         self.trace = open(os.path.join(game_dir, 'wnav_trace.jsonl'), 'a') if os.environ.get('WNAV_TRACE') else None
         self.map_path = os.path.join(game_dir, 'wnav_map.bin'); self.depth = os.path.join(game_dir, 'witness_depth.bin')
         for q in [q for q in (os.environ.get('WNAV_MAPS') or '').split(';') if q] + [self.map_path]: self.map.load(q)
@@ -439,23 +466,28 @@ class Walker:
         err = want - self.p.camera()[1][1]
         if abs(err) > 0.05: self.c.send(['mouse 0 %d' % int(round(-err / RAD_PER_COUNT))], 0.03)
 
-    def look(self, again=1):
-        """One depth picture into the map. False: the proxy did not answer, or the camera did not hold still (tried `again` more times)."""
+    def grab_depth(self):
+        """One depth picture from the proxy: its world points, or None when it did not answer (the simulated world overrides this)."""
         try: before = os.path.getmtime(self.depth)
         except OSError: before = 0
-        cam0 = self.p.camera(); self.c.send(['depthdump']); t0 = time.monotonic()
-        while time.monotonic() - t0 < 1.0:
+        self.c.send(['depthdump']); t0 = self.now()
+        while self.now() - t0 < 1.0:
             try:
                 if os.path.getmtime(self.depth) != before:
                     data = open(self.depth, 'rb').read()
                     if len(data) >= 44: break
             except OSError: pass
-            time.sleep(0.01)
-        else: return False
-        try: _, pts = depth_points(data)
-        except (ValueError, struct.error): return False
+            self.nap(0.01)
+        else: return None
+        try: return depth_points(data)[1]
+        except (ValueError, struct.error): return None
+
+    def look(self, again=1):
+        """One depth picture into the map. False: the proxy did not answer, or the camera did not hold still (tried `again` more times)."""
+        cam0 = self.p.camera(); pts = self.grab_depth()
+        if pts is None: return False
         if not still(cam0, self.p.camera()):      # (the camera turned or moved while the picture was taken)
-            self.blurred += 1; time.sleep(0.1); return self.look(again - 1) if again > 0 else False
+            self.blurred += 1; self.nap(0.1); return self.look(again - 1) if again > 0 else False
         self.map.integrate(pts); self.looks += 1; self.last_pts = pts
         q = self.pos(); self.map.stand(q[0], q[1], q[2] - EYE)
         return True
@@ -472,15 +504,15 @@ class Walker:
 
     def follow(self, points, seconds=15.0):
         """Walk through these points in turn by steering alone (no plan): the way back out of a pocket. True when the last was reached."""
-        t0 = time.monotonic(); last, last_t = self.pos(), t0
+        t0 = self.now(); last, last_t = self.pos(), t0
         for pt in points:
-            while time.monotonic() - t0 < seconds:
+            while self.now() - t0 < seconds:
                 q = self.pos()
                 if math.dist(q[:2], pt[:2]) < 0.7: break
                 err = wrap(math.atan2(pt[1] - q[1], pt[0] - q[0]) - self.yaw()); self.turn(err); self.key('W', abs(err) < 0.7)
-                if math.dist(q[:2], last[:2]) > 0.3: last, last_t = q, time.monotonic()
-                elif time.monotonic() - last_t > 2.0: self.key('W', False); return False
-                time.sleep(0.03)
+                if math.dist(q[:2], last[:2]) > 0.3: last, last_t = q, self.now()
+                elif self.now() - last_t > 2.0: self.key('W', False); return False
+                self.nap(0.03)
             else: self.key('W', False); return False
         self.key('W', False); return True
 
@@ -508,7 +540,7 @@ class Walker:
 
     def look_around(self):
         self.key('W', False)
-        for _ in range(4): self.look(); self.turn(math.pi / 2); time.sleep(0.15)      # (the turn takes a frame or two: a look during it is blurred)
+        for _ in range(4): self.look(); self.turn(math.pi / 2); self.nap(0.15)      # (the turn takes a frame or two: a look during it is blurred)
 
     def keep_depth(self, name):
         """WNAV_KEEP=1: the last depth picture (and the camera it was taken from) kept as <game folder>/wnav_<name>.bin, to see what a stuck is against."""
@@ -517,12 +549,12 @@ class Walker:
             except OSError: pass
 
     def note(self, **kv):
-        if self.trace: self.trace.write(json.dumps(dict(t=round(time.monotonic(), 2), **kv)) + '\n'); self.trace.flush()
+        if self.trace: self.trace.write(json.dumps(dict(t=round(self.now(), 2), **kv)) + '\n'); self.trace.flush()
 
-    def plan(self, target):
+    def plan(self, target, reason='plan'):
         q = self.pos(); cells = self.map.plan(q, target, avoid=self.avoid, dear=self.dear | self.hit)
         if cells is None: return None
-        self.replans += 1; self.cells, self.ci = cells, 0
+        self.replans += 1; self.cells, self.ci, self.cell_set = cells, 0, set(cells); self.tr.emit('replan', reason=reason, cells=len(cells))
         way = simplify(cells, target[2]) or [tuple(target)]      # (a plan of one cell: the target is next to the player)
         self.note(plan=[[round(w[0], 1), round(w[1], 1)] for w in way], at=[round(v, 2) for v in q], reached=self.map.reached); return way
 
@@ -539,11 +571,11 @@ class Walker:
     def settle(self, target, tol=0.12, seconds=8.0):
         """Shuffle onto an exact spot after a walk (where a line is drawn from matters to within a few tens of cm): face it, tap W for a
         moment, again, until within `tol`. Returns the distance left."""
-        t0 = time.monotonic()
-        while time.monotonic() - t0 < seconds:
+        t0 = self.now()
+        while self.now() - t0 < seconds:
             q = self.pos(); d = math.dist(q[:2], target[:2])
             if d < tol: break
-            self.turn(wrap(math.atan2(target[1] - q[1], target[0] - q[0]) - self.yaw())); time.sleep(0.05)
+            self.turn(wrap(math.atan2(target[1] - q[1], target[0] - q[0]) - self.yaw())); self.nap(0.05)
             self.c.send(['key W down'], min(0.25, max(0.03, d / 1.8 * 0.6))); self.c.send(['key W up'], 0.15)
         return math.dist(self.pos()[:2], target[:2])
 
@@ -556,64 +588,130 @@ class Walker:
             self.c.send(['button R down'], 0.12); self.c.send(['button R up'], 0.6)
         return False
 
-    def go(self, target, tol=0.8, seconds=240, ztol=2.0):
-        """Walk to `target` (x, y, z: the eye there) until within `tol` across and `ztol` in height. Returns a dict like the JSON line."""
-        t0 = time.monotonic(); deadline = t0 + seconds; self.hit = set()
+    def go(self, target, tol=0.8, seconds=240, ztol=2.0, stall=None, leg=None):
+        """Walk to `target` (x, y, z: the eye there) until within `tol` across and `ztol` in height. Returns a WalkResult (a dict like the JSON
+        line; ok False says why: see WalkResult). The progress clock: progress is the distance to the target dropping 0.5 m below the best so far,
+        a cell of the planned way reached for the first time, or a bump that changed the map; it resets the clock. `stall` seconds (20) without
+        progress fire the watchdog, which tries in turn: plan again with the bumped cells (replan), the wall rule (all of the wall in sight
+        bumped), the pocket escape (back out along the trail); the next time (10 s after each) it gives up with why 'stuck'. The quick reflex
+        (W held, 2 s and under 0.5 m moved: bump the cells ahead, step aside, look round) stays; WNAV_STUCKS of them are a fallback limit only."""
+        t0 = self.now(); deadline = t0 + seconds; self.hit = set(); stall = stall or self.stall_seconds
         self.c.send(['hover off'])
-        if not self.free_look(): return {'ok': False, 'why': 'stuck in a puzzle: the mouse does not turn the camera', 'seconds': round(time.monotonic() - t0, 1), 'walked': 0.0, 'stuck': 0, 'replans': 0, 'looks': 0, 'from': list(self.pos()), 'to': list(self.pos())}
+        start = self.pos(); self.tried = []; self.last_class = ''
+        self.tr.emit('walk_start', **{'leg': leg if leg is not None else (self.tag.rstrip('_') or 'walk'), 'from': [round(v, 2) for v in start], 'to': [round(float(v), 2) for v in target]})
+
+        def done(ok, why, detail=''):
+            self.release()
+            try: self.map.save(self.map_path)
+            except OSError: pass
+            q = self.pos(); left = round(math.dist(q[:2], target[:2]), 2)
+            if not ok and not self.last_class and why in ('stuck', 'no way') and self.last_pts: self.last_class = stuck_class(self.last_pts, q, self.yaw())
+            r = WalkResult(ok=ok, why=why, detail=detail, distance_left=left, last_way=[list(c_) for c_ in self.cells[self.ci:self.ci + 60]], stuck_class=self.last_class,
+                           tried=list(self.tried), seconds=round(self.now() - t0, 1), walked=round(self.walked, 1), stuck=self.stuck, replans=self.replans, looks=self.looks,
+                           backouts=self.backouts, sidesteps=self.sidesteps, pressed=self.pressed_n, blurred=self.blurred,
+                           **{'from': [round(v, 2) for v in start], 'to': [round(v, 2) for v in q]})
+            if not ok: self.tr.emit('giveup', why=why, dist_left=left, stuck_class=self.last_class, last_way=r['last_way'])
+            return r
+
+        if not self.free_look(): return done(False, 'view does not turn', 'the mouse does not turn the camera (stuck in a puzzle?)')
         self.pitch_to(-0.25)
-        start = self.pos(); last = noted = start; self.note(go=list(target), at=list(start)); self.look_around()
+        last = noted = start; self.note(go=list(target), at=list(start)); self.look_around()
         stucks = int(os.environ.get('WNAV_STUCKS') or 20)
-        ok, why, way, k = False, 'out of time', None, 0
-        last_look = 0.0; moved_at, moved_t = start, time.monotonic(); near_d, near_t = math.dist(start[:2], target[:2]), time.monotonic()
-        while time.monotonic() < deadline:
-            q = self.pos(); self.walked += math.dist(q[:2], last[:2])
+        way, k, rp = None, 0, 'start'      # rp: why the next plan is made (the trace)
+        last_look = 0.0; moved_at, moved_t = start, self.now()
+        best_d = math.dist(start[:2], target[:2]); prog_t = near_t = self.now(); window = stall; stage = 0; ladder = []; seen = set(); noted_prog = -99.0; turn_ref = None; bumps_near = 0
+
+        def progress(reason, d):
+            """Any progress re-arms the clock; only getting nearer (0.5 m below the best so far) also starts the ladder again and clears the
+            count of stucks since: wandering along a wall finds new cells and new bumps for ever, and is not getting anywhere."""
+            nonlocal best_d, prog_t, near_t, window, stage, ladder, noted_prog, bumps_near
+            prog_t, window = self.now(), stall
+            if d < best_d - 0.5: best_d, near_t, stage, ladder, bumps_near = d, prog_t, 0, [], 0
+            if prog_t - noted_prog >= 2.0: noted_prog = prog_t; self.tr.emit('progress', dist_left=round(d, 2), reason=reason)
+
+        def bumps(cells_, cls):
+            """Bump cells (centres); progress when that changed the map. Returns how many were new."""
+            n = 0
+            for c_ in cells_:
+                if self.map.bump(*centre(c_)): n += 1
+                self.avoid.add(c_)
+            if n: self.tr.emit('bump', cell=list(next(iter(cells_))), **{'class': cls}, count=n)
+            return n
+
+        while self.now() < deadline:
+            q = self.pos(); self.walked += math.dist(q[:2], last[:2]); dist = math.dist(q[:2], target[:2])
             if math.dist(q[:2], noted[:2]) > 1.0: self.note(pos=[round(q[0], 2), round(q[1], 2), round(q[2], 2)]); noted = q
             if self.trail and math.dist(q[:2], self.trail[-1][:2]) > 3.0: self.trail = []      # a teleport (or a reload): the way here is not a walk
             if not self.trail or math.dist(q[:2], self.trail[-1][:2]) > 0.5: self.trail.append(q)
             last = q
-            if math.dist(q[:2], target[:2]) < tol and abs(q[2] - target[2]) < ztol: ok, why = True, ''; break
+            if dist < tol and abs(q[2] - target[2]) < ztol: return done(True, 'arrived')
+            if dist < best_d - 0.5: progress('nearer', dist)
+            elif cell_of(q[0], q[1]) in self.cell_set and cell_of(q[0], q[1]) not in seen: seen.add(cell_of(q[0], q[1])); progress('new cell', dist)
             if way is None or k >= len(way):
-                way, k = self.plan(target), 0
-                if way is None and math.dist(q[:2], target[:2]) >= tol and self.back_out('no way on the map'): continue
-                if way is None: why = 'no way on the map' if math.dist(q[:2], target[:2]) >= tol else 'here, but %.1f m %s it' % (abs(q[2] - target[2]), 'below' if q[2] < target[2] else 'above'); break
+                way, k = self.plan(target, rp), 0
+                if way is None and dist >= tol:
+                    self.tried.append('pocket escape')
+                    if self.back_out('no way on the map'): rp = 'no way: backed out'; continue
+                if way is None:
+                    return done(False, 'no way', 'no way on the map' if dist >= tol else 'here, but %.1f m %s it' % (abs(q[2] - target[2]), 'below' if q[2] < target[2] else 'above'))
             while k < len(way) - 1 and math.dist(q[:2], way[k][:2]) < 1.0: k += 1
-            aim = way[k]; d = math.dist(q[:2], aim[:2])
+            aim = way[k]
             bearing = math.atan2(aim[1] - q[1], aim[0] - q[0]); err = wrap(bearing - self.yaw())
             self.turn(err); self.key('W', abs(err) < 0.7)
-            if time.monotonic() - last_look > 0.5:
-                last_look = time.monotonic(); self.look()
-                if self.ahead_blocked(): way = None; continue
-            # stuck: W held but not 0.5 m moved in 2 s (a wall unseen), or not 0.5 m nearer the target in 25 s (going round in circles)
-            now = time.monotonic()
+            # the view must turn: a turn commanded and the yaw unchanged for 2 s (a puzzle holds the mouse, the game is paused)
+            if abs(err) > 0.5:
+                if turn_ref is None or abs(wrap(self.yaw() - turn_ref[0])) > 0.05: turn_ref = (self.yaw(), self.now())
+                elif self.now() - turn_ref[1] > 2.0: return done(False, 'view does not turn', 'a turn of %.1f rad was commanded and the yaw did not change in 2 s' % abs(err))
+            else: turn_ref = None
+            if self.now() - last_look > 0.5:
+                last_look = self.now(); self.look()
+                if self.ahead_blocked(): way, rp = None, 'ahead blocked'; continue
+            now = self.now()
+            # stuck (reflex): W held but not 0.5 m moved in 2 s (a wall unseen)
             if math.dist(q[:2], moved_at[:2]) > 0.5 or 'W' not in self.down: moved_at, moved_t = q, now
-            dt = math.dist(q[:2], target[:2])
-            if dt < near_d - 0.5: near_d, near_t = dt, now
-            if now - moved_t > 2.0 or now - near_t > 25.0:
-                trig = 'still' if now - moved_t > 2.0 else 'circles'      # (into the stuck note: a stuck in circles is not against anything, its picture shows open ground)
-                moved_at, moved_t, near_d, near_t = q, now, dt, now
+            if now - moved_t > 2.0:
+                moved_at, moved_t = q, now
                 self.stuck += 1
-                if self.stuck > stucks: why = 'stuck %d times' % (self.stuck - 1); break
+                if self.stuck > stucks: return done(False, 'stuck', 'stuck %d times' % (self.stuck - 1))
                 y = self.yaw(); again = sum(1 for s in self.stuck_at if math.dist(s, q[:2]) < 3.0); pocketed = pocket(self.stuck_at, q); self.stuck_at.append(q[:2])
+                ahead = []
                 for r in (0.45, 0.75, 1.05, 1.35):      # the cells ahead (wider each time it is stuck here again)
                     for side in range(-again, again + 1):
-                        x = q[0] + r * math.cos(y) - side * CELL * math.sin(y); yy = q[1] + r * math.sin(y) + side * CELL * math.cos(y)
-                        self.map.bump(x, yy); self.avoid.add(cell_of(x, yy))
+                        x = q[0] + r * math.cos(y) - side * CELL * math.sin(y); yy = q[1] + r * math.sin(y) + side * CELL * math.cos(y); ahead.append(cell_of(x, yy))
+                if self.last_pts: self.last_class = stuck_class(self.last_pts, q, y)
+                new = bumps(list(dict.fromkeys(ahead)), self.last_class or 'ahead'); self.tried.append('bump')
                 if wall_rule(self.stuck_at[:-1], q, os.environ.get('WNAV_PRESSED')) and self.look(0):      # (what it is pressed against: all of it, not only the cell ahead; from the second stuck near here: at the first stuck in the benchmark it bumped the way of a leg that walks without it)
-                    wall = pressed(self.last_pts, q, y)
-                    for c_ in wall: self.map.bump(*centre(c_))
-                    self.pressed_n += len(wall)
-                self.note(stuck=[round(q[0], 2), round(q[1], 2)], again=again, yaw=round(y, 2), z=round(q[2], 2), trig=trig); self.keep_depth('stuck%d' % self.stuck)
+                    wall = pressed(self.last_pts, q, y); new += bumps(sorted(wall), 'pressed') if wall else 0
+                    self.pressed_n += len(wall); self.tried.append('wall rule')
+                self.note(stuck=[round(q[0], 2), round(q[1], 2)], again=again, yaw=round(y, 2), z=round(q[2], 2), trig='still'); self.keep_depth('stuck%d' % self.stuck)
                 self.log('stuck %d at %.1f %.1f: bumped, planning again' % (self.stuck, q[0], q[1]))
-                if pocketed and self.back_out('stuck %d times here' % (again + 1)): way = None; continue
-                if not self.sidestep(): self.c.send(['key S down'], 0.4); self.c.send(['key S up'])      # (the sidestep or the step back: off the thing unseen)
-                self.look_around(); way = None
-            time.sleep(0.02)
-        self.release()
-        try: self.map.save(self.map_path)
-        except OSError: pass
-        return {'ok': ok, 'why': why, 'seconds': round(time.monotonic() - t0, 1), 'walked': round(self.walked, 1), 'stuck': self.stuck,
-                'replans': self.replans, 'looks': self.looks, 'backouts': self.backouts, 'sidesteps': self.sidesteps, 'pressed': self.pressed_n, 'blurred': self.blurred, 'from': [round(v, 2) for v in start], 'to': [round(v, 2) for v in self.pos()]}
+                bumps_near += 1
+                if new: progress('bump', dist)
+                if pocketed and self.back_out('stuck %d times here' % (again + 1)): way, rp = None, 'pocket escape'; self.tried.append('pocket escape'); continue
+                if not self.sidestep():
+                    self.c.send(['key S down'], 0.4); self.c.send(['key S up']); self.tried.append('step back')      # (the sidestep or the step back: off the thing unseen)
+                else: self.tried.append('sidestep')
+                self.look_around(); way, rp = None, 'stuck'
+            # the watchdog: no progress for `window` s
+            now = self.now()
+            if now - prog_t > window or (bumps_near >= 4 and now - near_t > 3 * stall):      # (no progress at all, or stuck again and again without getting nearer for 3 stall times)
+                self.tr.emit('stall', since_t=round(self.tr.clock() - (now - prog_t), 3), seconds=round(now - prog_t, 1), tried=list(ladder))
+                if stage == 0:
+                    ladder.append('replan'); self.tried.append('replan'); way, rp = None, 'stall'; self.look_around()
+                elif stage == 1:
+                    ladder.append('wall rule'); self.tried.append('wall rule'); y = self.yaw()
+                    if self.look(0): wall = pressed(self.last_pts, q, y); self.pressed_n += len(wall); n_ = bumps(sorted(wall), 'pressed') if wall else 0
+                    else: n_ = 0
+                    way, rp = None, 'stall: wall rule'
+                    if n_: progress('bump', dist); continue      # (the map changed: that is progress)
+                elif stage == 2:
+                    ladder.append('pocket escape'); self.tried.append('pocket escape')
+                    if not self.back_out('no progress for %d s' % round(now - prog_t)): return done(False, 'stuck', 'stalled; replan, wall rule and pocket escape tried')
+                    way, rp = None, 'stall: pocket escape'
+                else: return done(False, 'stuck', 'stalled; replan, wall rule and pocket escape tried')
+                stage += 1; prog_t = self.now(); window = stall / 2; near_t = prog_t - 2.5 * stall      # (the next rung in half a stall time)
+            self.nap(0.02)
+        return done(False, 'timed out', 'out of time')
 
 
 if __name__ == '__main__' and sys.argv[1:2] == ['--merge-maps']:      # OUT.bin A.bin B.bin ...: the maps added together (the walkers' learnt walls and walked cells)

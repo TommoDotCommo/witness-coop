@@ -186,7 +186,7 @@ check('lvlfall', p is not None and not m.reached and 10 < last[0] < 17.6 and abs
 m = wnav.Map(); m.integrate(ground(None, -5, 25, -15, 30, 0.0)); w = object.__new__(wnav.Walker)
 class P_:
     def camera(self): return ((5.0, 5.0, E), (0.0, 0.0))
-w.p = P_(); w.map = m; w.hit = set(); w.dear = set(); w.avoid = set(); w.replans = 0; w.trace = None
+w.p = P_(); w.map = m; w.hit = set(); w.dear = set(); w.avoid = set(); w.replans = 0; w.trace = None; w.tr = wnav.Trace()
 first = m.plan((5, 5, E), (15, 5, E), margin=12); w.cells, w.ci = first, 0
 m.integrate(wall(10.1, 3.0, 8.0, 0.25, 3.0))      # a look sees a wall across the way
 blocked = w.ahead_blocked(99)
@@ -267,7 +267,7 @@ def main():
         if old not in text:
             print('mutant text not found: %s' % old[:70]); bad = True; continue
         with tempfile.TemporaryDirectory(prefix='wnav-mut-') as d:
-            open(os.path.join(d, 'wnav.py'), 'w').write(text.replace(old, new, 1))
+            open(os.path.join(d, 'wnav.py'), 'w').write(text.replace(old, new, 1)); shutil.copy(os.path.join(HERE, 'win', 'wtrace.py'), d)
             ok, out = run_with(d)
             print('mutant %-70s %s (%s)' % (old[:70], 'rejected' if not ok else 'SURVIVED', out), flush=True); bad |= ok
     print('ALL OK' if not bad else 'FAILED'); return 1 if bad else 0
