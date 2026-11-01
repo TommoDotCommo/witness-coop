@@ -3,9 +3,9 @@
 Usage: Windows Python wnav.py <pid> <game folder> x y z [tolerance m]      (or import: Walker(p, c, game_dir).go((x, y, z)))
        python3 tools/win/wnav.py --merge-maps OUT.bin A.bin B.bin ...   (maps added together, game-free)
        python3 tools/win/wnav.py --merge-recordings MAP.bin SESSION.jsonl ...   (a person's recorded walks into a map file, game-free)
-Prints one JSON line {"ok", "why", "seconds", "walked", "stuck", "replans", "looks", "backouts", "sidesteps", "blurred", "from", "to"}.
+Prints one JSON line (a WalkResult: "ok", "why", "detail", "distance_left", "last_way", "stuck_class", "tried", "seconds", "walked", "stuck", "replans", "looks", "backouts", "sidesteps", "pressed", "blurred", "from", "to").
 Environment: WNAV_MAPS (more maps to read, ';' separated), WNAV_RECORDINGS (session.jsonl files of tools/win/wrecord.py, ';' separated:
-their walks are known-good cells), WNAV_STUCKS (stucks before giving up, 20: at 12 the legs through a maze of unseen walls gave up where the next stuck went on), WNAV_TRACE (a trace in <game folder>/wnav_trace.jsonl),
+their walks are known-good cells), WNAV_STUCKS (stucks before giving up, a fallback limit, 20: at 12 the legs through a maze of unseen walls gave up where the next stuck went on), WNAV_STALL (seconds without progress before the watchdog fires, 20), WNAV_TRACE (a trace in <game folder>/wnav_trace.jsonl),
 WNAV_PRESSED (bump all of the wall it is pressed against: 1 at every stuck, 0 never, default from the second stuck within 6 m), WNAV_KEEP (a depth picture kept at each stuck as <game folder>/wnav_<Walker.tag>stuck<N>.bin).
 
 Measured (build 11370412): a mouse count turns the camera 0.0025 rad (positive dx turns right: the yaw at CAM_ANG goes down), dy the same in
@@ -38,15 +38,27 @@ How it finds the way (a robot with a depth camera, as a person uses their eyes):
  - it walks the plan, looking again every half second (the camera faces the way it walks) and planning again when the way ahead is no
    longer free (the cells found blocked stay dear for the rest of the walk: a look from another side finds them open again, and the walker
    turned back at them to and fro); at the start and after being stuck it looks all round (four looks);
- - stuck (W held but under 0.5 m moved in 2 s, or no nearer the target in 25 s): something unseen is in the way (the game has invisible walls
+ - stuck, the quick reflex (W held but under 0.5 m moved in 2 s): something unseen is in the way (the game has invisible walls
    at the shore and on steep slopes): the cells just ahead are marked bumped (dear, not forbidden: a door may open later), it steps aside
    (A, else D; else back with S) and plans again; from the second stuck near here (wall_rule) it looks once more first: the band-filled points up to 1.2 m ahead and 4 m either side are
-   what it is pressed against (a wall the map took for a hedge), and all those cells are bumped, not only the one ahead; the trace's stuck note carries
-   trig (still: W held, not moving; circles: no nearer the target in 25 s) and, with WNAV_KEEP, stuck_class(depth picture) names what it is against:
-   wall (flat), foliage (scattered) or open (nothing in the body band: a kerb, a drop, an unseen collision; 43 of 88 and 56 of 110 stuck pictures);
+   what it is pressed against (a wall the map took for a hedge), and all those cells are bumped, not only the one ahead; stuck_class(depth picture of the
+   last look) names what it is against: wall (flat), foliage (scattered) or open (nothing in the body band: a kerb, a drop, an unseen collision;
+   43 of 88 and 56 of 110 stuck pictures), and goes into the result; WNAV_KEEP also keeps the picture;
  - a pocket (stuck a third time within 3 m, or no way on the map from here): it walks back out along its own trail (10 m), keeps out of the
    cells round that place for this walk (and makes all within POCKET 5 m of it dear: a U of unseen walls is wider than one bump), unbumps the cells near doors the game says are open, and plans again (3 times at most); only then
    does it give up, and the caller may teleport (the last resort).
+ - the progress clock (go): progress is the distance to the target 0.5 m below the best so far, a cell of the planned way reached for the first time, or a
+   bump that changed the map; each resets the clock. `stall` seconds (20; WNAV_STALL) without progress fire the watchdog, which tries in turn a replan with
+   the bumped cells, the wall rule (all of the wall in sight bumped), the pocket escape (back out), each rung 10 s after the one before; the next time it
+   gives up. Getting nearer is the only progress that starts the ladder again: stuck four times without getting nearer for 60 s fires it too (wandering
+   along a wall finds new cells and new bumps for ever). WNAV_STUCKS (20) reflexes are a fallback limit only. A turn commanded and the yaw unchanged for 2 s
+   gives up at once, 'view does not turn' (a puzzle holds the mouse).
+ - the result (go returns a WalkResult, never an exception; a proxy that stops taking commands is a walk that 'timed out'): ok, why (arrived | stuck | no way |
+   timed out | view does not turn), detail (the words), distance_left, last_way (the cells of the last plan), stuck_class, tried (replans, bumps, wall rules,
+   sidesteps, pocket escapes in order), and the counters. Every giveup also goes to the typed trace (<game folder>/trace.jsonl, see wtrace.py) with the walk_start,
+   replan, bump, progress and stall lines; a caller that teleports after a failed walk writes a teleport line (always after a giveup).
+ - tested without a game: tools/test_navsim.py walks this code against 16 simulated levels (tools/navsim.py) with mutants; a planner or walker change merges
+   only with that passing and a before/after of tools/test_walk_bench.sh on the 15 legs (docs/WALKER.md).
 The map is kept in <game folder>/wnav_map.bin and read with the maps in WNAV_MAPS (the other bots' and the shared one): it is learnt once
 and shared (the orchestrator merges the bots' maps). Doors open and close: a cell whose floor is seen with the band above it empty takes
 that newer view."""

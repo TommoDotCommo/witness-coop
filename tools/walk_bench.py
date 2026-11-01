@@ -66,6 +66,9 @@ def compare(before, after):
     ta, tb = totals(before), totals(after)
     lines.append('before: %s' % ta); lines.append('after:  %s' % tb)
     ok = not worse and tb['teleported'] + tb['failed'] <= ta['teleported'] + ta['failed']
+    slower = [h for h, _ in PANELS if (before.get('%#x' % h) or {}).get('seconds') is not None and (after.get('%#x' % h) or {}).get('seconds') is not None
+              and after['%#x' % h]['seconds'] > before['%#x' % h]['seconds'] * 1.1 + 5]
+    lines.append('slower (10%% and 5 s over before): %s' % (', '.join('%#x' % h for h in slower) or 'none'))
     lines.append('worse: %s' % (', '.join(worse) or 'none')); lines.append('PASS' if ok else 'FAIL')
     return ok, lines
 

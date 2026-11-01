@@ -8,7 +8,7 @@ walker's sleeps move the world on, so a minute of walking takes well under a sec
  - pocket:   an unseen U of walls round the straight way, open behind: stuck at its end again and again, the walker backs out along its
              trail and goes round it;
  - teleport: a jump of the player (a teleport) starts a new trail: backing out never walks back to before the jump."""
-import os, subprocess, sys, tempfile
+import os, shutil, subprocess, sys, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CHECK = r'''
@@ -83,7 +83,7 @@ sys.exit(1 if fails else 0)
 
 MUTANTS = [      # (file text, replacement): each removes one protection
     ("            if math.dist(self.pos()[:2], q[:2]) > 0.3: self.sidesteps += 1; return True\n", ""),      # no sidestep
-    ("if pocketed and self.back_out('stuck %d times here' % (again + 1)): way = None; continue", "pass"),      # no backing out of a pocket
+    ("if pocketed and self.back_out('stuck %d times here' % (again + 1)): way, rp = None, 'pocket escape'; self.tried.append('pocket escape'); continue", "pass"),      # no backing out of a pocket
     ("if self.trail and math.dist(q[:2], self.trail[-1][:2]) > 3.0: self.trail = []", "pass"),      # a teleport kept in the trail
     ("                        if v in dear: cost = max(cost, 40.0)\n", ""),      # the pocket round a back-out is not dear: the next try goes in beside it
 ]
@@ -101,7 +101,7 @@ def main():
     for old, new in MUTANTS:
         if old not in text: print('mutant text not found: %s' % old[:70]); bad = True; continue
         with tempfile.TemporaryDirectory(prefix='wnav-walk-mut-') as d:
-            open(os.path.join(d, 'wnav.py'), 'w').write(text.replace(old, new, 1))
+            open(os.path.join(d, 'wnav.py'), 'w').write(text.replace(old, new, 1)); shutil.copy(os.path.join(HERE, 'win', 'wtrace.py'), d)
             ok, out_ = run_with(d)
             print('mutant %-70s %s (%s)' % (old.strip()[:70], 'rejected' if not ok else 'SURVIVED', ' | '.join(l for l in out_.splitlines() if 'FAILED' in l or 'Error' in l)[:200]), flush=True); bad |= ok
     print('ALL OK' if not bad else 'FAILED'); return 1 if bad else 0
