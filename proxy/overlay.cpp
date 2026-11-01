@@ -300,7 +300,7 @@ static LRESULT CALLBACK DevWndProc(HWND w, UINT m, WPARAM wp, LPARAM lp) {
     switch (m) {
     case WM_KILLFOCUS: GuideReset(); break;
     case WM_ACTIVATEAPP: if (!wp) GuideReset(); break;
-    case WM_KEYDOWN: case WM_SYSKEYDOWN: if (wp == VK_F2 && !(lp & (1 << 30))) DiagMarkKey(); if (GuideKey((unsigned)wp, true)) return 0; if (DevMenuKey((unsigned)wp, true)) return 0; break;
+    case WM_KEYDOWN: case WM_SYSKEYDOWN: if (wp == guide::MarkerKey(GetCfg()) && !(lp & (1 << 30))) DiagMarkKey(); if (GuideKey((unsigned)wp, true)) return 0; if (DevMenuKey((unsigned)wp, true)) return 0; break;
     case WM_KEYUP: case WM_SYSKEYUP: if (GuideKey((unsigned)wp, false)) return 0; DevMenuKey((unsigned)wp, false); break;
     case WM_CHAR: if (DevMenuOpen()) return 0; break;
     case WM_LBUTTONDOWN: if (DevMenuMouseButton(0, true)) return 0; break;

@@ -175,6 +175,42 @@ worktree's slots, runs a normal bot solve, checks every world's process memory, 
 and verifies restart recovery and drained queues. It refuses insufficient RAM rather than displacing another test. Groups of three or more also defer while another sweep or suite is live, so a client restart cannot make occupied test capacity look temporarily free.
 Sixteen live clients and remote-PC networking have not been tested.
 
+## Reporting a problem
+
+Open a [bug report](https://github.com/TommoDotCommo/witness-coop/issues/new?template=bug.yml); the form asks for what is needed. A report
+from another PC is only useful with its logs, so:
+
+1. Press **F2** the moment something goes wrong (any player). It saves the last minute of that game (frame rate, where everyone was,
+   round trip and lost packets to each player, the sync queue) next to its log, and sends the marker to the other players, so every
+   machine saves the same moment under the same number. A toast says "Marker N saved". If a custom binding already uses F2 the marker is on F12
+   (the F1 guide names it).
+2. Open **witness_launcher.exe** and press **Send diagnostics** (bottom bar; it works after a crash too). A few seconds later a zip,
+   `witness-coop-diag_<date>_<id>.zip`, appears on the desktop with Explorer pointing at it, and the launcher says what is in it:
+   the logs of recent game and launcher runs, flight recordings, a crash dump if the game crashed, `witness_coop.cfg`,
+   `witness_proxy.log` (the last run), and a summary of the PC (mod version, the game's build hash, Windows version, graphics card
+   and driver, network adapters, firewall rules, ping to the peer). Your Windows and computer names, profile folder, IP addresses (the same
+   address always gets the same number: `ip-3`), MAC addresses and Steam IDs are replaced before it is zipped. A crash dump is a piece of the
+   game's memory: the same strings are overwritten in it, but it may hold more than that. No saves, no game files, nothing uploaded: you
+   attach the zip to the report yourself. Attach one from every player if you can, the host's first.
+3. Say which player you were, the mod version, how you connected and where on the island you were.
+
+Every run (the game and the launcher) writes its own log, `%LOCALAPPDATA%\witness-coop\logs\<UTC start>_p<pid>.log` (the launcher's has
+`_launcher_` in the name). Nothing is overwritten by playing again: the newest 100 MB are kept (`max_log_mb=` in `witness_coop.cfg`), and a run
+that crashed is never deleted. `witness_proxy.log` next to the DLL is still the last run only, and the one before it is `witness_proxy.previous.log`.
+Each log line is numbered and hash-chained, so a missing or edited line shows (accidents, not forgery).
+
+**Crashes.** The mod installs an unhandled-exception filter (not a first-chance handler, so exceptions the game catches itself, as
+`IsBadReadPtr` does all the time, produce no marker and no dump). On a crash it writes the crash lines (faulting module and offset, registers, the
+code addresses found on the stack) to the log, `<session>.crash`, the flight recording and `<session>.dmp`, a small minidump that also holds the
+mod's data. It cannot see `__fastfail` or a killed process: such a session simply has no "session end: clean exit" line. Developers read a
+submitted zip with `python3 tools/diag_report.py a.zip b.zip [--map proxy/AnselSDK64.map --dll proxy/AnselSDK64.dll]`: it checks the manifest and the
+hash chains, lists the sessions, crashes (a proxy crash is mapped to the object file and function through the linker map `make -C proxy`
+writes; keep the map and DLL of every release), desyncs and markers, summarises the flight recordings, and with two zips lines up the
+shared marker (`--timeline merged.txt --align`). Game-free tests: `python3 -B tools/test_diag.py` (anonymisation with mutants: a computer name, a
+user name, a username path, an IP address, a Steam ID and the dump masking, each left in, must fail), `make -C launcher test` (log chain, pruning, crash
+dump of a child process, with mutants). Test-only settings in `witness_coop.cfg`: `diag_dir=instance` (logs beside the DLL, for test copies),
+`test_crash=1` (the command `testcrash` really crashes the game; `testhandled` raises a handled exception), `crash_handler=0` (mutant: the handler does nothing).
+
 ## How it works
 
 The exe loads `AnselSDK64.dll` from its own folder. `proxy/` builds a replacement whose nine exports are stubs that load the

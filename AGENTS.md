@@ -31,6 +31,9 @@ prepare a reviewable diff before asking to publish. Never force-push.
   ownership journal `install-state.ps1` with the pure decisions in `install-policy.h`), and the player's `README.txt`.
   `tools/release.sh <version>` builds the zip, `tools/check_release_package.py` checks it, `tools/qa_installer.sh <game folder>`
   runs `tools/test_installer.ps1` on disposable Windows fixtures. Release notes: `docs/RELEASE-NOTES-<version>.md`.
+- Diagnostics: `common/diag_log.h` (per-session hash-chained logs, cap), `common/crash_handler.h` (unhandled-exception filter, minidump), `proxy/diag.cpp`
+  (flight recorder, F2 marker, desync dump, the commands `diagmark`, `diagdesync`, `testcrash`), `dist/diag.ps1` (the Send diagnostics bundle, embedded in the launcher),
+  `tools/diag_report.py`, `tools/minidump.py`, `tools/map_symbols.py`; tests `make -C launcher test` (diag-test, crash-test), `python3 -B tools/test_diag.py`, `tools/qa_diag.sh` (live).
 - `local/`: ignored private configuration, disposable test copies, release zips (`local/release/`) and QA evidence.
 
 ## Build and validation

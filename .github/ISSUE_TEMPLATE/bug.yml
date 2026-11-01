@@ -1,0 +1,69 @@
+name: Bug report
+description: Something broke, crashed or looked wrong while playing.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for testing! Press **F2** in game the moment something goes wrong: it saves the last minute
+        (frame rate, where everyone was, ping and lost packets) and puts a numbered marker in every player's log.
+        Then, with the game closed or open, open the launcher (`witness_launcher.exe`) and press **Send diagnostics**:
+        a zip appears on your desktop. Your Windows and computer names, IP addresses and Steam IDs are replaced in it;
+        it holds no saves and no game files, and nothing is uploaded. It works after a crash too: the crashed
+        run's log and crash dump are kept. If you can, send one from every player, the host's first.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you saw, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How it happened
+      description: What you and the others were doing just before. Can it be made to happen again?
+  - type: input
+    id: where
+    attributes:
+      label: Where on the island
+      placeholder: e.g. the first tutorial panels, the keep, behind the windmill, in the shadows
+  - type: input
+    id: version
+    attributes:
+      label: Mod version
+      description: The launcher's window title bar area shows it in the Send diagnostics message; the diagnostics zip also has it (system.txt).
+      placeholder: e.g. v0.1.0-alpha
+    validations:
+      required: true
+  - type: dropdown
+    id: role
+    attributes:
+      label: You were
+      options: [the host, a player who joined, playing alone, in a race]
+    validations:
+      required: true
+  - type: dropdown
+    id: transport
+    attributes:
+      label: How you connected
+      options: [Lobby over the internet, Lobby on a LAN, A VPN (Tailscale / ZeroTier / Hamachi), Two copies on one PC, Not connected]
+  - type: input
+    id: players
+    attributes:
+      label: Number of players
+      placeholder: e.g. 2
+  - type: input
+    id: markers
+    attributes:
+      label: F2 marker numbers
+      placeholder: e.g. marker 3
+  - type: textarea
+    id: logs
+    attributes:
+      label: Diagnostics and screenshots
+      description: |
+        Drag the diagnostics zip (`witness-coop-diag_<date>_<id>.zip` on your desktop) here, from every player if you can, plus any screenshots.
+        If the launcher will not start, the logs are in `%LOCALAPPDATA%\witness-coop\logs`; zip that folder instead.
+    validations:
+      required: true

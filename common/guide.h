@@ -32,6 +32,19 @@ inline const Fixed fixed[] = {
     {DevMenu, "Developer menu (if enabled); Tab: page"},
     {Nearby, "Nearby puzzles (developer mode)"},
 };
+// The diagnostics marker: F2, unless a binding already uses it (the F1 migration may have put one there), then F12, else none.
+inline unsigned MarkerKey(const Cfg& c) {
+#ifdef GUIDE_MUT_MARKER_BOUND
+    (void)c; return 0x71;
+#else
+    for (unsigned k : {0x71u, 0x7Bu}) {
+        bool used = false;
+        for (const auto& b : bindings) if (c.*b.member == k) used = true;
+        if (!used && k != Help && k != Boost && k != Nearby && k != Roster && k != DevMenu && k != Video && k != TvView && k != TvConsent) return k;
+    }
+    return 0;
+#endif
+}
 inline std::string KeyName(unsigned k) {
     if (k >= 0x70 && k <= 0x7B) return "F" + std::to_string(k - 0x6F);
     if (k == PrevView) return "[";
@@ -100,6 +113,7 @@ inline Columns Content(const Cfg& c) {
     }
     out[0].push_back("FIXED KEYS");
     for (const auto& b : fixed) out[0].push_back(KeyName(b.key) + "  " + b.text);
+    out[0].push_back(KeyName(MarkerKey(c)) + "  Mark a problem: saves the last minute for a bug report (every player's game marks it)");
     out[0].push_back("GAME / MENU CONTROLS");
     out[0].push_back("Game uses your settings. Defaults: WASD move, mouse look / draw, click puzzles, Esc back.");
     out[0].push_back("Lists: arrows, Enter, Esc. Launcher: Tab / Shift+Tab and Enter.");
