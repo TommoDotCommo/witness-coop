@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 #include "lobby.h"
+#include "lobby_steam.h"
 
 namespace lw {
 class Mutex { CRITICAL_SECTION cs_; public: Mutex() { InitializeCriticalSection(&cs_); } ~Mutex() { DeleteCriticalSection(&cs_); } void lock() { EnterCriticalSection(&cs_); } void unlock() { LeaveCriticalSection(&cs_); } };
@@ -23,6 +24,15 @@ public:
     Session(); ~Session();
     bool Host(const std::string& name, uint16_t gamePort, uint16_t lobbyPort, const std::string& advertise, std::string* err);       // advertise: the address friends reach this PC at (empty: this PC's address on the local network)
     bool Join(const std::string& invite, const std::string& name, uint16_t gamePort, std::string* err);                              // invite: address:port/CODE
+    // Steam (lobby_steam.h): a friends-only Steam lobby, relayed; the launcher's lobby logic is the same, its members are addressed by SteamID
+    bool SteamInit(const std::wstring& gameDir, std::string* err);
+    bool HostSteam(const std::string& name, uint16_t gamePort, const std::wstring& gameDir, std::string* err);
+    bool JoinSteam(uint64_t lobby, const std::string& name, uint16_t gamePort, const std::wstring& gameDir, std::string* err);
+    bool SteamMode() const { return steamMode_; }
+    std::string SteamStatus(); bool SteamFailed(); uint64_t SteamLobbyId(); std::string SteamReadData(const char* key); unsigned SteamMemberCount(); unsigned SteamMemberLimit();
+    bool SteamInviteDialog(); bool SteamInviteFriend(uint64_t f); std::vector<std::pair<uint64_t, std::string>> SteamFriends(); std::string SteamName();
+    uint64_t SteamJoinRequest();      // a lobby the player chose in Steam (an accepted invite, Join Game): the UI joins it
+    void Idle();                      // the UI's timer: Steam callbacks while no lobby session runs (invites accepted in Steam)
     void Stop();
     bool Active() const { return active_; }
     bool IsHost() const { return host_; }
@@ -35,7 +45,9 @@ public:
     void SendVoice(const wvoice::Packet& p); void SetSpeaking(bool b);
     void SetVoiceSink(std::function<void(const wvoice::Packet&)> f);
 private:
-    bool Open(uint16_t port, std::string* err); void Loop();
+    bool Open(uint16_t port, std::string* err); void Loop(); uint64_t VNow();       // VNow: the lobby's clock, which stands still while this launcher's game holds the Steam connection
+    void MakeSteamLobby();
+    std::unique_ptr<lsteam::SteamLobby> steam_; bool steamMode_ = false; std::string steamName_, steamCode_; uint16_t steamGamePort_ = 0; uint64_t pausedSince_ = 0, pausedTotal_ = 0;
     Mutex mu_; std::unique_ptr<wlobby::Lobby> lobby_; SOCKET sock_ = INVALID_SOCKET; HANDLE th_ = nullptr; static DWORD WINAPI Run(LPVOID p) { ((Session*)p)->Loop(); return 0; } std::atomic<bool> active_{false}, stop_{false}; bool host_ = false; std::string invite_; uint32_t hostIp_ = 0;
     std::function<void(const wvoice::Packet&)> sink_;
 };

@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include "../common/steam_ids.h"
 
 namespace lw {
 namespace {
@@ -53,31 +54,85 @@ bool Session::Join(const std::string& invite, const std::string& name, uint16_t 
     lobby_->Join({ip, (uint16_t)port}); invite_ = inv; host_ = false; hostIp_ = ip; stop_ = false; active_ = true; th_ = CreateThread(nullptr, 0, Run, this, 0, nullptr); return true;
 }
 void Session::Stop() {
-    if (th_) { stop_ = true; if (!host_ && lobby_) { Guard l(mu_); lobby_->Leave(); } WaitForSingleObject(th_, 3000); CloseHandle(th_); th_ = nullptr; }
+    if (th_) { stop_ = true; if (!host_ && lobby_) { Guard l(mu_); lobby_->Leave(); } if (steamMode_) Sleep(50); WaitForSingleObject(th_, 3000); CloseHandle(th_); th_ = nullptr; }
     Guard l(mu_); if (sock_ != INVALID_SOCKET) { closesocket(sock_); sock_ = INVALID_SOCKET; } lobby_.reset(); active_ = false; invite_.clear();
+    if (steamMode_ && steam_) steam_->Leave(); steamMode_ = false; pausedSince_ = pausedTotal_ = 0;
+}
+uint64_t Session::VNow() { uint64_t t = GetTickCount64(); return t - pausedTotal_ - (pausedSince_ ? t - pausedSince_ : 0); }
+void Session::MakeSteamLobby() {      // (locked) the Steam lobby is entered: the lobby logic starts on it, as host if this player owns the Steam lobby
+    bool host = steam_->IsOwner(); std::string code = host ? steamCode_ : steam_->Code(); lsteam::SteamLobby* st = steam_.get();
+    lobby_ = std::make_unique<wlobby::Lobby>(host, steamName_, steamGamePort_, code, [st](const wlobby::Addr& to, const wlobby::Bytes& b) { if (to.steam) st->Send(to.steam, b.data(), b.size()); });
+    lobby_->SetSteamId(steam_->Self()); lobby_->onVoice = [this](const wvoice::Packet& p) { if (sink_) sink_(p); };
+    if (host) lobby_->SetSession((uint32_t)GetTickCount64() ^ 0x5bd1e995u); else lobby_->Join(wlobby::SteamAddr(steam_->Owner()));
+    host_ = host; invite_ = steamids::Text(steam_->LobbyId());
 }
 void Session::Loop() {
     uint8_t buf[2048];
     while (!stop_) {
         { Guard l(mu_);
-          if (!lobby_) break; sockaddr_in from; int fl = sizeof from; int n; uint64_t now = GetTickCount64();
-          while ((n = recvfrom(sock_, (char*)buf, sizeof buf, 0, (sockaddr*)&from, &fl)) > 0) { wlobby::Addr a{ntohl(from.sin_addr.s_addr), ntohs(from.sin_port)}; lobby_->OnPacket(a, buf, (size_t)n, now); fl = sizeof from; }
-          lobby_->Tick(now); }
+          if (steamMode_) {
+              steam_->Poll(GetTickCount64());
+              if (!lobby_ && steam_->InLobby()) MakeSteamLobby();
+              if (lobby_ && !steam_->InLobby()) lobby_.reset();      // the Steam lobby was lost: Steam's status says why (never a fallback to UDP)
+              if (lobby_ && !steam_->Paused()) {
+                  uint64_t now = VNow(), from = 0; int n; wlobby::Gate gate = steam_->Gate();
+                  while ((n = steam_->Receive(buf, sizeof buf, &from)) > 0) if (gate.Allowed(from)) lobby_->OnPacket(wlobby::SteamAddr(from), buf, (size_t)n, now);
+                  lobby_->Tick(now);
+              }
+          } else {
+              if (!lobby_) break; sockaddr_in from; int fl = sizeof from; int n; uint64_t now = GetTickCount64();
+              while ((n = recvfrom(sock_, (char*)buf, sizeof buf, 0, (sockaddr*)&from, &fl)) > 0) { wlobby::Addr a{ntohl(from.sin_addr.s_addr), ntohs(from.sin_port)}; lobby_->OnPacket(a, buf, (size_t)n, now); fl = sizeof from; }
+              lobby_->Tick(now);
+          } }
         Sleep(5);
     }
 }
+bool Session::SteamInit(const std::wstring& gameDir, std::string* err) {
+    Guard l(mu_); if (!steam_) steam_ = std::make_unique<lsteam::SteamLobby>();
+    return steam_->Init(gameDir, err);
+}
+bool Session::HostSteam(const std::string& name, uint16_t gamePort, const std::wstring& gameDir, std::string* err) {
+    Stop(); if (!SteamInit(gameDir, err)) return false;
+    Guard l(mu_); steamCode_ = Token(); steamName_ = name; steamGamePort_ = gamePort;
+    if (!steam_->Host(steamCode_)) { *err = steam_->Status(); return false; }
+    steamMode_ = true; host_ = true; hostIp_ = 0; stop_ = false; active_ = true; th_ = CreateThread(nullptr, 0, Run, this, 0, nullptr); return true;
+}
+bool Session::JoinSteam(uint64_t lobby, const std::string& name, uint16_t gamePort, const std::wstring& gameDir, std::string* err) {
+    Stop(); if (!SteamInit(gameDir, err)) return false;
+    Guard l(mu_); steamName_ = name; steamGamePort_ = gamePort;
+    if (!steam_->Join(lobby)) { *err = steam_->Status(); return false; }
+    steamMode_ = true; host_ = false; hostIp_ = 0; stop_ = false; active_ = true; th_ = CreateThread(nullptr, 0, Run, this, 0, nullptr); return true;
+}
+void Session::Idle() { if (th_) return; Guard l(mu_); if (steam_ && steam_->Ready()) steam_->Poll(GetTickCount64()); }
+std::string Session::SteamStatus() { Guard l(mu_); return steam_ ? steam_->Status() : std::string(); }
+bool Session::SteamFailed() { Guard l(mu_); return steam_ && steam_->Failed(); }
+uint64_t Session::SteamLobbyId() { Guard l(mu_); return steam_ ? steam_->LobbyId() : 0; }
+std::string Session::SteamReadData(const char* key) { Guard l(mu_); return steam_ ? steam_->ReadData(key) : std::string(); }
+unsigned Session::SteamMemberCount() { Guard l(mu_); return steam_ ? steam_->MemberCount() : 0; }
+unsigned Session::SteamMemberLimit() { Guard l(mu_); return steam_ ? steam_->MemberLimit() : 0; }
+bool Session::SteamInviteDialog() { Guard l(mu_); return steam_ && steam_->InviteDialog(); }
+bool Session::SteamInviteFriend(uint64_t f) { Guard l(mu_); return steam_ && steam_->InviteFriend(f); }
+std::vector<std::pair<uint64_t, std::string>> Session::SteamFriends() { Guard l(mu_); return steam_ ? steam_->OnlineFriends() : std::vector<std::pair<uint64_t, std::string>>(); }
+std::string Session::SteamName() { Guard l(mu_); return steam_ ? steam_->PersonaName() : std::string(); }
+uint64_t Session::SteamJoinRequest() { Guard l(mu_); return steam_ ? steam_->TakeJoinRequest() : 0; }
 #define LOCKED(expr, def) Guard l(mu_); if (!lobby_) return def; return expr
 wlobby::State Session::State() { LOCKED(lobby_->state(), wlobby::State()); }
 unsigned Session::MyId() { LOCKED(lobby_->myId(), 0); }
 bool Session::Joined() { LOCKED(lobby_->joined(), false); }
 wlobby::JoinResult Session::Refused() { LOCKED(lobby_->refused(), wlobby::kPending); }
 std::vector<wlobby::ChatLine> Session::TakeChat() { LOCKED(lobby_->TakeChat(), std::vector<wlobby::ChatLine>()); }
-bool Session::TakeLaunch(wlobby::Launch* out) { LOCKED(lobby_->TakeLaunch(GetTickCount64(), out), false); }
-bool Session::Start() { LOCKED(lobby_->Start(GetTickCount64()), false); }
+bool Session::TakeLaunch(wlobby::Launch* out) { LOCKED(lobby_->TakeLaunch(VNow(), out), false); }
+bool Session::Start() { LOCKED(lobby_->Start(VNow()), false); }
 void Session::SetReady(bool r) { Guard l(mu_); if (lobby_) lobby_->SetReady(r); }
 void Session::SendChat(const std::string& t) { Guard l(mu_); if (lobby_) lobby_->SendChat(t); }
 void Session::SetSettings(const wlobby::Settings& s) { Guard l(mu_); if (lobby_) lobby_->SetSettings(s); }
-void Session::SetInGame(bool b) { Guard l(mu_); if (lobby_) lobby_->SetInGame(b); }
+void Session::SetInGame(bool b) {
+    Guard l(mu_); if (lobby_) lobby_->SetInGame(b);
+    if (steamMode_ && steam_) {      // the game takes over this player's Steam messages while it runs; the lobby's clock stands still meanwhile, so nobody times out
+        uint64_t t = GetTickCount64(); if (b && !pausedSince_) pausedSince_ = t; else if (!b && pausedSince_) { pausedTotal_ += t - pausedSince_; pausedSince_ = 0; }
+        steam_->Pause(b);
+    }
+}
 void Session::SetResult(const std::string& t) { Guard l(mu_); if (lobby_) lobby_->SetResult(t); }
 void Session::SendVoice(const wvoice::Packet& p) { Guard l(mu_); if (lobby_) lobby_->SendVoice(p); }
 void Session::SetSpeaking(bool b) { Guard l(mu_); if (lobby_) lobby_->SetSpeaking(b); }

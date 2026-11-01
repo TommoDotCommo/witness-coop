@@ -4,6 +4,8 @@
 // Nothing in DllMain blocks or does I/O (the loader lock): logging runs on a thread.
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include "../common/steam_ids.h"
+#include <string>
 #include <cstdio>
 #include <cstdint>
 #include <cstring>
@@ -116,11 +118,25 @@ static LONG WINAPI CrashLogger(EXCEPTION_POINTERS* ep) {
     Log(line); Sleep(300);      // the log thread gets a moment to write
     return EXCEPTION_CONTINUE_SEARCH;
 }
+// A friend accepted a Steam invite (or chose Join Game) while The Witness was not running: Steam starts the game itself with "+connect_lobby <id>".
+// The lobby lives in the launcher, so the launcher is started with the same words (it inherits Steam's environment) and this game closes before it opens a window.
+static bool HandOffSteamJoin() {
+    uint64_t lobby = 0; if (!steamids::ParseConnect(GetCommandLineA(), &lobby)) return false;
+    wchar_t dir[MAX_PATH]; GetModuleFileNameW(nullptr, dir, MAX_PATH); wchar_t* sl = wcsrchr(dir, L'\\'); if (sl) *sl = 0;
+    std::wstring launcher = std::wstring(dir) + L"\\witness_launcher.exe";
+    if (GetFileAttributesW(launcher.c_str()) == INVALID_FILE_ATTRIBUTES) { Log("steam: +connect_lobby on the command line, but no witness_launcher.exe beside the game"); return false; }
+    std::wstring cmd = L"\"" + launcher + L"\" +connect_lobby " + std::to_wstring((unsigned long long)lobby);
+    STARTUPINFOW si = {sizeof si}; PROCESS_INFORMATION pi = {};
+    if (!CreateProcessW(nullptr, &cmd[0], nullptr, nullptr, FALSE, 0, nullptr, dir, &si, &pi)) { Log("steam: could not start the launcher for the Steam invite"); return false; }
+    CloseHandle(pi.hThread); CloseHandle(pi.hProcess); Log("steam: a Steam invite started the game: the launcher joins the lobby, this game closes"); Sleep(200);
+    return true;
+}
 static DWORD WINAPI Init(LPVOID) {
     char msg[300], exe[MAX_PATH];
     GetModuleFileNameA(nullptr, exe, MAX_PATH);
     snprintf(msg, sizeof msg, "proxy loaded: pid=%lu host=%s tick=%lu", GetCurrentProcessId(), exe, GetTickCount());
     Log(msg);
+    if (HandOffSteamJoin()) TerminateProcess(GetCurrentProcess(), 0);
     AddVectoredExceptionHandler(1, CrashLogger);
     OverlayInstall();
     CoopStart();
