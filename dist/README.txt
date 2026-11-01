@@ -8,22 +8,86 @@ Project page and bug reports: https://github.com/TommoDotCommo/witness-coop
 
 You need The Witness on Steam, build 11370412 (the current one). Setup checks the game's
 exe and refuses any other build: the mod uses that build's addresses. Every player needs
-their own copy and this same mod version.
+their own copy and this same mod version. If Setup says your build is not supported, see
+"Setup says my build is not supported" below.
 
 
-Install
--------
-1. Unzip this folder anywhere (not inside the game folder).
-2. Double-click Witness-Coop-Setup.exe. It finds The Witness in your Steam libraries (or asks for
-   the folder), checks the build and shows what it will change. Click Install. Windows asks for
-   administrator permission only if the game folder is protected.
+Install (easiest): the single file
+----------------------------------
+1. Download Witness-Coop-Setup.exe from the releases page and double-click it. It is one file and
+   needs nothing else: do not open it from inside a zip. (If you see "Setup was started from
+   inside a zip file", this is the cause; use the single file, or Extract All first.)
+2. Setup finds The Witness in your Steam libraries (or asks for the folder), checks the build and
+   shows what it will change. Click Install. Windows asks for administrator permission only if
+   the game folder is protected.
 3. Click Play (launcher) when it finishes, or create a desktop shortcut. From now on start the
    game through witness_launcher.exe in the game folder, not from Steam, when you want co-op.
    Starting it from Steam still works: alone, with the mod loaded but nobody to connect to.
 
-If Windows shows "Windows protected your PC", click "More info" > "Run anyway".
-(Setup is a small program that runs PowerShell scripts you can read in Notepad:
-installer-gui.ps1 and witness-coop.ps1.)
+The single file unpacks itself into %LOCALAPPDATA%\witness-coop\setup\<version>\, runs the
+setup window from there and removes that folder when you close the window.
+If Windows shows "Windows protected your PC", click "More info" > "Run anyway" (the first
+releases may be unsigned). Setup is a small program that starts Windows PowerShell scripts you
+can read: installer-gui.ps1 and witness-coop.ps1 (in this zip; the single file carries the same).
+
+
+Install from this zip
+---------------------
+1. Right-click the zip > Extract All, anywhere (not inside the game folder).
+2. Double-click Witness-Coop-Setup.exe in the new folder. Steps 2 and 3 above follow.
+
+
+Install by hand (no Setup)
+--------------------------
+1. Close the game. In Steam: The Witness > Properties > Installed Files > Browse. That is the game folder
+   (it holds witness64_d3d11.exe).
+2. In the game folder rename AnselSDK64.dll to AnselSDK64_real.dll. (It is the game's own file.
+   SHA-256 3b0677ae1e01fc17645c903c8322497785768145abbe3758364299fdaa8aff15. Keep it.)
+3. Copy these from this zip into the game folder:
+     AnselSDK64.dll         (the co-op mod; the game loads it from its folder, it loads the real one)
+     witness_launcher.exe   (the lobby and settings window)
+     witness_models\        (the whole folder: the player model)
+4. Start witness_launcher.exe from the game folder.
+Uninstall by hand: delete AnselSDK64.dll (the mod), rename AnselSDK64_real.dll back to AnselSDK64.dll,
+delete witness_launcher.exe and the witness_models folder. witness_coop.cfg and witness_proxy.log may
+stay. If the game's own file is lost, Steam's Verify integrity of game files brings it back.
+Setup can later take over a hand install: it backs up what it replaces and can uninstall it.
+
+
+Steam Deck and Linux (Proton): untested
+---------------------------------------
+Not tried on a real Steam Deck yet. What should work, from how Proton and Wine load DLLs:
+- The game folder is, for example, ~/.local/share/Steam/steamapps/common/The Witness (Desktop mode).
+- install-linux.sh in this zip does the hand install above with backups and receipts:
+    sh install-linux.sh install              (finds the game; or give the folder as a second argument)
+    sh install-linux.sh uninstall
+    sh install-linux.sh status
+  Open a terminal (Konsole) in the unpacked zip. It refuses any other build of the game in plain words.
+- Wine has no built-in AnselSDK64, so the mod's AnselSDK64.dll beside the game's exe should load
+  without any WINEDLLOVERRIDES setting. Expected, untested.
+- The launcher is a Windows program and has to run in the game's own Proton prefix. In Steam
+  (Desktop mode): Games > Add a Non-Steam Game > Browse to witness_launcher.exe in the game folder.
+  Open its Properties: Start In = the game folder; Compatibility = force the same Proton version as
+  The Witness; Launch Options =
+    STEAM_COMPAT_DATA_PATH="<your Steam library>/steamapps/compatdata/210970" %command%
+  Start that entry instead of the game for co-op. Its Lobby starts the game inside the same prefix.
+  Starting The Witness from Steam as usual loads the mod alone, like on Windows.
+- Unknown until someone tries: the overlay and model drawing under DXVK, voice chat (microphone) under Proton,
+  the game window position on the Deck's screen. Please report what you see (the address is at the end).
+
+
+Setup says my build is not supported
+------------------------------------
+The mod only fits Steam build 11370412 of The Witness. Setup tells you what it found (the store if it can
+tell, the exe's SHA-256 start), what it needs, and what to do. Usually:
+- Steam: right-click The Witness > Properties > Betas > choose None, then Properties > Installed Files >
+  Verify integrity of game files. Run Setup again.
+- Other stores (GOG, Epic, ...): not supported yet.
+- If Steam already has the newest version, the game was updated after this mod: co-op returns when the mod is
+  updated. Nothing was changed and the game works as before.
+If a game update happens after you installed, the mod notices when the game starts: it leaves the game alone,
+shows one message ("Co-op is off") and the game runs as normal. Run Setup again once a new mod version is out.
+
 
 Playing with a friend
 ---------------------
@@ -73,18 +137,19 @@ Known limits of this alpha
 - First play test over the internet. Localhost and LAN are what the automated tests cover.
 - Nobody who joins after progress has been made gets the whole world yet; start together.
 - Everybody must have the same mod version (the lobby says so if not).
+- Steam Deck / Linux (Proton) is untested (see above). Copies of the game that are not Steam build 11370412 are not supported.
 - The game's own Launcher.variables (video settings) is written by the launcher's Video tab.
 
 Uninstall
 ---------
-Open Witness-Coop-Setup.exe and choose Uninstall. It puts the game's own AnselSDK64.dll back,
+Open Witness-Coop-Setup.exe and choose Uninstall (on Linux: sh install-linux.sh uninstall). It puts the game's own AnselSDK64.dll back,
 removes the launcher and the player model, and keeps witness_coop.cfg (your co-op settings),
 witness_proxy.log and your saves. Only files this setup installed are touched (each has a
 .coop-receipt.json beside it); files it does not own are kept.
 
 What the installer changes
 --------------------------
-Only the game folder:
+Only the game folder (the single-file Setup also unpacks itself for a moment into %LOCALAPPDATA%\witness-coop\setup\ and deletes that again):
 - AnselSDK64.dll becomes the co-op mod (the game loads this DLL from its folder); the game's own
   AnselSDK64.dll is kept as AnselSDK64_real.dll, and as AnselSDK64.dll.coop-original for uninstall.
 - witness_launcher.exe (the lobby and settings window) and witness_models\ (the adventurer).
