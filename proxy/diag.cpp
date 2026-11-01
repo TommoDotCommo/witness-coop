@@ -199,7 +199,7 @@ bool DiagCommand(const char* line) {
 
 static void DiagRenderTest() {      // render thread, from the same Present hook as DiagFrame
     LONG a = InterlockedExchange(&g_testAction, 0);
-    if (a == 1) { volatile int* p = nullptr; *p = 1; }
+    if (a == 1) { SetErrorMode(GetErrorMode() | SEM_NOGPFAULTERRORBOX); volatile int* p = nullptr; *p = 1; }      // test only: no Windows error dialog on a lab PC
     if (a == 2) {
         // exceptions the game handles itself: IsBadReadPtr raises an access violation and catches it inside kernel32. A first-chance
         // handler sees it; the unhandled filter must not.

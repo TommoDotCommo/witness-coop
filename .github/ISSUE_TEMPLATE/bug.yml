@@ -32,7 +32,7 @@ body:
     id: version
     attributes:
       label: Mod version
-      description: The launcher's window title bar area shows it in the Send diagnostics message; the diagnostics zip also has it (system.txt).
+      description: The launcher's title bar shows it; the diagnostics zip also has it (system.txt).
       placeholder: e.g. v0.1.0-alpha
     validations:
       required: true

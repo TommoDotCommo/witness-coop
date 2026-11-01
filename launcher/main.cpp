@@ -691,7 +691,7 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, LPWSTR cmdline, int show) {
         diag::CrashOptions co; co.session = &g_log; co.dataModule = GetModuleHandleW(nullptr); co.log = Dlog; diag::InstallCrashHandler(co); } }
     th::Init(); AddFields();
     WNDCLASSW wc = {}; wc.lpfnWndProc = MainProc; wc.hInstance = hi; wc.lpszClassName = L"WitnessLauncher"; wc.hbrBackground = th::BgBrush(); wc.hCursor = LoadCursorW(nullptr, IDC_ARROW); wc.hIcon = LoadIconW(nullptr, IDI_APPLICATION); RegisterClassW(&wc);
-    g_main = CreateWindowExW(0, L"WitnessLauncher", L"The Witness co-op: launcher", WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_VISIBLE | WS_CLIPCHILDREN, CW_USEDEFAULT, CW_USEDEFAULT, 880, 790, nullptr, nullptr, hi, nullptr);
+    g_main = CreateWindowExW(0, L"WitnessLauncher", (std::wstring(L"The Witness co-op: launcher ") + W(MOD_VERSION)).c_str(), WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_VISIBLE | WS_CLIPCHILDREN, CW_USEDEFAULT, CW_USEDEFAULT, 880, 790, nullptr, nullptr, hi, nullptr);
     RECT rc; GetClientRect(g_main, &rc);
     g_tab = CreateWindowExW(0, WC_TABCONTROLW, L"", WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN, 8, 88, rc.right - 16, rc.bottom - 88 - 64, g_main, (HMENU)ID_TAB, hi, nullptr); SendMessageW(g_tab, WM_SETFONT, (WPARAM)GetStockObject(DEFAULT_GUI_FONT), TRUE);
     BuildPages(g_main);
