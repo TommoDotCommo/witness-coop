@@ -8,14 +8,15 @@
 
 struct ReloadWorld : witness::World {
     bool solved[4] = {}, open[4] = {}; uint64_t gen = 1;      // gen: the world's generation (a load re-creates the entities)
-    uint64_t generation() override { return gen; }
+    bool gap = false; uint64_t table = 1;                     // gap: a load is under way (the entities are missing, the generation reads 0); table: the entity table's address
+    uint64_t generation() override { return gap ? 0 : gen; }
     bool cameraValid() override { return true; }
-    bool scan(std::vector<unsigned>& p, std::vector<unsigned>& d, uint64_t* t) override { p = {1, 2}; d = {3, 4}; *t = 1; return true; }
-    bool entityExists(unsigned id) override { return id >= 1 && id <= 4; }
-    bool isPanel(unsigned id) override { return id == 1 || id == 2; }
-    bool isDoor(unsigned id) override { return id == 3 || id == 4; }
-    bool panelSolved(unsigned id) override { return solved[id - 1]; }
-    bool doorOpen(unsigned id) override { return open[id - 1]; }
+    bool scan(std::vector<unsigned>& p, std::vector<unsigned>& d, uint64_t* t) override { if (gap) { p.clear(); d.clear(); } else { p = {1, 2}; d = {3, 4}; } *t = table; return true; }
+    bool entityExists(unsigned id) override { return !gap && id >= 1 && id <= 4; }
+    bool isPanel(unsigned id) override { return !gap && (id == 1 || id == 2); }
+    bool isDoor(unsigned id) override { return !gap && (id == 3 || id == 4); }
+    bool panelSolved(unsigned id) override { return !gap && solved[id - 1]; }
+    bool doorOpen(unsigned id) override { return !gap && open[id - 1]; }
     void applyPanelSolved(unsigned id) override { solved[id - 1] = true; }
     bool applyDoorOpen(unsigned id) override { open[id - 1] = true; return true; }
     bool pose(float p[3], float a[2]) override { p[0] = p[1] = p[2] = 1; a[0] = a[1] = 0; return true; }
@@ -92,8 +93,34 @@ bool resetting(witness::Flags fa) {
     return p.b.open[3];
 }
 
+// A save point restored into a fresh game (tools/suite.py 'save point restore'): A loads a save with MORE progress than its world has. The game
+// takes the world down first (entities missing, generation 0, a new entity table) and builds it again; the core's rescan of the entity
+// table runs every 3 s and, before the fix, a rescan that fell into that gap took a silent new baseline (generation 0), and the next one folded
+// the loaded progress in as A's start-up world: B never got it (live: A had 16 panels, B none, A emitted nothing). gapMs 4000 always puts a
+// rescan into the gap; 300 ms usually does not (the old rule caught that case through the changed generation). B solved panel 2 before the
+// load and A's save lacks it: it must come back to A (a load merges, it never takes B's progress away).
+bool restoreIntoFresh(witness::Flags fa, uint64_t gapMs) {
+    witness::Flags none; Pair p(none); witness::Hooks ha; ha.send = [&](const witness::Bytes& d) { p.toB.push_back(d); };
+    p.ca = std::make_unique<witness::SyncCore>(1, 1, &p.a, ha, fa);
+    p.advance(30000);
+    p.b.solved[1] = true; p.advance(5000);                   // B's own progress, shared live before the load
+    if (!p.a.solved[1]) return false;
+    p.a.gap = true; p.a.table++; p.advance(gapMs);           // the load takes A's world down
+    p.a.gap = false; p.a.gen++; p.a.table++;                 // and builds the saved one: panel 1 solved, door 3 open, panel 2 not (the save is older)
+    for (int i = 0; i < 4; ++i) p.a.solved[i] = p.a.open[i] = false;
+    p.a.solved[0] = true; p.a.open[2] = true;
+    p.advance(40000);
+    return p.b.solved[0] && p.b.open[2] && p.a.solved[0] && p.a.open[2] && p.a.solved[1] && p.b.solved[1];
+}
+
 int main() {
     bool all = true;
+    for (uint64_t gap : {4000u, 300u}) {
+        bool ok = restoreIntoFresh({}, gap);
+        std::printf("%s  save point restored into a fresh game (load gap %llu ms): B gets the loaded progress, A gets B's back\n", ok ? "PASS" : "FAIL", (unsigned long long)gap); all &= ok;
+        witness::Flags twin; twin.reloadGapIgnored = true; bool caught = !restoreIntoFresh(twin, gap);
+        std::printf("%s  reload-gap-ignored twin: the loaded progress is folded into a silent baseline (gap %llu ms)\n", caught ? "PASS" : "FAIL", (unsigned long long)gap); all &= caught;
+    }
     for (const char* mode : {"older save", "second reload", "progress only in the save"}) {
         bool ok = run(mode, {});
         std::printf("%s  %s\n", ok ? "PASS" : "FAIL", mode); all &= ok;

@@ -221,6 +221,7 @@ SCENARIOS = [   # name, extra cfg for A, extra cfg for B, check(a_stats, b_stats
   ('preset apply', '', '', lambda a, b, ok: (ok and b.get('ep', 9) == 0, 'a list-only preset made from forced progress brings a fresh game to that progress, and the other game follows')),
   ('save point restore', '', '', lambda a, b, ok: (ok, 'a save point (the game save plus the progress list) brings a fresh game back to the saved progress, and the other game follows')),
   ('MUTANT: save point restore without the save file', 'no_restore_copy=1', '', lambda a, b, ok: (not ok, 'the natural progress in the game save must be missing after the restore')),
+  ('MUTANT: save point restore with the load gap ignored', 'reload_gap_ignored=1', '', lambda a, b, ok: (not ok, "A's load must not be seen while its world is down: the rescan folds the loaded progress into a silent baseline and B never gets it")),
   ('MUTANT: panel power chain disabled', 'no_panel_power=1', '', lambda a, b, ok: (not ok, 'target panel must remain dark on B')),
 ]
 args = sys.argv[1:]; shard = None
@@ -375,7 +376,11 @@ while True:
     if partner: ok = pres == ('missing' if name.startswith('MUTANT:') else 'match')
     if savept or preset:
         sa, sb = state('A'), state('B')
-        if name.startswith('MUTANT:'): ok = bot_ok and '0x64' not in sa['panels'] and len(sa['panels']) >= 15
+        if 'load gap' in name:      # A must really have loaded the save (all 16 with 0x64), and B must lack it: the check is (not ok)
+            loaded = bot_ok and '0x64' in sa['panels'] and len(sa['panels']) >= 16
+            ok = not loaded or (sa['panels'] == sb['panels'] and sa['doors'] == sb['doors'])
+            print('load-gap mutant: A loaded the save: %s, panels A %d B %d' % (loaded, len(sa['panels']), len(sb['panels'])), flush=True)
+        elif name.startswith('MUTANT:'): ok = bot_ok and '0x64' not in sa['panels'] and len(sa['panels']) >= 15
         else: ok = ok and sa['panels'] == sb['panels'] and sa['doors'] == sb['doors'] and len(sa['panels']) >= 16 and (not savept or '0x64' in sa['panels'])
     if devmenu:
         sa, sb = state('A'), state('B')

@@ -29,5 +29,6 @@
  "preset apply": 117,
  "save point restore": 163,
  "MUTANT: save point restore without the save file": 168,
+ "MUTANT: save point restore with the load gap ignored": 168,
  "MUTANT: panel power chain disabled": 102
 }

@@ -148,6 +148,7 @@ static DWORD WINAPI NetThread(LPVOID) {
         if (sscanf(line, "no_resync_on_restart=%d", &v) == 1) flags.noResyncOnRestart = v;
         if (sscanf(line, "no_panel_power=%d", &v) == 1) flags.noPanelPower = v;
         if (sscanf(line, "no_reload_sync=%d", &v) == 1) flags.noReloadSync = v;
+        if (sscanf(line, "reload_gap_ignored=%d", &v) == 1) flags.reloadGapIgnored = v;      // twin: a load's gap is not a load (the rescan then folds a loaded save into a silent baseline)
         if (sscanf(line, "no_cable_sync=%d", &v) == 1) flags.noCableSync = v;
         if (sscanf(line, "no_cable_off=%d", &v) == 1) flags.noCableOff = v;
         if (sscanf(line, "no_unsolve_sync=%d", &v) == 1) flags.noUnsolveSync = v;

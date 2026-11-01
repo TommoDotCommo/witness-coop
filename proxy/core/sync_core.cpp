@@ -372,6 +372,11 @@ bool SyncCore::reloadSeen(uint64_t now) {
     if (!f_.reloadByProgress && !f_.reloadOnDoor) {      // the world can say whether it was loaded again (the twins judge by progress, the old way): then that alone decides (a panel resetting itself is not a load)
         uint64_t g = w_->generation();
         if (g && gen_) { if (g == gen_) return false; vanished_ = " the world was loaded again (entity generation changed)"; return true; }
+        // A load first takes the world down and then builds it again: in between its entities are missing and the generation reads 0. Once
+        // a generation was known, that gap is the load. (Judged only by a changed non-zero generation, the entity-table rescan could fall into
+        // the gap and take a silent new baseline there: a game that loaded a save with more progress than it had, such as a save point restored
+        // into a fresh game, folded the loaded progress in as if it were its start-up world and never told the other game.)
+        if (!g && gen_ && !f_.reloadGapIgnored) { vanished_ = " the world is being loaded again (entity generation unreadable)"; return true; }
     }
     unsigned closed = 0, unsolved = 0; vanished_.clear();
     for (unsigned id : doors_) {
@@ -411,19 +416,32 @@ void SyncCore::pollState(uint64_t now) {
         return;
     }
     if (!settledLogged_ && now >= settleUntil_) { settledLogged_ = true; log("state: settled"); }      // the start-up window is over: from here local changes are shared as they happen (tests wait for this line)
-    if (!f_.noReloadSync && reloadSeen(now)) {
-        // The process and the link are up, but the world lost progress it had: a save was loaded. Nothing told the peer, so
-        // announce a new session (the peer then resends its full state, as for a restart), wait for the loading world to
-        // settle again, and publish this world's full state once it has.
+    // A save loaded in this process (the world's generation changed, or a known generation became unreadable: the load is under way).
+    // What a load means in co-op: the loaded world is merged with the others, never pushed over them and never silently kept to itself.
+    // Nothing told the peer, so announce a new session (the peer then resends its full state, as for a restart, so nothing it has and
+    // the save lacks is lost), wait for the loading world to settle again, and publish this world's full state once it has (so progress
+    // that came with the save, such as a restored save point, reaches the peer). Lost progress is never sent as un-solves.
+    auto reloadStarts = [&] {
         { std::string m = "state: save reload suspected (known progress vanished:" + vanished_ + "), waiting for a stable world"; log(m.c_str()); }
         ready_ = false; gateSame_ = 0; gateLastPanels_ = gateLastDoors_ = 0; gateLastSig_ = 0; nextGate_ = now + 3000;
         cableVersion_.clear();
         suppressPanel_.clear(); suppressDoor_.clear(); suppressPower_.clear(); suppressCable_.clear(); anyLocalSolve_ = false;
         session_++; epoch_ = (uint64_t(session_) << 16) | ++restartsSeen_; nextSeq_ = 1; sent_.clear(); resync_ = true;
         st_.reloads++;
-        return;
+    };
+    if (!f_.noReloadSync && reloadSeen(now)) { reloadStarts(); return; }
+    if (f_.reloadGapIgnored || now >= nextScan_) {      // (the twin rescans on every poll, so its rescan always falls into a load's gap)
+        nextScan_ = now + 3000;
+        if (scanWorld()) {
+            // A new entity table in a world whose generation is no longer the baseline's is a load that began after the check above:
+            // it is handled as one, never folded into a new baseline (which would adopt the loaded progress without telling the peer).
+            uint64_t g = w_->generation();
+            if (!f_.noReloadSync && !f_.reloadGapIgnored && !f_.reloadByProgress && !f_.reloadOnDoor && gen_ && g != gen_) {
+                vanished_ = " the entity table was replaced and the generation changed"; reloadStarts(); return;
+            }
+            log("state: entity table changed, new baseline"); baseline(false);
+        }
     }
-    if (now >= nextScan_) { nextScan_ = now + 3000; if (scanWorld()) { log("state: entity table changed, new baseline"); baseline(false); } }
     if (resync_ && !groupIntent) { resync_ = false; baseline(true); log("state: full state queued for the peer"); }
     for (unsigned id : panels_) {
         if (!w_->entityExists(id)) continue;
