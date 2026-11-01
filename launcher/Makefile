@@ -9,7 +9,7 @@ $(BUILD)/core-test.exe: $(SRC) core.h
 $(BUILD)/mutant-%.exe: $(SRC) core.h
 	mkdir -p $(BUILD)
 	$(CXX) -std=c++17 -O2 -Wno-unused-parameter -static -DWL_MUT_$* -o $@ $(SRC)
-test: $(BUILD)/core-test.exe $(addsuffix .exe,$(addprefix $(BUILD)/mutant-,$(MUTANTS))) diag-test
+test: $(BUILD)/core-test.exe $(addsuffix .exe,$(addprefix $(BUILD)/mutant-,$(MUTANTS))) diag-test crash-test
 	$(BUILD)/core-test.exe
 	@for m in $(MUTANTS); do if $(BUILD)/mutant-$$m.exe >/dev/null; then echo "MUTANT $$m SURVIVED (the test cannot fail for it)"; exit 1; else echo "mutant $$m killed"; fi; done
 
@@ -55,3 +55,17 @@ lobby-test: $(BUILD)/lobby-test.exe $(addsuffix .exe,$(addprefix $(BUILD)/lobby-
 	$(BUILD)/lobby-test.exe
 	@for m in $(LOBBY_MUTANTS); do if $(BUILD)/lobby-mutant-$$m.exe >/dev/null; then echo "MUTANT $$m SURVIVED (the test cannot fail for it)"; exit 1; else echo "lobby mutant $$m killed"; fi; done
 .PHONY: lobby-test
+
+# the crash handler shared with the proxy (common/crash_handler.h): a child process crashes on purpose; mutants: handler off, dump from a first-chance handler
+CRASH_MUTANTS = DISABLED FIRSTCHANCE
+$(BUILD)/crash-test.exe: ../common/crash_test.cpp ../common/crash_handler.h ../common/diag_log.h
+	mkdir -p $(BUILD)
+	$(CXX) -std=c++17 -O0 -Wall -Wextra -static -o $@ ../common/crash_test.cpp -lshell32
+$(BUILD)/crash-mutant-%.exe: ../common/crash_test.cpp ../common/crash_handler.h ../common/diag_log.h
+	mkdir -p $(BUILD)
+	$(CXX) -std=c++17 -O0 -DCRASH_MUT_$* -static -o $@ ../common/crash_test.cpp -lshell32
+crash-test: $(BUILD)/crash-test.exe $(addsuffix .exe,$(addprefix $(BUILD)/crash-mutant-,$(CRASH_MUTANTS)))
+	rm -rf $(BUILD)/crash-out; mkdir -p $(BUILD)/crash-out
+	cd $(BUILD) && ./crash-test.exe crash-out
+	@for m in $(CRASH_MUTANTS); do rm -rf $(BUILD)/crash-mut-$$m; mkdir -p $(BUILD)/crash-mut-$$m; if (cd $(BUILD) && ./crash-mutant-$$m.exe crash-mut-$$m) >/dev/null 2>&1; then echo "MUTANT crash $$m SURVIVED (the test cannot fail for it)"; exit 1; else echo "crash mutant $$m killed"; fi; done
+.PHONY: crash-test

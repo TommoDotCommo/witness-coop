@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <cstring>
 #include <cctype>
+#include "diag.h"
 
 static const char* kNames[] = {
     "getConfiguration", "getConfigurationSize", "getSessionConfigurationSize", "getVersion", "setConfiguration",
@@ -18,6 +19,7 @@ HMODULE g_selfModule() { return g_self; }
 static FARPROC g_fn[9];
 
 void Log(const char* msg) {
+    DiagLine(msg);      // this run's own session log (and the rotation of witness_proxy.log on the first line)
     wchar_t path[MAX_PATH];
     GetModuleFileNameW(g_self, path, MAX_PATH);
     wchar_t* slash = wcsrchr(path, L'\\');
@@ -86,9 +88,11 @@ void GameStart();
 void StateStart();
 // A crash is logged before the game dies: the faulting address and the return addresses above it, each as module+offset, so a fault in a
 // driver call can be traced to the call in this DLL that made it (map an AnselSDK64.dll offset with objdump or nm on the build).
+// It is a first-chance view: it also sees exceptions the game catches itself, so its lines are "first-chance:" and it writes no crash marker or dump (diag.cpp's unhandled-exception filter does, for a crash that really ends the game).
 static LONG WINAPI CrashLogger(EXCEPTION_POINTERS* ep) {
     const DWORD code = ep->ExceptionRecord->ExceptionCode;
     if (code != EXCEPTION_ACCESS_VIOLATION && code != EXCEPTION_ILLEGAL_INSTRUCTION && code != EXCEPTION_STACK_OVERFLOW && code != EXCEPTION_INT_DIVIDE_BY_ZERO && code != EXCEPTION_PRIV_INSTRUCTION) return EXCEPTION_CONTINUE_SEARCH;
+    DiagFirstChance(ep);      // test mutant only (diag_first_chance=1): a naive dump from here
     {   // a probe like IsBadReadPtr raises and catches its own access violation (vectored handlers see it first): not a crash
         HMODULE mod = nullptr; char name[MAX_PATH] = "";
         if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCSTR)ep->ExceptionRecord->ExceptionAddress, &mod) && mod) GetModuleFileNameA(mod, name, MAX_PATH);
@@ -102,11 +106,11 @@ static LONG WINAPI CrashLogger(EXCEPTION_POINTERS* ep) {
         else snprintf(out, n, "%p", a);
     };
     char m[400], w[200]; where(ep->ExceptionRecord->ExceptionAddress, w, sizeof w);
-    snprintf(m, sizeof m, "CRASH: exception 0x%lx at %s (thread %lu, access %llu of %p)", code, w, GetCurrentThreadId(), code == EXCEPTION_ACCESS_VIOLATION && ep->ExceptionRecord->NumberParameters >= 2 ? (unsigned long long)ep->ExceptionRecord->ExceptionInformation[0] : 0ull, code == EXCEPTION_ACCESS_VIOLATION && ep->ExceptionRecord->NumberParameters >= 2 ? (void*)ep->ExceptionRecord->ExceptionInformation[1] : nullptr); Log(m);
+    snprintf(m, sizeof m, "first-chance: exception 0x%lx at %s (thread %lu, access %llu of %p)", code, w, GetCurrentThreadId(), code == EXCEPTION_ACCESS_VIOLATION && ep->ExceptionRecord->NumberParameters >= 2 ? (unsigned long long)ep->ExceptionRecord->ExceptionInformation[0] : 0ull, code == EXCEPTION_ACCESS_VIOLATION && ep->ExceptionRecord->NumberParameters >= 2 ? (void*)ep->ExceptionRecord->ExceptionInformation[1] : nullptr); Log(m);
     void* frames[32]; USHORT n = RtlCaptureStackBackTrace(0, 32, frames, nullptr);
-    for (USHORT i = 0; i < n; i++) { where(frames[i], w, sizeof w); snprintf(m, sizeof m, "CRASH: stack %2u %s", i, w); Log(m); }
+    for (USHORT i = 0; i < n; i++) { where(frames[i], w, sizeof w); snprintf(m, sizeof m, "first-chance: stack %2u %s", i, w); Log(m); }
     // the frames above are the handler's own; the faulting thread's stack is walked from its context
-    CONTEXT* c = ep->ContextRecord; int depth = 0; char line[1200] = "CRASH: trace"; size_t at = strlen(line);
+    CONTEXT* c = ep->ContextRecord; int depth = 0; char line[1200] = "first-chance: trace"; size_t at = strlen(line);
     for (uintptr_t* sp = (uintptr_t*)c->Rsp; depth < 24 && (uintptr_t)sp < c->Rsp + 4096; sp++) {
         if (IsBadReadPtr(sp, 8)) break; uintptr_t v = *sp; HMODULE mod = nullptr;
         if (v > 0x10000 && GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCSTR)v, &mod) && mod) {
@@ -118,6 +122,7 @@ static LONG WINAPI CrashLogger(EXCEPTION_POINTERS* ep) {
 }
 static DWORD WINAPI Init(LPVOID) {
     char msg[300], exe[MAX_PATH];
+    DiagStart();
     GetModuleFileNameA(nullptr, exe, MAX_PATH);
     snprintf(msg, sizeof msg, "proxy loaded: pid=%lu host=%s tick=%lu", GetCurrentProcessId(), exe, GetTickCount());
     Log(msg);
@@ -141,7 +146,8 @@ static DWORD WINAPI Init(LPVOID) {
     return 0;
 }
 
-BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID) {
+BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID reserved) {
+    if (reason == DLL_PROCESS_DETACH && reserved) DiagStop();      // the process is ending normally: a session log without this line ended in a crash or a kill
     if (reason == DLL_PROCESS_ATTACH) {
         g_self = inst;
         InstallHooks();      // memory patching only: no I/O under the loader lock
