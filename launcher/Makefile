@@ -9,9 +9,22 @@ $(BUILD)/core-test.exe: $(SRC) core.h
 $(BUILD)/mutant-%.exe: $(SRC) core.h
 	mkdir -p $(BUILD)
 	$(CXX) -std=c++17 -O2 -Wno-unused-parameter -static -DWL_MUT_$* -o $@ $(SRC)
-test: $(BUILD)/core-test.exe $(addsuffix .exe,$(addprefix $(BUILD)/mutant-,$(MUTANTS)))
+test: $(BUILD)/core-test.exe $(addsuffix .exe,$(addprefix $(BUILD)/mutant-,$(MUTANTS))) diag-test
 	$(BUILD)/core-test.exe
 	@for m in $(MUTANTS); do if $(BUILD)/mutant-$$m.exe >/dev/null; then echo "MUTANT $$m SURVIVED (the test cannot fail for it)"; exit 1; else echo "mutant $$m killed"; fi; done
+
+# the session logs shared with the proxy (common/diag_log.h), game-free, with mutants
+DIAG_MUTANTS = WEAK_CHAIN NO_CHAIN PRUNE_CRASHED
+$(BUILD)/diag-test.exe: ../common/diag_test.cpp ../common/diag_log.h
+	mkdir -p $(BUILD)
+	$(CXX) -std=c++17 -O2 -Wall -Wextra -static -o $@ ../common/diag_test.cpp
+$(BUILD)/diag-mutant-%.exe: ../common/diag_test.cpp ../common/diag_log.h
+	mkdir -p $(BUILD)
+	$(CXX) -std=c++17 -O2 -DDIAG_MUT_$* -static -o $@ ../common/diag_test.cpp
+diag-test: $(BUILD)/diag-test.exe $(addsuffix .exe,$(addprefix $(BUILD)/diag-mutant-,$(DIAG_MUTANTS)))
+	$(BUILD)/diag-test.exe
+	@for m in $(DIAG_MUTANTS); do if $(BUILD)/diag-mutant-$$m.exe >/dev/null; then echo "MUTANT diag $$m SURVIVED (the test cannot fail for it)"; exit 1; else echo "diag mutant $$m killed"; fi; done
+.PHONY: diag-test
 clean:
 	rm -rf $(BUILD)
 .PHONY: test clean
