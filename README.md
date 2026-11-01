@@ -93,8 +93,20 @@ build (SHA-256 above; any other build is refused and nothing is changed), rename
 gets a `.coop-receipt.json` beside it, so Uninstall restores the game's own files and never removes a file it did not install;
 `witness_coop.cfg`, the log and the saves stay. Setup is a windowless stub that runs the PowerShell in `dist/`
 (`installer-gui.ps1`, `witness-coop.ps1`, `install-state.ps1`; the pure decisions are `dist/install-policy.h`).
-Then both players start the game from the launcher: Lobby, host (send the invite `address:port/CODE`) or join; the host's
-lobby port is UDP 47100 and the games use 47001 and 47002. The player's own copy of the instructions is `dist/README.txt`.
+Then both players start the game from the launcher (Lobby tab). The player's own copy of the instructions is `dist/README.txt`.
+
+### Play over the internet (Steam, no port forwarding)
+
+With Steam running, the host clicks **Host on Steam** (a friends-only Steam lobby for up to 16) and invites friends through the Steam
+overlay, through a Steam chat invite from the launcher's list of online friends, or by giving them the lobby number; a friend accepts
+in Steam (or **Join Game** in the friends list, or pastes the number and clicks Join). The lobby and then the games talk through
+Steam, which relays the traffic when there is no direct path, so nobody forwards a port. The launcher starts the Steam API as The
+Witness (app 210970) through the `SteamAppId` environment variable, which the game inherits; the mod uses the game's own Steam
+connection and never falls back to UDP by itself. Details, the cfg syntax (`peer=<id>,steam:<steamid64>`, `transport=steam`), the
+messages a player sees when something is wrong, and the two-account test: [docs/STEAM.md](docs/STEAM.md).
+
+**Direct (LAN / manual)**: "Host direct (LAN)" gives the invite `address:port/CODE`; the host's lobby port is UDP 47100 and the
+games use 47001 and 47002, so over the internet every player would need reachable ports. Use it on a LAN.
 
 Making a release: `tools/release.sh v0.x.y` builds `local/release/witness-coop-v0.x.y.zip` and its `.sha256`
 (proxy, launcher, model, setup, scripts, `README.txt` with the version, `LICENSE.txt`); `tools/check_release_package.py <zip>`
@@ -183,6 +195,7 @@ file made the loader fail with "AnselSDK64_real.dll not found"). `DllMain` only 
 
 | Part | File | What it does |
 |---|---|---|
+| Transport | `core/peers.h`, `steam_net.cpp` | The roster and whom a datagram is taken from (UDP endpoint or SteamID, game-free, `tests/peers.cpp`); the Steam transport over the game's own Steam connection ([docs/STEAM.md](docs/STEAM.md)) |
 | Network | `coop.cpp` | Protocol v6 UDP: pose at 30 Hz (`WTP6`, 40 bytes), reliable events (`WTE6`, 32 bytes: epoch, sequence, kind with bit 8 set for snapshot events, entity), cumulative acks (`WTA6`, 24 bytes); lengths include checksums. A peer session change starts a new epoch and full state resend |
 | Overlay | `overlay.cpp` | Patches slot 8 (`Present`) of the swap-chain vtable (found through a dummy device), draws the player model (`model_gpu.cpp`, `model/`) or the flat puppet; also runs queued game commands and remote events between frames |
 | Model | `model/model.{h,cpp}`, `model_gpu.cpp`, `depth.cpp` | `model/` is game-free C++ (glTF loading with cgltf and stb_image, skeletal animation, CPU skinning, camera maths, the remote player's walk state) with its own T0 test; `model_gpu.cpp` is the D3D11 skinned-mesh renderer with a GPU occlusion query; `depth.cpp` patches the context vtable (`OMSetRenderTargets`) to find the game's scene depth buffer |
@@ -205,7 +218,7 @@ off by default, so a player's own game is unchanged): `save_dir=instance` (the g
 `<game folder>\appdata`, or give a path; the owner's real saves are then never touched), `cap_fps=N` (frame cap), `share_zip=1`
 (see above), `force_active=1` (the game believes its window is always active: full speed, and it accepts injected input, without taking the focus or the mouse; the real cursor is replaced by a virtual one). Test-only switches: `drop_first_event=1`, `no_resend=1`, `no_echo_guard=1`, `no_resync_on_restart=1`, `skip_entity_zero=1`, `no_panel_power=1`, `no_cable_sync=1`, `no_cable_off=1`, `no_off_snapshot=1`, `no_snap_reassert=1`, `no_cable_arbiter=1`, `no_power_link=1`, `no_target_dispatch=1`. The log is `witness_proxy.log` next to the DLL.
 
-Keys added with the lobby and the race (all optional): `game_mode=race` (nothing of the world is shared, see features.md) with `race_goal=panel:<hex>|count:<n>` and `race_countdown_ms=` (default 5000), `voice_channel=proximity|radio|global|direct:<player>` and `key_voice_channel=` (default `H`), `see_through=0|1` and `ghost_alpha=`, and for the launcher `lobby_port=` and `lobby_advertise=`; test switches `race_emits=1`, `race_applies=1`, `no_race_hud=1`, `no_voice_channel=1`, `no_voice_channel_key=1`, `voice_no_self=1`. `racestat`, `ghoststat` (in `modelstat`) and the channel in `voicestat` are the readouts the tests use.
+Keys added with the lobby and the race (all optional): `game_mode=race` (nothing of the world is shared, see features.md) with `race_goal=panel:<hex>|count:<n>` and `race_countdown_ms=` (default 5000), `voice_channel=proximity|radio|global|direct:<player>` and `key_voice_channel=` (default `H`), `see_through=0|1` and `ghost_alpha=`, and for the launcher `lobby_port=` and `lobby_advertise=`; for Steam, `peer=<id>,steam:<steamid64>` and `transport=steam` (written by the launcher, [docs/STEAM.md](docs/STEAM.md)); test switches `race_emits=1`, `race_applies=1`, `no_race_hud=1`, `no_voice_channel=1`, `no_voice_channel_key=1`, `voice_no_self=1`. `racestat`, `ghoststat` (in `modelstat`), the channel in `voicestat` and `netstat`/`steamstat` (the transport and each Steam session) are the readouts the tests use.
 Optional back TV settings: `pov_tv=0|1` (enable viewing back TV on the nearest player, default 0; hotkey F10), `pov_tv_consent=0|1` (consent to streaming POV snapshots to subscribing viewers, default 0; hotkey F11). Commands `tv 0|1`, `tvconsent 0|1`, and `tvstate` control and inspect TV state. Aim at a nearby player and press J to deploy their stationary audience screen: it goes up 3 m in front of you with its picture facing you, and the three stools stand where you are (turn round to sit). While the mod measures the ground under it (a few seconds: it drops your player onto each point) your picture is held still and the others keep seeing you where you stood (`tv_probe_show=1` is the test mutant that shows the jumps). The picture is 256x144 at 5 frames a second (dithered 8-bit colour, up to about 185 KB/s to each viewer). Press J again to retract it. Aim at a wooden audience stool and press K to sit facing the screen; K or movement stands up. `key_tv_deploy` and `key_tv_seat` are configurable through the common controls table. Use flat, open ground for the stools (they take the wearer's ground height, so on a slope or a cliff edge some of them hover or sink). If two players take the same stool in the same instant, the one with the higher player id stands up again. `tools/qa.sh seats` runs the two-client seat scenarios (simultaneous seating with its mutant, the wearer or the deployer leaving while the other sits, the hidden ground measurement with its mutant); `tools/qa.sh seats terrain` measures the stools against the real ground and fails today on uneven spots.
 
 ### Character migration
