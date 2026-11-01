@@ -12,7 +12,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 CHECK = r'''
 import os, sys, threading, time, types
-sys.path.insert(0, TOOLS); sys.path.insert(0, D)      # D first: the (possibly mutated) playthrough modules, then the shared tools
+sys.path.insert(0, TOOLS); sys.path.insert(0, os.path.join(TOOLS, 'win')); sys.path.insert(0, D)      # D first: the (possibly mutated) playthrough modules, then the shared tools (and wtrace, which run.py imports)
 import run
 from logic import Logic, CREDITS
 run.time.sleep = lambda s: None      # the loop's pauses are for real games

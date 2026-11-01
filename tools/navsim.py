@@ -198,7 +198,7 @@ def W(*a, **k): return Block(*a, 'wall', **k)
 
 def open_field(): return Level('open_field', [], (0, 0), (30, 6), ('arrives', 40), 'nothing in the way')
 def wide_wall(): return Level('wide_wall', [W(14, -14, 15, 14)], (0, 0), (30, 0), ('arrives', 120), 'a wall 28 m wide: the way round is long')
-def wall_80(): return Level('wall_80', [W(14, -40, 15, 40)], (0, 0), (30, 0), ('gives up', {'stuck'}, 200), 'KNOWN GAP: a wall 80 m wide is soft for the planner (a wall is a cliff face of soft cells), it pushes through it stuck after stuck; the walk gives up with stuck_class wall', seconds=200)
+def wall_80(): return Level('wall_80', [W(14, -40, 15, 40)], (0, 0), (30, 0), ('gives up', {'stuck'}, 150), 'KNOWN GAP: a wall 80 m wide is soft for the planner (a wall is a cliff face of soft cells), it pushes through it stuck after stuck; the walk gives up with stuck_class wall', seconds=200)
 def dead_end(): return Level('dead_end', [W(8, -8, 9, 8), W(8, 7, 20, 8), W(8, -8, 20, -7)], (0, 0), (14, 0), ('arrives', 120), 'a U of walls open to the start, the target behind its base')
 def room_far_door(): return Level('room_far_door', [W(10, -10, 30, -9), W(10, 9, 30, 10), W(10, -10, 11, 10), W(29, -10, 30, -3), W(29, 3, 30, 10)], (15, 0), (36, 0), ('arrives', 120), 'in a room whose only way out is the far side: the target is just outside the near wall', locked=False)
 def zigzag():
@@ -209,7 +209,7 @@ def pillars():
     return Level('pillars', [W(x, y, x + 1, y + 1) for x in range(6, 40, 5) for y in range(-20, 21, 5)], (0, 0), (40, 3), ('arrives', 100), 'pillars every 5 m')
 def narrow_door(): return Level('narrow_door', [W(12, -30, 13, -0.6), W(12, 0.6, 13, 30)], (0, 0), (26, 0), ('arrives', 90), 'a gap 1.2 m wide (the body is 0.6 m)')
 def closed_room():
-    return Level('closed_room', [W(14, -8, 28, -7), W(14, 7, 28, 8), W(14, -8, 15, 8), W(27, -8, 28, 8)], (0, 0), (21, 0), ('gives up', {'no way', 'stuck', 'timed out'}, 150), 'the target is in a room with no door: the walk should give up, not wander', seconds=150)
+    return Level('closed_room', [W(14, -8, 28, -7), W(14, 7, 28, 8), W(14, -8, 15, 8), W(27, -8, 28, 8)], (0, 0), (21, 0), ('gives up', {'no way', 'stuck'}, 110), 'the target is in a room with no door: the walk should give up, not wander', seconds=150)
 def shore_bay():
     """The shore round (0, 200) in the real island: land bends round a bay of water. Straight ahead is sea, which has no depth (unseen cells: the planner takes
     them for walkable at 3 times the cost), with an invisible wall at the shore line; the land way goes round the bay."""
