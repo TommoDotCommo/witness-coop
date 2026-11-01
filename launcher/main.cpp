@@ -284,9 +284,20 @@ void PassMonitor() {
     SetEnvironmentVariableW(L"WITNESS_MONITOR", v);
 #endif
 }
+// Co-op needs the one build of the game the mod was made for. For any other the launcher says so in plain words instead of starting
+// a game with co-op silently off (the proxy in the game says the same if the game is started some other way).
+void LobbyStatus(const std::wstring& s);
+bool BuildOk(const std::wstring& exe, bool lobby = false) {
+    std::string problem = wl::GameBuildProblemOfFile(exe); if (problem.empty()) return true;
+    std::wstring shortText = W(WITNESS_UNSUPPORTED_SHORT);
+    if (lobby) LobbyStatus(shortText); else Status(shortText);
+    MessageBoxW(g_main, W(problem).c_str(), L"The Witness Co-op", MB_OK | MB_ICONINFORMATION);
+    return false;
+}
 void LaunchGame(bool newGame) {
     std::wstring exe = g_dir + L"\\witness64_d3d11.exe"; if (!Exists(exe)) exe = g_dir + L"\\witness_d3d11.exe";
     if (!Exists(exe)) { Status(L"The game was not found in " + g_dir); return; }
+    if (!BuildOk(exe)) return;
     std::wstring ApplyMsg; if (!ApplyAll(&ApplyMsg)) { Status(ApplyMsg); return; }
     PassMonitor();
     std::wstring cmd = L"\"" + exe + L"\" " + W(wl::LaunchArgs(LoadCfg(), newGame));
@@ -405,6 +416,7 @@ std::string RaceResultText() {      // witness_race_result.txt written by the ga
 }
 void LaunchFromLobby(const wlobby::Launch& l) {
     std::wstring exe = g_dir + L"\\witness64_d3d11.exe"; if (!Exists(exe)) exe = g_dir + L"\\witness_d3d11.exe"; if (!Exists(exe)) { LobbyStatus(L"The game was not found in " + g_dir); g_sess.SetInGame(false); return; }
+    if (!BuildOk(exe, true)) { g_sess.SetInGame(false); return; }
     std::wstring msg; if (!ApplyAll(&msg)) { LobbyStatus(msg); return; }
     g_cfgBackup = ReadFile8(CfgPath());      // the player's own settings: put back when the game is over
     std::string cfg = wlobby::BuildGameCfg(g_cfgBackup, l, g_sess.HostIp());

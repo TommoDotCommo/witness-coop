@@ -7,10 +7,10 @@ build/guide-test: guide_test.cpp guide.h bindings.def ../proxy/config.h
 build/mutant-%: guide_test.cpp guide.h bindings.def ../proxy/config.h
 	mkdir -p build
 	$(CXX) $(CXXFLAGS) -DGUIDE_MUT_$* -o $@ $<
-build/buildid-test: buildid_test.cpp buildid.h sha256.h
+build/buildid-test: buildid_test.cpp buildid.h sha256.h buildid_fixture.h
 	mkdir -p build
 	$(CXX) $(CXXFLAGS) -g -fsanitize=address,undefined -fno-sanitize-recover=undefined -o $@ $<
-build/buildid-mutant: buildid_test.cpp buildid.h sha256.h
+build/buildid-mutant: buildid_test.cpp buildid.h sha256.h buildid_fixture.h
 	mkdir -p build
 	$(CXX) $(CXXFLAGS) -DBI_MUT_SKIP_TEXT -o $@ $<
 test: build/guide-test $(addprefix build/mutant-,$(MUTANTS)) build/buildid-test build/buildid-mutant

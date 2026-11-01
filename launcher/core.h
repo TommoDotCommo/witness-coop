@@ -8,7 +8,13 @@
 #include <vector>
 #include "../proxy/progress/savemeta.h"
 
+#include "../common/buildid.h"
 namespace wl {
+
+// "" when the exe's bytes are the build the mod supports; otherwise the plain words for the player (what was found, what is needed, what to do).
+// A missing, empty or cut-off file counts as "not the supported build" as well. The spec is a parameter so the test can use a synthetic exe.
+std::string GameBuildProblem(const std::vector<uint8_t>& exeBytes, const buildid::Spec& want);
+std::string GameBuildProblemOfFile(const std::wstring& exePath);
 // ---- witness_coop.cfg
 struct CfgFile {
     std::vector<std::string> lines;

@@ -16,7 +16,7 @@ static const uint32_t coop_sha256_k[64] = {
     0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,
     0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2 };
 
-static void coop_sha256_block(coop_sha256* c, const uint8_t* p)
+static inline void coop_sha256_block(coop_sha256* c, const uint8_t* p)
 {
     uint32_t w[64], a, b, d, e, f, g, h, cc, t1, t2; int i;
 #define COOP_ROR(x, n) (((x) >> (n)) | ((x) << (32 - (n))))
@@ -35,12 +35,12 @@ static void coop_sha256_block(coop_sha256* c, const uint8_t* p)
     c->h[0] += a; c->h[1] += b; c->h[2] += cc; c->h[3] += d; c->h[4] += e; c->h[5] += f; c->h[6] += g; c->h[7] += h;
 #undef COOP_ROR
 }
-static void coop_sha256_init(coop_sha256* c)
+static inline void coop_sha256_init(coop_sha256* c)
 {
     static const uint32_t iv[8] = {0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19};
     memcpy(c->h, iv, sizeof iv); c->len = 0; c->n = 0;
 }
-static void coop_sha256_update(coop_sha256* c, const void* data, size_t len)
+static inline void coop_sha256_update(coop_sha256* c, const void* data, size_t len)
 {
     const uint8_t* p = (const uint8_t*)data;
     c->len += len;
@@ -50,7 +50,7 @@ static void coop_sha256_update(coop_sha256* c, const void* data, size_t len)
         if (c->n == 64) { coop_sha256_block(c, c->buf); c->n = 0; }
     }
 }
-static void coop_sha256_final(coop_sha256* c, uint8_t out[32])
+static inline void coop_sha256_final(coop_sha256* c, uint8_t out[32])
 {
     uint64_t bits = c->len * 8; uint8_t pad = 0x80; int i;
     coop_sha256_update(c, &pad, 1);
@@ -58,13 +58,13 @@ static void coop_sha256_final(coop_sha256* c, uint8_t out[32])
     for (i = 7; i >= 0; i--) { uint8_t b = (uint8_t)(bits >> (8 * i)); coop_sha256_update(c, &b, 1); }
     for (i = 0; i < 8; i++) { out[4*i] = (uint8_t)(c->h[i] >> 24); out[4*i+1] = (uint8_t)(c->h[i] >> 16); out[4*i+2] = (uint8_t)(c->h[i] >> 8); out[4*i+3] = (uint8_t)c->h[i]; }
 }
-static void coop_sha256_hex(const uint8_t d[32], char out[65])
+static inline void coop_sha256_hex(const uint8_t d[32], char out[65])
 {
     static const char hex[] = "0123456789abcdef"; int i;
     for (i = 0; i < 32; i++) { out[2*i] = hex[d[i] >> 4]; out[2*i+1] = hex[d[i] & 15]; }
     out[64] = 0;
 }
-static void coop_sha256_buf(const void* data, size_t len, uint8_t out[32])
+static inline void coop_sha256_buf(const void* data, size_t len, uint8_t out[32])
 {
     coop_sha256 c; coop_sha256_init(&c); coop_sha256_update(&c, data, len); coop_sha256_final(&c, out);
 }

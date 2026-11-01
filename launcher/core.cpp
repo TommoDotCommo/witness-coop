@@ -141,3 +141,21 @@ std::string LaunchArgs(const CfgFile& cfg, bool newGame) {
     return a;
 }
 }  // namespace wl
+
+namespace wl {
+std::string GameBuildProblem(const std::vector<uint8_t>& exeBytes, const buildid::Spec& want) {
+#ifdef WL_MUT_BUILD_ALWAYS_OK
+    (void)exeBytes; (void)want; return "";             // mutant: any exe is accepted
+#else
+    buildid::Info i = buildid::Inspect(exeBytes.data(), exeBytes.size(), false, want);
+    if (i.verdict == buildid::kKnown) return "";
+    char what[220]; buildid::Describe(i, what, sizeof what);
+    return std::string(WITNESS_UNSUPPORTED_SHORT "\n\nFound: ") + what + "\n\n" + WITNESS_UNSUPPORTED_HELP;
+#endif
+}
+std::string GameBuildProblemOfFile(const std::wstring& exePath) {
+    std::vector<uint8_t> bytes; FILE* f = _wfopen(exePath.c_str(), L"rb");
+    if (f) { uint8_t buf[1 << 16]; size_t n; while ((n = fread(buf, 1, sizeof buf, f)) > 0) bytes.insert(bytes.end(), buf, buf + n); fclose(f); }
+    return GameBuildProblem(bytes, buildid::Witness());
+}
+}
