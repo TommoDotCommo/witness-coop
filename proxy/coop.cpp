@@ -17,6 +17,13 @@
 #include "race_game.h"
 #include "social.h"
 #include "core/peers.h"
+#include "core/version_notice.h"
+#if __has_include("version.h")
+#include "version.h"      // MOD_VERSION: git describe, written by the Makefile
+#endif
+#ifndef MOD_VERSION
+#define MOD_VERSION "dev"
+#endif
 #include "steam_net.h"
 #include "../common/steam_abi.h"
 #include "diag.h"
@@ -127,10 +134,11 @@ static DWORD WINAPI NetThread(LPVOID) {
     FILE* f = _wfopen(wp, L"r");
     if (!f) { Log("coop: no witness_coop.cfg, networking off"); return 0; }
     witness::Flags flags; int id = 0, listenPort = 0, peerPort = 0; char host[64] = "127.0.0.1", line[200], name[32] = ""; int dropPct = 0; uint32_t dropState = 1;
-    wpeers::PeerTable table; std::string transport;      // transport=steam (the launcher writes it for a Steam lobby) | udp | (none: from the peer lines)
+    wpeers::PeerTable table; std::map<unsigned, std::string> peerVersion; wpeers::VersionNotice versionNotice; std::string transport;      // transport=steam (the launcher writes it for a Steam lobby) | udp | (none: from the peer lines)
     while (fgets(line, sizeof line, f)) {
         if (table.ParseLine(line, 0, [](const char* h) { return (uint32_t)inet_addr(h); })) continue;      // peer=<id>,<ip>,<port> | peer=<id>,steam:<steamid64>
         { char nm[64]; if (sscanf(line, "name=%23[^\r\n]", nm) == 1) strncpy(name, nm, sizeof name - 1); }
+        { unsigned pid; char pv[40]; if (sscanf(line, "peer_version=%u,%39[^\r\n ]", &pid, pv) == 2) peerVersion[pid] = pv; }      // the launcher's roster: which player runs which mod version
         int v; sscanf(line, "id=%d", &id); sscanf(line, "listen=%d", &listenPort); sscanf(line, "peer=%d", &peerPort); sscanf(line, "peer_host=%63s", host);
         if (sscanf(line, "drop_first_event=%d", &v) == 1) flags.dropFirstEvent = v;
         if (sscanf(line, "drop_pct=%d", &v) == 1) dropPct = v;
@@ -234,6 +242,9 @@ static DWORD WINAPI NetThread(LPVOID) {
             sourceLen = sizeof source;
             if (!table.Accept(from, buf, (size_t)n, single)) continue;      // every datagram, pictures included, names its sender: only from that sender's own endpoint
             DiagRxPose(buf, (size_t)n);
+            { unsigned sender = n >= 8 ? unsigned(buf[4]) | unsigned(buf[5]) << 8 | unsigned(buf[6]) << 16 | unsigned(buf[7]) << 24 : 0; auto pv = peerVersion.find(sender);
+              std::string note = versionNotice.Observe(buf, (size_t)n, MOD_VERSION, pv == peerVersion.end() ? "" : pv->second);      // another version's packet from a player in the roster: said once, not dropped in silence
+              if (!note.empty()) Msg("%s", note.c_str()); }      // (the toast logs it too)
             if (n >= 4 && (!memcmp(buf, "WTT1", 4) || !memcmp(buf, "WTU1", 4) || !memcmp(buf, "WTD2", 4))) TvOnPacket(buf, (size_t)n);
             else if (n >= 4 && !memcmp(buf, "WTV4", 4)) VideoOnPacket(buf, (size_t)n);            // a chunk of a POV picture
             else if (n >= 4 && !memcmp(buf, "WTO5", 4)) VoiceOnPacket(buf, (size_t)n);         // 20 ms of a player's voice

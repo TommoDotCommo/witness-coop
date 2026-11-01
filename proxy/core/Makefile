@@ -135,3 +135,17 @@ $(BUILD)/peers-mutant-%: tests/peers.cpp peers.h ../../common/steam_ids.h $(BUIL
 $(BUILD)/peers-mutants.ok: $(addprefix $(BUILD)/peers-mutant-,$(PEER_MUTANTS))
 	@for m in $(PEER_MUTANTS); do if $(BUILD)/peers-mutant-$$m > /dev/null; then echo "MUTANT $$m SURVIVED (the peers test cannot fail for it)"; exit 1; else echo "peers mutant $$m killed"; fi; done; touch $@
 test: $(BUILD)/peers-mutants.ok
+
+# a peer on another mod version is said, once (version_notice.h); mutants: silent, repeated, any foreign bytes
+VN_MUTANTS = SILENT REPEAT ANY_MAGIC
+$(BUILD)/version-notice: tests/version_notice.cpp version_notice.h
+	@mkdir -p $(BUILD)
+	g++ $(CXXF) -o $@ tests/version_notice.cpp
+$(BUILD)/version-notice-mutant-%: tests/version_notice.cpp version_notice.h
+	@mkdir -p $(BUILD)
+	g++ $(CXXF) -Wno-unused-parameter -DWN_MUT_$* -o $@ tests/version_notice.cpp
+version-notice-test: $(BUILD)/version-notice $(addprefix $(BUILD)/version-notice-mutant-,$(VN_MUTANTS))
+	$(BUILD)/version-notice
+	@for m in $(VN_MUTANTS); do if $(BUILD)/version-notice-mutant-$$m >/dev/null; then echo "MUTANT version-notice $$m SURVIVED"; exit 1; else echo "version-notice mutant $$m rejected"; fi; done
+test: version-notice-test
+.PHONY: version-notice-test
