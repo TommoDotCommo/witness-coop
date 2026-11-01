@@ -74,6 +74,17 @@ def run_levels(names, quiet=False, fail_fast=False):
         check('clutter%d' % seed, not bad and (not r.ok or lv.reachable) and r.seconds <= lv.seconds + 1, '%s in %.0f s, reachable=%s %s' % (r.why, r.seconds, lv.reachable, '; '.join(bad)))
         if fail_fast and fails: return fails
     if not quiet: print('clutter: arrived in %d of %d worlds (%d have a way)' % (arrived, len(CLUTTER_SEEDS), reach))
+    # the proxy stops taking commands in the middle of a walk: a structured result, not an exception out of the caller's run
+    sim = navsim.Sim(navsim.open_field()); orig = sim.send; n = [0]
+    def dying(lines, settle=0.0):
+        n[0] += 1
+        if n[0] > 200: raise TimeoutError('proxy did not take command file')
+        orig(lines, settle)
+    sim.send = dying
+    with tempfile.TemporaryDirectory() as d:
+        try: r = navsim.SimWalker(sim, d).go((30, 6, wnav.EYE), 1.0, 60, ztol=1.8); got = '%s: %s' % (r.why, r.detail)
+        except Exception as e: r, got = None, 'raised %r' % (e,)
+    check('proxy dies', r is not None and not r.ok and r.why == 'timed out' and 'proxy' in r.detail, got)
     # the simulator itself
     lv = navsim.Level('door', [navsim.Block(5, -5, 6, 5, 'door', name='d')], (0, 0), (10, 0), ('arrives', 60))
     s = navsim.Sim(lv); s.send(['key W down'], 4.0); shut = s.x
@@ -94,6 +105,7 @@ MUTANTS = [
     ("            if now - prog_t > window or (bumps_near >= 4 and now - near_t > 3 * stall):", "            if False:"),      # a watchdog that never fires
     ("            prog_t, window = self.now(), stall\n", "            pass\n"),      # a progress clock that never resets
     ("                elif self.now() - turn_ref[1] > 2.0: return done(", "                elif False: return done("),      # no check that the view turns
+    ("        except TimeoutError as e:\n            q = self.pos(); left", "        except KeyError as e:\n            q = self.pos(); left"),      # a proxy that dies raises out of the walk
     ("            if not ok: self.tr.emit('giveup', why=why", "            if False: self.tr.emit('giveup', why=why"),      # a stuck walk that never says why
     ("                if wall_rule(self.stuck_at[:-1], q, os.environ.get('WNAV_PRESSED')) and self.look(0):", "                if False:"),      # (the wall rule never applied at a stuck)
 ]

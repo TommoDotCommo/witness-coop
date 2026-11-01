@@ -589,6 +589,18 @@ class Walker:
         return False
 
     def go(self, target, tol=0.8, seconds=240, ztol=2.0, stall=None, leg=None):
+        """Walk to `target`; always returns a WalkResult (see _go). A proxy that stops taking commands (TimeoutError from the command file) is a walk that
+        'timed out' with that detail, not an exception out of the caller's run."""
+        self.started = self.pos(); self.t_start = self.now()
+        try: return self._go(target, tol, seconds, ztol, stall, leg)
+        except TimeoutError as e:
+            q = self.pos(); left = round(math.dist(q[:2], target[:2]), 2)
+            r = WalkResult(ok=False, why='timed out', detail='the proxy did not answer: %s' % e, distance_left=left, last_way=[list(c_) for c_ in self.cells[self.ci:self.ci + 60]], stuck_class=self.last_class,
+                           tried=list(self.tried), seconds=round(self.now() - self.t_start, 1), walked=round(self.walked, 1), stuck=self.stuck, replans=self.replans, looks=self.looks, backouts=self.backouts,
+                           sidesteps=self.sidesteps, pressed=self.pressed_n, blurred=self.blurred, **{'from': [round(v, 2) for v in self.started], 'to': [round(v, 2) for v in q]})
+            self.tr.emit('giveup', why=r.why, dist_left=left, stuck_class=r.stuck_class, last_way=r['last_way']); return r
+
+    def _go(self, target, tol, seconds, ztol, stall, leg):
         """Walk to `target` (x, y, z: the eye there) until within `tol` across and `ztol` in height. Returns a WalkResult (a dict like the JSON
         line; ok False says why: see WalkResult). The progress clock: progress is the distance to the target dropping 0.5 m below the best so far,
         a cell of the planned way reached for the first time, or a bump that changed the map; it resets the clock. `stall` seconds (20) without

@@ -1,0 +1,242 @@
+{"t": 1000.011, "kind": "walk_start", "leg": 0, "from": [0, 0, 1.65], "to": [30.0, 6.0, 1.65]}
+{"t": 1000.971, "kind": "replan", "reason": "start", "cells": 63}
+{"t": 1001.024, "kind": "progress", "dist_left": 30.53, "reason": "new cell"}
+{"t": 1003.193, "kind": "progress", "dist_left": 27.21, "reason": "new cell"}
+{"t": 1005.226, "kind": "progress", "dist_left": 24.43, "reason": "nearer"}
+{"t": 1007.277, "kind": "progress", "dist_left": 21.34, "reason": "nearer"}
+{"t": 1009.386, "kind": "progress", "dist_left": 17.66, "reason": "nearer"}
+{"t": 1011.406, "kind": "progress", "dist_left": 14.03, "reason": "nearer"}
+{"t": 1013.429, "kind": "progress", "dist_left": 10.41, "reason": "nearer"}
+{"t": 1015.448, "kind": "progress", "dist_left": 6.79, "reason": "nearer"}
+{"t": 1017.503, "kind": "progress", "dist_left": 3.14, "reason": "nearer"}
+{"t": 1018.847, "kind": "verdict", "leg": 0, "outcome": "walked", "seconds": 18.8, "panel": "0x100", "metres": 32.1, "stuck": 0, "replans": 1, "why": "arrived"}
+{"t": 1000.011, "kind": "walk_start", "leg": 1, "from": [0, 0, 1.65], "to": [26.0, 0.0, 1.65]}
+{"t": 1000.971, "kind": "replan", "reason": "start", "cells": 53}
+{"t": 1001.024, "kind": "progress", "dist_left": 25.93, "reason": "new cell"}
+{"t": 1003.05, "kind": "progress", "dist_left": 23.1, "reason": "new cell"}
+{"t": 1005.24, "kind": "progress", "dist_left": 20.92, "reason": "new cell"}
+{"t": 1006.627, "kind": "replan", "reason": "ahead blocked", "cells": 39}
+{"t": 1007.269, "kind": "progress", "dist_left": 18.27, "reason": "nearer"}
+{"t": 1009.385, "kind": "progress", "dist_left": 15.23, "reason": "new cell"}
+{"t": 1011.486, "kind": "progress", "dist_left": 12.11, "reason": "nearer"}
+{"t": 1013.631, "kind": "progress", "dist_left": 9.11, "reason": "new cell"}
+{"t": 1015.715, "kind": "progress", "dist_left": 5.42, "reason": "nearer"}
+{"t": 1017.767, "kind": "progress", "dist_left": 1.75, "reason": "nearer"}
+{"t": 1018.212, "kind": "verdict", "leg": 1, "outcome": "walked", "seconds": 18.2, "panel": "0x101", "metres": 31.0, "stuck": 0, "replans": 2, "why": "arrived"}
+{"t": 1000.011, "kind": "walk_start", "leg": 2, "from": [0, 0, 1.65], "to": [21.0, 0.0, 1.65]}
+{"t": 1000.971, "kind": "replan", "reason": "start", "cells": 42}
+{"t": 1001.024, "kind": "progress", "dist_left": 20.92, "reason": "new cell"}
+{"t": 1003.036, "kind": "progress", "dist_left": 17.31, "reason": "nearer"}
+{"t": 1005.058, "kind": "progress", "dist_left": 13.67, "reason": "nearer"}
+{"t": 1007.07, "kind": "progress", "dist_left": 10.05, "reason": "nearer"}
+{"t": 1010.513, "kind": "bump", "cell": [28, 0], "class": "wall", "count": 3}
+{"t": 1010.513, "kind": "progress", "dist_left": 7.31, "reason": "bump"}
+{"t": 1011.854, "kind": "replan", "reason": "stuck", "cells": 20}
+{"t": 1011.876, "kind": "replan", "reason": "ahead blocked", "cells": 25}
+{"t": 1012.397, "kind": "replan", "reason": "ahead blocked", "cells": 26}
+{"t": 1013.14, "kind": "progress", "dist_left": 7.46, "reason": "new cell"}
+{"t": 1013.426, "kind": "replan", "reason": "ahead blocked", "cells": 18}
+{"t": 1016.575, "kind": "bump", "cell": [28, 0], "class": "wall", "count": 6}
+{"t": 1016.586, "kind": "progress", "dist_left": 7.35, "reason": "bump"}
+{"t": 1017.927, "kind": "replan", "reason": "stuck", "cells": 19}
+{"t": 1020.155, "kind": "progress", "dist_left": 7.3, "reason": "new cell"}
+{"t": 1021.52, "kind": "bump", "cell": [28, -3], "class": "wall", "count": 9}
+{"t": 1025.789, "kind": "replan", "reason": "pocket escape", "cells": 32}
+{"t": 1026.253, "kind": "progress", "dist_left": 12.15, "reason": "new cell"}
+{"t": 1026.83, "kind": "replan", "reason": "ahead blocked", "cells": 30}
+{"t": 1028.423, "kind": "progress", "dist_left": 11.47, "reason": "new cell"}
+{"t": 1030.698, "kind": "progress", "dist_left": 10.61, "reason": "new cell"}
+{"t": 1033.006, "kind": "bump", "cell": [28, -16], "class": "wall", "count": 3}
+{"t": 1033.006, "kind": "progress", "dist_left": 10.64, "reason": "bump"}
+{"t": 1034.347, "kind": "replan", "reason": "stuck", "cells": 22}
+{"t": 1035.383, "kind": "replan", "reason": "ahead blocked", "cells": 26}
+{"t": 1035.414, "kind": "progress", "dist_left": 10.94, "reason": "new cell"}
+{"t": 1036.41, "kind": "replan", "reason": "ahead blocked", "cells": 31}
+{"t": 1037.414, "kind": "replan", "reason": "ahead blocked", "cells": 29}
+{"t": 1037.605, "kind": "progress", "dist_left": 9.37, "reason": "new cell"}
+{"t": 1037.916, "kind": "replan", "reason": "ahead blocked", "cells": 22}
+{"t": 1040.541, "kind": "progress", "dist_left": 8.33, "reason": "new cell"}
+{"t": 1041.804, "kind": "bump", "cell": [41, -16], "class": "wall", "count": 3}
+{"t": 1043.145, "kind": "replan", "reason": "stuck", "cells": 27}
+{"t": 1043.167, "kind": "replan", "reason": "ahead blocked", "cells": 20}
+{"t": 1045.1, "kind": "progress", "dist_left": 8.3, "reason": "new cell"}
+{"t": 1046.405, "kind": "bump", "cell": [43, -16], "class": "wall", "count": 6}
+{"t": 1047.757, "kind": "replan", "reason": "stuck", "cells": 17}
+{"t": 1049.809, "kind": "bump", "cell": [42, -16], "class": "wall", "count": 9}
+{"t": 1049.82, "kind": "progress", "dist_left": 8.33, "reason": "bump"}
+{"t": 1057.46, "kind": "replan", "reason": "pocket escape", "cells": 49}
+{"t": 1059.228, "kind": "progress", "dist_left": 11.38, "reason": "new cell"}
+{"t": 1061.289, "kind": "progress", "dist_left": 13.05, "reason": "new cell"}
+{"t": 1063.505, "kind": "progress", "dist_left": 13.33, "reason": "new cell"}
+{"t": 1064.109, "kind": "replan", "reason": "ahead blocked", "cells": 30}
+{"t": 1065.784, "kind": "progress", "dist_left": 11.84, "reason": "new cell"}
+{"t": 1067.93, "kind": "progress", "dist_left": 11.12, "reason": "new cell"}
+{"t": 1068.532, "kind": "stall", "since_t": 1068.272, "seconds": 0.3, "tried": []}
+{"t": 1069.251, "kind": "replan", "reason": "stall", "cells": 30}
+{"t": 1069.789, "kind": "replan", "reason": "ahead blocked", "cells": 26}
+{"t": 1070.1, "kind": "progress", "dist_left": 10.19, "reason": "new cell"}
+{"t": 1070.291, "kind": "replan", "reason": "ahead blocked", "cells": 30}
+{"t": 1071.825, "kind": "replan", "reason": "ahead blocked", "cells": 28}
+{"t": 1072.125, "kind": "progress", "dist_left": 8.66, "reason": "new cell"}
+{"t": 1072.336, "kind": "replan", "reason": "ahead blocked", "cells": 30}
+{"t": 1072.838, "kind": "replan", "reason": "ahead blocked", "cells": 20}
+{"t": 1074.915, "kind": "progress", "dist_left": 7.3, "reason": "new cell"}
+{"t": 1076.761, "kind": "bump", "cell": [55, 0], "class": "wall", "count": 3}
+{"t": 1078.102, "kind": "replan", "reason": "stuck", "cells": 14}
+{"t": 1078.155, "kind": "progress", "dist_left": 7.33, "reason": "new cell"}
+{"t": 1079.232, "kind": "stall", "since_t": 1078.155, "seconds": 1.1, "tried": ["replan"]}
+{"t": 1079.243, "kind": "bump", "cell": [56, -3], "class": "pressed", "count": 1}
+{"t": 1079.243, "kind": "replan", "reason": "stall: wall rule", "cells": 14}
+{"t": 1079.243, "kind": "stall", "since_t": 1079.243, "seconds": 0.0, "tried": ["replan", "wall rule"]}
+{"t": 1079.274, "kind": "replan", "reason": "stall: wall rule", "cells": 14}
+{"t": 1080.136, "kind": "bump", "cell": [55, -1], "class": "wall", "count": 9}
+{"t": 1081.488, "kind": "replan", "reason": "stuck", "cells": 14}
+{"t": 1081.541, "kind": "progress", "dist_left": 7.49, "reason": "new cell"}
+{"t": 1083.535, "kind": "bump", "cell": [55, -2], "class": "wall", "count": 9}
+{"t": 1083.546, "kind": "bump", "cell": [56, -5], "class": "pressed", "count": 1}
+{"t": 1083.546, "kind": "progress", "dist_left": 7.51, "reason": "bump"}
+{"t": 1088.926, "kind": "replan", "reason": "pocket escape", "cells": 44}
+{"t": 1088.968, "kind": "progress", "dist_left": 10.63, "reason": "new cell"}
+{"t": 1089.27, "kind": "stall", "since_t": 1089.159, "seconds": 0.1, "tried": ["replan", "wall rule", "wall rule"]}
+{"t": 1089.281, "kind": "giveup", "why": "stuck", "dist_left": 10.69, "stuck_class": "wall", "last_way": [[56, -16], [57, -15], [58, -14], [59, -14], [60, -14], [61, -13], [62, -13], [63, -12], [64, -11], [65, -10], [65, -9], [66, -8], [66, -7], [66, -6], [67, -5], [67, -4], [66, -3], [66, -2], [66, -1], [66, 0], [65, 1], [65, 2], [64, 3], [63, 4], [62, 5], [61, 5], [60, 6], [59, 6], [58, 7], [57, 8], [56, 8], [55, 8], [54, 8], [53, 8], [52, 8], [51, 8], [50, 8], [49, 7], [48, 6], [47, 5], [46, 4], [45, 3], [44, 2], [43, 1]]}
+{"t": 1089.281, "kind": "teleport", "reason": "the walk gave up (stuck)"}
+{"t": 1089.281, "kind": "verdict", "leg": 2, "outcome": "teleported", "seconds": 89.3, "panel": "0x102", "metres": 92.2, "stuck": 10, "replans": 29, "why": "stuck"}
+{"t": 1000.011, "kind": "walk_start", "leg": 3, "from": [0, 0, 1.65], "to": [20.0, 0.0, 1.65]}
+{"t": 1003.623, "kind": "giveup", "why": "view does not turn", "dist_left": 20.0, "stuck_class": "", "last_way": []}
+{"t": 1003.623, "kind": "teleport", "reason": "the walk gave up (view does not turn)"}
+{"t": 1003.623, "kind": "verdict", "leg": 3, "outcome": "teleported", "seconds": 3.6, "panel": "0x103", "metres": 0.0, "stuck": 0, "replans": 0, "why": "view does not turn"}
+{"t": 1000.011, "kind": "walk_start", "leg": 4, "from": [0, 0, 1.65], "to": [46.0, 6.0, 1.65]}
+{"t": 1000.971, "kind": "replan", "reason": "start", "cells": 94}
+{"t": 1001.024, "kind": "progress", "dist_left": 46.31, "reason": "new cell"}
+{"t": 1003.087, "kind": "progress", "dist_left": 43.12, "reason": "new cell"}
+{"t": 1005.194, "kind": "progress", "dist_left": 39.81, "reason": "new cell"}
+{"t": 1007.45, "kind": "progress", "dist_left": 38.31, "reason": "new cell"}
+{"t": 1010.34, "kind": "bump", "cell": [16, 11], "class": "open", "count": 3}
+{"t": 1010.34, "kind": "progress", "dist_left": 38.31, "reason": "bump"}
+{"t": 1011.681, "kind": "replan", "reason": "stuck", "cells": 102}
+{"t": 1012.491, "kind": "progress", "dist_left": 38.35, "reason": "new cell"}
+{"t": 1014.703, "kind": "progress", "dist_left": 38.77, "reason": "new cell"}
+{"t": 1016.941, "kind": "progress", "dist_left": 39.84, "reason": "new cell"}
+{"t": 1019.966, "kind": "progress", "dist_left": 38.16, "reason": "new cell"}
+{"t": 1022.032, "kind": "progress", "dist_left": 34.79, "reason": "new cell"}
+{"t": 1024.157, "kind": "progress", "dist_left": 31.33, "reason": "nearer"}
+{"t": 1026.221, "kind": "progress", "dist_left": 28.22, "reason": "nearer"}
+{"t": 1028.474, "kind": "progress", "dist_left": 24.66, "reason": "new cell"}
+{"t": 1030.773, "kind": "progress", "dist_left": 21.04, "reason": "new cell"}
+{"t": 1033.317, "kind": "progress", "dist_left": 17.81, "reason": "nearer"}
+{"t": 1037.785, "kind": "bump", "cell": [68, 35], "class": "open", "count": 3}
+{"t": 1037.785, "kind": "progress", "dist_left": 17.03, "reason": "bump"}
+{"t": 1039.126, "kind": "replan", "reason": "stuck", "cells": 28}
+{"t": 1041.463, "kind": "bump", "cell": [72, 35], "class": "open", "count": 9}
+{"t": 1041.474, "kind": "progress", "dist_left": 16.05, "reason": "bump"}
+{"t": 1042.815, "kind": "replan", "reason": "stuck", "cells": 45}
+{"t": 1043.587, "kind": "progress", "dist_left": 17.81, "reason": "new cell"}
+{"t": 1047.129, "kind": "bump", "cell": [72, 44], "class": "open", "count": 3}
+{"t": 1047.14, "kind": "progress", "dist_left": 19.15, "reason": "bump"}
+{"t": 1048.481, "kind": "replan", "reason": "stuck", "cells": 40}
+{"t": 1049.266, "kind": "progress", "dist_left": 18.92, "reason": "new cell"}
+{"t": 1051.533, "kind": "progress", "dist_left": 16.93, "reason": "new cell"}
+{"t": 1053.67, "kind": "progress", "dist_left": 13.29, "reason": "nearer"}
+{"t": 1055.686, "kind": "progress", "dist_left": 9.7, "reason": "nearer"}
+{"t": 1057.698, "kind": "progress", "dist_left": 6.1, "reason": "nearer"}
+{"t": 1059.728, "kind": "progress", "dist_left": 2.5, "reason": "new cell"}
+{"t": 1080.735, "kind": "stall", "since_t": 1060.707, "seconds": 20.0, "tried": []}
+{"t": 1081.454, "kind": "replan", "reason": "stall", "cells": 1}
+{"t": 1081.558, "kind": "verdict", "leg": 4, "outcome": "walked", "seconds": 81.6, "panel": "0x104", "metres": 95.7, "stuck": 4, "replans": 6, "why": "arrived"}
+{"t": 1000.011, "kind": "walk_start", "leg": 5, "from": [0, 0, 1.65], "to": [30.0, 0.0, 1.65]}
+{"t": 1000.971, "kind": "replan", "reason": "start", "cells": 60}
+{"t": 1001.024, "kind": "progress", "dist_left": 29.92, "reason": "new cell"}
+{"t": 1003.036, "kind": "progress", "dist_left": 26.31, "reason": "nearer"}
+{"t": 1005.058, "kind": "progress", "dist_left": 22.67, "reason": "nearer"}
+{"t": 1007.07, "kind": "progress", "dist_left": 19.05, "reason": "nearer"}
+{"t": 1010.513, "kind": "bump", "cell": [28, 0], "class": "wall", "count": 3}
+{"t": 1010.513, "kind": "progress", "dist_left": 16.31, "reason": "bump"}
+{"t": 1011.854, "kind": "replan", "reason": "stuck", "cells": 38}
+{"t": 1011.876, "kind": "replan", "reason": "ahead blocked", "cells": 43}
+{"t": 1012.397, "kind": "replan", "reason": "ahead blocked", "cells": 44}
+{"t": 1013.14, "kind": "progress", "dist_left": 16.37, "reason": "new cell"}
+{"t": 1013.426, "kind": "replan", "reason": "ahead blocked", "cells": 36}
+{"t": 1016.575, "kind": "bump", "cell": [28, 0], "class": "wall", "count": 6}
+{"t": 1016.586, "kind": "progress", "dist_left": 16.32, "reason": "bump"}
+{"t": 1017.927, "kind": "replan", "reason": "stuck", "cells": 37}
+{"t": 1020.155, "kind": "progress", "dist_left": 16.3, "reason": "new cell"}
+{"t": 1021.52, "kind": "bump", "cell": [28, -3], "class": "wall", "count": 9}
+{"t": 1025.789, "kind": "replan", "reason": "pocket escape", "cells": 49}
+{"t": 1026.253, "kind": "progress", "dist_left": 21.14, "reason": "new cell"}
+{"t": 1026.83, "kind": "replan", "reason": "ahead blocked", "cells": 45}
+{"t": 1028.423, "kind": "progress", "dist_left": 20.14, "reason": "new cell"}
+{"t": 1031.18, "kind": "progress", "dist_left": 17.39, "reason": "new cell"}
+{"t": 1032.465, "kind": "bump", "cell": [28, -13], "class": "wall", "count": 3}
+{"t": 1032.476, "kind": "bump", "cell": [28, -14], "class": "pressed", "count": 2}
+{"t": 1033.817, "kind": "replan", "reason": "stuck", "cells": 38}
+{"t": 1033.839, "kind": "progress", "dist_left": 17.13, "reason": "new cell"}
+{"t": 1033.839, "kind": "replan", "reason": "ahead blocked", "cells": 43}
+{"t": 1034.854, "kind": "replan", "reason": "ahead blocked", "cells": 34}
+{"t": 1036.879, "kind": "bump", "cell": [28, -16], "class": "wall", "count": 8}
+{"t": 1036.89, "kind": "progress", "dist_left": 17.83, "reason": "bump"}
+{"t": 1038.231, "kind": "replan", "reason": "stuck", "cells": 47}
+{"t": 1038.966, "kind": "progress", "dist_left": 18.14, "reason": "new cell"}
+{"t": 1040.29, "kind": "replan", "reason": "ahead blocked", "cells": 34}
+{"t": 1041.453, "kind": "progress", "dist_left": 18.86, "reason": "new cell"}
+{"t": 1043.173, "kind": "bump", "cell": [28, -20], "class": "wall", "count": 9}
+{"t": 1044.525, "kind": "replan", "reason": "stuck", "cells": 46}
+{"t": 1044.547, "kind": "progress", "dist_left": 18.35, "reason": "new cell"}
+{"t": 1044.547, "kind": "replan", "reason": "ahead blocked", "cells": 40}
+{"t": 1047.175, "kind": "progress", "dist_left": 19.96, "reason": "new cell"}
+{"t": 1048.617, "kind": "bump", "cell": [28, -25], "class": "wall", "count": 9}
+{"t": 1049.969, "kind": "replan", "reason": "stuck", "cells": 46}
+{"t": 1049.991, "kind": "progress", "dist_left": 19.55, "reason": "new cell"}
+{"t": 1049.991, "kind": "replan", "reason": "ahead blocked", "cells": 37}
+{"t": 1052.21, "kind": "progress", "dist_left": 20.54, "reason": "new cell"}
+{"t": 1053.484, "kind": "bump", "cell": [28, -27], "class": "wall", "count": 6}
+{"t": 1054.836, "kind": "replan", "reason": "stuck", "cells": 74}
+{"t": 1057.667, "kind": "progress", "dist_left": 18.82, "reason": "new cell"}
+{"t": 1060.346, "kind": "progress", "dist_left": 20.78, "reason": "new cell"}
+{"t": 1062.538, "kind": "progress", "dist_left": 21.28, "reason": "new cell"}
+{"t": 1063.968, "kind": "replan", "reason": "ahead blocked", "cells": 42}
+{"t": 1064.894, "kind": "progress", "dist_left": 19.53, "reason": "new cell"}
+{"t": 1068.368, "kind": "bump", "cell": [28, 10], "class": "wall", "count": 3}
+{"t": 1068.379, "kind": "bump", "cell": [28, 9], "class": "pressed", "count": 2}
+{"t": 1068.379, "kind": "progress", "dist_left": 17.11, "reason": "bump"}
+{"t": 1069.7, "kind": "stall", "since_t": 1068.379, "seconds": 1.3, "tried": []}
+{"t": 1070.408, "kind": "replan", "reason": "stall", "cells": 42}
+{"t": 1070.43, "kind": "progress", "dist_left": 17.44, "reason": "new cell"}
+{"t": 1070.43, "kind": "replan", "reason": "ahead blocked", "cells": 35}
+{"t": 1073.451, "kind": "bump", "cell": [28, 13], "class": "wall", "count": 9}
+{"t": 1073.462, "kind": "progress", "dist_left": 17.81, "reason": "bump"}
+{"t": 1074.803, "kind": "replan", "reason": "stuck", "cells": 42}
+{"t": 1075.327, "kind": "replan", "reason": "ahead blocked", "cells": 34}
+{"t": 1078.72, "kind": "bump", "cell": [28, 15], "class": "wall", "count": 6}
+{"t": 1078.731, "kind": "progress", "dist_left": 18.3, "reason": "bump"}
+{"t": 1080.072, "kind": "replan", "reason": "stuck", "cells": 43}
+{"t": 1080.405, "kind": "stall", "since_t": 1080.114, "seconds": 0.3, "tried": ["replan"]}
+{"t": 1080.416, "kind": "bump", "cell": [28, 20], "class": "pressed", "count": 3}
+{"t": 1080.416, "kind": "replan", "reason": "stall: wall rule", "cells": 44}
+{"t": 1080.427, "kind": "stall", "since_t": 1080.416, "seconds": 0.0, "tried": ["replan", "wall rule"]}
+{"t": 1080.458, "kind": "replan", "reason": "stall: wall rule", "cells": 44}
+{"t": 1080.6, "kind": "replan", "reason": "ahead blocked", "cells": 41}
+{"t": 1080.86, "kind": "progress", "dist_left": 19.58, "reason": "new cell"}
+{"t": 1081.111, "kind": "replan", "reason": "ahead blocked", "cells": 47}
+{"t": 1081.613, "kind": "replan", "reason": "ahead blocked", "cells": 34}
+{"t": 1083.647, "kind": "bump", "cell": [28, 24], "class": "wall", "count": 3}
+{"t": 1083.658, "kind": "bump", "cell": [28, 23], "class": "pressed", "count": 2}
+{"t": 1083.658, "kind": "progress", "dist_left": 20.37, "reason": "bump"}
+{"t": 1084.999, "kind": "replan", "reason": "stuck", "cells": 48}
+{"t": 1085.523, "kind": "replan", "reason": "ahead blocked", "cells": 53}
+{"t": 1085.674, "kind": "progress", "dist_left": 21.81, "reason": "new cell"}
+{"t": 1086.531, "kind": "replan", "reason": "ahead blocked", "cells": 53}
+{"t": 1087.042, "kind": "replan", "reason": "ahead blocked", "cells": 39}
+{"t": 1088.006, "kind": "progress", "dist_left": 23.93, "reason": "new cell"}
+{"t": 1090.387, "kind": "bump", "cell": [28, 35], "class": "wall", "count": 3}
+{"t": 1090.398, "kind": "bump", "cell": [28, 34], "class": "pressed", "count": 2}
+{"t": 1090.398, "kind": "progress", "dist_left": 24.1, "reason": "bump"}
+{"t": 1091.719, "kind": "stall", "since_t": 1090.398, "seconds": 1.3, "tried": ["replan", "wall rule", "wall rule"]}
+{"t": 1098.587, "kind": "replan", "reason": "stall: pocket escape", "cells": 38}
+{"t": 1098.629, "kind": "progress", "dist_left": 18.07, "reason": "new cell"}
+{"t": 1102.034, "kind": "bump", "cell": [28, 18], "class": "wall", "count": 12}
+{"t": 1102.045, "kind": "progress", "dist_left": 19.25, "reason": "bump"}
+{"t": 1108.099, "kind": "replan", "reason": "pocket escape", "cells": 79}
+{"t": 1108.583, "kind": "stall", "since_t": 1102.045, "seconds": 6.5, "tried": ["replan", "wall rule", "wall rule", "pocket escape"]}
+{"t": 1108.594, "kind": "giveup", "why": "stuck", "dist_left": 20.84, "stuck_class": "wall", "last_way": [[19, 5], [18, 4], [17, 3], [17, 2], [17, 1], [16, 0], [16, -1], [17, -2], [17, -3], [17, -4], [17, -5], [17, -6], [18, -7], [19, -8], [20, -9], [21, -10], [22, -11], [23, -12], [23, -13], [24, -14], [25, -15], [25, -16], [26, -17], [26, -18], [26, -19], [26, -20], [26, -21], [26, -22], [26, -23], [26, -24], [26, -25], [26, -26], [26, -27], [26, -28], [26, -29], [26, -30], [26, -31], [26, -32], [26, -33], [26, -34], [26, -35], [27, -36], [28, -36], [29, -36], [30, -35], [31, -34], [32, -33], [33, -32], [34, -31], [35, -30], [36, -29], [37, -28], [38, -27], [39, -26], [40, -25], [41, -24], [42, -23], [43, -22], [44, -21], [45, -20]]}
+{"t": 1108.594, "kind": "teleport", "reason": "the walk gave up (stuck)"}
+{"t": 1108.594, "kind": "verdict", "leg": 5, "outcome": "teleported", "seconds": 108.6, "panel": "0x105", "metres": 109.6, "stuck": 14, "replans": 35, "why": "stuck"}
