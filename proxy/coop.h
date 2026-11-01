@@ -16,4 +16,5 @@ unsigned CoopMyId();                               // this game's player id (0 b
 void CoopSetFakeRemote(bool on, const float* pos, float yaw);   // test hook: show the peer at this eye position instead of where it is (witness_cmd.txt: fakepose x y z yaw | fakepose off)
 
 struct SocialSnapshot;
+void CoopNetStat();                                  // `netstat`/`steamstat` in witness_cmd.txt: the transport (udp|steam) and each Steam session's state, to the log
 void CoopDumpStatus(unsigned submittedPlayers = 0, const SocialSnapshot* ui = nullptr); // test bridge: writes witness_net.json from the live core

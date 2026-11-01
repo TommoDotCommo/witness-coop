@@ -142,6 +142,7 @@ static DWORD WINAPI CmdThread(LPVOID) {
             else if (!strncmp(line, "voiceplayer ", 12)) { unsigned id; int volume; if (sscanf(line+12, "%u %d", &id, &volume)==2 && id>0 && id<=255 && volume>=0 && volume<=100) VoicePlayerVolume(id, volume/100.0f); }
             else if (!strncmp(line, "voicestat", 9)) VoiceStat();
             else if (!strncmp(line, "racestat", 8)) RaceStat();
+            else if (!strncmp(line, "netstat", 7) || !strncmp(line, "steamstat", 9)) CoopNetStat();      // which transport, and the Steam sessions
             else if (!strncmp(line, "voicechannel ", 13)) VoiceSetChannel(line + 13);
             else if (!strncmp(line, "mapgen ", 7)) MapGenCommand(line + 7);
             else if (!strncmp(line, "mapstat", 7)) DevMenuCommand("mapstat", 0);
