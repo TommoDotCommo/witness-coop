@@ -44,7 +44,7 @@ bool Open(unsigned timeoutMs, uint64_t* self, char* why, size_t cap) {
 }
 
 bool Send(uint64_t to, const uint8_t* d, size_t n) {
-    if (!g_messages || !to || n == 0 || n > 1200) { ++g_sendFailed; return false; }      // (the largest datagram the mod sends is a POV chunk, under 1200 bytes)
+    if (!g_messages || !to || n == 0 || n > 1500) { ++g_sendFailed; return false; }      // (as over UDP: every receiver reads into 1500 bytes; a TV chunk is 1200 pixels plus its header)
     Identity id = IdentityOf(to);
     int r = Call<int>(g_messages, NM_SEND, (const Identity*)&id, (const void*)d, (uint32_t)n, kSendUnreliable | kSendNoNagle | kSendAutoRestartBrokenSession, kGameChannel);
     if (r == 1) { ++g_sent; return true; }

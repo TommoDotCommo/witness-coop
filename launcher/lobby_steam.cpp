@@ -147,7 +147,7 @@ void SteamLobby::Poll(uint64_t now) {
 }
 
 bool SteamLobby::Send(uint64_t to, const uint8_t* d, size_t n) {
-    if (!ready_ || paused_ || !Gate().Allowed(to) || n == 0 || n > 1200) return false;
+    if (!ready_ || paused_ || !Gate().Allowed(to) || n == 0 || n > 1500) return false;
     Identity i = IdentityOf(to);
     return Call<int>(msgs_, NM_SEND, (const Identity*)&i, (const void*)d, (uint32_t)n, kSendUnreliable | kSendNoNagle | kSendAutoRestartBrokenSession, kLobbyChannel) == 1;
 }
