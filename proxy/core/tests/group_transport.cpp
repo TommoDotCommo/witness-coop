@@ -50,6 +50,8 @@ void RaceTick(uint64_t,bool,const std::set<unsigned>&){}
 void RaceOnPacket(const uint8_t*,size_t,uint64_t){}
 void Log(const char* text){std::puts(text);std::fflush(stdout);}
 void DevMenuNotice(const char* text){std::puts(text);}
+void DiagRxPose(const uint8_t*,size_t){}
+void DiagCoreLog(const char*){}
 int main(int argc,char** argv){
     if(argc!=2&&argc!=3)return 2;
     world.player=(unsigned)std::strtoul(argv[1],nullptr,10);

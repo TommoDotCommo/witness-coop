@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Validate the installer, the one-file Setup.exe and the release zip against disposable fixtures on a Windows filesystem. No game is started.
 #   tools/qa_installer.sh <folder of the supported build>     (its exe and original Ansel DLL are read, never changed)
-# The fixtures go under WITNESS_TMPDIR (local/env.sh) or /mnt/c/coop/lab/run, per LAB_OWNER when set.
+# The fixtures go under WITNESS_TMPDIR (a scratch folder on the Windows disk, set in local/env.sh), per WITNESS_RESOURCE_OWNER when set.
 # Runs: the release build and its package check; the build-id header against the real exe; the setup core natively; the PowerShell installer
 # suite (install, update, repair, refusals in plain words, uninstall); the one-file Setup.exe (extract, hash, planted links, zip location, run);
 # install-linux.sh on fixtures, and its install read back by the Windows installer. Every protection has a mutant that must fail.
@@ -18,7 +18,7 @@ python3 -I "$here/tools/check_release_package.py" "$rel/$name.zip" --single "$re
 python3 -I "$here/tools/buildid_of.py" "$src/witness64_d3d11.exe" --check
 make -s -C "$here/common" test BUILDID_EXE="$src/witness64_d3d11.exe" | tail -4
 "$here/tools/test_setup_core.sh" "$rel/$name-payload.bin"
-base="${WITNESS_TMPDIR:-/mnt/c/coop/lab/run}/${LAB_OWNER:-installer}"
+base="${WITNESS_TMPDIR:?set WITNESS_TMPDIR to a scratch folder on the Windows disk (local/env.sh)}/${WITNESS_RESOURCE_OWNER:-installer}"
 mkdir -p "$base"
 fixtures=$(mktemp -d "$base/installer-XXXXXXXX")
 cp -a "$rel/$name" "$fixtures/package"

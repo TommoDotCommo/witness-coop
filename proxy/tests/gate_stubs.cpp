@@ -9,3 +9,8 @@ void OverlayInstall() { InterlockedIncrement(&coop_gate[1]); }
 void CoopStart() { InterlockedIncrement(&coop_gate[2]); }
 void GameStart() { InterlockedIncrement(&coop_gate[3]); }
 void StateStart() { InterlockedIncrement(&coop_gate[4]); }
+// the diagnostics (proxy/diag.cpp) start only after the gate passes; here they do nothing
+void DiagLine(const char*) {}
+void DiagStart() {}
+void DiagStop() {}
+struct _EXCEPTION_POINTERS; void DiagFirstChance(struct _EXCEPTION_POINTERS*) {}

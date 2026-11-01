@@ -9,7 +9,7 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")/.." && pwd)"
 [ -f "$here/local/env.sh" ] && . "$here/local/env.sh"
 CXX=x86_64-w64-mingw32-g++
-work="$(mktemp -d "${WITNESS_TMPDIR:-/mnt/c/coop/lab/run}/${LAB_OWNER:-gate}-gate-XXXXXXXX" 2>/dev/null || mktemp -d)"
+work="$(mktemp -d "${WITNESS_TMPDIR:?set WITNESS_TMPDIR to a scratch folder on the Windows disk (local/env.sh)}/${WITNESS_RESOURCE_OWNER:-gate}-gate-XXXXXXXX")"
 [ -n "${KEEP:-}" ] || trap 'rm -rf "$work"' EXIT
 t="$here/proxy/tests"
 # like the real game exe: fixed base, no relocations, so its code in memory is the same every run
