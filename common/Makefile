@@ -1,6 +1,6 @@
 CXX ?= g++
 CXXFLAGS = -std=c++17 -O2 -Wall -Wextra
-MUTANTS = NO_MIGRATE TOGGLE ALLOW_COLLISION MISSING_KEY
+MUTANTS = NO_MIGRATE TOGGLE ALLOW_COLLISION MISSING_KEY MARKER_BOUND
 build/guide-test: guide_test.cpp guide.h bindings.def ../proxy/config.h
 	mkdir -p build
 	$(CXX) $(CXXFLAGS) -o $@ $<

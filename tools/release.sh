@@ -82,5 +82,7 @@ z.close()' "$name")
 check=(python3 -I "$here/tools/check_release_package.py" "$out/$name.zip" --single "$single/Witness-Coop-Setup.exe")
 [ -n "${SIGN_CMD:-}" ] && check+=(--require-signed)
 "${check[@]}"
-echo "$out/$name.zip ($(du -h "$out/$name.zip" | cut -f1))"
+# the proxy's linker map and DLL of this release, kept (not shipped): tools/diag_report.py --map ... --dll ... names the function a crash report from this version is in
+rm -rf "$out/$name.symbols"; mkdir -p "$out/$name.symbols"; cp "$here/proxy/AnselSDK64.map" "$here/proxy/AnselSDK64.dll" "$out/$name.symbols/"
+echo "$out/$name.zip ($(du -h "$out/$name.zip" | cut -f1)); symbols for crash reports: $out/$name.symbols"
 echo "$single/Witness-Coop-Setup.exe ($(du -h "$single/Witness-Coop-Setup.exe" | cut -f1)) <- the main download"

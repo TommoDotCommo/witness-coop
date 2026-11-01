@@ -83,5 +83,12 @@ struct Cfg {
     bool noLineDepth = false;      // twin: remote lines are drawn without the depth test (they show through walls)
     bool noTeleportHold = false;   // twin: the menu teleport does not hold the player (the old 12-frame write): far panels end at the spawn point
     bool noTargetDispatch = false; // twin: a remote solve does not run the game's target dispatcher for other target types
+    std::wstring diagDir;        // diag_dir=instance -> <dll folder>\witness-coop-logs (not "logs": the game keeps its own logs there) ; diag_dir=<path> ; empty: %LOCALAPPDATA%\witness-coop\logs (diag.cpp)
+    int maxLogMb = 100;          // max_log_mb=N: the logs folder is pruned to this size (a crashed session is never pruned)
+    bool noCrashHandler = false; // crash_handler=0: no crash marker, no dump (a test mutant: the injected crash must then leave nothing)
+    bool testCrash = false;      // test_crash=1: the witness_cmd.txt command 'testcrash' really crashes this game (access violation on the render thread); 'testhandled' raises an exception that is caught
+    bool diagFirstChance = false; // test mutant diag_first_chance=1: the dump is written from the first-chance (vectored) handler, so exceptions the game handles itself would produce one
+    bool noDiagMarkSend = false; // test mutant: the marker is not sent to the other players
+    bool noDiagFlight = false;   // test mutant: no flight recorder samples
 };
 const Cfg& GetCfg();

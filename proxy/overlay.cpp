@@ -30,6 +30,7 @@ static const uintptr_t kPausedOld = 0x62DAC4;      // the first candidate, WRONG
 #include "config.h"
 #include "input.h"
 #include "ui.h"
+#include "diag.h"
 #include "guide_ui.h"
 #include "../common/guide.h"
 #include "race_game.h"
@@ -300,7 +301,7 @@ static LRESULT CALLBACK DevWndProc(HWND w, UINT m, WPARAM wp, LPARAM lp) {
     switch (m) {
     case WM_KILLFOCUS: GuideReset(); break;
     case WM_ACTIVATEAPP: if (!wp) GuideReset(); break;
-    case WM_KEYDOWN: case WM_SYSKEYDOWN: if (GuideKey((unsigned)wp, true)) return 0; if (DevMenuKey((unsigned)wp, true)) return 0; break;
+    case WM_KEYDOWN: case WM_SYSKEYDOWN: if (wp == guide::MarkerKey(GetCfg()) && !(lp & (1 << 30))) DiagMarkKey(); if (GuideKey((unsigned)wp, true)) return 0; if (DevMenuKey((unsigned)wp, true)) return 0; break;
     case WM_KEYUP: case WM_SYSKEYUP: if (GuideKey((unsigned)wp, false)) return 0; DevMenuKey((unsigned)wp, false); break;
     case WM_CHAR: if (DevMenuOpen()) return 0; break;
     case WM_LBUTTONDOWN: if (DevMenuMouseButton(0, true)) return 0; break;
@@ -591,6 +592,7 @@ static HRESULT STDMETHODCALLTYPE HookPresent(IDXGISwapChain* sc, UINT sync, UINT
 }
 static HRESULT HookPresentBody(IDXGISwapChain* sc, UINT sync, UINT flags) {
     LONG f = InterlockedIncrement(&g_frames);
+    { const float* dc = (const float*)((uintptr_t)GetModuleHandleA(nullptr) + kCamPos); DiagFrame(Readable(dc, 12) ? dc : nullptr, (unsigned)f); }
     GameRunQueued();
     StateApplyRemote();
     if (f == 1) Log("overlay: Present hook called (first frame)");

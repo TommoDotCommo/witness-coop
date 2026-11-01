@@ -34,6 +34,9 @@ prepare a reviewable diff before asking to publish. Never force-push.
 - One-file setup, build check, signing: `dist/installer.c` + `dist/setup-core.h` (the payload container, its hash and names; `tools/test_setup_core.sh`), `tools/pack_payload.py`, `tools/build_setup.sh`,
   `tools/release.sh` (`SIGN_CMD`, see `docs/SIGNING.md`), `dist/install-linux.sh` (`tools/test_install_linux.sh`), `common/buildid.h` (the exe fingerprint the proxy and launcher check; `tools/buildid_of.py`
   derives its constants for a new game build), `tools/test_build_gate.sh` (the real `DllMain` with a host that is not the known build), `tools/unknown_build_slot.sh` (one slot), `tools/qa_installer.sh` (everything game-free).
+- Diagnostics: `common/diag_log.h` (per-session hash-chained logs, cap), `common/crash_handler.h` (unhandled-exception filter, minidump), `proxy/diag.cpp`
+  (flight recorder, F2 marker, desync dump, the commands `diagmark`, `diagdesync`, `testcrash`), `dist/diag.ps1` (the Send diagnostics bundle, embedded in the launcher),
+  `tools/diag_report.py`, `tools/minidump.py`, `tools/map_symbols.py`; tests `make -C launcher test` (diag-test, crash-test), `python3 -B tools/test_diag.py`, `tools/qa_diag.sh` (live).
 - `local/`: ignored private configuration, disposable test copies, release zips (`local/release/`) and QA evidence.
 
 ## Build and validation

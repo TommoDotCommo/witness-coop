@@ -89,6 +89,17 @@ int main() {
     check(col0Text.find("F11  Toggle back TV camera broadcast consent") != std::string::npos, "guide lists TV consent key");
     check(col0Text.find("V  Watch / clear a player's screen") != std::string::npos, "guide lists POV watch key");
 
+    // the diagnostics marker is F2 unless a binding took it, never one of the bindings, and the guide names it
+    check(guide::MarkerKey(Cfg()) == 0x71, "the marker is F2 by default");
+    check(col0Text.find("F2  Mark a problem") != std::string::npos, "guide lists the marker key");
+    { Cfg m; m.keyChat = 0x71; check(guide::MarkerKey(m) == 0x7B, "a binding on F2 moves the marker to F12");
+      auto cols = guide::Content(m); std::string t; for (const auto& line : cols[0]) t += line + "\n"; check(t.find("F12  Mark a problem") != std::string::npos, "the guide names the moved marker");
+      m.keyPing = 0x7B; check(guide::MarkerKey(m) == 0, "no free key: no marker key"); }
+    {   // no default or migrated binding may equal the marker key
+        Cfg m; for (const auto& b : guide::bindings) m.*b.member = guide::Help; guide::MigrateF1(m);
+        unsigned mk = guide::MarkerKey(m); for (const auto& b : guide::bindings) check(!mk || m.*b.member != mk, "the marker never shares a key with a binding");
+    }
+
     std::cout << (failures ? "FAILED" : "ALL OK") << '\n';
     return failures ? 1 : 0;
 }

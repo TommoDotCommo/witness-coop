@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 #include "social.h"
+#include "diag.h"
 #include "coop.h"
 #include "config.h"
 #include "gamecam.h"
@@ -245,7 +246,7 @@ void SocialFrame(float W, float H, const float* cam, const float* ang) {
     Lock l;
     if (GamePaused() || g_open || g_wheel) { VoiceRadioKey(false,true); VoiceKey(cfg.keyVoice,false); }
     if (core) {
-        for (const auto& m : core->takeChat()) AddChat(m.from, m.text, now);
+        for (const auto& m : core->takeChat()) { if (DiagChat(m.from, m.text)) continue; AddChat(m.from, m.text, now); }
         for (const auto& m : core->takeMarks()) AddMark(m.from, m.kind, m.pos, now);
         for (const auto& s : core->takeStrokes()) ApplyStroke(s);
         witness::Presence p; p.appearance = MyAppearance(); p.typing = g_open && !cfg.noTypingDots; p.speaking = VoiceSpeaking(); p.proximitySpeaking = VoiceProximitySpeaking(); p.radioEquipped = cfg.radioEnabled; p.radioTx = VoiceRadioTx() && p.speaking; p.voiceChannel = (uint8_t)VoiceChannel();

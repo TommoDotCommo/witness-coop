@@ -19,6 +19,7 @@
 #include "core/peers.h"
 #include "steam_net.h"
 #include "../common/steam_abi.h"
+#include "diag.h"
 
 void Log(const char* msg);
 extern HMODULE g_selfModule();
@@ -192,7 +193,7 @@ static DWORD WINAPI NetThread(LPVOID) {
         RawSend(to, b.data(), b.size()); };
     if (table.empty()) h.send = [&](const witness::Bytes& b) { transmit(single, b); };
     else h.sendTo = [&](unsigned target, const witness::Bytes& b) { if (const wpeers::Endpoint* e = table.Find(target)) transmit(*e, b); };
-    h.log = [](const char* t) { Log(t); if (!strncmp(t, "state: ", 7)) EventLog(t); };
+    h.log = [](const char* t) { Log(t); if (!strncmp(t, "state: ", 7)) EventLog(t); DiagCoreLog(t); };
     h.lock = [] { EnterCriticalSection(&g_lock); }; h.unlock = [] { LeaveCriticalSection(&g_lock); };
     uint32_t session = (uint32_t)time(nullptr);     // must grow with every start: the core ignores packets from an older session
     witness::SyncCore* core = new witness::SyncCore(id, session, GameWorldInstance(), h, flags);
@@ -232,6 +233,7 @@ static DWORD WINAPI NetThread(LPVOID) {
             wpeers::Endpoint from = steam ? wpeers::Steam(steamFrom) : wpeers::Udp(source.sin_addr.s_addr, ntohs(source.sin_port));
             sourceLen = sizeof source;
             if (!table.Accept(from, buf, (size_t)n, single)) continue;      // every datagram, pictures included, names its sender: only from that sender's own endpoint
+            DiagRxPose(buf, (size_t)n);
             if (n >= 4 && (!memcmp(buf, "WTT1", 4) || !memcmp(buf, "WTU1", 4) || !memcmp(buf, "WTD2", 4))) TvOnPacket(buf, (size_t)n);
             else if (n >= 4 && !memcmp(buf, "WTV4", 4)) VideoOnPacket(buf, (size_t)n);            // a chunk of a POV picture
             else if (n >= 4 && !memcmp(buf, "WTO5", 4)) VoiceOnPacket(buf, (size_t)n);         // 20 ms of a player's voice

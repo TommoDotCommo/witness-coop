@@ -25,6 +25,10 @@
 #include "lobby_win.h"
 #include "../common/steam_ids.h"
 #include "../proxy/progress/progress.h"
+#include "../common/diag_log.h"
+#include "../common/crash_handler.h"
+#include "version.h"
+#include "diag_ps1.h"
 
 namespace {
 std::wstring W(const std::string& s) { if (s.empty()) return L""; int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, nullptr, 0); std::wstring w(n, 0); MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, &w[0], n); w.resize(n - 1); return w; }
@@ -34,7 +38,7 @@ bool WriteFile8(const std::wstring& p, const std::string& t) { FILE* f = _wfopen
 std::wstring Dir(const std::wstring& p) { size_t s = p.find_last_of(L"\\/"); return s == std::wstring::npos ? L"" : p.substr(0, s); }
 bool Exists(const std::wstring& p) { return GetFileAttributesW(p.c_str()) != INVALID_FILE_ATTRIBUTES; }
 
-enum { ID_TAB = 100, ID_APPLY, ID_LAUNCH, ID_NEWGAME, ID_BROWSE, ID_GAMEDIR, ID_STATUS, ID_REFRESH, ID_OPENSAVES, ID_BACKUP, ID_TRASH, ID_SAVELIST, ID_SAVEINFO, ID_SAVEPICK, ID_NG_OK = 300, ID_NG_LASERS, ID_NG_PRESET, ID_NG_INFO, ID_NG_AREAS = 400, ID_FIELD = 1000 };
+enum { ID_TAB = 100, ID_APPLY, ID_LAUNCH, ID_NEWGAME, ID_BROWSE, ID_GAMEDIR, ID_STATUS, ID_REFRESH, ID_OPENSAVES, ID_BACKUP, ID_TRASH, ID_SAVELIST, ID_SAVEINFO, ID_SAVEPICK, ID_DIAG, ID_NG_OK = 300, ID_NG_LASERS, ID_NG_PRESET, ID_NG_INFO, ID_NG_AREAS = 400, ID_FIELD = 1000 };
 enum Kind { kCheck, kCombo, kEdit, kMulti };
 struct Field { int id; int page; std::string label, key; Kind kind; std::vector<std::string> choices; std::string def, hint; HWND h = nullptr; };
 guide::Hold g_guideHold;
@@ -52,7 +56,9 @@ std::wstring SaveFolder(const wl::CfgFile& c) {      // where the game keeps its
     wchar_t p[MAX_PATH]; if (SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_APPDATA, nullptr, 0, p))) return std::wstring(p) + L"\\The Witness"; return L"";
 }
 wl::CfgFile LoadCfg() { return wl::CfgFile::Parse(ReadFile8(CfgPath())); }
-void Status(const std::wstring& s) { SetWindowTextW(g_status, s.c_str()); }
+diag::Session g_log; bool g_logOpen;      // this run's own log (common/diag_log.h), in the same folder as the game's
+void Dlog(const char* text) { if (g_logOpen) g_log.Line(text); }
+void Status(const std::wstring& s) { SetWindowTextW(g_status, s.c_str()); Dlog(("status: " + U(s)).c_str()); }
 void LobbyCfgSave(wl::CfgFile* c); void LobbyCfgLoad(const wl::CfgFile& c); void LobbyPartsChosen(const std::string& spec);
 
 void AddFields() {
@@ -295,6 +301,42 @@ bool BuildOk(const std::wstring& exe, bool lobby = false) {
     MessageBoxW(g_main, W(problem).c_str(), L"The Witness Co-op", MB_OK | MB_ICONINFORMATION);
     return false;
 }
+// ---- Send diagnostics: the embedded dist/diag.ps1 writes a zip (logs, dumps, settings, a summary of this PC; names and addresses replaced) to the desktop
+std::wstring g_diagOut;                     // --diag-out <folder> (tests): write the zip there, open no Explorer window and show no message box
+HANDLE g_diagProc; std::wstring g_diagResult, g_diagScript;
+std::wstring LogsFolder() {
+    std::string d = LoadCfg().Get("diag_dir");
+    if (d == "instance") return g_dir + L"\\witness-coop-logs";
+    if (!d.empty()) return W(d);
+    return diag::DefaultLogsDir();
+}
+void SendDiagnostics() {
+    if (g_diagProc) { Status(L"Diagnostics are already being packed."); return; }
+    wchar_t tmp[MAX_PATH]; GetTempPathW(MAX_PATH, tmp); std::wstring id = std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64());
+    g_diagScript = std::wstring(tmp) + L"witness-coop-diag-" + id + L".ps1"; g_diagResult = std::wstring(tmp) + L"witness-coop-diag-" + id + L".txt";
+    DeleteFileW(g_diagResult.c_str());
+    if (!WriteFile8(g_diagScript, kDiagScript)) { Status(L"Could not write the diagnostics script to the temporary folder."); return; }
+    wchar_t sys[MAX_PATH]; GetSystemDirectoryW(sys, MAX_PATH);
+    std::wstring cmd = std::wstring(L"\"") + sys + L"\\WindowsPowerShell\\v1.0\\powershell.exe\" -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File \"" + g_diagScript + L"\" -GameDir \"" + g_dir +
+        L"\" -LogsDir \"" + LogsFolder() + L"\" -Version \"" + W(MOD_VERSION) + L"\" -ResultFile \"" + g_diagResult + L"\"" + (g_diagOut.empty() ? L"" : L" -NoOpen -OutDir \"" + g_diagOut + L"\"");
+    STARTUPINFOW si; memset(&si, 0, sizeof si); si.cb = sizeof si; si.dwFlags = STARTF_USESHOWWINDOW; si.wShowWindow = SW_HIDE; PROCESS_INFORMATION pi = {};
+    if (!CreateProcessW(nullptr, &cmd[0], nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) { Status(L"Could not start PowerShell for the diagnostics."); return; }
+    CloseHandle(pi.hThread); g_diagProc = pi.hProcess; Dlog("diagnostics: packing started"); Status(L"Packing diagnostics ...");
+}
+void DiagPoll() {      // the 100 ms timer
+    if (!g_diagProc || WaitForSingleObject(g_diagProc, 0) == WAIT_TIMEOUT) return;
+    CloseHandle(g_diagProc); g_diagProc = nullptr;
+    std::string r = ReadFile8(g_diagResult); while (!r.empty() && (r.back() == '\n' || r.back() == '\r')) r.pop_back();
+    DeleteFileW(g_diagScript.c_str()); DeleteFileW(g_diagResult.c_str());
+    Dlog(("diagnostics: " + (r.empty() ? std::string("no result") : r)).c_str());
+    if (r.compare(0, 3, "OK ") == 0) {
+        std::wstring zip = W(r.substr(3)); Status(L"Diagnostics saved: " + zip);
+        if (g_diagOut.empty()) MessageBoxW(g_main, (L"Saved to your Desktop:\n" + zip + L"\n\nIt holds the logs of your recent game and launcher runs, a crash dump if the game crashed, your settings file, and a summary of this PC "
+            L"(Windows, graphics card, the game's build). Your Windows and computer names, your profile folder, IP addresses and Steam IDs are replaced. No saves and no game files are in it, and nothing was uploaded: "
+            L"attach the file to your bug report.").c_str(), L"Diagnostics", MB_OK | MB_ICONINFORMATION);
+    } else Status(L"Diagnostics failed: " + W(r.size() > 4 ? r.substr(4) : std::string("the packing script did not finish")));
+}
+
 void LaunchGame(bool newGame) {
     std::wstring exe = g_dir + L"\\witness64_d3d11.exe"; if (!Exists(exe)) exe = g_dir + L"\\witness_d3d11.exe";
     if (!Exists(exe)) { Status(L"The game was not found in " + g_dir); return; }
@@ -302,6 +344,7 @@ void LaunchGame(bool newGame) {
     std::wstring ApplyMsg; if (!ApplyAll(&ApplyMsg)) { Status(ApplyMsg); return; }
     PassMonitor();
     std::wstring cmd = L"\"" + exe + L"\" " + W(wl::LaunchArgs(LoadCfg(), newGame));
+    Dlog(("launching the game: " + U(cmd)).c_str());
     STARTUPINFOW si = {sizeof si}; PROCESS_INFORMATION pi = {}; if (g_noActivate) { si.dwFlags = STARTF_USESHOWWINDOW; si.wShowWindow = SW_SHOWNOACTIVATE; }
     if (CreateProcessW(nullptr, &cmd[0], nullptr, nullptr, FALSE, 0, nullptr, g_dir.c_str(), &si, &pi)) { CloseHandle(pi.hThread); CloseHandle(pi.hProcess); Status(L"The game is starting."); } else Status(L"Could not start the game.");
 }
@@ -571,6 +614,7 @@ void PollCommands() {      // tests: one command per line in launcher_cmd.txt, t
         else if (cmd == "mute") { SendMessageW(LB(ID_LB_MUTE), BM_SETCHECK, arg == "1" ? BST_CHECKED : BST_UNCHECKED, 0); g_voice.SetMuted(arg == "1"); }
         else if (cmd == "deaf") { SendMessageW(LB(ID_LB_DEAF), BM_SETCHECK, arg == "1" ? BST_CHECKED : BST_UNCHECKED, 0); g_voice.SetDeaf(arg == "1"); }
         else if (cmd == "voicestart") { g_voiceWanted = true; StartVoice(); } else if (cmd == "voicestop") { g_voiceWanted = false; g_voice.Stop(); }
+        else if (cmd == "diag") SendDiagnostics();
         else if (cmd == "quit") PostMessageW(g_main, WM_CLOSE, 0, 0);
     }
 }
@@ -646,11 +690,12 @@ LRESULT CALLBACK MainProc(HWND h, UINT m, WPARAM w, LPARAM l) {
     case WM_PAINT: { PAINTSTRUCT ps; HDC dc = BeginPaint(h, &ps); RECT rc; GetClientRect(h, &rc); th::PaintHeader(dc, rc, 84, L"Hold F1: quick guide   |   lobby, race, voice, saves"); EndPaint(h, &ps); return 0; }
     case WM_CTLCOLORSTATIC: case WM_CTLCOLOREDIT: case WM_CTLCOLORLISTBOX: case WM_CTLCOLORBTN: return th::CtlColor(m, (HDC)w, (HWND)l);
     case WM_DRAWITEM: { DRAWITEMSTRUCT* d = (DRAWITEMSTRUCT*)l; if (d->CtlID == ID_LB_MEMBERS) DrawMember(d); else if (d->CtlID == ID_LB_LEVEL) DrawLevel(d); return TRUE; }
-    case WM_TIMER: if (w == 1) { PollCommands(); LobbyTick(); WriteStat(); } return 0;
+    case WM_TIMER: if (w == 1) { PollCommands(); LobbyTick(); WriteStat(); DiagPoll(); } return 0;
     case WM_CLOSE: g_voice.Stop(); g_sess.Stop(); DestroyWindow(h); return 0;
     case WM_COMMAND: {
         int id = LOWORD(w);
         if (id == ID_APPLY) { std::wstring msg; ApplyAll(&msg); Status(msg); LoadAll(); }
+        else if (id == ID_DIAG) SendDiagnostics();
         else if (id == ID_LB_HOST) HostLobby();
         else if (id == ID_LB_STEAM_HOST) HostSteamLobby();
         else if (id == ID_LB_STEAM_INVITE) { if (!g_sess.SteamInviteDialog()) LobbyStatus(W(g_sess.SteamStatus())); }
@@ -679,7 +724,7 @@ LRESULT CALLBACK MainProc(HWND h, UINT m, WPARAM w, LPARAM l) {
         else if (id == ID_BROWSE) { BROWSEINFOW bi = {}; bi.hwndOwner = h; bi.lpszTitle = L"The Witness game folder"; PIDLIST_ABSOLUTE p = SHBrowseForFolderW(&bi); if (p) { wchar_t b[MAX_PATH]; if (SHGetPathFromIDListW(p, b)) { g_dir = b; SetDlgItemTextW(g_pages[1], ID_GAMEDIR, b); LoadAll(); } CoTaskMemFree(p); } }
         return 0; }
     case WM_NOTIFY: { NMHDR* n = (NMHDR*)l; if (n->idFrom == ID_TAB && n->code == TCN_SELCHANGE) ShowPage(TabCtrl_GetCurSel(g_tab)); return 0; }
-    case WM_DESTROY: PostQuitMessage(0); return 0;
+    case WM_DESTROY: if (g_logOpen) { g_log.Close(); g_logOpen = false; } PostQuitMessage(0); return 0;
     }
     return DefWindowProcW(h, m, w, l);
 }
@@ -689,17 +734,20 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, LPWSTR cmdline, int show) {
     INITCOMMONCONTROLSEX ic = {sizeof ic, ICC_TAB_CLASSES | ICC_LISTVIEW_CLASSES}; InitCommonControlsEx(&ic); CoInitialize(nullptr);
     int argc; LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc); std::wstring dumpTo; int startPage = 0; bool openNew = false;
     wchar_t self[MAX_PATH]; GetModuleFileNameW(nullptr, self, MAX_PATH); g_dir = Dir(self);
-    for (int i = 1; i < argc; ++i) { std::wstring a = argv[i]; if (a == L"--dir" && i + 1 < argc) g_dir = argv[++i]; else if (a == L"--dump-controls" && i + 1 < argc) dumpTo = argv[++i]; else if (a == L"--no-activate") g_noActivate = true; else if (a == L"--page" && i + 1 < argc) startPage = _wtoi(argv[++i]); else if (a == L"--stat-file" && i + 1 < argc) g_statFile = argv[++i]; else if (a == L"--cmd-file" && i + 1 < argc) g_cmdFile = argv[++i]; else if (a == L"--new-game-window") openNew = true; else if ((a == L"+connect_lobby" || a == L"--connect-lobby") && i + 1 < argc) { steamids::ParseLobby(U(argv[++i]), &g_autoJoin); } }
+    for (int i = 1; i < argc; ++i) { std::wstring a = argv[i]; if (a == L"--dir" && i + 1 < argc) g_dir = argv[++i]; else if (a == L"--dump-controls" && i + 1 < argc) dumpTo = argv[++i]; else if (a == L"--diag-out" && i + 1 < argc) g_diagOut = argv[++i]; else if (a == L"--no-activate") g_noActivate = true; else if (a == L"--page" && i + 1 < argc) startPage = _wtoi(argv[++i]); else if (a == L"--stat-file" && i + 1 < argc) g_statFile = argv[++i]; else if (a == L"--cmd-file" && i + 1 < argc) g_cmdFile = argv[++i]; else if (a == L"--new-game-window") openNew = true; else if ((a == L"+connect_lobby" || a == L"--connect-lobby") && i + 1 < argc) { steamids::ParseLobby(U(argv[++i]), &g_autoJoin); } }
     if (!Exists(g_dir + L"\\witness64_d3d11.exe") && !Exists(g_dir + L"\\witness_d3d11.exe") && Exists(Dir(g_dir) + L"\\witness64_d3d11.exe")) g_dir = Dir(g_dir);
+    { std::wstring ld = LogsFolder(); if (!ld.empty() && g_log.Open(ld, L"launcher_p", (unsigned long long)100 * 1024 * 1024)) {
+        g_logOpen = true; char l[200]; snprintf(l, sizeof l, "session %s: mod %s", g_log.KeyUtf8().c_str(), MOD_VERSION); Dlog(l); Dlog(("launcher started, game folder " + U(g_dir)).c_str());
+        diag::CrashOptions co; co.session = &g_log; co.dataModule = GetModuleHandleW(nullptr); co.log = Dlog; diag::InstallCrashHandler(co); } }
     th::Init(); AddFields();
     WNDCLASSW wc = {}; wc.lpfnWndProc = MainProc; wc.hInstance = hi; wc.lpszClassName = L"WitnessLauncher"; wc.hbrBackground = th::BgBrush(); wc.hCursor = LoadCursorW(nullptr, IDC_ARROW); wc.hIcon = LoadIconW(nullptr, IDI_APPLICATION); RegisterClassW(&wc);
-    g_main = CreateWindowExW(0, L"WitnessLauncher", L"The Witness co-op: launcher", WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_VISIBLE | WS_CLIPCHILDREN, CW_USEDEFAULT, CW_USEDEFAULT, 880, 790, nullptr, nullptr, hi, nullptr);
+    g_main = CreateWindowExW(0, L"WitnessLauncher", (std::wstring(L"The Witness co-op: launcher ") + W(MOD_VERSION)).c_str(), WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_VISIBLE | WS_CLIPCHILDREN, CW_USEDEFAULT, CW_USEDEFAULT, 880, 790, nullptr, nullptr, hi, nullptr);
     RECT rc; GetClientRect(g_main, &rc);
     g_tab = CreateWindowExW(0, WC_TABCONTROLW, L"", WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN, 8, 88, rc.right - 16, rc.bottom - 88 - 64, g_main, (HMENU)ID_TAB, hi, nullptr); SendMessageW(g_tab, WM_SETFONT, (WPARAM)GetStockObject(DEFAULT_GUI_FONT), TRUE);
     BuildPages(g_main);
-    Make(g_main, L"BUTTON", L"Save settings", BS_PUSHBUTTON, 12, rc.bottom - 52, 150, 34, ID_APPLY); g_status = Make(g_main, L"STATIC", L"", SS_LEFT, 176, rc.bottom - 46, rc.right - 190, 24, ID_STATUS); th::MarkMuted(g_status);
+    Make(g_main, L"BUTTON", L"Save settings", BS_PUSHBUTTON, 12, rc.bottom - 52, 150, 34, ID_APPLY); Make(g_main, L"BUTTON", L"Send diagnostics", BS_PUSHBUTTON, 172, rc.bottom - 52, 160, 34, ID_DIAG); g_status = Make(g_main, L"STATIC", L"", SS_LEFT, 346, rc.bottom - 46, rc.right - 360, 24, ID_STATUS); th::MarkMuted(g_status);
     LoadAll(); SetTimer(g_main, 1, 100, nullptr); if (g_autoJoin) { JoinSteamLobby(g_autoJoin); startPage = 0; } if (startPage < 0 || startPage >= g_npages) startPage = 0; TabCtrl_SetCurSel(g_tab, startPage); ShowPage(startPage); if (openNew) OpenNewGame();
-    if (!dumpTo.empty()) { std::string t = std::to_string(ID_STATUS) + " status\n"; for (auto& f : g_fields) t += std::to_string(f.id) + " " + f.key + "\n"; t += std::to_string(ID_APPLY) + " apply\n" + std::to_string(ID_SAVEPICK) + " savepick\n" + std::to_string(ID_LAUNCH) + " launch\n";
+    if (!dumpTo.empty()) { std::string t = std::to_string(ID_STATUS) + " status\n"; for (auto& f : g_fields) t += std::to_string(f.id) + " " + f.key + "\n"; t += std::to_string(ID_APPLY) + " apply\n" + std::to_string(ID_DIAG) + " diag\n" + std::to_string(ID_SAVEPICK) + " savepick\n" + std::to_string(ID_LAUNCH) + " launch\n";
         const std::pair<int, const char*> lb[] = {{ID_LB_HOST, "lobby:host"}, {ID_LB_JOIN, "lobby:join"}, {ID_LB_INVITE, "lobby:invite"}, {ID_LB_COPY, "lobby:copy"}, {ID_LB_LEAVE, "lobby:leave"}, {ID_LB_READY, "lobby:ready"}, {ID_LB_START, "lobby:start"}, {ID_LB_MEMBERS, "lobby:members"}, {ID_LB_LOG, "lobby:log"}, {ID_LB_CHAT, "lobby:chat"}, {ID_LB_SEND, "lobby:send"}, {ID_LB_MODE, "lobby:mode"}, {ID_LB_GOAL, "lobby:goal"}, {ID_LB_NEWGAME, "lobby:newgame"}, {ID_LB_PARTS, "lobby:parts"}, {ID_LB_STATUS, "lobby:status"}, {ID_LB_PORT, "lobby:port"}, {ID_LB_ADVERTISE, "lobby:advertise"}, {ID_LB_MUTE, "lobby:mute"}, {ID_LB_DEAF, "lobby:deaf"}, {ID_LB_RESULT, "lobby:result"}, {ID_LB_STEAM_HOST, "lobby:steamhost"}, {ID_LB_STEAM_INVITE, "lobby:steaminvite"}, {ID_LB_STEAM_FRIENDS, "lobby:steamfriends"}, {ID_LB_STEAM_SEND, "lobby:steamsend"}};
         for (const auto& k : lb) t += std::to_string(k.first) + " " + k.second + "\n";
         WriteFile8(dumpTo, t); }

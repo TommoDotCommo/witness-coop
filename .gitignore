@@ -26,3 +26,4 @@ common/build/
 proxy/frame/build/
 proxy/ghost/build/
 proxy/ui/build/
+proxy/*.map

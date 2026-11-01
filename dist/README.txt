@@ -168,3 +168,13 @@ Attach witness_proxy.log from the game folder (both players' if you can) and say
 the mod version (the name of this zip), and what you were doing.
 
 MIT licensed (LICENSE.txt). The Witness itself is not included.
+
+
+Reporting a problem
+-------------------
+Press F2 in the game the moment something goes wrong: the game saves the last minute and tells the other players' games to do the
+same. Then open witness_launcher.exe and press "Send diagnostics" (it works after a crash too). A zip appears on your desktop. It holds
+the logs of your recent runs, a crash dump if the game crashed, your witness_coop.cfg and a summary of your PC. Your Windows and
+computer names, IP addresses and Steam IDs are replaced; no saves and no game files are in it, and nothing is uploaded. Attach it to
+a bug report at https://github.com/TommoDotCommo/witness-coop/issues/new?template=bug.yml , with your mod version, how you connected
+and where on the island you were. The logs are kept in %LOCALAPPDATA%\witness-coop\logs.
