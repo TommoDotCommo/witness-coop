@@ -199,7 +199,7 @@ def W(*a, **k): return Block(*a, 'wall', **k)
 def open_field(): return Level('open_field', [], (0, 0), (30, 6), ('arrives', 40), 'nothing in the way')
 def wide_wall(): return Level('wide_wall', [W(14, -14, 15, 14)], (0, 0), (30, 0), ('arrives', 120), 'a wall 28 m wide: the way round is long')
 def wall_80(): return Level('wall_80', [W(14, -40, 15, 40)], (0, 0), (30, 0), ('gives up', {'stuck'}, 150), 'KNOWN GAP: a wall 80 m wide is soft for the planner (a wall is a cliff face of soft cells), it pushes through it stuck after stuck; the walk gives up with stuck_class wall', seconds=200)
-def dead_end(): return Level('dead_end', [W(8, -8, 9, 8), W(8, 7, 20, 8), W(8, -8, 20, -7)], (0, 0), (14, 0), ('arrives', 120), 'a U of walls open to the start, the target behind its base')
+def dead_end(): return Level('dead_end', [W(8, -7, 9, 7), W(8, 6, 16, 7), W(8, -7, 16, -6)], (0, 0), (13, 0), ('arrives', 100), 'a U of walls open away from the start, the target inside its base: the way is round the arms')
 def room_far_door(): return Level('room_far_door', [W(10, -10, 30, -9), W(10, 9, 30, 10), W(10, -10, 11, 10), W(29, -10, 30, -3), W(29, 3, 30, 10)], (15, 0), (36, 0), ('arrives', 120), 'in a room whose only way out is the far side: the target is just outside the near wall', locked=False)
 def zigzag():
     return Level('zigzag', [W(8, -12, 9, 6), W(16, -6, 17, 12), W(24, -12, 25, 6)], (0, 0), (32, 0), ('arrives', 150), 'walls with gaps at alternate ends')

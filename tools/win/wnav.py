@@ -653,12 +653,12 @@ class Walker:
             if d < best_d - 0.5: best_d, near_t, stage, ladder, bumps_near = d, prog_t, 0, [], 0
             if prog_t - noted_prog >= 2.0: noted_prog = prog_t; self.tr.emit('progress', dist_left=round(d, 2), reason=reason)
 
-        def bumps(cells_, cls):
-            """Bump cells (centres); progress when that changed the map. Returns how many were new."""
+        def bumps(cells_, cls, forbid=True):
+            """Bump cells (centres); `forbid`: and keep off them for this walk (the cells just ahead; the wall rule's cells are only dear, as before). Returns how many were new."""
             n = 0
             for c_ in cells_:
                 if self.map.bump(*centre(c_)): n += 1
-                self.avoid.add(c_)
+                if forbid: self.avoid.add(c_)
             if n: self.tr.emit('bump', cell=list(next(iter(cells_))), **{'class': cls}, count=n)
             return n
 
@@ -705,7 +705,7 @@ class Walker:
                 if self.last_pts: self.last_class = stuck_class(self.last_pts, q, y)
                 new = bumps(list(dict.fromkeys(ahead)), self.last_class or 'ahead'); self.tried.append('bump')
                 if wall_rule(self.stuck_at[:-1], q, os.environ.get('WNAV_PRESSED')) and self.look(0):      # (what it is pressed against: all of it, not only the cell ahead; from the second stuck near here: at the first stuck in the benchmark it bumped the way of a leg that walks without it)
-                    wall = pressed(self.last_pts, q, y); new += bumps(sorted(wall), 'pressed') if wall else 0
+                    wall = pressed(self.last_pts, q, y); new += bumps(sorted(wall), 'pressed', False) if wall else 0
                     self.pressed_n += len(wall); self.tried.append('wall rule')
                 self.note(stuck=[round(q[0], 2), round(q[1], 2)], again=again, yaw=round(y, 2), z=round(q[2], 2), trig='still'); self.keep_depth('stuck%d' % self.stuck)
                 self.log('stuck %d at %.1f %.1f: bumped, planning again' % (self.stuck, q[0], q[1]))
@@ -724,7 +724,7 @@ class Walker:
                     ladder.append('replan'); self.tried.append('replan'); way, rp = None, 'stall'; self.look_around()
                 elif stage == 1:
                     ladder.append('wall rule'); self.tried.append('wall rule'); y = self.yaw()
-                    if self.look(0): wall = pressed(self.last_pts, q, y); self.pressed_n += len(wall); n_ = bumps(sorted(wall), 'pressed') if wall else 0
+                    if self.look(0): wall = pressed(self.last_pts, q, y); self.pressed_n += len(wall); n_ = bumps(sorted(wall), 'pressed', False) if wall else 0
                     else: n_ = 0
                     way, rp = None, 'stall: wall rule'
                     if n_: progress('bump', dist); continue      # (the map changed: that is progress)
