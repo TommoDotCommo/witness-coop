@@ -88,8 +88,25 @@ void GameStart();
 void StateStart();
 // A crash is logged before the game dies: the faulting address and the return addresses above it, each as module+offset, so a fault in a
 // driver call can be traced to the call in this DLL that made it (map an AnselSDK64.dll offset with objdump or nm on the build).
+// A stack overflow leaves almost no stack for the handler: its trace is written with static buffers and a file opened beforehand
+// (witness_crash_stack.txt): each return address as module+offset, so a recursion between two hooks (the mod's and another's) shows.
+static HANDLE g_overflowFile = INVALID_HANDLE_VALUE; static void* g_overflowFrames[96]; static char g_overflowLine[160]; static char g_overflowName[MAX_PATH];
+static void OverflowTrace() {
+    if (g_overflowFile == INVALID_HANDLE_VALUE) return;
+    DWORD w; USHORT n = RtlCaptureStackBackTrace(0, 96, g_overflowFrames, nullptr);      // the innermost 96 frames
+    for (USHORT i = 0; i < n; ++i) {
+        HMODULE mod = nullptr; g_overflowName[0] = 0; uintptr_t off = (uintptr_t)g_overflowFrames[i];
+        if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCSTR)g_overflowFrames[i], &mod) && mod) { GetModuleFileNameA(mod, g_overflowName, MAX_PATH); off -= (uintptr_t)mod; }
+        const char* b = strrchr(g_overflowName, '\\'); b = b ? b + 1 : g_overflowName;
+        int k = 0; for (const char* c = b; *c && k < 100; ++c) g_overflowLine[k++] = *c; g_overflowLine[k++] = '+'; g_overflowLine[k++] = '0'; g_overflowLine[k++] = 'x';
+        for (int sh = 28; sh >= 0; sh -= 4) g_overflowLine[k++] = "0123456789abcdef"[(off >> sh) & 15]; g_overflowLine[k++] = '\r'; g_overflowLine[k++] = '\n';
+        WriteFile(g_overflowFile, g_overflowLine, (DWORD)k, &w, nullptr);
+    }
+    FlushFileBuffers(g_overflowFile);
+}
 static LONG WINAPI CrashLogger(EXCEPTION_POINTERS* ep) {
     const DWORD code = ep->ExceptionRecord->ExceptionCode;
+    if (code == EXCEPTION_STACK_OVERFLOW) { static volatile LONG once; if (InterlockedExchange(&once, 1) == 0) OverflowTrace(); return EXCEPTION_CONTINUE_SEARCH; }
     if (code != EXCEPTION_ACCESS_VIOLATION && code != EXCEPTION_ILLEGAL_INSTRUCTION && code != EXCEPTION_STACK_OVERFLOW && code != EXCEPTION_INT_DIVIDE_BY_ZERO && code != EXCEPTION_PRIV_INSTRUCTION) return EXCEPTION_CONTINUE_SEARCH;
     {   // a probe like IsBadReadPtr raises and catches its own access violation (vectored handlers see it first): not a crash
         HMODULE mod = nullptr; char name[MAX_PATH] = "";
@@ -137,6 +154,8 @@ static DWORD WINAPI Init(LPVOID) {
     snprintf(msg, sizeof msg, "proxy loaded: pid=%lu host=%s tick=%lu", GetCurrentProcessId(), exe, GetTickCount());
     Log(msg);
     if (HandOffSteamJoin()) TerminateProcess(GetCurrentProcess(), 0);
+    { wchar_t p[MAX_PATH]; GetModuleFileNameW(g_selfModule(), p, MAX_PATH); wchar_t* sl = wcsrchr(p, L'\\'); if (sl) sl[1] = 0; wcscat_s(p, L"witness_crash_stack.txt");
+      g_overflowFile = CreateFileW(p, GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr); }
     AddVectoredExceptionHandler(1, CrashLogger);
     OverlayInstall();
     CoopStart();

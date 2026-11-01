@@ -96,6 +96,10 @@ check('B2. the id is a Steam lobby id (universe 1, chat type) and the invite sho
 check('B3. the mod key and protocol key read back through the Steam API', st.get('mod') == 'witness-coop' and st.get('protocol') == 'lobby2-net1', (st.get('mod'), st.get('protocol')))
 check('B4. the join code is in the lobby data; the lobby has 1 member (the host) and room for 16', st.get('code') == 1 and st.get('members') == 1 and st.get('limit') == 16, st)
 check('B5. the launcher is the lobby host in its own lobby logic', s.get('lobby', {}).get('host') == 1 and s.get('lobby', {}).get('joined') == 1, s.get('lobby'))
+def overlay_in(pid):      # facts, not checks: is Steam's overlay loaded into this process (the invite dialog and Steam's own notices need it)
+    out = subprocess.run(['tasklist', '/M', 'gameoverlayrenderer64.dll', '/FI', 'PID eq %d' % pid], capture_output=True, text=True).stdout
+    return str(pid) in out
+print('     fact: Steam overlay loaded into the launcher: %s' % overlay_in(launcher.pid), flush=True)
 cmd('start')
 s = wait(lambda s: s['game']['running'] == 1 and s['game']['pid'] != 0, 30)
 gpid = s.get('game', {}).get('pid', 0)
@@ -105,13 +109,20 @@ if gpid:
     cfg = open(os.path.join(gdir, 'witness_coop.cfg'), errors='ignore').read()
     check('B7. the game cfg says transport=steam and keeps no UDP peer line', 'transport=steam' in cfg.splitlines() and not any(l.startswith('peer=') for l in cfg.splitlines()), [l for l in cfg.splitlines() if l.startswith(('peer', 'transport'))])
     line = wait_log(r'coop: steam transport down|steam: the game.s Steam connection is up', 90)
+    time.sleep(2); print('     fact: Steam overlay loaded into the game started from the lobby: %s (Steam puts it there when the game\'s Steam API is up and the overlay is on)' % overlay_in(gpid), flush=True)
     check('B8. the mod in the game took the game\'s own Steam connection (it inherited the launcher\'s Steam environment)', line and 'connection is up' in line, line)
-    n0 = len(log_lines()); send_game(['steamstat']); end = time.time() + 15; ss = None
+    n0 = len(log_lines()); send_game(['steamstat']); end = time.time() + 90; ss = None      # (the game takes the command once its loading lets the command thread run)
     while time.time() < end and not ss:
         for l in log_lines()[n0:]:
             if 'steamstat: transport steam' in l: ss = l
         time.sleep(0.5)
     check('B9. steamstat: transport steam up 1 app 210970, this player\'s SteamID known', ss and 'up 1' in ss and 'app 210970' in ss and 'self_set 1' in ss, ss)
+    def alive(pid): return str(pid) in subprocess.run(['tasklist', '/FI', 'PID eq %d' % pid], capture_output=True, text=True).stdout
+    t_alive = time.time()
+    while time.time() - t_alive < 60 and alive(gpid): time.sleep(1)
+    check('B9b. the game started from the Steam lobby (Steam puts its overlay in it) is still running a minute later (its Present hook and the overlay\'s looped into a stack overflow before)', alive(gpid), 'alive %.0f s' % (time.time() - t_alive))
+    ov = [l for l in log_lines() if l.startswith('overlay: ') and ('Present' in l or 'vtable in' in l)]
+    print('     ' + ' | '.join(ov[:5]), flush=True)
     check('B10. alone in the lobby the game says so and sends nothing over UDP', any('alone in a Steam lobby' in l for l in log_lines()) and not any('listening' in l for l in log_lines()), [l for l in log_lines() if l.startswith('coop:') or 'coop:' in l][-3:])
     kill(gpid)
     s = wait(lambda s: s['game']['running'] == 0, 30)

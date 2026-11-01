@@ -16,3 +16,10 @@ build/%.o: %.cpp Makefile
 clean:
 	rm -rf build $(OUT)
 .PHONY: clean
+
+# a mutant for tools/qa.sh steam: the loop with the Steam overlay's Present hook is not broken (the game must be seen to crash)
+build/overlay_PRESENT_LOOP.o: overlay.cpp Makefile
+	@mkdir -p build
+	$(CXX) $(CXXFLAGS) -DWP_MUT_PRESENT_LOOP -c -o $@ $<
+build/AnselSDK64_PRESENT_LOOP.dll: $(filter-out build/overlay.o,$(OBJ)) build/overlay_PRESENT_LOOP.o ansel_proxy.def
+	$(CXX) -shared -static-libgcc -static-libstdc++ -o $@ $^ $(LIBS)
