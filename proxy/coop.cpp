@@ -219,7 +219,7 @@ static DWORD WINAPI NetThread(LPVOID) {
             nextWatch = now + 5000;
             for (const auto& kv : table.peers()) {
                 int st = wsteam::State(kv.second.steam); int& was = lastState[kv.first];
-                bool bad = st == steamabi::kConnClosedByPeer || st == steamabi::kConnProblemLocally || (st == steamabi::kConnNone && was == steamabi::kConnConnected);
+                bool bad = wpeers::SessionLost(was, st);
                 if (bad) { std::string who = "player " + std::to_string(kv.first); for (const auto& r : core->remotePoses(now)) if (r.id == kv.first && !r.name.empty()) who = r.name;
                            Msg("Co-op over Steam: no connection to %s (Steam says %s). Steam keeps trying; check that both of you are online.", who.c_str(), wsteam::StateName(st)); }
                 if (st != was) { snprintf(m, sizeof m, "coop: steam session with %u: %s -> %s", kv.first, wsteam::StateName(was), wsteam::StateName(st)); Log(m); }

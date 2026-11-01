@@ -124,5 +124,8 @@ int main() {
     { wpeers::PeerTable t; t.Add(2, wpeers::Udp(0x0200000a, 47002), 1); witness::Bytes b(24, 0); b[4] = 2;
       check("udp: a member's datagram from its own address is taken, from another port it is not", t.Accept(wpeers::Udp(0x0200000a, 47002), b.data(), b.size(), {}) && !t.Accept(wpeers::Udp(0x0200000a, 47009), b.data(), b.size(), {}));
       wpeers::PeerTable one; check("udp: the old two-player form takes only its one peer", one.Accept(wpeers::Udp(1, 2), b.data(), b.size(), wpeers::Udp(1, 2)) && !one.Accept(wpeers::Udp(1, 3), b.data(), b.size(), wpeers::Udp(1, 2))); }
+    // a Steam session that fails mid-game is said in the game (connected -> closed by peer, problem locally, or gone); a session still being set up is not
+    check("steam: a lost session is said (closed by peer, a local problem, or gone after it worked)", wpeers::SessionLost(3, 4) && wpeers::SessionLost(3, 5) && wpeers::SessionLost(3, 0) && wpeers::SessionLost(1, 5));
+    check("steam: connecting, finding a route and connected are not alarms", !wpeers::SessionLost(0, 1) && !wpeers::SessionLost(1, 2) && !wpeers::SessionLost(2, 3) && !wpeers::SessionLost(3, 3) && !wpeers::SessionLost(0, 0));
     printf("%d checks, %d failed\n", checks, fails); return fails ? 1 : 0;
 }

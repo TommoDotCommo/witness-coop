@@ -149,6 +149,10 @@ int main() {
       check("steam cfg: each game names the others by SteamID (peer=<id>,steam:<steamid64>), not itself, and no UDP line is left", pa.size() == 2 && has(pa, "1,steam:" + steamids::Text(Net::Sid(0))) && has(pa, std::to_string(net.n[b]->myId()) + ",steam:" + steamids::Text(Net::Sid(2)))
             && ph.size() == 2 && has(ph, std::to_string(net.n[a]->myId()) + ",steam:" + steamids::Text(Net::Sid(1))) && cfgA.find("10.0.0.9") == std::string::npos && ca2.Get("transport", "") == "steam");
       Net u; u.add(true, "H", "T"); unsigned ua = u.add(false, "A", "T"); u.advance(3000); check("udp: a member's SteamID is 0 and its cfg keeps the UDP form", u.n[ua]->joined() && u.n[0]->state().members[1].steamId == 0);
+      Net g(10, 80, true); for (unsigned i = 0; i < 16; ++i) g.gate.members.insert(Net::Sid(i)); g.add(true, "H", "T"); for (unsigned i = 1; i < 16; ++i) g.add(false, "P" + std::to_string(i), "T"); g.advance(8000);
+      for (unsigned i = 1; i < 16; ++i) g.n[i]->SetReady(true); g.advance(3000); bool gs = g.n[0]->Start(g.now); Launch gl; bool got = false; for (int step = 0; step < 600 && !got; ++step) { g.advance(10); got = g.n[7]->TakeLaunch(g.now, &gl); }
+      wl::CfgFile gc = wl::CfgFile::Parse(BuildGameCfg("", gl, 0)); auto gp = gc.GetAll("peer"); bool allSteam = gp.size() == 15; for (auto& x : gp) allSteam = allSteam && x.find(",steam:") != std::string::npos;
+      check("steam group: 16 players in one Steam lobby, each game's cfg names the 15 others by SteamID", g.n[0]->state().members.size() == 16 && gs && got && allSteam);
       Launch solo; solo.myId = 1; Member m; m.id = 1; m.host = true; m.playing = true; m.steamId = Net::Sid(0); solo.state.members.push_back(m);
       wl::CfgFile cs = wl::CfgFile::Parse(BuildGameCfg("peer=47002\ntransport=udp\n", solo, 0));
       check("steam cfg: alone in a Steam lobby the game still uses Steam (transport=steam), and the old peer=<port> line is gone", cs.Get("transport", "") == "steam" && cs.GetAll("peer").empty()); }

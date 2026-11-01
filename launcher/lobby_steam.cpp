@@ -108,7 +108,10 @@ void SteamLobby::RefreshMembers() {
     int n = Call<int>(mm_, MM_MEMBERS, lobby_); std::vector<uint64_t> now;
     for (int i = 0; i < n && i < 64; ++i) { uint64_t m = 0; Call<uint64_t*>(mm_, MM_MEMBER, &m, lobby_, i); if (m) now.push_back(m); }
     for (uint64_t old : members_) { bool still = false; for (uint64_t m : now) still = still || m == old; if (!still && old != self_) { Identity i = IdentityOf(old); Call<bool>(msgs_, NM_CLOSE, (const Identity*)&i); } }
+    std::vector<uint64_t> fresh; for (uint64_t m : now) { bool known = false; for (uint64_t o : members_) known = known || o == m; if (!known && m != self_) fresh.push_back(m); }
     members_ = now;
+    static const uint8_t kHello[4] = {'W', 'T', 'S', '0'};      // a first message to every new member: a session we started is accepted without waiting for Steam's session request (the lobby ignores it)
+    for (uint64_t m : fresh) Send(m, kHello, sizeof kHello);
 }
 
 void SteamLobby::OnCallback(int id, void* data) {

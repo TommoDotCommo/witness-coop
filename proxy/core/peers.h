@@ -24,6 +24,14 @@ struct Endpoint {
 inline Endpoint Udp(uint32_t ip, uint16_t port) { Endpoint e; e.ip = ip; e.port = port; return e; }
 inline Endpoint Steam(uint64_t id) { Endpoint e; e.steam = id; return e; }
 
+// A Steam session with a player is worth telling the player about when Steam gave up on it or it ended after it had worked
+// (states as in ESteamNetworkingConnectionState: 0 none, 1 connecting, 2 finding route, 3 connected, 4 closed by peer, 5 problem locally).
+inline bool SessionLost(int was, int now) {
+#ifdef WP_MUT_SILENT_LOSS
+    return false;      // mutant: a lost session is never said
+#endif
+    return now == 4 || now == 5 || (now == 0 && was == 3);
+}
 class PeerTable {
 public:
     // Reads one cfg line. Returns true when it was a group peer line (good or bad: bad ones set error()). `resolve` turns "a.b.c.d" into in_addr.s_addr (0xffffffff: bad).

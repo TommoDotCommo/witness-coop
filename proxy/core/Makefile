@@ -128,7 +128,7 @@ test: line-capture-test
 .PHONY: line-capture-test
 
 # the roster's receive filter over a fake Steam link: two mutants that must fail (tests/peers.cpp)
-PEER_MUTANTS = STEAM_ANY_SENDER STEAM_ANY_MEMBER
+PEER_MUTANTS = STEAM_ANY_SENDER STEAM_ANY_MEMBER SILENT_LOSS
 $(BUILD)/peers-mutant-%: tests/peers.cpp peers.h ../../common/steam_ids.h $(BUILD)/sync_core.o
 	@mkdir -p $(BUILD)
 	g++ $(CXXF) -Wno-unused-parameter -DWP_MUT_$* -o $@ tests/peers.cpp $(BUILD)/sync_core.o
