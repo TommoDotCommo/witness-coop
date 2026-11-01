@@ -48,9 +48,10 @@ build_set() {   # <dir> <what: all|one|thin> <flags...>
     [ "$what" = one ] || "$here/tools/build_setup.sh" "$d/thin.exe" "$ver" "" "$@"
 }
 build_set "$exes" all
-cp "$exes/one.exe" "$fixtures/one-from-build.exe"
+mkdir -p "$fixtures/gui"; cp "$rel/$name-single/Witness-Coop-Setup.exe" "$fixtures/gui/one.exe"
 cmp -s "$exes/one.exe" "$rel/$name-single/Witness-Coop-Setup.exe" && echo "(the test build equals the release build)" || true
 ps "$here/tools/test_setup_exe.ps1" -Exes "$(wslpath -w "$exes")" -TestRoot "$(wslpath -w "$fixtures")" -Scenario all -PackageDir "$(wslpath -w "$fixtures/package")"
+[ -z "${QA_GUI:-}" ] || ps "$here/tools/test_setup_exe.ps1" -Exes "$(wslpath -w "$fixtures/gui")" -TestRoot "$(wslpath -w "$fixtures")" -Scenario gui    # opens the real setup window for a moment: QA_GUI=1
 mutant() {  # <label> <scenario> <what> <flag>
     local d="$fixtures/exes-$1"; build_set "$d" "$3" "$4"
     if ps "$here/tools/test_setup_exe.ps1" -Exes "$(wslpath -w "$d")" -TestRoot "$(wslpath -w "$fixtures")" -Scenario "$2" >/dev/null 2>&1; then

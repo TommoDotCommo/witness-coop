@@ -86,4 +86,24 @@ if ($Scenario -in 'all', 'zip') {
     $r = Run-Setup (Join-Path $plain 'Witness-Coop-Setup.exe') (Join-Path $root 'lad-none') '' @{ WITNESS_SETUP_MARKER = $marker }
     Check ($r.code -eq 0 -and (Test-Path $marker)) 'unpacked zip: the thin Setup runs the script beside it'
 }
+if ($Scenario -eq 'gui') {
+    # End to end with the REAL window (needs a desktop; not part of 'all'): the one-file setup starts, its window appears, closing the window ends the setup
+    # and removes the unpacked folder. Only the processes this test started are touched.
+    $exe = Pick 'one.exe'; $lad = Fresh 'lad-gui'
+    $env:LOCALAPPDATA = $lad
+    $setup = Start-Process -FilePath $exe -PassThru -WindowStyle Hidden
+    $title = $false; $window = $null
+    for ($i = 0; $i -lt 80 -and -not $title; $i++) {
+        Start-Sleep -Milliseconds 500
+        foreach ($c in @(Get-CimInstance Win32_Process -Filter "ParentProcessId = $($setup.Id)")) {
+            $q = Get-Process -Id $c.ProcessId -ErrorAction SilentlyContinue
+            if ($q -and $q.MainWindowTitle -eq 'The Witness Co-op Setup') { $title = $true; $window = $q }
+        }
+    }
+    Check $title 'the setup window opened from the one-file setup'
+    Check (Test-Path (Join-Path $lad 'witness-coop\setup\v0.0.0-test\installer-gui.ps1')) 'while it is open, the scripts are in the per-version folder'
+    [void]$window.CloseMainWindow()
+    Check ($setup.WaitForExit(20000)) 'closing the window ends the setup'
+    Check (-not (Test-Path (Join-Path $lad 'witness-coop\setup\v0.0.0-test'))) 'the unpacked folder is gone afterwards'
+}
 Write-Output "PASS: $script:checks setup-exe checks ($Scenario)"

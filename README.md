@@ -149,7 +149,7 @@ what it needs and what to do:
 How the runtime check works: `common/buildid.h` reads the exe's PE header and hashes its code section **in memory** (no file I/O inside `DllMain`); anything
 but the known build leaves `proxy/ansel_proxy.cpp` with no hook and no thread of ours touching the game. `tools/test_build_gate.sh` tests the real `DllMain`
 with a host program that is not the known build (and a mutant that ignores the check must fail); `make -C common test` tests the check on synthetic exes, truncated
-files and the real exe; `tools/buildid_of.py <exe> --check` verifies the constants against a game exe when the target build changes.
+files and the real exe; `tools/unknown_build_slot.sh` (one game slot) starts a slot copy whose exe has one code byte changed and requires: the game keeps running, exactly one message box, nothing hooked or started (and a proxy that ignores the check must hook it); `tools/buildid_of.py <exe> --check` verifies the constants against a game exe when the target build changes.
 
 ### Making a release
 
