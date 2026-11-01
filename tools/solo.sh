@@ -3,10 +3,13 @@
 # must not crash. Leases one slot, installs the current proxy into it, starts the game with a cfg that has no id/listen/peer,
 # and requires the world scan in the proxy log and the process still alive 30 s later.
 #   tools/solo.sh            the check (exit 0 = alive)
+#   tools/solo.sh --via-setup <Witness-Coop-Setup.exe>   the same check on a copy installed by the one-file setup (it is unpacked with --extract-only, then its own
+#                            witness-coop.ps1 installs into the slot copy: the files the setup carries are what runs) instead of tools/install.sh
 #   tools/solo.sh --mutant   late_voice_lock=1 (the lock as before 2026-10-31): the game must die, otherwise the check tests nothing
 # Voice stays at its default (push to talk): the mic indicator is what took the lock. The owner's saves are never touched (save_dir=instance). Needs the resource provider (local/env.sh), as qa.sh does.
 set -u
-mutant=0; [ "${1:-}" = --mutant ] && mutant=1
+mutant=0; via=""
+while [ $# -gt 0 ]; do case "$1" in --mutant) mutant=1;; --via-setup) via="${2:?give the Setup.exe}"; shift;; *) echo "usage: solo.sh [--mutant] [--via-setup Setup.exe]" >&2; exit 2;; esac; shift; done
 WITNESS_ALLOCATING=1 . "$(dirname "$0")/config.sh" || exit $?
 if [ -x "$WITNESS_RESOURCES" ] && [ -z "${WITNESS_SLOTS:-}" ]; then
   "$WITNESS_RESOURCES" acquire --slots 1 --ttl 1200 --wait "${QA_WAIT:-0}" || { echo "no game slot free (resource provider status); not waiting"; exit 3; }
@@ -18,8 +21,18 @@ elif [ -x "$WITNESS_RESOURCES" ]; then
   trap '"$WITNESS_RESOURCES" release' EXIT
   "$WITNESS_RESOURCES" provision witness || exit 1
 fi
-"$TOOLS/install.sh" A >/dev/null || exit 1
 d="$WITNESS_DIR1"
+if [ -n "$via" ]; then
+  # the one-file setup unpacks itself; the backend it carries installs into this slot's copy (never a real install)
+  lad="$RUN/setup-localappdata"; rm -rf "$lad"; mkdir -p "$lad"; msg="$RUN/setup-message.txt"; rm -f "$msg"
+  export WSLENV="LOCALAPPDATA:WITNESS_SETUP_MESSAGE_FILE${WSLENV:+:$WSLENV}"
+  LOCALAPPDATA="$(win "$lad")" WITNESS_SETUP_MESSAGE_FILE="$(win "$msg")" "$via" --extract-only || { echo "solo: the setup did not unpack"; exit 1; }
+  unpacked="$(sed -n 's/^extracted: //p' "$msg" | tr -d '\r')"
+  powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$unpacked\\witness-coop.ps1" -GameDir "$(win "$d")" -Yes | tr -d '\r' | tail -4 || exit 1
+  [ -f "$d/AnselSDK64_real.dll" ] && [ -f "$d/AnselSDK64.dll.coop-receipt.json" ] || { echo "solo: the setup did not install into $d"; exit 1; }
+else
+  "$TOOLS/install.sh" A >/dev/null || exit 1
+fi
 printf 'save_dir=instance\nshare_zip=1\nforce_active=1\ncap_fps=%s\n%s' "${WITNESS_FPS:-30}" "$([ $mutant = 1 ] && echo 'late_voice_lock=1')" > "$d/witness_coop.cfg"
 rm -f "$d/witness_proxy.log"
 pid=$(timeout 30 "$PYW" -I "$(win "$TOOLS/win/launch.py")" "$(win "$d")" -skip_config_dialog -windowed -new_game | tail -1 | tr -d '\r')

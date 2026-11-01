@@ -3,7 +3,7 @@
 Co-op for The Witness (Steam app 210970, build 11370412). **Dev preview, not playable with friends yet.** Two copies of the
 game on one PC can see each other as puppets, and when one player solves a panel the other game marks it solved and opens the
 door it gates. The first two tutorial door puzzles and a panel-to-panel power-on chain have automated bots; power-off switches, lasers, plates
-and bridges are not synced, and there is no installer or release.
+and bridges are not synced. Installing is a single file, `Witness-Coop-Setup.exe` from Releases (see Install below).
 Built with the [Co-op Anything](https://github.com/cranebeaker/coop-anything) playbook; research notes live in
 `games/the-witness/NOTES.md` there.
 
@@ -86,13 +86,22 @@ passes the work area of its monitor in `WITNESS_MONITOR`, and the mod places the
 
 ## Install and play with a friend
 
-Players do not build anything: [Releases](https://github.com/TommoDotCommo/witness-coop/releases) has a zip with
-`Witness-Coop-Setup.exe`. It finds The Witness in the Steam libraries (or takes a folder), checks that the exe is the supported
-build (SHA-256 above; any other build is refused and nothing is changed), renames the game's `AnselSDK64.dll` to
+Players do not build anything: [Releases](https://github.com/TommoDotCommo/witness-coop/releases) has **one file**,
+`Witness-Coop-Setup.exe`, that carries everything (and, for manual installs and Linux, a zip with the same files).
+Setup finds The Witness in the Steam libraries (or takes a folder), checks that the exe is the supported build (SHA-256 above;
+any other build is refused with a plain explanation and nothing is changed), renames the game's `AnselSDK64.dll` to
 `AnselSDK64_real.dll`, puts the proxy in its place, and adds `witness_launcher.exe` and `witness_models\`. Every file it writes
 gets a `.coop-receipt.json` beside it, so Uninstall restores the game's own files and never removes a file it did not install;
-`witness_coop.cfg`, the log and the saves stay. Setup is a windowless stub that runs the PowerShell in `dist/`
-(`installer-gui.ps1`, `witness-coop.ps1`, `install-state.ps1`; the pure decisions are `dist/install-policy.h`).
+`witness_coop.cfg`, the log and the saves stay.
+
+The one-file Setup checks its embedded payload against a SHA-256 compiled into it, unpacks it into a fresh
+`%LOCALAPPDATA%\witness-coop\setup\<version>\` (created exclusively: an existing folder is never reused, a link anywhere on the way is
+refused), runs the PowerShell in `dist/` (`installer-gui.ps1`, `witness-coop.ps1`, `install-state.ps1`; the pure decisions are
+`dist/install-policy.h`) from there and removes the folder when the window closes. `Setup.exe` inside the zip is the thin version of the same
+program: it runs the scripts beside it, and when they are missing (it was started from inside the zip) it says so and points to the one-file download.
+PowerShell is started with `-ExecutionPolicy Bypass` for that one process, because Windows' default policy refuses every unsigned script;
+the scripts are readable, and signing the exe and dll files (below) is what makes the download trustworthy to Windows.
+
 Then both players start the game from the launcher (Lobby tab). The player's own copy of the instructions is `dist/README.txt`.
 
 ### Play over the internet (Steam, no port forwarding)
@@ -108,12 +117,63 @@ messages a player sees when something is wrong, and the two-account test: [docs/
 **Direct (LAN / manual)**: "Host direct (LAN)" gives the invite `address:port/CODE`; the host's lobby port is UDP 47100 and the
 games use 47001 and 47002, so over the internet every player would need reachable ports. Use it on a LAN.
 
-Making a release: `tools/release.sh v0.x.y` builds `local/release/witness-coop-v0.x.y.zip` and its `.sha256`
-(proxy, launcher, model, setup, scripts, `README.txt` with the version, `LICENSE.txt`); `tools/check_release_package.py <zip>`
-checks the inventory, the checksum and that the zip holds the proxy; `tools/qa_installer.sh <folder of the supported build>`
-builds a test package and runs `tools/test_installer.ps1` on disposable fixtures on the Windows side (install, update, repair,
-a modified file refused, uninstall restoring the original, another build refused, unowned files kept, the setup window's
-geometry and actions). Publishing is `gh release create v0.x.y --prerelease local/release/witness-coop-v0.x.y.zip*`
+### Manual install (no Setup)
+
+Close the game; open its folder (Steam: Properties > Installed Files > Browse, the folder with `witness64_d3d11.exe`).
+
+1. Rename the game's `AnselSDK64.dll` to `AnselSDK64_real.dll` (SHA-256 `3b0677ae1e01fc17645c903c8322497785768145abbe3758364299fdaa8aff15`; keep it).
+2. From the zip copy `AnselSDK64.dll` (the proxy: it loads `AnselSDK64_real.dll` by name), `witness_launcher.exe` and the folder `witness_models\`
+   into the game folder.
+3. Start `witness_launcher.exe` there.
+
+Uninstall by hand: delete the proxy `AnselSDK64.dll`, rename `AnselSDK64_real.dll` back to `AnselSDK64.dll`, delete `witness_launcher.exe` and
+`witness_models\` (`witness_coop.cfg` and `witness_proxy.log` may stay). Steam's *Verify integrity of game files* restores the game's own file if it was lost.
+A later Setup can adopt a hand install: it backs up what it replaces.
+
+### Steam Deck and Linux (Proton): untested
+
+Not run on a real Steam Deck or Linux PC yet (tracked in Known issues). What is expected, from how Wine and Proton load DLLs:
+
+- `install-linux.sh` in the zip is the manual install as a POSIX script with backups and the same receipts as the Windows Setup (either can uninstall
+  the other's install): `sh install-linux.sh install|uninstall|status [game folder]`. It finds the game in the usual Steam folders
+  (`~/.local/share/Steam`, `~/.steam/steam`, the Flatpak Steam, other libraries from `libraryfolders.vdf`), refuses any other build in plain words, refuses
+  symbolic links in the way, and changes nothing but the game folder. `tools/test_install_linux.sh` tests it on fixture folders (in WSL) with mutants.
+- The game loads `AnselSDK64.dll` from its own folder. Wine has no built-in `AnselSDK64`, so a native one beside the exe should load without any
+  `WINEDLLOVERRIDES` entry. Expected, untested.
+- The launcher is a Windows program and must run in the game's Proton prefix: add `witness_launcher.exe` as a **non-Steam game**, Start In = the game folder,
+  Compatibility = the same Proton version as The Witness, Launch Options = `STEAM_COMPAT_DATA_PATH="<library>/steamapps/compatdata/210970" %command%`. Its lobby then
+  starts the game inside that prefix. (Decision: the launcher is the entry point for co-op, as the desktop shortcut is on Windows. Starting the game from Steam as
+  usual loads the mod alone.)
+- Unknown: overlay and model drawing under DXVK, voice (microphone) under Proton, window placement on the Deck's screen. Reports welcome.
+
+### FAQ: not the supported build
+
+*Setup says my copy of The Witness is not the supported build, or the game says "Co-op is off" when it starts.*
+
+The mod's addresses fit one build of the game only (Steam build 11370412, `witness64_d3d11.exe` SHA-256 `8d672d44...`). Setup (and the launcher) says what it found,
+what it needs and what to do:
+
+- **Steam:** right-click The Witness > Properties > Betas > choose *None*, then Properties > Installed Files > *Verify integrity of game files*. Run Setup again.
+- **Other stores (GOG, Epic, ...):** not supported yet.
+- **Steam already shows the newest version:** the game was updated after the mod. Nothing is broken: the mod notices the unknown exe when the game starts, patches nothing,
+  forwards to the game's own Ansel DLL, and shows one message. Co-op returns with a mod update.
+
+How the runtime check works: `common/buildid.h` reads the exe's PE header and hashes its code section **in memory** (no file I/O inside `DllMain`); anything
+but the known build leaves `proxy/ansel_proxy.cpp` with no hook and no thread of ours touching the game. `tools/test_build_gate.sh` tests the real `DllMain`
+with a host program that is not the known build (and a mutant that ignores the check must fail); `make -C common test` tests the check on synthetic exes, truncated
+files and the real exe; `tools/unknown_build_slot.sh` (one game slot) starts a slot copy whose exe has one code byte changed and requires: the game keeps running, exactly one message box, nothing hooked or started (and a proxy that ignores the check must hook it); `tools/buildid_of.py <exe> --check` verifies the constants against a game exe when the target build changes.
+
+### Making a release
+
+`tools/release.sh v0.x.y` builds, in `local/release/`: `witness-coop-v0.x.y.zip` (+ `.sha256`; proxy, launcher, model, thin Setup, scripts, `install-linux.sh`,
+`README.txt` with the version, `LICENSE.txt`) and `witness-coop-v0.x.y-single/Witness-Coop-Setup.exe` (+ `.sha256`), the main download.
+`tools/check_release_package.py <zip> --single <exe>` checks the inventory, the checksum, that the zip holds the proxy, and that the one-file setup carries the same
+bytes as the zip under its own compiled-in checksum. **Signing:** set `SIGN_CMD` (and optionally `SIGN_VERIFY_CMD`) and every `.exe` and `.dll` is signed before it is hashed and
+embedded, the one-file setup last, then verified; without it the build is unsigned and says so. See [docs/SIGNING.md](docs/SIGNING.md) (certificate, `SIGN_CMD` examples,
+Microsoft's false-positive submission). `tools/qa_installer.sh <folder of the supported build>` runs everything game-free: the release build, the PowerShell installer suite on disposable
+fixtures (install, update, repair, refusals in plain words, uninstall), the one-file setup (hash, planted links, exclusive folder, zip location, a real run), `install-linux.sh`, and the
+mutants (an unknown exe installing, an unchecked payload hash, a followed link, a reused folder, a missing zip message, an Ansel DLL overwritten without a backup, an uninstall removing an
+unowned file) that must fail. `tools/test_release_signing.sh` tests the signing hook with a stand-in signer. Publishing is `gh release create v0.x.y --prerelease <the Setup.exe, the zip and their .sha256>`
 (the notes go in `docs/RELEASE-NOTES-v0.x.y.md`).
 
 ## Try it (two copies on one PC)
@@ -407,6 +467,17 @@ Not covered by the suite: a real network, more than two players, puzzles beyond 
 
 The probes in `tools/win/` (`wread.py`, `wsnap.py` + `wdiff.py` for before/after memory diffs, `wnames.py`, `wstatedump.py`, `wfps.py`) are
 read-only; `wkeys.py`, `wshot.py`, `wplace.py`, `wfocus.py` and `launch.py` drive the windows.
+
+## Known issues
+
+- **Steam Deck / Linux (Proton) is untested.** The install script, the DLL loading without an override and the launcher as a non-Steam game are expected to work and have not
+  been run on a real Deck or Linux PC. The script itself is tested on fixture folders. Overlay under DXVK, voice under Proton and window placement are unknown.
+- **Only Steam build 11370412 is supported.** A Steam update, a beta branch or another store's copy turns co-op off with one message (see the FAQ above). Supporting a new
+  build means re-deriving the offsets and re-running the checks.
+- **The first releases may be unsigned.** Windows SmartScreen and some antivirus programs warn about unsigned programs and about PowerShell started by one. `docs/SIGNING.md`
+  is the plan; the build is ready for a certificate.
+- The setup window's elevation step (only when the game folder is protected) runs `witness-coop.ps1` from the unpacked folder with administrator rights; a program already
+  running as the same user could replace that script in the moment between unpacking and the Windows permission prompt. A fully native setup would remove this.
 
 ## License
 

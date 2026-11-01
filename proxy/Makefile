@@ -12,6 +12,12 @@ $(OUT): $(OBJ) ansel_proxy.def
 build/%.o: %.cpp Makefile
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
+# Test build for tools/unknown_build_slot.sh: the same proxy with the build check ignored (a mutant that must be caught). Only ansel_proxy.cpp differs.
+build/ansel_proxy_mut_gate.o: ansel_proxy.cpp Makefile
+	@mkdir -p build
+	$(CXX) $(CXXFLAGS) -DCOOP_MUT_ALWAYS_KNOWN -c -o $@ $<
+AnselSDK64_mut_gate.dll: $(filter-out build/ansel_proxy.o,$(OBJ)) build/ansel_proxy_mut_gate.o ansel_proxy.def
+	$(CXX) -shared -static-libgcc -static-libstdc++ -o $@ $(filter-out build/ansel_proxy.o,$(OBJ)) build/ansel_proxy_mut_gate.o ansel_proxy.def $(LIBS)
 -include $(OBJ:.o=.d)
 clean:
 	rm -rf build $(OUT)

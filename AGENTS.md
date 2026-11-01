@@ -31,6 +31,9 @@ prepare a reviewable diff before asking to publish. Never force-push.
   ownership journal `install-state.ps1` with the pure decisions in `install-policy.h`), and the player's `README.txt`.
   `tools/release.sh <version>` builds the zip, `tools/check_release_package.py` checks it, `tools/qa_installer.sh <game folder>`
   runs `tools/test_installer.ps1` on disposable Windows fixtures. Release notes: `docs/RELEASE-NOTES-<version>.md`.
+- One-file setup, build check, signing: `dist/installer.c` + `dist/setup-core.h` (the payload container, its hash and names; `tools/test_setup_core.sh`), `tools/pack_payload.py`, `tools/build_setup.sh`,
+  `tools/release.sh` (`SIGN_CMD`, see `docs/SIGNING.md`), `dist/install-linux.sh` (`tools/test_install_linux.sh`), `common/buildid.h` (the exe fingerprint the proxy and launcher check; `tools/buildid_of.py`
+  derives its constants for a new game build), `tools/test_build_gate.sh` (the real `DllMain` with a host that is not the known build), `tools/unknown_build_slot.sh` (one slot), `tools/qa_installer.sh` (everything game-free).
 - `local/`: ignored private configuration, disposable test copies, release zips (`local/release/`) and QA evidence.
 
 ## Build and validation

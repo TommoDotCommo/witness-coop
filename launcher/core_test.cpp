@@ -1,5 +1,6 @@
 // Game-free (T0) test of the launcher's logic.
 #include "core.h"
+#include "../common/buildid_fixture.h"
 #include <cstdio>
 #include <cstring>
 #include <windows.h>
@@ -17,6 +18,16 @@ static std::vector<uint8_t> FakeSave() {      // the layout of the real save: na
 static float Val(const std::vector<uint8_t>& b, const char* n) { for (const auto& o : ReadSaveOptions(b)) if (o.name == n) return o.value; return -999; }
 
 int main() {
+    {   // the build check: a synthetic exe stands in for the game
+        Fixture ok = Make(0x5c48cf09, 0x1100, 1), newer = Make(0x5c48cf0a, 0x1100, 1);
+        check("build: the supported build gives no problem", GameBuildProblem(ok.file, ok.spec).empty());
+        std::string p = GameBuildProblem(newer.file, ok.spec);
+        check("build: another build is a problem that says what it needs and what to do", p.find("Steam build 11370412") != std::string::npos && p.find("Verify integrity") != std::string::npos && p.find("Found: exe built 5c48cf0a") != std::string::npos && p.find("#faq-not-the-supported-build") != std::string::npos);
+        check("build: an empty (missing) file is a problem", !GameBuildProblem({}, ok.spec).empty());
+        std::vector<uint8_t> cut(ok.file.begin(), ok.file.begin() + 0x300); check("build: a cut-off exe is a problem", !GameBuildProblem(cut, ok.spec).empty());
+        Fixture patched = ok; patched.file[0x200 + 9] ^= 4; check("build: same header, other code is a problem", !GameBuildProblem(patched.file, ok.spec).empty());
+        check("build: a file that does not exist is a problem", !GameBuildProblemOfFile(L"does-not-exist.exe").empty());
+    }
     // cfg
     CfgFile c = CfgFile::Parse("# my settings\nid=1\nname=Tom\npeer=2,10.0.0.5,47002\n\npeer=3,10.0.0.6,47003\nweird line\nmodel=fox\n");
     check("cfg: values are read", c.Get("name") == "Tom" && c.Get("id") == "1" && c.Get("nothing", "dflt") == "dflt" && c.Has("model") && !c.Has("mode"));

@@ -167,6 +167,65 @@ function Get-WitnessBuildState($game) {
         if ($hash -eq $script:WitnessExeSha) { return 'current' } else { return 'conflict' }
     } catch { return 'unknown' }
 }
+# ---- the plain-words answer when the game is not the supported build: what was found, what is needed, what to do
+$script:WitnessFaq = 'https://github.com/TommoDotCommo/witness-coop#faq-not-the-supported-build'
+function Get-WitnessBuildReport($game) {
+    $exe = Join-Path $game 'witness64_d3d11.exe'
+    $report = [ordered]@{ state = (Get-WitnessBuildState $game); store = 'unknown'; buildId = $null; version = $null; sha = $null; size = $null }
+    try {
+        if (Test-Path -LiteralPath $exe -PathType Leaf) {
+            $report.size = (Get-Item -LiteralPath $exe).Length
+            $hash = Get-CoopHash $exe
+            if ($hash) { $report.sha = $hash.Substring(0, 12) }
+            $v = (Get-Item -LiteralPath $exe).VersionInfo.FileVersion
+            if ($v) { $report.version = "$v" }
+        }
+    } catch { }
+    # the store, as far as the folder shows it
+    try {
+        $full = [IO.Path]::GetFullPath($game)
+        $manifest = Join-Path (Split-Path -Parent (Split-Path -Parent $full)) 'appmanifest_210970.acf'
+        if (Test-Path -LiteralPath $manifest) {
+            $report.store = 'Steam'
+            $m = [regex]::Match((Get-Content -LiteralPath $manifest -Raw), '"buildid"\s+"(\d+)"')
+            if ($m.Success) { $report.buildId = $m.Groups[1].Value }
+        } elseif ($full -match '\\steamapps\\common\\') { $report.store = 'Steam' }
+        elseif (Test-Path -LiteralPath (Join-Path $game '.egstore')) { $report.store = 'Epic Games' }
+        elseif (@(Get-ChildItem -LiteralPath $game -Filter 'goggame-*.info' -ErrorAction SilentlyContinue).Count -gt 0) { $report.store = 'GOG' }
+    } catch { }
+    return [pscustomobject]$report
+}
+function Format-WitnessBuildFound($report) {
+    $what = if ($report.state -eq 'unknown' -and -not $report.size) { 'no readable witness64_d3d11.exe' }
+            elseif ($report.size -and $report.size -lt 1MB) { "witness64_d3d11.exe is only $($report.size) bytes (damaged or incomplete)" }
+            else { "witness64_d3d11.exe" + $(if ($report.version) { ", file version $($report.version)" } else { '' }) + $(if ($report.sha) { ", SHA-256 starting $($report.sha)" } else { '' }) }
+    $where = if ($report.store -eq 'Steam') { 'a Steam copy' + $(if ($report.buildId) { " (Steam build $($report.buildId))" } else { '' }) }
+             elseif ($report.store -eq 'unknown') { 'a copy from an unknown source' } else { "a $($report.store) copy" }
+    return "$where, $what"
+}
+function Format-WitnessBuildRefusal($report) {
+    $todo = if ($report.store -eq 'Steam') {
+        "In Steam, right-click The Witness > Properties > Betas > choose None, then Properties > Installed Files > Verify integrity of game files. Then run Setup again. If Steam already shows the newest version, the game was updated after this mod was made: co-op will work again when the mod is updated."
+    } elseif ($report.store -eq 'unknown') {
+        "Only the Steam copy of The Witness is supported right now. If this is the Steam copy, verify its files in Steam (Properties > Installed Files > Verify integrity of game files) and pick the game folder Steam shows (Properties > Installed Files > Browse)."
+    } else { "Only the Steam copy of The Witness is supported right now; $($report.store) copies are not supported yet." }
+    return @"
+This copy of The Witness is not the build the co-op mod is made for. Nothing was changed.
+
+Found:  $(Format-WitnessBuildFound $report)
+Needed: Steam build 11370412 (witness64_d3d11.exe, SHA-256 starting $($script:WitnessExeSha.Substring(0, 12)))
+
+What to do: $todo
+
+More: $($script:WitnessFaq)
+"@
+}
+function Format-WitnessBuildShort($report) {
+    # one or two lines for the setup window's status label
+    $where = if ($report.store -eq 'Steam') { 'a Steam copy' + $(if ($report.buildId) { " (build $($report.buildId))" } else { '' }) } elseif ($report.store -eq 'unknown') { 'an unknown copy' } else { "a $($report.store) copy" }
+    $todo = if ($report.store -eq 'Steam') { 'In Steam: Properties > Betas > None, then Verify integrity of game files.' } else { 'Only the Steam copy is supported yet.' }
+    return "Not Steam build 11370412 (found $where, SHA-256 $($report.sha)...). $todo See the README FAQ."
+}
 function Get-WitnessInstallStatus($game, $package) {
     $rows = @(); $states = @(); $owned = $false
     $build = Get-WitnessBuildState $game
@@ -201,5 +260,6 @@ function Get-WitnessInstallStatus($game, $package) {
     $actions = Get-CoopActions $states $owned
     $rows += [pscustomobject]@{ item='witness_coop.cfg'; status=$(if (Test-Path -LiteralPath (Join-Path $game 'witness_coop.cfg')) { 'present' } else { 'written by the launcher' }); detail='Your co-op settings; kept on uninstall' }
     $rows += [pscustomobject]@{ item='Saves, registry, the game executable'; status='untouched'; detail='Saves stay in %APPDATA%\The Witness; nothing else on the PC is changed' }
-    return [pscustomobject]@{ schema=1; items=$rows; actions=$actions; build=$build }
+    $report = if ($build -ne 'current') { Get-WitnessBuildReport $game } else { $null }
+    return [pscustomobject]@{ schema=1; items=$rows; actions=$actions; build=$build; report=$report }
 }
