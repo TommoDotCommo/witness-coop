@@ -34,7 +34,7 @@ def files(d, suffix): return sorted(f for f in os.listdir(os.path.join(d, LOGS))
 def session_log(d):
     """This run's session log (the game's, not the launcher's), as text."""
     fs = [f for f in files(d, '.log') if '_launcher_' not in f]
-    return open(os.path.join(d, 'logs', fs[-1]), errors='ignore').read() if fs else ''
+    return open(os.path.join(d, LOGS, fs[-1]), errors='ignore').read() if fs else ''
 def alive(p): return str(p) in subprocess.run(['tasklist.exe', '/FI', 'PID eq %s' % p, '/NH'], capture_output=True, text=True).stdout
 def wait(cond, timeout, step=0.3):
     t = time.time()
