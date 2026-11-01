@@ -6,7 +6,7 @@ usage: qa_lobby_version.py  (tools/qa.sh lobbyversion)"""
 import os, shutil, subprocess, sys
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 PYW = os.environ.get('PYW', 'python.exe')
-OWNER = os.environ.get('WITNESS_RESOURCE_OWNER') or os.environ.get('LAB_OWNER') or 'lobbyver'
+OWNER = os.environ.get('WITNESS_RESOURCE_OWNER') or 'lobbyver'
 RUN = os.path.join(os.environ.get('WITNESS_TMPDIR') or sys.exit('set WITNESS_TMPDIR (a scratch folder on the Windows disk: source local/env.sh)'), OWNER, 'lobbyver')      # a scratch folder on the Windows disk (local/env.sh sets WITNESS_TMPDIR)
 win = lambda p: subprocess.check_output(['wslpath', '-w', p], text=True).strip()
 VER_C = 'v9.9.9-test'
