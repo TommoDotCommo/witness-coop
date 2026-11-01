@@ -31,11 +31,11 @@ $(BUILD)/witness_launcher.exe: ../common/guide.h ../common/bindings.def ../proxy
 
 # the lobby (game-free): the same kind of test and mutants
 LSRC = lobby.cpp lobby_test.cpp core.cpp ../proxy/voice/voice.cpp ../proxy/progress/savemeta.cpp ../proxy/progress/progress.cpp ../proxy/progress/progress_data.cpp
-LOBBY_MUTANTS = NO_CHECKSUM
-$(BUILD)/lobby-test.exe: $(LSRC) lobby.h core.h ../proxy/voice/voice.h
+LOBBY_MUTANTS = NO_CHECKSUM GATE_OPEN
+$(BUILD)/lobby-test.exe: $(LSRC) lobby.h core.h ../proxy/voice/voice.h ../common/steam_ids.h
 	mkdir -p $(BUILD)
 	$(CXX) -std=c++17 -O2 -Wall -Wextra -static -o $@ $(LSRC)
-$(BUILD)/lobby-mutant-%.exe: $(LSRC) lobby.h core.h ../proxy/voice/voice.h
+$(BUILD)/lobby-mutant-%.exe: $(LSRC) lobby.h core.h ../proxy/voice/voice.h ../common/steam_ids.h
 	mkdir -p $(BUILD)
 	$(CXX) -std=c++17 -O2 -Wno-unused-parameter -static -DWLB_MUT_$* -o $@ $(LSRC)
 lobby-test: $(BUILD)/lobby-test.exe $(addsuffix .exe,$(addprefix $(BUILD)/lobby-mutant-,$(LOBBY_MUTANTS)))
