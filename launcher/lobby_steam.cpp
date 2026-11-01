@@ -68,7 +68,8 @@ void SteamLobby::Leave() {
     if (!ready_) return;
     for (uint64_t m : members_) if (m != self_) { Identity i = IdentityOf(m); Call<bool>(msgs_, NM_CLOSE, (const Identity*)&i); }
     if (lobby_) { if (owner_ == self_) Call<bool>(mm_, MM_JOINABLE, lobby_, false); Call<void>(mm_, MM_LEAVE, lobby_); }
-    lobby_ = owner_ = 0; members_.clear(); paused_ = false; Call<bool>(friends_, SF_PRESENCE, "connect", (const char*)nullptr);
+    bool was = lobby_ != 0; lobby_ = owner_ = 0; members_.clear(); paused_ = false; Call<bool>(friends_, SF_PRESENCE, "connect", (const char*)nullptr);
+    if (was) SetStatus("You left the Steam lobby.");
 }
 bool SteamLobby::InviteDialog() {
     if (!lobby_) { SetStatus("Host a Steam lobby first."); return false; }

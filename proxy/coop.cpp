@@ -26,7 +26,7 @@ extern HMODULE g_selfModule();
 static CRITICAL_SECTION g_lock; static bool g_lockInit;
 static std::atomic<witness::SyncCore*> g_core{nullptr};
 static wpeers::PeerTable g_table; static wpeers::Endpoint g_single;      // the roster (group), or the one peer of the old two-player form; fixed before g_peerSet
-static SOCKET g_sock = INVALID_SOCKET; static std::atomic<bool> g_peerSet{false}, g_steam{false};
+static SOCKET g_sock = INVALID_SOCKET; static std::atomic<bool> g_peerSet{false}, g_steam{false}, g_wantSteam{false};      // g_wantSteam: the cfg asks for Steam (up or not)
 static void RawSend(const wpeers::Endpoint& e, const uint8_t* d, size_t n) {      // one datagram on this game's transport (any thread)
     if (e.isSteam()) { wsteam::Send(e.steam, d, n); return; }
     sockaddr_in a = {}; a.sin_family = AF_INET; a.sin_addr.s_addr = e.ip; a.sin_port = htons(e.port); sendto(g_sock, (const char*)d, (int)n, 0, (const sockaddr*)&a, sizeof a);
@@ -47,7 +47,7 @@ static void Msg(const char* fmt, ...) {      // a message shown in the game for 
     char b[200]; va_list ap; va_start(ap, fmt); vsnprintf(b, sizeof b, fmt, ap); va_end(ap); DevMenuNotice(b);
 }
 void CoopNetStat() {      // witness_cmd.txt `netstat` / `steamstat`: which transport this game uses and how its sessions are
-    char m[160]; snprintf(m, sizeof m, "netstat: transport %s up %d peers %zu", g_steam ? "steam" : "udp", g_peerSet.load() ? 1 : 0, g_table.empty() ? (size_t)1 : g_table.peers().size()); Log(m);
+    char m[160]; snprintf(m, sizeof m, "netstat: transport %s up %d peers %zu", g_wantSteam ? "steam" : "udp", (g_peerSet.load() || g_steam.load()) ? 1 : 0, g_table.empty() ? (size_t)(g_wantSteam ? 0 : 1) : g_table.peers().size()); Log(m);
     if (!g_steam) return;
     std::vector<uint64_t> sids; std::vector<unsigned> ids; for (const auto& kv : g_table.peers()) { ids.push_back(kv.first); sids.push_back(kv.second.steam); }
     wsteam::Stat(sids.data(), ids.data(), ids.size());
@@ -169,7 +169,7 @@ static DWORD WINAPI NetThread(LPVOID) {
     table.CheckSelf((unsigned)id, 0); if (!table.ok()) { Log("coop: this game's id is in its own roster; networking off"); return 0; }
     SOCKET s = INVALID_SOCKET; char m[200];
     if (steam) {      // Steam: the game's own Steam connection. If it is not there the game plays alone and says why: never a silent fallback to UDP.
-        uint64_t self = 0; char why[200] = "";
+        g_wantSteam = true; uint64_t self = 0; char why[200] = "";
         if (!wsteam::Open(60000, &self, why, sizeof why)) { snprintf(m, sizeof m, "coop: steam transport down: %s; networking off", why); Log(m); for (int k = 0; k < 6; ++k) { Msg("Co-op over Steam is off: %s", why); Sleep(6000); } return 0; }
         table.CheckSelf((unsigned)id, self); if (!table.ok()) { Log("coop: this game's own SteamID is in its roster; networking off"); Msg("Co-op over Steam is off: the lobby's roster lists this player twice."); return 0; }
         snprintf(m, sizeof m, "coop: id=%d over Steam (relayed, channel %d), %zu peers", id, wsteam::kGameChannel, table.peers().size()); Log(m);
