@@ -92,7 +92,7 @@ function Do-Install {
     if ($FindOnly) { return }
     Check-NotRunning $game
     $build = Get-WitnessBuildState $game
-    if ($build -ne 'current') { Fail "This copy of The Witness is not the supported build (Steam build 11370412, witness64_d3d11.exe SHA-256 $($script:WitnessExeSha)). The mod's addresses would not fit; nothing was changed." }
+    if ($build -ne 'current') { Fail (Format-WitnessBuildRefusal (Get-WitnessBuildReport $game)) }
     foreach ($f in 'AnselSDK64.dll', 'witness_launcher.exe', 'witness_models\adventurer.glb', 'witness_models\adventurer.glb.txt') {
         if (-not (Test-Path (Join-Path $Here $f))) { Fail "$f is missing next to this script. Unpack the whole zip first." }
     }

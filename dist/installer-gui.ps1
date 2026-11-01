@@ -160,7 +160,7 @@ function Refresh-Status {
             $install.Enabled = [bool]$snapshot.actions.install
             $install.Text = if ($snapshot.actions.install) { $snapshot.actions.install } elseif ($snapshot.actions.blocked) { 'Needs attention' } else { 'Up to date' }
             $uninstall.Enabled = $snapshot.actions.uninstall
-            if ($snapshot.build -eq 'conflict') { $status.Text = 'This copy of The Witness is not the supported build (Steam build 11370412). The mod cannot be installed here.' }
+            if ($snapshot.build -ne 'current') { $status.Text = Format-WitnessBuildShort $snapshot.report }
             elseif ($snapshot.actions.blocked) { $status.Text = 'Conflicting or unreadable files need attention. Modified files are kept.' }
             elseif (-not $snapshot.actions.install) { $status.Text = 'Co-op is installed. Click Play to open the launcher: host a lobby or join a friend there.' }
             else { $status.Text = 'Supported build found. Install co-op below; the launcher then starts the game for you.' }
@@ -308,7 +308,7 @@ function Perform($remove) {
     }
     try {
         $preflight = Get-WitnessInstallStatus $dir $PSScriptRoot
-        if ($preflight.build -eq 'conflict') { throw 'This copy of The Witness is not the supported build (Steam build 11370412). Nothing was changed.' }
+        if ($preflight.build -ne 'current') { throw (Format-WitnessBuildRefusal $preflight.report) }
         if ($preflight.actions.blocked) { throw 'Conflicting or unreadable files must be resolved before setup can continue.' }
         $script:busy = $true
         $form.ControlBox = $false

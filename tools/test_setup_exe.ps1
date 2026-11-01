@@ -19,7 +19,7 @@ function Run-Setup($exe, $localAppData, $arguments, $extraEnv = @{}) {
     $saved = @{}; $env:LOCALAPPDATA = $localAppData; $env:WITNESS_SETUP_MESSAGE_FILE = $msg
     foreach ($k in $extraEnv.Keys) { $saved[$k] = [Environment]::GetEnvironmentVariable($k); [Environment]::SetEnvironmentVariable($k, $extraEnv[$k]) }
     try {
-        $p = Start-Process -FilePath $exe -ArgumentList $arguments -Wait -PassThru -WindowStyle Hidden
+        $p = if ($arguments) { Start-Process -FilePath $exe -ArgumentList $arguments -Wait -PassThru -WindowStyle Hidden } else { Start-Process -FilePath $exe -Wait -PassThru -WindowStyle Hidden }
         $text = if (Test-Path $msg) { [IO.File]::ReadAllText($msg) } else { '' }
         return [pscustomobject]@{ code = $p.ExitCode; message = $text }
     } finally { foreach ($k in $saved.Keys) { [Environment]::SetEnvironmentVariable($k, $saved[$k]) }; $env:WITNESS_SETUP_MESSAGE_FILE = $null }

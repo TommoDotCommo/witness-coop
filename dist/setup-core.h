@@ -70,7 +70,7 @@ static inline int wp_parse(const uint8_t* buf, size_t len, wp_entry* out, int ma
     size_t at = 12, i, j; uint32_t n;
     *count = 0;
     if (len < 12) return WP_TRUNCATED;
-    if (memcmp(buf, "WCPAYLD1", 8)) return WP_BAD_MAGIC;
+    if (memcmp(buf, "WCPAYLD", 7) || buf[7] != '1') return WP_BAD_MAGIC;      /* (written in two parts so the exe holds the magic only in the payload itself) */
     n = wp_rd32(buf + 8);
     if (!n) return WP_EMPTY;
     if (n > (uint32_t)max || n > WP_MAX_FILES) return WP_TOO_MANY;

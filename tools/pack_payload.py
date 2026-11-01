@@ -21,8 +21,8 @@ def pack(root, skip=()):
     return bytes(out)
 
 
-def unpack(blob):
-    """The same format read back (for tests and the release check): {name: bytes}."""
+def unpack(blob, exact=True):
+    """The same format read back (for tests and the release check): {name: bytes}. exact=False: bytes may follow, and (files, length used) is returned."""
     assert blob[:8] == b'WCPAYLD1'
     n, = struct.unpack_from('<I', blob, 8)
     at, files = 12, {}
@@ -31,6 +31,8 @@ def unpack(blob):
         name = blob[at:at + nl].decode(); at += nl
         sz, = struct.unpack_from('<I', blob, at); at += 4
         files[name] = blob[at:at + sz]; at += sz
+    if not exact:
+        return files, at
     assert at == len(blob), 'trailing bytes'
     return files
 
