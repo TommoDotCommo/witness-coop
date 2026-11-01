@@ -1,7 +1,7 @@
 #!/bin/bash
 # Live check (one slot) of what the mod does when the game exe is not the build it knows, e.g. after a game update.
 # The slot copy gets the current proxy; then ITS exe is replaced by a private copy with one byte changed inside the code section (the copy under the
-# lab's base folder is never touched; the owner's real install and saves are never involved). The game is started the way a player does and must:
+# shared base copy of the resource provider is never touched; the owner's real install and saves are never involved). The game is started the way a player does and must:
 #   - keep running (the mod must not crash it), with the game's own Ansel DLL still in the path,
 #   - show exactly one message box, "The Witness Co-op", and
 #   - patch nothing and start nothing of the mod: no hook, no overlay, no world scan in the proxy log.
