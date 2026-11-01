@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <cstring>
 #include <cctype>
+#include "../common/buildid.h"
 
 static const char* kNames[] = {
     "getConfiguration", "getConfigurationSize", "getSessionConfigurationSize", "getVersion", "setConfiguration",
@@ -79,6 +80,38 @@ extern "C" uintptr_t updateCamera(void* a, void* b, void* c, void* d) {
     return fn ? fn(a, b, c, d) : 0;
 }
 
+// ---- which build of the game is this? Decided in DllMain from the exe already in memory (no I/O under the loader lock).
+// Any build but the one the mod's addresses fit is left strictly alone: no hook, no thread of ours that touches the game,
+// every export still forwards to the game's own Ansel DLL, and the player is told once that co-op is off.
+#ifdef COOP_TEST_SPEC      // test builds only (tools/test_build_gate.sh): the build to treat as the known one
+static buildid::Spec KnownSpec() { return buildid::Spec{ COOP_TEST_SPEC }; }
+#else
+static buildid::Spec KnownSpec() { return buildid::Witness(); }
+#endif
+static bool g_buildKnown;
+static buildid::Info g_build;
+static void CheckBuild() {
+    const uint8_t* base = (const uint8_t*)GetModuleHandleW(nullptr);
+    size_t size = base ? buildid::MappedSize(base) : 0;
+    if (size) g_build = buildid::Inspect(base, size, true, KnownSpec());
+    g_buildKnown = g_build.verdict == buildid::kKnown;
+#ifdef COOP_MUT_ALWAYS_KNOWN
+    g_buildKnown = true;       // mutant: the check is ignored, an unknown build is hooked
+#endif
+}
+static void UnsupportedBuild() {
+    char what[200], line[400];
+    buildid::Describe(g_build, what, sizeof what);
+    snprintf(line, sizeof line, "BUILD: not %s (%s). Co-op is OFF; nothing of the game is patched, the Ansel calls pass through.", WITNESS_BUILD_NAME, what);
+    Log(line);
+    char off[8];
+    if (GetEnvironmentVariableA("WITNESS_COOP_NO_DIALOG", off, sizeof off)) { Log("BUILD: message box suppressed (WITNESS_COOP_NO_DIALOG)"); return; }
+    Log("BUILD: message box shown");
+    char text[1600];
+    snprintf(text, sizeof text, "%s\n\n%s\n\nFound: %s", WITNESS_UNSUPPORTED_SHORT, WITNESS_UNSUPPORTED_HELP, what);
+    MessageBoxA(nullptr, text, "The Witness Co-op", MB_OK | MB_ICONINFORMATION | MB_SETFOREGROUND | MB_TOPMOST);
+}
+
 void OverlayInstall();
 void InstallHooks();
 void CoopStart();
@@ -117,6 +150,7 @@ static LONG WINAPI CrashLogger(EXCEPTION_POINTERS* ep) {
     return EXCEPTION_CONTINUE_SEARCH;
 }
 static DWORD WINAPI Init(LPVOID) {
+    if (!g_buildKnown) { UnsupportedBuild(); return 0; }
     char msg[300], exe[MAX_PATH];
     GetModuleFileNameA(nullptr, exe, MAX_PATH);
     snprintf(msg, sizeof msg, "proxy loaded: pid=%lu host=%s tick=%lu", GetCurrentProcessId(), exe, GetTickCount());
@@ -144,7 +178,8 @@ static DWORD WINAPI Init(LPVOID) {
 BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID) {
     if (reason == DLL_PROCESS_ATTACH) {
         g_self = inst;
-        InstallHooks();      // memory patching only: no I/O under the loader lock
+        CheckBuild();        // reads the exe's own header and code in memory: no I/O under the loader lock
+        if (g_buildKnown) InstallHooks();      // memory patching only: no I/O under the loader lock
         DisableThreadLibraryCalls(inst);
         HANDLE t = CreateThread(nullptr, 0, Init, nullptr, 0, nullptr);
         if (t) CloseHandle(t);
