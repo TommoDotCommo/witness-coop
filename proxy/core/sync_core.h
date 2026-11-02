@@ -87,6 +87,8 @@ struct Flags {   // all off by default
     bool reloadGapIgnored = false; // twin: detection runs on while the world is down during a load (generation unreadable), and the entity table is rescanned on every
                                    // poll: the rescan falls into the gap and takes a silent new baseline, so progress loaded from a save never reaches the peer (save point restore, 2026-11-02)
     bool gapIsLoad = false;     // twin: one unreadable generation counts as a load at once (a game that loaded nothing re-gated and folded a door it should have shared)
+    bool noModApplyShare = false; // twin: progress the mod applies (a progress list right after a load) leaves the start-up window running, so the doors and power the game's
+                                  // own scripts turn on in response are folded into the baseline and stay on this game only (save point restore without the save, 2026-11-02)
     bool noPingReply = false;   // twin: this game never answers a ping (the peers cannot measure it)
     bool noPingExpiry = false;  // twin: a ping measured once stays on show for ever, even when the peer is gone
     bool noNameSend = false;    // twin: names are not sent
@@ -137,6 +139,10 @@ public:
     void tick(uint64_t nowMs);                             // network thread, every few ms: pose at 30 Hz, resends every 150 ms
     void onPacket(const uint8_t* data, size_t n, uint64_t nowMs);
     void pollState(uint64_t nowMs);                        // detector thread, about every 100 ms
+    // Any thread: the mod itself just changed this world's progress (a progress list or preset applied, a dev-tool solve, a door opened by hand).
+    // That is the player's progress, not start-up noise: the start-up settling window ends (see pollState), so what the game's scripts do in
+    // response is shared as it happens.
+    void modProgressApplied(uint64_t nowMs);
     void applyRemote(uint64_t nowMs);                      // render thread, once per frame: apply queued remote events
     bool remotePose(RemotePose* out, uint64_t nowMs);
     std::vector<RemotePose> remotePoses(uint64_t nowMs);
@@ -212,6 +218,7 @@ private:
     std::string vanished_;      // what reloadSeen found gone (for the log)
     uint64_t gen_ = 0;          // the world's generation at the last baseline (0: not known)
     bool inGap_ = false;        // the generation reads 0 after a known one: the world is down (a load), detection waits
+    bool modApplied_ = false;   // modProgressApplied was called and pollState has not acted on it yet
     bool ready_ = false, gateStarted_ = false; uint64_t nextGate_ = 0, settleUntil_ = 0, nextScan_ = 0, nextStats_ = 0;
     size_t gateLastPanels_ = 0, gateLastDoors_ = 0; uint64_t gateLastSig_ = 0; int gateSame_ = 0;
 };

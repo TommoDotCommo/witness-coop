@@ -190,6 +190,9 @@ std::vector<int> ChainOf(bool down, int start) {
 }
 
 void Refresh();
+// Everything below that changes progress by itself (the solve queue of a progress list, preset or 'complete', the menu's actions, the doors
+// opened by hand) tells the sync core, so the game's reaction is shared even inside a start-up window (SyncCore::modProgressApplied).
+void ModProgress() { if (auto* c = CoopCore()) c->modProgressApplied(GetTickCount64()); }
 std::vector<int> g_solveQ; size_t g_solveTotal;
 void QueueSolveSpots(int n) {      // complete the first n spots: solve every panel in their map cells (a few per frame, with its target)
     if (!g_built) Build(); Refresh(); g_solveQ.clear();      // fresh solved flags: a panel solved by play since the last refresh is not queued, so it never counts as forced
@@ -266,12 +269,12 @@ void ProgressStat() {      // test command: every solved panel (hex ids, 40 per 
 bool Do(const char* what, int pi) {      // one action on panel index pi, by name (the buttons and the 'menudo' test command)
     if (pi < 0 || pi >= (int)g_pn.size()) return false; Pn& p = g_pn[pi]; uintptr_t te = p.target >= 0 ? GameEntity(p.target) : 0; const char* tt = te ? TypeName(te) : "";
     if (!strcmp(what, "teleport")) TeleportToPanel(p);
-    else if (!strcmp(what, "solve")) { if (!p.solved) g_forced.insert(p.id); GameMarkPanelSolved(p.id); GameDispatchTargetNow(p.id, true); Msg("solved panel %#x and ran its target", p.id); }
-    else if (!strcmp(what, "power")) { GamePanelPowerOnNow(p.id); Msg("powered panel %#x", p.id); }
-    else if (!strcmp(what, "run") && te) { GameDispatchTargetNow(p.id, true); Msg("ran the target of %#x", p.id); }
-    else if (!strcmp(what, "door") && te && !strcmp(tt, "Door")) { GameDoorOpenNow((unsigned)p.target, 1.0f); Msg("opened door %#x", (unsigned)p.target); }
-    else if (!strcmp(what, "cableon") && te && !strcmp(tt, "Power_Cable")) { GameCablePowerOnNow((unsigned)p.target); Msg("lit cable %#x", (unsigned)p.target); }
-    else if (!strcmp(what, "cableoff") && te && !strcmp(tt, "Power_Cable")) { GameCableOffNow((unsigned)p.target); Msg("cable %#x switched off", (unsigned)p.target); }
+    else if (!strcmp(what, "solve")) { if (!p.solved) g_forced.insert(p.id); ModProgress(); GameMarkPanelSolved(p.id); GameDispatchTargetNow(p.id, true); Msg("solved panel %#x and ran its target", p.id); }
+    else if (!strcmp(what, "power")) { ModProgress(); GamePanelPowerOnNow(p.id); Msg("powered panel %#x", p.id); }
+    else if (!strcmp(what, "run") && te) { ModProgress(); GameDispatchTargetNow(p.id, true); Msg("ran the target of %#x", p.id); }
+    else if (!strcmp(what, "door") && te && !strcmp(tt, "Door")) { ModProgress(); GameDoorOpenNow((unsigned)p.target, 1.0f); Msg("opened door %#x", (unsigned)p.target); }
+    else if (!strcmp(what, "cableon") && te && !strcmp(tt, "Power_Cable")) { ModProgress(); GameCablePowerOnNow((unsigned)p.target); Msg("lit cable %#x", (unsigned)p.target); }
+    else if (!strcmp(what, "cableoff") && te && !strcmp(tt, "Power_Cable")) { ModProgress(); GameCableOffNow((unsigned)p.target); Msg("cable %#x switched off", (unsigned)p.target); }
     else return false;
     return true;
 }
@@ -494,10 +497,11 @@ void DevMenuTick() {      // every frame, open or not: test commands, saves, the
     { static bool hooked; if (!hooked) { SaveSetHooks(StateWrite, StateApply); hooked = true; } }
     ProcessCmds(); StartProgressTick(); SaveTick(GetTickCount());
     { static char last[200]; if (strcmp(last, SaveStatus())) { snprintf(last, sizeof last, "%s", SaveStatus()); if (last[0]) Msg("%s", last); } }
+    if (!g_solveQ.empty()) ModProgress();
     for (int k = 0; k < 8 && !g_solveQ.empty(); k++) { int i = g_solveQ.back(); g_solveQ.pop_back(); g_forced.insert(g_pn[i].id); GameMarkPanelSolved(g_pn[i].id); GameDispatchTargetNow(g_pn[i].id, true); if (g_solveQ.empty()) Msg("solved the panels of the chosen spots"); }
     if (g_solveQ.empty() && !g_doorQ.empty()) {      // a moment after the last solve: open the doors the data says are open that the solves did not open
         if (!g_doorAt) g_doorAt = GetTickCount() + 1500;
-        else if (GetTickCount() >= g_doorAt) { Refresh(); std::set<unsigned> openNow; for (auto& d : g_dr) if (d.open) openNow.insert(d.id); unsigned n = 0; for (unsigned id : g_doorQ) if (!openNow.count(id) && GameEntity(id)) { GameDoorOpenNow(id, 1.0f); ++n; } g_doorQ.clear(); char m[100]; snprintf(m, sizeof m, "progress: %u doors opened by hand", n); Log(m); }
+        else if (GetTickCount() >= g_doorAt) { Refresh(); std::set<unsigned> openNow; for (auto& d : g_dr) if (d.open) openNow.insert(d.id); unsigned n = 0; for (unsigned id : g_doorQ) if (!openNow.count(id) && GameEntity(id)) { ModProgress(); GameDoorOpenNow(id, 1.0f); ++n; } g_doorQ.clear(); char m[100]; snprintf(m, sizeof m, "progress: %u doors opened by hand", n); Log(m); }
     }
     if (!g_tp.on || GetTickCount() - g_tp.at < 1500) return;
     float pos[3], ang[2]; if (!Camera(pos, ang)) return;

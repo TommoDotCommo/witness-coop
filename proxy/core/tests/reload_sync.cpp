@@ -139,6 +139,43 @@ bool halfBuilt(witness::Flags fa) {
     return p.b.solved[0] && p.b.open[2] && !p.b.open[3] && !p.a.open[3];
 }
 
+// A save point restored without its game save (tools/suite.py 'MUTANT: save point restore without the save file'), and any progress list applied
+// after a load: A loads a world with nothing solved, and the mod then applies the list (panel 1). The game's own scripts react later: door 3
+// opens 3 s after the list and door 4 6 s after it. Live (2026-11-02) the list landed just as the reloaded world became stable, so the panel
+// reached B with the full state, but the doors came inside the start-up window and were folded into A's baseline: 8 doors stayed open on A only.
+// early: the list is applied 2 s after the load, before the world is stable (its panel and door 3 are then in the stable world's baseline).
+// B must end with panel 1 and both doors; and a start-up flip on A after a load with no list (door 4 opening and shutting again) is still folded.
+bool listAfterLoad(witness::Flags fa, bool early) {
+    witness::Flags none; Pair p(none); witness::Hooks ha; ha.send = [&](const witness::Bytes& d) { p.toB.push_back(d); };
+    p.ca = std::make_unique<witness::SyncCore>(1, 1, &p.a, ha, fa);
+    p.advance(30000);
+    p.a.gap = true; p.a.table++; p.advance(300);             // the load takes A's world down
+    p.a.gap = false; p.a.gen++; p.a.table++;                 // and builds a fresh one (nothing solved, as before)
+    if (early) p.advance(2000);
+    else { p.advance(500); for (int i = 0; i < 400 && !p.ca->ready(); ++i) p.advance(50); if (!p.ca->ready()) return false; }
+    p.a.solved[0] = true; p.ca->modProgressApplied(p.now);   // the mod applies the list
+    p.advance(early ? 1000 : 3000); p.a.open[2] = true;      // the game's script opens door 3
+    if (early) { for (int i = 0; i < 400 && !p.ca->ready(); ++i) p.advance(50); p.advance(2000); }
+    else p.advance(3000);
+    p.a.open[3] = true;                                      // and door 4 (early: 2 s after the world became stable)
+    p.advance(40000);
+    return p.b.solved[0] && p.b.open[2] && p.b.open[3];
+}
+
+// The rule above must not share an ordinary start-up flip: A loads again with no list applied, door 4 (open since the list) shuts and opens
+// once more while the world settles. B must keep it open (no close was sent) and must not see A re-solving anything.
+bool loadWithoutList(witness::Flags fa) {
+    witness::Flags none; Pair p(none); witness::Hooks ha; ha.send = [&](const witness::Bytes& d) { p.toB.push_back(d); };
+    p.ca = std::make_unique<witness::SyncCore>(1, 1, &p.a, ha, fa);
+    p.advance(30000);
+    p.a.gap = true; p.a.table++; p.advance(300);
+    p.a.gap = false; p.a.gen++; p.a.table++; p.a.open[3] = true;          // the load: door 4 stands open in the saved world
+    p.advance(500); for (int i = 0; i < 400 && !p.ca->ready(); ++i) p.advance(50);
+    p.advance(2000); p.a.open[3] = false; p.advance(1000); p.a.open[3] = true;      // a start-up flip in the settling window
+    p.advance(40000);
+    return p.b.open[3] && p.ca->stats().emittedDoors == 0;
+}
+
 int main() {
     bool all = true;
     { bool ok = halfBuilt({}); std::printf("%s  the half-built world's default-open door is not sent as progress\n", ok ? "PASS" : "FAIL"); all &= ok;
@@ -147,6 +184,15 @@ int main() {
     { bool ok = blip({}); std::printf("%s  a moment's unreadable generation is no load: a door opened after it reaches B at once\n", ok ? "PASS" : "FAIL"); all &= ok;
       witness::Flags twin; twin.gapIsLoad = true; bool caught = !blip(twin);
       std::printf("%s  gap-is-load twin: the blip re-gates A and the door is folded into its start-up baseline\n", caught ? "PASS" : "FAIL"); all &= caught; }
+    for (bool early : {false, true}) {
+        bool ok = listAfterLoad({}, early);
+        std::printf("%s  a progress list applied after a load (%s): the doors the game opens in response reach B\n", ok ? "PASS" : "FAIL", early ? "before the world is stable" : "as it becomes stable"); all &= ok;
+        witness::Flags twin; twin.noModApplyShare = true; bool caught = !listAfterLoad(twin, early);
+        std::printf("%s  no-mod-apply-share twin: the doors are folded into the start-up baseline (%s)\n", caught ? "PASS" : "FAIL", early ? "early list" : "list at stable"); all &= caught;
+    }
+    { bool ok = loadWithoutList({}); std::printf("%s  a load with no list still folds its start-up flips (nothing emitted)\n", ok ? "PASS" : "FAIL"); all &= ok;
+      witness::Flags twin; twin.noSettle = true; bool caught = !loadWithoutList(twin);
+      std::printf("%s  no-settle twin: the start-up flip goes out as a close and an open\n", caught ? "PASS" : "FAIL"); all &= caught; }
     for (uint64_t gap : {4000u, 300u}) {
         bool ok = restoreIntoFresh({}, gap);
         std::printf("%s  save point restored into a fresh game (load gap %llu ms): B gets the loaded progress, A gets B's back\n", ok ? "PASS" : "FAIL", (unsigned long long)gap); all &= ok;

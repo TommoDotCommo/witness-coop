@@ -408,7 +408,22 @@ void SyncCore::pollState(uint64_t now) {
         char m[160]; std::snprintf(m, sizeof m, "state: world stable, %zu panels, %zu doors", panels_.size(), doors_.size()); log(m);
         baseline(false);
         ready_ = true; settleUntil_ = f_.noSettle ? now : now + kSettleMs; nextScan_ = now + 3000; nextStats_ = now + 10000;
+        if (modApplied_) {      // the mod applied progress while the world was settling: it is in this baseline, so the peer gets the full state, and no start-up window follows
+            modApplied_ = false; resync_ = true; settleUntil_ = now;
+            log("state: progress the mod applied is in the stable world: full state for the peer, no start-up window");
+        }
         return;
+    }
+    // Progress the mod applies itself (a progress list or preset, the dev tools' solves) is the player's progress, never start-up noise. A save
+    // point restore loads the game save and then applies the list: the list's panels land just after the reloaded world became stable, inside
+    // its start-up window, and reach the peer with the full state, but the doors, panel power and cables the game's own scripts turn on in
+    // response came 1 to 12 s later in that window and were folded into the baseline, so they stayed on this game only (8 doors, 3 powered panels
+    // and 6 lit cables in the restore without the save file, 2026-11-02). So the window ends when the mod applies progress (and is skipped when that happened before
+    // the world was stable, above). The ordinary start of a game, where the mod applies nothing, still folds its start-up flips, and a load's
+    // half-built world is still not read at all (the gap below).
+    if (modApplied_) {
+        modApplied_ = false;
+        if (now < settleUntil_) { settleUntil_ = now; log("state: the mod applied progress: the start-up window ends, what follows is shared"); }
     }
     if (!settledLogged_ && now >= settleUntil_) { settledLogged_ = true; log("state: settled"); }      // the start-up window is over: from here local changes are shared as they happen (tests wait for this line)
     // A save loaded in this process (the world's generation changed). What a load means in co-op: the loaded world is merged with the
@@ -517,6 +532,11 @@ void SyncCore::pollState(uint64_t now) {
         char l[320]; std::snprintf(l, sizeof l, "state: emitted panels %u doors %u, applied panels %u doors %u | net sent %u resent %u in-order %u dup %u ooo %u acked %u | power emitted %u applied %u | cable emitted %u applied %u",
             st_.emittedPanels, st_.emittedDoors, st_.appliedPanels, st_.appliedDoors, st_.sent, st_.resent, st_.inOrder, st_.dup, st_.ooo, st_.acked, st_.emittedPowers, st_.appliedPowers, st_.emittedCables, st_.appliedCables); log(l);
     }
+}
+
+void SyncCore::modProgressApplied(uint64_t now) {
+    Guard g(h_); (void)now;
+    if (!f_.noModApplyShare) modApplied_ = true;
 }
 
 void SyncCore::applyRemote(uint64_t now) {

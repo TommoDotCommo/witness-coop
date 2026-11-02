@@ -150,6 +150,7 @@ static DWORD WINAPI NetThread(LPVOID) {
         if (sscanf(line, "no_reload_sync=%d", &v) == 1) flags.noReloadSync = v;
         if (sscanf(line, "reload_gap_ignored=%d", &v) == 1) flags.reloadGapIgnored = v;      // twin: detection runs on in a load's gap (the rescan then folds a loaded save into a silent baseline)
         if (sscanf(line, "gap_is_load=%d", &v) == 1) flags.gapIsLoad = v;      // twin: one unreadable generation is taken for a load
+        if (sscanf(line, "no_mod_apply_share=%d", &v) == 1) flags.noModApplyShare = v;      // twin: progress the mod applies leaves the start-up window running (what the game opens in response is folded)
         if (sscanf(line, "no_cable_sync=%d", &v) == 1) flags.noCableSync = v;
         if (sscanf(line, "no_cable_off=%d", &v) == 1) flags.noCableOff = v;
         if (sscanf(line, "no_unsolve_sync=%d", &v) == 1) flags.noUnsolveSync = v;
