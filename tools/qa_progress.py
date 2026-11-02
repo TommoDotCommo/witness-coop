@@ -50,7 +50,8 @@ def run(cfg_a='', cfg_b=''):
         if sa >= want or time.time() - t0 > 60: break
         time.sleep(2)
     time.sleep(3); sa, da = state('A'); t1 = time.time(); sb, db = state('B')
-    while sb != sa and time.time() - t1 < 40: time.sleep(2); sb, db = state('B')
+    # B converges: the panels, then the doors, which the dump reads by where they stand (some take seconds to swing open after B was told)
+    while (sb != sa or (db & known) != (da & known)) and time.time() - t1 < 40: time.sleep(2); sb, db = state('B')
     ok = True
     def check(what, cond, detail=''):
         nonlocal ok; ok = ok and bool(cond); print('  %-92s %s  %s' % (what, 'ok' if cond else 'FAILED', detail), flush=True)
@@ -60,7 +61,7 @@ def run(cfg_a='', cfg_b=''):
     open_known = da & known
     check('A: exactly the doors those panels open are open (%d doors of the %d the data knows)' % (len(opened), len(known)), open_known == opened, 'wrong: %s' % sorted(hex(x) for x in (open_known ^ opened))[:8])
     check('B (no setting) holds the same solved panels as A through the sync', sb == sa, 'only A %d, only B %d' % (len(sa - sb), len(sb - sa)))
-    check('B: the same doors are open', (db & known) == open_known)
+    check('B: the same doors are open', (db & known) == open_known, 'only A %s, only B %s' % (sorted(hex(x) for x in open_known - db), sorted(hex(x) for x in (db & known) - open_known)))
     cfg = open(os.path.join(DIR1, 'witness_coop.cfg')).read().splitlines()
     check('the setting is disarmed in the cfg (a normal start next time)', not any(l.startswith('start_progress=') for l in cfg) and any(l.startswith('# applied: start_progress=') for l in cfg))
     side = os.path.join(DIR1, 'appdata', 'The Witness', 'coop_progress.txt')
