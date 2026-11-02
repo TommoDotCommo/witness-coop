@@ -84,8 +84,9 @@ struct Flags {   // all off by default
     bool noReloadSync = false;  // twin: ignore a same-process save reload (no re-gate, no resync with the peer)
     bool reloadByProgress = false;  // twin: ignore the world's generation and judge a reload by vanished progress alone (panels that reset themselves stalled sync)
     bool reloadOnDoor = false;  // twin: one closed door alone counts as a save reload (a timed door shutting by itself stalled sync for 10-50 s)
-    bool reloadGapIgnored = false; // twin: an unreadable generation (the load's gap) is not a load, and the entity table is rescanned on every poll: the rescan falls
-                                   // into the gap and takes a silent new baseline, so progress loaded from a save never reaches the peer (save point restore, 2026-11-02)
+    bool reloadGapIgnored = false; // twin: detection runs on while the world is down during a load (generation unreadable), and the entity table is rescanned on every
+                                   // poll: the rescan falls into the gap and takes a silent new baseline, so progress loaded from a save never reaches the peer (save point restore, 2026-11-02)
+    bool gapIsLoad = false;     // twin: one unreadable generation counts as a load at once (a game that loaded nothing re-gated and folded a door it should have shared)
     bool noPingReply = false;   // twin: this game never answers a ping (the peers cannot measure it)
     bool noPingExpiry = false;  // twin: a ping measured once stays on show for ever, even when the peer is gone
     bool noNameSend = false;    // twin: names are not sent
@@ -210,6 +211,7 @@ private:
     bool settledLogged_ = false;
     std::string vanished_;      // what reloadSeen found gone (for the log)
     uint64_t gen_ = 0;          // the world's generation at the last baseline (0: not known)
+    bool inGap_ = false;        // the generation reads 0 after a known one: the world is down (a load), detection waits
     bool ready_ = false, gateStarted_ = false; uint64_t nextGate_ = 0, settleUntil_ = 0, nextScan_ = 0, nextStats_ = 0;
     size_t gateLastPanels_ = 0, gateLastDoors_ = 0; uint64_t gateLastSig_ = 0; int gateSame_ = 0;
 };

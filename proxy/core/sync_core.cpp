@@ -372,11 +372,6 @@ bool SyncCore::reloadSeen(uint64_t now) {
     if (!f_.reloadByProgress && !f_.reloadOnDoor) {      // the world can say whether it was loaded again (the twins judge by progress, the old way): then that alone decides (a panel resetting itself is not a load)
         uint64_t g = w_->generation();
         if (g && gen_) { if (g == gen_) return false; vanished_ = " the world was loaded again (entity generation changed)"; return true; }
-        // A load first takes the world down and then builds it again: in between its entities are missing and the generation reads 0. Once
-        // a generation was known, that gap is the load. (Judged only by a changed non-zero generation, the entity-table rescan could fall into
-        // the gap and take a silent new baseline there: a game that loaded a save with more progress than it had, such as a save point restored
-        // into a fresh game, folded the loaded progress in as if it were its start-up world and never told the other game.)
-        if (!g && gen_ && !f_.reloadGapIgnored) { vanished_ = " the world is being loaded again (entity generation unreadable)"; return true; }
     }
     unsigned closed = 0, unsolved = 0; vanished_.clear();
     for (unsigned id : doors_) {
@@ -416,29 +411,42 @@ void SyncCore::pollState(uint64_t now) {
         return;
     }
     if (!settledLogged_ && now >= settleUntil_) { settledLogged_ = true; log("state: settled"); }      // the start-up window is over: from here local changes are shared as they happen (tests wait for this line)
-    // A save loaded in this process (the world's generation changed, or a known generation became unreadable: the load is under way).
-    // What a load means in co-op: the loaded world is merged with the others, never pushed over them and never silently kept to itself.
-    // Nothing told the peer, so announce a new session (the peer then resends its full state, as for a restart, so nothing it has and
-    // the save lacks is lost), wait for the loading world to settle again, and publish this world's full state once it has (so progress
-    // that came with the save, such as a restored save point, reaches the peer). Lost progress is never sent as un-solves.
+    // A save loaded in this process (the world's generation changed). What a load means in co-op: the loaded world is merged with the
+    // others, never pushed over them and never silently kept to itself. Nothing told the peer, so announce a new session (the peer then
+    // resends its full state, as for a restart, so nothing it has and the save lacks is lost), wait for the loading world to settle again,
+    // and publish this world's full state once it has (so progress that came with the save, such as a restored save point, reaches the
+    // peer). Lost progress is never sent as un-solves.
     auto reloadStarts = [&] {
         { std::string m = "state: save reload suspected (known progress vanished:" + vanished_ + "), waiting for a stable world"; log(m.c_str()); }
         ready_ = false; gateSame_ = 0; gateLastPanels_ = gateLastDoors_ = 0; gateLastSig_ = 0; nextGate_ = now + 3000;
         cableVersion_.clear();
         suppressPanel_.clear(); suppressDoor_.clear(); suppressPower_.clear(); suppressCable_.clear(); anyLocalSolve_ = false;
         session_++; epoch_ = (uint64_t(session_) << 16) | ++restartsSeen_; nextSeq_ = 1; sent_.clear(); resync_ = true;
-        st_.reloads++;
+        st_.reloads++; inGap_ = false;
     };
+    // A load first takes the world down and then builds it again: in between, the entities are missing and the generation cannot be read.
+    // While it cannot (once one was known), nothing is detected: the half-built world's default state is no player progress (27 doors that
+    // stand open in it went out as opened), and a rescan of the entity table there took a silent new baseline that adopted generation 0, so
+    // the load was never seen and the loaded progress was folded in as the start-up world (a save point restored into a fresh game never
+    // reached the other game). When the world reads again, a new generation is the load (reloadSeen); the same one was a moment's unreadable
+    // entity and detection goes on. (An unreadable read alone is not a load: one happened in a game that loaded nothing, and taking it for
+    // one re-gated that game, whose new start-up window then folded a door it should have shared.)
+    const bool byGeneration = !f_.reloadByProgress && !f_.reloadOnDoor && !f_.reloadGapIgnored;
+    if (byGeneration && gen_) {
+        bool gap = w_->generation() == 0;
+        if (gap != inGap_) { inGap_ = gap; log(gap ? "state: world unreadable (generation 0), detection paused" : "state: world readable again, detection resumed"); }
+        if (gap && f_.gapIsLoad && !f_.noReloadSync) { vanished_ = " the world is unreadable (generation 0)"; reloadStarts(); return; }
+        if (gap) return;
+    }
     if (!f_.noReloadSync && reloadSeen(now)) { reloadStarts(); return; }
     if (f_.reloadGapIgnored || now >= nextScan_) {      // (the twin rescans on every poll, so its rescan always falls into a load's gap)
         nextScan_ = now + 3000;
         if (scanWorld()) {
-            // A new entity table in a world whose generation is no longer the baseline's is a load that began after the check above:
-            // it is handled as one, never folded into a new baseline (which would adopt the loaded progress without telling the peer).
+            // The world may have gone down (or come back as another one) since the checks above: a new entity table is then never folded
+            // into a new baseline. A gap waits; a new generation is the load.
             uint64_t g = w_->generation();
-            if (!f_.noReloadSync && !f_.reloadGapIgnored && !f_.reloadByProgress && !f_.reloadOnDoor && gen_ && g != gen_) {
-                vanished_ = " the entity table was replaced and the generation changed"; reloadStarts(); return;
-            }
+            if (byGeneration && gen_ && !g) return;
+            if (byGeneration && gen_ && g != gen_ && !f_.noReloadSync) { vanished_ = " the world was loaded again (entity generation changed)"; reloadStarts(); return; }
             log("state: entity table changed, new baseline"); baseline(false);
         }
     }
