@@ -68,4 +68,8 @@ prepare a reviewable diff before asking to publish. Never force-push.
   check the entity's type descriptor before calling a type-specific function.
 - Never sync or baseline before the world is stable; after applying a remote change, suppress local detection for
   that entity (the echo guard). Both were real bugs, see the README.
+- Changes in the first 15 s after the stable-world gate are start-up noise and are folded into the baseline, except
+  after progress the mod applies itself: anything that solves, powers, opens or lights on its own (a progress list,
+  a preset, the dev tools, doors opened by hand) calls `SyncCore::modProgressApplied`, which ends that window, so
+  what the game's scripts do in response reaches the other players. A new tool that changes progress must call it too.
 - Keep the real install untouched: the proxy is installed into disposable copies only.

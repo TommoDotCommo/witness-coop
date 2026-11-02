@@ -39,10 +39,11 @@ def wait_new_stats(dirs, timeout=14):
     n0 = [stats_lines(d) for d in dirs]; t0 = time.time()
     while time.time() - t0 < timeout and any(stats_lines(d) <= n for d, n in zip(dirs, n0)): time.sleep(0.5)
 
-def restart_both(ca, cb):
-    """Throw both games away and start two fresh new games (the save point and preset scenarios restore progress into them)."""
+def restart_both(ca, cb, settle=True):
+    """Throw both games away and start two fresh new games (the save point and preset scenarios restore progress into them).
+    settle=False returns as soon as both worlds are stable, inside their 15 s start-up window (a player who applies a preset at once)."""
     subprocess.run([os.path.join(TOOLS, 'restart.sh')], env={**os.environ, 'CFG_A': ca, 'CFG_B': cb}, capture_output=True, text=True, timeout=600, check=True)
-    wait_stable([DIR1, DIR2]); time.sleep(16); open(os.path.join(RUN, 'guard.stop'), 'w').write('restarted')
+    wait_stable([DIR1, DIR2]); time.sleep(16 if settle else 0); open(os.path.join(RUN, 'guard.stop'), 'w').write('restarted')
 
 def wait_panels(which, want, secs):
     """Poll until game `which` has every panel in `want` solved; returns True when it does."""
@@ -219,8 +220,11 @@ SCENARIOS = [   # name, extra cfg for A, extra cfg for B, check(a_stats, b_stats
   ('partner view', '', '', lambda a, b, ok: (ok, "B receives A's pictures and they show what A sees")),
   ('MUTANT: partner view without pictures', 'no_partner_video=1', '', lambda a, b, ok: (not ok, 'B must receive no picture')),
   ('preset apply', '', '', lambda a, b, ok: (ok and b.get('ep', 9) == 0, 'a list-only preset made from forced progress brings a fresh game to that progress, and the other game follows')),
+  ('preset apply during start-up', '', '', lambda a, b, ok: (ok and b.get('ep', 9) == 0, "the preset is applied as soon as the fresh worlds are stable, inside the start-up window: the doors, power and cables the game turns on in response reach the other game too")),
+  ('MUTANT: preset apply during start-up, reaction not shared', 'no_mod_apply_share=1', '', lambda a, b, ok: (not ok, "with the mod's apply taken for start-up noise, what the game turns on in response must stay on A only")),
   ('save point restore', '', '', lambda a, b, ok: (ok, 'a save point (the game save plus the progress list) brings a fresh game back to the saved progress, and the other game follows')),
-  ('MUTANT: save point restore without the save file', 'no_restore_copy=1', '', lambda a, b, ok: (not ok, 'the natural progress in the game save must be missing after the restore')),
+  ('MUTANT: save point restore without the save file', 'no_restore_copy=1', '', lambda a, b, ok: (not ok, 'the natural progress in the game save must be missing after the restore, and everything else (what the game turned on in response to the list) identical')),
+  ('MUTANT: save point restore without the save file, reaction not shared', 'no_restore_copy=1\nno_mod_apply_share=1', '', lambda a, b, ok: (not ok, "with the list taken for start-up noise, the doors, power and cables the game turns on in response must stay on A only")),
   ('MUTANT: save point restore with the load gap ignored', 'reload_gap_ignored=1', '', lambda a, b, ok: (not ok, "A's load must not be seen while its world is down: the rescan folds the loaded progress into a silent baseline and B never gets it")),
   ('MUTANT: panel power chain disabled', 'no_panel_power=1', '', lambda a, b, ok: (not ok, 'target panel must remain dark on B')),
 ]
@@ -264,6 +268,7 @@ while True:
     devmenu = 'dev menu' in name
     partner = 'partner view' in name
     preset = 'preset apply' in name
+    early = 'during start-up' in name      # the progress is applied inside the fresh worlds' start-up window
     savept = 'save point restore' in name
     maze = chain      # the chain scenario also covers the single maze: its first panel is the one the 'cable maze' scenario used
     def progress_flow(natural):      # forced progress (the first 4 spots) is kept, both games are thrown away, and it is restored into fresh ones
@@ -279,11 +284,11 @@ while True:
         if not os.path.exists(os.path.join(folder, name_ + '.state')): return 'the %s was not written' % kind
         listed = re.findall(r'^S ([0-9a-f]+)$', open(os.path.join(folder, name_ + '.state')).read(), re.M)
         if natural and '64' in listed: return 'the progress list names panel 0x64, which the bot solved by play: only the game save may bring it back, or the mutant cannot fail'
-        time.sleep(3); restart_both(ca, cb)
+        time.sleep(3); restart_both(ca, cb, settle=not early)
         if len(state('A')['panels']): return 'the new game was not fresh'
         if natural: pyw('wtour.py', pid('A'), win(DIR1), win(os.path.join(RUN, 'tourA.txt')), 'go', '1'); time.sleep(25)     # out of the intro tunnel: the pause menu can load from here
         pyw('wcmd.py', win(DIR1), 'restore', name_)
-        if name.startswith('MUTANT:'): want = [w for w in want if w != '0x64']      # the mutant never loads the game's save: only the list part can come back
+        if 'without the save file' in name: want = [w for w in want if w != '0x64']      # the mutant never loads the game's save: only the list part can come back
         if not wait_panels('A', want, 150): return 'A did not get back to the saved progress (%d of %d panels)' % (len(set(want) & set(state('A')['panels'])), len(want))
         time.sleep(15); return ''
     if partner:      # B shows what A sees: A goes somewhere with its own look, then B's received picture is compared with A's screenshot
@@ -362,7 +367,8 @@ while True:
     if late and bot_ok: catchup = late_join(ca, cb, name.startswith('MUTANT:'))
     out = sh('python3 %s' % os.path.join(TOOLS, 'state_diff.py'))
     t0 = time.time()      # a door that a solve opened late (its animation) may still be on its way to B: give a clean scenario up to 20 s to converge (a mutant must differ, so it is not retried)
-    while not name.startswith('MUTANT:') and 'IDENTICAL' not in out and time.time() - t0 < 20: time.sleep(3); out = sh('python3 %s' % os.path.join(TOOLS, 'state_diff.py'))
+    converge = not name.startswith('MUTANT:') or name == 'MUTANT: save point restore without the save file'      # that mutant must be identical apart from panel 0x64
+    while converge and 'IDENTICAL' not in out and time.time() - t0 < 20: time.sleep(3); out = sh('python3 %s' % os.path.join(TOOLS, 'state_diff.py'))
     print(out.strip(), flush=True)
     a, b = last_stats(DIR1), last_stats(DIR2)
     ok, why = check(a, b, 'IDENTICAL' in out)
@@ -380,7 +386,14 @@ while True:
             loaded = bot_ok and '0x64' in sa['panels'] and len(sa['panels']) >= 16
             ok = loaded and (sa['panels'] != sb['panels'] or sa['doors'] != sb['doors'])
             print('load-gap mutant: A loaded the save: %s, panels A %d B %d' % (loaded, len(sa['panels']), len(sb['panels'])), flush=True)
-        elif name.startswith('MUTANT:'): ok = bot_ok and '0x64' not in sa['panels'] and len(sa['panels']) >= 15
+        elif name.startswith('MUTANT:'):
+            # the list came back without the game save (0x64 missing on A). What the game's scripts turned on in response to the list (doors, panel power,
+            # cables) must have reached B: the state diff identical (B never had 0x64 either). The 'reaction not shared' mutants must instead leave some of it on A only.
+            stays_on_a = bool(set(sa['doors']) - set(sb['doors']) or set(sa['powered_panels']) - set(sb['powered_panels']) or set(sa['lit_cables']) - set(sb['lit_cables']))
+            listed = len(sa['panels']) >= 15 and sa['panels'] == sb['panels'] and (preset or '0x64' not in sa['panels'])
+            ok = bot_ok and listed and (stays_on_a if 'reaction not shared' in name else 'IDENTICAL' in out)
+            print('list-only mutant: A %d panels, B %d; turned on only on A: doors %s powered %s cables %s' % (len(sa['panels']), len(sb['panels']), sorted(set(sa['doors']) - set(sb['doors'])),
+                  sorted(set(sa['powered_panels']) - set(sb['powered_panels'])), sorted(set(sa['lit_cables']) - set(sb['lit_cables']))), flush=True)
         else: ok = ok and sa['panels'] == sb['panels'] and sa['doors'] == sb['doors'] and len(sa['panels']) >= 16 and (not savept or '0x64' in sa['panels'])
     if devmenu:
         sa, sb = state('A'), state('B')
