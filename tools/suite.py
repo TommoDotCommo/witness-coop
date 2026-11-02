@@ -376,9 +376,9 @@ while True:
     if partner: ok = pres == ('missing' if name.startswith('MUTANT:') else 'match')
     if savept or preset:
         sa, sb = state('A'), state('B')
-        if 'load gap' in name:      # A must really have loaded the save (all 16 with 0x64), and B must lack it: the check is (not ok)
+        if 'load gap' in name:      # (as for the other mutant, ok here is the verdict: the mutant did what it must) A really loaded the save (all 16 with 0x64), and B lacks it
             loaded = bot_ok and '0x64' in sa['panels'] and len(sa['panels']) >= 16
-            ok = not loaded or (sa['panels'] == sb['panels'] and sa['doors'] == sb['doors'])
+            ok = loaded and (sa['panels'] != sb['panels'] or sa['doors'] != sb['doors'])
             print('load-gap mutant: A loaded the save: %s, panels A %d B %d' % (loaded, len(sa['panels']), len(sb['panels'])), flush=True)
         elif name.startswith('MUTANT:'): ok = bot_ok and '0x64' not in sa['panels'] and len(sa['panels']) >= 15
         else: ok = ok and sa['panels'] == sb['panels'] and sa['doors'] == sb['doors'] and len(sa['panels']) >= 16 and (not savept or '0x64' in sa['panels'])
