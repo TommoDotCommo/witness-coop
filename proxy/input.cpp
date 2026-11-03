@@ -138,6 +138,7 @@ void Log(const char* msg);
 
 // The game's message loop reads mouse messages itself, before the window procedure sees them: the dev menu takes its keys and mouse
 // messages here, and a message it took becomes WM_NULL. Key-ups and button-ups are shown to the menu but still reach the game.
+void ThirdPersonClick();       // thirdperson.cpp
 typedef BOOL(WINAPI* PeekMessageAFn)(LPMSG, HWND, UINT, UINT, UINT);
 static PeekMessageAFn g_origPeekA;
 static BOOL WINAPI HookPeekMessageA(LPMSG m, HWND w, UINT lo, UINT hi, UINT rm) {
@@ -146,6 +147,7 @@ static BOOL WINAPI HookPeekMessageA(LPMSG m, HWND w, UINT lo, UINT hi, UINT rm) 
     if (m->message == WM_KILLFOCUS || (m->message == WM_ACTIVATEAPP && !m->wParam)) GuideReset();
     if ((m->message == WM_KEYDOWN || m->message == WM_SYSKEYDOWN || m->message == WM_KEYUP || m->message == WM_SYSKEYUP) &&
         GuideKey((unsigned)m->wParam, m->message == WM_KEYDOWN || m->message == WM_SYSKEYDOWN)) { m->message = WM_NULL; return r; }
+    if (m->message == WM_LBUTTONDOWN || m->message == WM_RBUTTONDOWN || m->message == WM_MBUTTONDOWN) ThirdPersonClick();      // a click (a puzzle): the emote view returns
     if (!(DevMenuEnabled() || VideoEnabled())) return r;
     bool take = false;
     switch (m->message) {

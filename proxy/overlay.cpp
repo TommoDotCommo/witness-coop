@@ -24,6 +24,7 @@ static const uintptr_t kGlobals = 0x62D0A0, kCamPos = 0x6304B0 + 0x10, kCamAng =
 static const uintptr_t kPauseDimA = 0x630070, kPauseDimB = 0x62FF3C;      // two floats: 0.0 in every state but the pause menu, where they are 1.0 (a state table: walking, dev menu, at a panel, in and out of a puzzle, after F7, pause menu)
 static const uintptr_t kPausedOld = 0x62DAC4;      // the first candidate, WRONG: it flips with F6 / F7 and with entering a puzzle; only kept for the mutant pause_wrong_flag=1
 #include "gamecam.h"
+#include "thirdperson.h"
 #include "coop.h"
 #include "game.h"
 #include "state.h"
@@ -47,6 +48,9 @@ static const uintptr_t kPausedOld = 0x62DAC4;      // the first candidate, WRONG
 #include "ui/player_panel.h"
 #include <atomic>
 #include <cctype>
+// The camera the world on screen was drawn from: the player's own, or the third-person view while emoting (thirdperson.h). Everything the
+// mod draws in the world uses it, so it lines up with the game's picture.
+static void ViewCamera(const float*& cam, const float*& ang) { static float vp[3], va[2]; if (ThirdPersonViewCam(vp, va)) { cam = vp; ang = va; } }
 
 typedef HRESULT(STDMETHODCALLTYPE* PresentFn)(IDXGISwapChain*, UINT, UINT);
 static PresentFn g_origPresent;
@@ -224,7 +228,7 @@ static void DrawMarkers(IDXGISwapChain* sc) {
     ID3D11RenderTargetView* rtv = nullptr;
     if (FAILED(g_dev->CreateRenderTargetView(bb, nullptr, &rtv))) { bb->Release(); return; }
     uintptr_t base = (uintptr_t)GetModuleHandleA(nullptr);
-    const float* cam = (const float*)(base + kCamPos); const float* ang = (const float*)(base + kCamAng);
+    const float* cam = (const float*)(base + kCamPos); const float* ang = (const float*)(base + kCamAng); ViewCamera(cam, ang);
     float rects[32][4] = {}, cols[32][4] = {}; int n = 0; float aspect = (float)td.Width / (float)td.Height; const float vfov = GameProjection().vfovDeg;
     uintptr_t glob = Readable((void*)(base + kGlobals), 8) ? *(uintptr_t*)(base + kGlobals) : 0;
     uintptr_t arr = glob && Readable((void*)(glob + 0x18), 8) ? *(uintptr_t*)(glob + 0x18) : 0;
@@ -246,12 +250,15 @@ static void DrawMarkers(IDXGISwapChain* sc) {
             } ex.appearance = rp.appearance; ex.proximitySpeaking = rp.proximitySpeaking; ex.radioEquipped = rp.radioEquipped; ex.radioTx = rp.radioTx; ex.viewPitch = rp.ang[1]; { int e = 0; float t = 0; if (SocialEmoteOf(rp.id, &e, &t)) { ex.emote = e; ex.emoteT = t; } }
             ModelGpuDraw(rtv, td.Width, td.Height, wc, true, rp.seq, rp.pos, rp.ang[0], rp.id, first, &ex); first = false;
         }
+        { float sp[3], sy = 0, st = 0; int se = 0; static unsigned selfSeq;      // the third-person view: this player's own figure, doing its emote
+            if (ThirdPersonSelf(sp, &sy, &se, &st)) { ModelExtra ex; ex.appearance = SocialMyAppearance(); ex.emote = se; ex.emoteT = st; ex.radioEquipped = GetCfg().radioEnabled;
+                ThirdPersonSelfDrawn(ModelGpuDraw(rtv, td.Width, td.Height, wc, true, ++selfSeq, sp, sy, CoopMyId(), first, &ex)); first = false; } }
         if (first) { float p[3] = {}; ModelGpuDraw(rtv, td.Width, td.Height, wc, false, 0, p, 0); }
         ModelGpuDrawAudience(rtv,td.Width,td.Height,wc);
         std::vector<LineVert> lv; unsigned nl = 0; if (!GetCfg().noLineDraw) nl = BuildLineVerts(wc.pos, lv);
         nl += SocialInkVerts(wc.pos, lv, 60000);
         ModelGpuDrawLines(rtv, td.Width, td.Height, wc, lv.data(), lv.size(), nl);
-        if (GetCfg().radioEnabled && !GetCfg().noRadioView) {
+        if (GetCfg().radioEnabled && !GetCfg().noRadioView && cam == (const float*)(base + kCamPos)) {      // (the radio in the hand is a first-person view only)
             static wradio::Raise raise; static uint64_t last; uint64_t now=GetTickCount64();
             raise.Step(VoiceRadioTx(), last ? (now-last)/1000.0f : 0); last=now;
             std::vector<LineVert> radio; float tv=std::tan(wc.vfovDeg*.00872664626f);
@@ -434,7 +441,7 @@ static void PromptChip(float x, float y, const char* text, float k, UiColor acce
 static void DrawNameTags(float W, float H) {
     if (!g_tagLockInit) { InitializeCriticalSection(&g_tagLock); g_tagLockInit = true; }
     uintptr_t base = (uintptr_t)GetModuleHandleA(nullptr);
-    const float* cam = (const float*)(base + kCamPos); const float* ang = (const float*)(base + kCamAng);
+    const float* cam = (const float*)(base + kCamPos); const float* ang = (const float*)(base + kCamAng); ViewCamera(cam, ang);
     std::vector<TagInfo> now;
     if (TagsWanted() && !GamePaused() && !IsBadReadPtr(cam, 12) && !IsBadReadPtr(ang, 8)) for (const auto& rp : CoopGetRemotes()) if (rp.ageMs < 2000) {
         TagInfo t = {}; t.id = rp.id; strncpy(t.name, rp.name[0] ? rp.name : "?", sizeof t.name - 1); t.ping = rp.pingMs;
@@ -550,7 +557,7 @@ void OverlayRequestUiCapture(unsigned width, unsigned height, const char* name) 
     ReleaseSRWLockExclusive(&g_uiCaptureLock);
 }
 static void DrawUiScene(float width, float height, ID3D11RenderTargetView* rtv) {
-    UiBegin(width, height); DrawNameTags(width, height); { uintptr_t b0 = (uintptr_t)GetModuleHandleA(nullptr); const float* c0 = (const float*)(b0 + kCamPos); const float* a0 = (const float*)(b0 + kCamAng); if (!IsBadReadPtr(c0, 12) && !IsBadReadPtr(a0, 8)) SocialFrame(width, height, c0, a0); } RaceDraw(width, height); if (DevMenuOpen()) DevMenuDraw(width, height); else DevMenuToast(width, height);
+    UiBegin(width, height); DrawNameTags(width, height); { uintptr_t b0 = (uintptr_t)GetModuleHandleA(nullptr); const float* c0 = (const float*)(b0 + kCamPos); const float* a0 = (const float*)(b0 + kCamAng); if (!IsBadReadPtr(c0, 12) && !IsBadReadPtr(a0, 8)) { ViewCamera(c0, a0); SocialFrame(width, height, c0, a0); } } RaceDraw(width, height); if (DevMenuOpen()) DevMenuDraw(width, height); else DevMenuToast(width, height);
         if (TvConsent() || TvEnabled()) PromptChip(14, 14, TvConsent() ? "Sharing my TV view   F11 stop   F10 back TV" : "Back TV on   F10 off   F11 share my view", 0.9f * std::max(1.f, height / 1080.f), uitheme::Accent);
         if (VideoViewMode()) {      // the partner's screen, in a corner (F9: small, large, off)
             int vw = 0, vh = 0; unsigned long age = 0; ID3D11ShaderResourceView* srv = VideoRemoteSrv(&vw, &vh, &age); InterlockedIncrement(&g_povBox); if (srv) InterlockedIncrement(&g_povPic);
@@ -673,6 +680,7 @@ static HRESULT STDMETHODCALLTYPE HookPresent(IDXGISwapChain* sc, UINT sync, UINT
 }
 static HRESULT HookPresentBody(IDXGISwapChain* sc, UINT sync, UINT flags) {
     LONG f = InterlockedIncrement(&g_frames);
+    ThirdPersonPresentBegin();
     { const float* dc = (const float*)((uintptr_t)GetModuleHandleA(nullptr) + kCamPos); DiagFrame(Readable(dc, 12) ? dc : nullptr, (unsigned)f); }
     GameRunQueued();
     StateApplyRemote();
@@ -685,6 +693,7 @@ static HRESULT HookPresentBody(IDXGISwapChain* sc, UINT sync, UINT flags) {
         HoldPictureWhileProbing(sc);
         if (!mapgen) VideoFrame(sc, g_dev, g_ctx);
     }
+    if (g_ready) { DXGI_SWAP_CHAIN_DESC d; float aspect = SUCCEEDED(sc->GetDesc(&d)) && d.BufferDesc.Height ? (float)d.BufferDesc.Width / d.BufferDesc.Height : 0; ThirdPersonFrame(aspect); }
     if (g_ready && !mapgen) DrawMarkers(sc);
     if (g_ready && g_uiReady && !mapgen) { DrawDevMenu(sc); }
     RadioDumpFrame();

@@ -195,6 +195,11 @@ bool SocialEmoteOf(unsigned id, int* emote, float* seconds) {
     Lock l; auto it = g_remoteEmotes.find(id); if (it == g_remoteEmotes.end() || !it->second.id) return false;
     ULONGLONG age = GetTickCount64() - it->second.start; if (!EmoteAlive(it->second.id,age)) return false; *emote = it->second.id; *seconds = float(age) / 1000.0f; return true;
 }
+witness::Appearance SocialMyAppearance() { Lock l; return MyAppearance(); }
+bool SocialMyEmote(int* emote, float* seconds, unsigned* sequence) {
+    Lock l; *sequence = g_emoteSeq; if (!g_emote) return false;
+    ULONGLONG age = GetTickCount64() - g_emoteAt; if (!EmoteAlive(g_emote, age)) return false; *emote = g_emote; *seconds = float(age) / 1000.0f; return true;
+}
 static bool SocialKeyImpl(unsigned vk, bool down);
 std::map<unsigned, ULONGLONG> g_swallow;      // keys whose press the mod took: the same press arrives a moment later as raw input, which must not reach the game either (Esc closing the chat box would open the pause menu)
 bool SocialKey(unsigned vk, bool down) {

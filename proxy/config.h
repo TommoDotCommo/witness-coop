@@ -95,6 +95,8 @@ struct Cfg {
     std::string invite;          // invite=<text>: the launcher's invite for this session (the player panel offers Copy invite when it is set)
     bool oldVWatch = false;      // test mutant old_v_watch=1: V watches the player (the pre-2026-11 key) instead of pinging
     bool noPlayerPanel = false;  // test mutant no_player_panel=1: holding Tab does not open the player panel
+    bool emoteThirdPerson = true; // emote_third_person=0: the view stays first person while this player emotes (the launcher's "Third-person view when emoting")
+    bool tpNeverReturn = false;   // test mutant tp_never_return=1: the third-person view never swings back to first person
 };
 const Cfg& GetCfg();
 void WriteMovedKeys();      // once per user: the list of keys whose default moved, for the launcher's What's new (common/movedkeys.h); not from DllMain

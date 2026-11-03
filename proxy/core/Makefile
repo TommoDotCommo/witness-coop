@@ -8,7 +8,7 @@ HUB := $(patsubst %/tools/fuzz/src,%,$(HUB))
 FUZZ = $(HUB)/tools/fuzz
 BUILD = build
 CXXF = -std=c++17 -O2 -Wall -Wextra
-TESTS = pov ping-names social-sync line-sync group-sync apply-retry power-sync reload-sync cable-sync cable-off race-isolation resend-count unsolve-sync propagation-latency peers
+TESTS = pov ping-names social-sync line-sync group-sync apply-retry power-sync reload-sync cable-sync cable-off race-isolation resend-count unsolve-sync propagation-latency peers thirdperson
 
 $(BUILD)/sync_core.o: sync_core.cpp sync_core.h line_precision.h appearance.h emotes.h pov.h ../radio/radio.h
 	@mkdir -p $(BUILD)
@@ -38,9 +38,17 @@ $(BUILD)/coopfuzz-witness: $(FUZZOBJ) $(BUILD)/witness_target.o $(BUILD)/sync_co
 $(BUILD)/t0.ok: $(BUILD)/coopfuzz-witness tests/run_t0.py
 	@if python3 tests/run_t0.py --hub $(HUB) > $(BUILD)/t0.log 2>&1; then touch $@; else cat $(BUILD)/t0.log; rm -f $@; exit 1; fi
 
-STAMPS = $(foreach t,$(TESTS),$(BUILD)/$(t).ok) $(BUILD)/t0.ok
+$(BUILD)/thirdperson: thirdperson.h emotes.h
+# mutant: the third-person view never swings back (TP_MUT_NO_RETURN); the test must fail it
+$(BUILD)/thirdperson-mut: tests/thirdperson.cpp thirdperson.h emotes.h
+	@mkdir -p $(BUILD)
+	g++ $(CXXF) -DTP_MUT_NO_RETURN -o $@ tests/thirdperson.cpp
+$(BUILD)/thirdperson-mut.ok: $(BUILD)/thirdperson-mut
+	@if $(BUILD)/thirdperson-mut > $(BUILD)/thirdperson-mut.log 2>&1; then echo "thirdperson mutant NOT caught"; rm -f $@; exit 1; else echo "thirdperson mutant (no return) caught" >> $(BUILD)/thirdperson-mut.log; touch $@; fi
+
+STAMPS = $(foreach t,$(TESTS),$(BUILD)/$(t).ok) $(BUILD)/t0.ok $(BUILD)/thirdperson-mut.ok
 test: $(STAMPS)
-	@for t in $(TESTS) t0; do echo "== $$t"; cat $(BUILD)/$$t.log; done
+	@for t in $(TESTS) t0 thirdperson-mut; do echo "== $$t"; cat $(BUILD)/$$t.log; done
 	$(MAKE) -C ../model test
 retest:
 	rm -f $(BUILD)/*.ok

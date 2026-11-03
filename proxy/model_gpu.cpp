@@ -370,6 +370,29 @@ static void AnswerCenterDepth(UINT w, UINT h) {
     InterlockedExchange(&g_centerReady, 1);
 }
 
+// Several points at once (the third-person emote camera measures the room in front of the player): asked for, answered by the next frame.
+static volatile LONG g_ptsReq, g_ptsReady; static float g_ptsXY[8][2], g_ptsDist[8]; static int g_ptsN; static bool g_ptsOk;
+void ModelGpuRequestDepthPoints(const float* fx, const float* fy, int n) {
+    if (n > 8) n = 8; for (int i = 0; i < n; ++i) { g_ptsXY[i][0] = fx[i]; g_ptsXY[i][1] = fy[i]; } g_ptsN = n;
+    InterlockedExchange(&g_ptsReady, 0); InterlockedExchange(&g_ptsReq, 1);
+}
+int ModelGpuTakeDepthPoints(float* dist, int n) {
+    if (!InterlockedExchange(&g_ptsReady, 0)) return 0;
+    if (!g_ptsOk) return -1;
+    for (int i = 0; i < n && i < g_ptsN; ++i) dist[i] = g_ptsDist[i]; return 1;
+}
+static void AnswerDepthPoints(UINT w, UINT h) {
+    ID3D11ShaderResourceView* sceneSrv = nullptr; bool ms = false; g_ptsOk = false;
+    if (!GetCfg().noModelDepth && DepthScene(&sceneSrv, &ms)) {
+        g_ptsOk = true;
+        for (int i = 0; i < g_ptsN; ++i) {
+            float v[8]; if (!ProbeDepth(w, h, sceneSrv, ms, v, g_ptsXY[i][0], g_ptsXY[i][1])) { g_ptsOk = false; break; }
+            float z = 0; int n = 0; for (int k = 0; k < (ms ? 4 : 1); ++k) if (v[k] > 1e-7f) { z += v[k]; ++n; }
+            g_ptsDist[i] = n ? GetCfg().depthNear / (z / n) : -1;      // -1: the sky
+        }
+    }
+    InterlockedExchange(&g_ptsReady, 1);
+}
 
 // The scene depth as a 192 x 108 picture with the camera it was drawn from, for the bot's walking (tools/win/wnav.py builds a map of where
 // it can walk from these): witness_depth.bin next to the DLL, replaced whole. Header: "WDD1", width, height (uint32), then floats: camera
@@ -409,6 +432,7 @@ bool ModelGpuDraw(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Cam& ca
     if (!g_ready) return false;
     InterlockedExchange(&g_modelRenderThread, (LONG)GetCurrentThreadId());
     if (first && InterlockedExchange(&g_centerReq, 0)) AnswerCenterDepth(w, h);
+    if (first && InterlockedExchange(&g_ptsReq, 0)) AnswerDepthPoints(w, h);
     if (first && (g_probeReq || g_gridReq || g_dumpReq)) {      // answered here, before anything returns early: with no other player to draw they were never answered
         ID3D11ShaderResourceView* srv = nullptr; bool ms = false; bool have = !GetCfg().noModelDepth && DepthScene(&srv, &ms);
         if (InterlockedExchange(&g_probeReq, 0)) { if (have) RunProbe(w, h, srv, ms); else Log("probe: no scene depth buffer found"); }

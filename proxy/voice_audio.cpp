@@ -1,6 +1,7 @@
 // Voice chat on Windows: the microphone (WinMM) is encoded and sent to the other players, their voices are mixed (voice/voice.h) and played; the game's own volume is set on its
 // audio session. See voice/voice.h for what the listener hears. Settings: voice_mode, key_voice, voice_volume, mic_volume, voice_range, voice_radio_range, voice_radio, game_volume.
 #define WIN32_LEAN_AND_MEAN
+#include "thirdperson.h"
 #include <windows.h>
 #include <mmsystem.h>
 #include <mmdeviceapi.h>
@@ -35,8 +36,9 @@ unsigned g_seq; float g_gameVolume = -1, g_gameVolumeRead = -1;
 const float kPi = 3.14159265f;
 
 bool ListenerPose(float pos[3], float* yaw) {
+    unsigned gen = ThirdPersonGen();      // the player's own ears, not the third-person emote camera
     const uintptr_t base = (uintptr_t)GetModuleHandleA(nullptr); const float* c = (const float*)(base + 0x6304B0 + 0x10); const float* a = (const float*)(base + 0x6303EC);
-    if (IsBadReadPtr(c, 12) || IsBadReadPtr(a, 8)) return false; memcpy(pos, c, 12); *yaw = a[0]; return true;
+    if (IsBadReadPtr(c, 12) || IsBadReadPtr(a, 8)) return false; memcpy(pos, c, 12); *yaw = a[0]; ThirdPersonFixEye(gen, pos); return true;
 }
 std::vector<wvoice::Speaker> Speakers() {
     std::vector<wvoice::Speaker> r; float pos[3], yaw = 0; bool have = ListenerPose(pos, &yaw); const Cfg& cfg = GetCfg();
