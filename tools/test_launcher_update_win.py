@@ -30,7 +30,7 @@ if MUTANT:      # a patched copy of the sources (update.h is patched for the mut
     src_root = a.root / 'mutant-src'; shutil.copytree(ROOT / 'launcher', src_root / 'launcher', ignore=shutil.ignore_patterns('build')); (src_root / 'dist').mkdir(); shutil.copy(ROOT / 'dist/install-policy.h', src_root / 'dist')
     for before, after in (WMUTANTS[MUTANT] if isinstance(WMUTANTS[MUTANT], list) else [WMUTANTS[MUTANT]]):
         f = src_root / 'launcher' / ('update.h' if before in (ROOT / 'launcher/update.h').read_text() else 'update_win.h'); t = f.read_text(); assert t.count(before) == 1, MUTANT; f.write_text(t.replace(before, after))
-subprocess.run(['x86_64-w64-mingw32-g++', '-std=c++17', '-O2', '-w', '-D_WIN32_WINNT=0x0601', '-static', '-o', str(exe), str(src_root / 'launcher/update_win_test.cpp'), '-lwininet', '-lws2_32'], check=True)
+subprocess.run(['x86_64-w64-mingw32-g++', '-std=c++17', '-O2', '-w', '-D_WIN32_WINNT=0x0601', '-DLU_ANSEL_SHA="%s"' % T.sha(T.ORIG_ANSEL), '-static', '-o', str(exe), str(src_root / 'launcher/update_win_test.cpp'), '-lwininet', '-lws2_32'], check=True)
 win = lambda p: subprocess.check_output(['wslpath', '-w', str(p)], text=True).strip()
 
 state = {'mode': 'ok', 'requests': [], 'releases': []}
@@ -104,8 +104,8 @@ r = run(g, "v0.1.0", "both")
 check('check finds v0.2.0 with its notes', r.get('check') == '0' and r.get('tag') == 'v0.2.0' and 'Notes of v0.2.0' in r.get('notes', ''))
 check('apply through WinINet: downloaded, verified and applied', r.get('apply') == '0' and r.get('state') == '5')
 after = tree(g)
-check('every managed file is the new one and the game\'s own Ansel DLL is untouched', all(after[k] == T.sha(v) for k, v in new.items()) and after['AnselSDK64_real.dll'] == before['AnselSDK64_real.dll'] and after['AnselSDK64.dll.coop-original'] == before['AnselSDK64.dll.coop-original'])
-rc = json.loads((g / 'AnselSDK64.dll.coop-receipt.json').read_text()); check('the receipt is the installer\'s form', rc == {'schema': 1, 'original': T.sha(T.ORIG_ANSEL), 'installed': T.sha(new['AnselSDK64.dll']), 'pending': None})
+check('every managed file is the new one and the game\'s own AnselSDK64.dll and the chain file are untouched', all(after[k] == T.sha(v) for k, v in new.items()) and after['AnselSDK64.dll'] == before['AnselSDK64.dll'] and after['dsound.chain.dll'] == before['dsound.chain.dll'])
+rc = json.loads((g / 'dsound.dll.coop-receipt.json').read_text()); check('the receipt is the installer\'s form', rc == {'schema': 1, 'original': T.sha(T.OTHER_DSOUND), 'installed': T.sha(new['dsound.dll']), 'pending': None})
 check('exactly the check, the .sha256 and the zip were requested, nothing else', [x.split('/')[1] for x in r['_reqs']] == ['releases?per_page=10'.split('?')[0], 'dl', 'dl'] or len(r['_reqs']) == 3)
 cfg = (g / 'witness_launcher_update.cfg').read_text()
 check('the time of the check is kept (so the next start does not ask again today)', 'update_last_check=' in cfg and 'update_last_check=0\n' not in cfg)

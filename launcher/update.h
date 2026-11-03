@@ -1,8 +1,10 @@
 /* The launcher's self-update, game-free and portable (T0 tests: tools/test_launcher_update.py, built into update_cli.cpp).
  * Ported from the MDK2 co-op launcher's updater (MIT, same owner): GitHub release checker, SHA-256 / ZIP verifier, and a transactional apply.
  * What is different here: the apply goes through the installer's ownership receipts (dist/install-state.ps1, decisions in dist/install-policy.h):
- * a managed file is replaced only when its receipt exists and the file is what the receipt says the installer put there; the game's own
- * AnselSDK64 (AnselSDK64_real.dll and its .coop-original) is never touched. Pure functions and standard file operations only; no UI. */
+ * a managed file is replaced only when its receipt exists and the file is what the receipt says the installer put there. The proxy is dsound.dll;
+ * the game's own files are never replaced. A folder still in the old layout (the proxy in AnselSDK64.dll, the game's file renamed
+ * AnselSDK64_real.dll) is migrated as Setup does: dsound.dll is added, then the game's AnselSDK64.dll goes back, verified by its SHA-256.
+ * Pure functions and standard file operations only; no UI. */
 #ifndef WITNESS_LAUNCHER_UPDATE_H
 #define WITNESS_LAUNCHER_UPDATE_H
 
@@ -54,7 +56,8 @@ enum lu_result {
     LU_ERR_RECEIPT,     /* a managed file is not what the installer's receipt says (changed by hand, another build, a leftover of an interrupted setup, or no receipt: not installed by Setup) */
     LU_ERR_RUNNING,     /* the game is running from this folder: the proxy DLL is replaced only while it is not */
     LU_ERR_DOWNGRADE,   /* the package is not newer than the installed version */
-    LU_ERR_DEV          /* the installed version is not a release version (a development build): never replaced */
+    LU_ERR_DEV,         /* the installed version is not a release version (a development build): never replaced */
+    LU_ERR_LEGACY       /* the old layout (AnselSDK64_real.dll) is there but cannot be undone safely (a hash that is not the game's): Setup explains */
 };
 
 struct lu_schedule {
@@ -1040,12 +1043,13 @@ static inline int lu_write_receipt(const char *target, const char *original, con
     return 1;
 }
 
-/* ---- what the package replaces: the files Setup manages, but never the game's own AnselSDK64 (AnselSDK64_real.dll, AnselSDK64.dll.coop-original) ---- */
+/* ---- what the package replaces: the files Setup manages, never a file of the game ---- */
 
 struct lu_target { const char *name; int exe; int launcher; };
 #define LU_NTARGETS 4
+#define LU_PROXY 0          /* the target a folder in the old layout does not have yet: it is added there */
 static const struct lu_target lu_targets[LU_NTARGETS] = {
-    { "AnselSDK64.dll", 1, 0 },
+    { "dsound.dll", 1, 0 },
     { "witness_launcher.exe", 1, 1 },
     { "witness_models/adventurer.glb", 0, 0 },
     { "witness_models/adventurer.glb.txt", 0, 0 }
@@ -1076,6 +1080,80 @@ static inline int lu_file_state(const char *dir, const struct lu_target *t, cons
 }
 
 #define LU_JOURNAL "witness_update.state"
+
+/* ---- the old layout (up to v0.1.0-alpha): the proxy in AnselSDK64.dll, the game's own renamed AnselSDK64_real.dll (and kept by Setup as
+ * AnselSDK64.dll.coop-original). The same rules as Setup (dist/install-state.ps1 Get-WitnessLegacy / Invoke-WitnessMigration). ---- */
+#ifndef LU_ANSEL_SHA
+#define LU_ANSEL_SHA "3b0677ae1e01fc17645c903c8322497785768145abbe3758364299fdaa8aff15"      /* the game's own AnselSDK64.dll, Steam build 11370412 */
+#endif
+static inline int lu_is_original(const char *h) { return h && h[0] && !strcmp(h, LU_ANSEL_SHA); }      /* verify-original */
+
+static inline int lu_file_contains(const char *path, const char *text)
+{
+    unsigned char *b = NULL;
+    size_t n = 0, k = strlen(text), i;
+    int found = 0;
+    if (!lu_read_bytes(path, &b, &n)) return 0;
+    for (i = 0; i + k <= n && !found; i++) if (!memcmp(b + i, text, k)) found = 1;
+    free(b);
+    return found;
+}
+
+/* 0: no old layout. 1: there, and undoable: src (if given) is a verified copy of the game's own file. -1: there, but a hash is not the
+ * game's (or AnselSDK64.dll is not this mod's old proxy, or the game's file is nowhere): nothing may be changed. */
+static inline int lu_legacy_check(const char *dir, char *src, size_t cap)
+{
+    char a[640], r[640], bk[640], st[640], arc[640], rrc[640], ha[65] = "", hr[65] = "", hb[65] = "", hs[65] = "";
+    struct lu_receipt rc;
+    lu_path(a, sizeof(a), dir, "AnselSDK64.dll", "");
+    lu_path(r, sizeof(r), dir, "AnselSDK64_real.dll", "");
+    lu_path(bk, sizeof(bk), dir, "AnselSDK64.dll", ".coop-original");
+    lu_path(st, sizeof(st), dir, "AnselSDK64.dll", ".coop-stage");
+    lu_path(arc, sizeof(arc), dir, "AnselSDK64.dll", ".coop-receipt.json");
+    lu_path(rrc, sizeof(rrc), dir, "AnselSDK64_real.dll", ".coop-receipt.json");
+    if ((lu_exists(a) && !lu_file_sha256(a, ha)) || (lu_exists(r) && !lu_file_sha256(r, hr)) ||
+        (lu_exists(bk) && !lu_file_sha256(bk, hb)) || (lu_exists(st) && !lu_file_sha256(st, hs))) return -1;
+    if (!hr[0] && !hb[0] && !hs[0] && !lu_exists(arc) && !lu_exists(rrc) && (!ha[0] || lu_is_original(ha))) return 0;
+    if ((hr[0] && !lu_is_original(hr)) || (hb[0] && !lu_is_original(hb)) || (hs[0] && !lu_is_original(hs))) return -1;
+    if (ha[0] && !lu_is_original(ha)) {
+        lu_read_receipt(a, &rc);
+        if (!lu_file_contains(a, "real Ansel DLL") && !(rc.valid && !strcmp(rc.installed, ha))) return -1;
+    }
+    if (src && cap) {
+        const char *s = lu_is_original(ha) ? a : lu_is_original(hr) ? r : lu_is_original(hb) ? bk : lu_is_original(hs) ? st : NULL;
+        if (!s) return -1;
+        snprintf(src, cap, "%s", s);
+    } else if (!lu_is_original(ha) && !lu_is_original(hr) && !lu_is_original(hb) && !lu_is_original(hs)) return -1;
+    return 1;
+}
+
+/* The game's own AnselSDK64.dll back under its name (a verified staged copy, one replacing rename), then the old proxy's leftovers go.
+ * 1: done (or nothing to do). 0: failed before or at the swap: AnselSDK64.dll is as it was. Repeatable after an interruption. */
+static inline int lu_migrate_legacy(const char *dir)
+{
+    char a[640], r[640], bk[640], st[640], p[700], src[640], h[65];
+    int i, l = lu_legacy_check(dir, src, sizeof(src));
+    if (l == 0) return 1;
+    if (l < 0) return 0;
+    lu_path(a, sizeof(a), dir, "AnselSDK64.dll", "");
+    lu_path(r, sizeof(r), dir, "AnselSDK64_real.dll", "");
+    lu_path(bk, sizeof(bk), dir, "AnselSDK64.dll", ".coop-original");
+    lu_path(st, sizeof(st), dir, "AnselSDK64.dll", ".coop-stage");
+    if (!lu_file_sha256(a, h) || !lu_is_original(h)) {
+        if (strcmp(src, st) != 0 && (!lu_copy_verified(src, st, h) || !lu_is_original(h))) { remove(st); return 0; }
+        if (!lu_rename_replace(st, a)) return 0;      /* remove-old-proxy */
+    }
+    if (!lu_file_sha256(a, h) || !lu_is_original(h)) return 0;
+    for (i = 0; i < 4; i++) {
+        const char *suffix[4] = { ".coop-receipt.json", ".coop-receipt.json.tmp", ".coop-receipt.json", ".coop-receipt.json.tmp" };
+        snprintf(p, sizeof(p), "%s%s", i < 2 ? a : r, suffix[i]);
+        remove(p);
+    }
+    if (lu_file_sha256(r, h) && lu_is_original(h)) remove(r);
+    if (lu_file_sha256(bk, h) && lu_is_original(h)) remove(bk);
+    if (lu_file_sha256(st, h) && lu_is_original(h)) remove(st);
+    return 1;
+}
 
 static inline int lu_journal_status(const char *dir, char *ver, size_t cap)
 {
@@ -1115,6 +1193,17 @@ static inline enum lu_result lu_rollback(const char *dir)
         lu_path(old, sizeof(old), dir, lu_targets[i].name, ".coop-old");
         lu_path(rprev, sizeof(rprev), dir, lu_targets[i].name, ".coop-receipt.json.coop-prev");
         lu_path(rpath, sizeof(rpath), dir, lu_targets[i].name, ".coop-receipt.json");
+        snprintf(hashkey, sizeof(hashkey), "file%d_add=", i);
+        if (strstr((const char *)jb, hashkey)) {      /* a file this update added (the old layout had none): it goes, with its receipt */
+            char newh[65] = {0};
+            snprintf(hashkey, sizeof(hashkey), "file%d_new=", i);
+            p = strstr((const char *)jb, hashkey);
+            if (p && strlen(p + strlen(hashkey)) >= 64) memcpy(newh, p + strlen(hashkey), 64);
+            remove(stage);
+            if (lu_exists(target) && (!lu_file_sha256(target, got) || strcmp(got, newh) != 0)) { failed = 1; continue; }
+            remove(target); remove(rpath);
+            continue;
+        }
         snprintf(hashkey, sizeof(hashkey), "file%d_prev=", i);
         p = strstr((const char *)jb, hashkey);
         if (p && strlen(p + strlen(hashkey)) >= 64) memcpy(want, p + strlen(hashkey), 64);
@@ -1161,7 +1250,7 @@ static inline enum lu_result lu_apply_package(const char *dir, const unsigned ch
     size_t plen[LU_NTARGETS] = {0};
     char newh[LU_NTARGETS][65], oldh[LU_NTARGETS][65];
     struct lu_receipt rc[LU_NTARGETS];
-    int change[LU_NTARGETS] = {0}, nchange = 0, i, k, ver;
+    int change[LU_NTARGETS] = {0}, nchange = 0, i, k, ver, legacy;
     enum lu_result r = LU_OK;
     struct lu_semver curv;
     char member[256], jpath[640];
@@ -1184,12 +1273,15 @@ static inline enum lu_result lu_apply_package(const char *dir, const unsigned ch
         if (lu_targets[i].exe && !lu_valid_pe(payload[i], plen[i], 0x8664u)) { r = LU_ERR_PE; goto done; }
         lu_sha256_hex(payload[i], plen[i], newh[i]);
     }
+    legacy = lu_legacy_check(dir, NULL, 0);
+    if (legacy < 0) { r = LU_ERR_LEGACY; goto done; }
     for (i = 0; i < LU_NTARGETS; i++) {
         int st = lu_file_state(dir, &lu_targets[i], newh[i], &rc[i], oldh[i]);
         if (st == CI_OUTDATED) { change[i] = 1; nchange++; }
+        else if (st == CI_MISSING && i == LU_PROXY && legacy > 0 && !rc[i].present) { change[i] = 2; nchange++; }      /* added: the old layout has none */
         else if (st != CI_CURRENT) { r = LU_ERR_RECEIPT; goto done; }
     }
-    if (!nchange) { r = LU_UP_TO_DATE; goto done; }
+    if (!nchange) { r = legacy > 0 ? (lu_migrate_legacy(dir) ? LU_OK : LU_ERR_LEGACY) : LU_UP_TO_DATE; goto done; }
 
     /* stage, back up, journal */
     for (i = 0; i < LU_NTARGETS; i++) {
@@ -1200,15 +1292,19 @@ static inline enum lu_result lu_apply_package(const char *dir, const unsigned ch
         lu_path(prev, sizeof(prev), dir, lu_targets[i].name, ".coop-prev");
         lu_path(rpath, sizeof(rpath), dir, lu_targets[i].name, ".coop-receipt.json");
         lu_path(rprev, sizeof(rprev), dir, lu_targets[i].name, ".coop-receipt.json.coop-prev");
-        if (!lu_write_verified(stage, payload[i], plen[i], newh[i]) || !lu_copy_verified(target, prev, chk) || strcmp(chk, oldh[i]) != 0 ||
+        if (!lu_write_verified(stage, payload[i], plen[i], newh[i])) { r = LU_ERR_IO; goto fail_clean; }
+        if (change[i] == 2) continue;      /* added: nothing to back up */
+        if (!lu_copy_verified(target, prev, chk) || strcmp(chk, oldh[i]) != 0 ||
             !lu_copy_verified(rpath, rprev, chk)) { r = LU_ERR_IO; goto fail_clean; }
     }
     lu_path(jpath, sizeof(jpath), dir, LU_JOURNAL, "");
     jf = fopen(jpath, "wb");
     if (!jf) { r = LU_ERR_IO; goto fail_clean; }
     fprintf(jf, "[update]\nstatus=pending\nprevious_version=%s\ntarget_version=%s\n", current_ver, target_tag);
-    for (i = 0; i < LU_NTARGETS; i++)
-        if (change[i]) fprintf(jf, "file%d_prev=%s\nfile%d_new=%s\n", i, oldh[i], i, newh[i]);
+    for (i = 0; i < LU_NTARGETS; i++) {
+        if (change[i] == 2) fprintf(jf, "file%d_add=1\nfile%d_new=%s\n", i, i, newh[i]);
+        else if (change[i]) fprintf(jf, "file%d_prev=%s\nfile%d_new=%s\n", i, oldh[i], i, newh[i]);
+    }
     if (fclose(jf) != 0) { remove(jpath); r = LU_ERR_IO; goto fail_clean; }
 
     k = 0;
@@ -1218,7 +1314,7 @@ static inline enum lu_result lu_apply_package(const char *dir, const unsigned ch
         lu_path(stage, sizeof(stage), dir, lu_targets[i].name, ".coop-stage");
         lu_path(target, sizeof(target), dir, lu_targets[i].name, "");
         lu_path(old, sizeof(old), dir, lu_targets[i].name, ".coop-old");
-        if (!lu_write_receipt(target, rc[i].original, rc[i].installed, newh[i])) { r = LU_ERR_IO; goto fail_rollback; }
+        if (!lu_write_receipt(target, rc[i].original, change[i] == 2 ? newh[i] : rc[i].installed, newh[i])) { r = LU_ERR_IO; goto fail_rollback; }
         if (lu_targets[i].launcher && !lu_rename_replace(target, old)) { r = LU_ERR_IO; goto fail_rollback; }      /* the running launcher can be renamed, not overwritten */
         if (!lu_rename_replace(stage, target)) { r = LU_ERR_IO; goto fail_rollback; }
         if (!lu_file_sha256(target, chk) || strcmp(chk, newh[i]) != 0) { r = LU_ERR_IO; goto fail_rollback; }
@@ -1229,6 +1325,9 @@ static inline enum lu_result lu_apply_package(const char *dir, const unsigned ch
             r = LU_ERR_IO; goto fail_rollback;
         }
     }
+    /* the old layout goes only now that the new files are in place: before the swap a failure rolls everything back; after it, the
+     * game's own AnselSDK64.dll is in place and verified (leftovers are cleaned on the next run) */
+    if (legacy > 0 && !lu_migrate_legacy(dir)) { r = LU_ERR_LEGACY; goto fail_rollback; }      /* MUT:migrate */
     /* settled: the backups and the journal go (the old launcher image stays until the next start) */
     for (i = 0; i < LU_NTARGETS; i++) {
         char prev[640], rprev[640];
