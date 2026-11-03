@@ -6,7 +6,8 @@
 // are called from two places each (exe+0x69653 / 0x699AD and exe+0x696BD / 0x69A17). While the view is out, those calls go through the
 // mod: the views are built a second time from the third-person camera, the world is drawn with it, and afterwards the views are built again
 // from the player's camera, so the game's logic (puzzle aiming, the pose the others receive) keeps the player's own. Nothing is patched
-// until the first emote with the setting on.
+// until the first emote with the setting on. The camera stands behind the player; the room behind is measured by one extra frame drawn
+// from the eye turned round (the same hooks), whose depth the overlay reads; that frame is never presented (ThirdPersonSkipPresent).
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <cmath>
@@ -40,7 +41,7 @@ float g_qErr = -1, g_maxOffset = 0, g_lastOffset = 0, g_gameView[3] = {0, 0, 0};
 View g_frameV; bool g_frameVValid = false, g_viewsSwapped = false;      // g_qErr: how far the game's own quaternion is from QuatFromYawPitch (a convention check, logged)
 volatile LONG g_moveKeys = 0, g_clicks = 0, g_stateReq = 0; volatile LONG g_force = -1;      // g_force: test override of the setting (-1: the cfg's)
 unsigned g_lastSeq = 0; bool g_seqInit = false; ULONGLONG g_lastTick = 0;
-ProbeSet g_probe; bool g_probeOut = false; float g_probeDepth[5] = {0, 0, 0, 0, 0};
+ProbeSet g_probe; bool g_probeOut = false; bool g_probeArm = false, g_probeView = false, g_probeDrawn = false, g_probeFrame = false, g_skipPresent = false; unsigned g_probeWait = 0, g_measureFrames = 0, g_skipped = 0; float g_probeDepth[5] = {0, 0, 0, 0, 0};
 Phase g_lastPhase = Phase::Off;
 
 uintptr_t Base() { return (uintptr_t)GetModuleHandleA(nullptr); }
@@ -72,6 +73,11 @@ void BuildViewsHook() {
     build();      // the game's own, from the player's camera
     g_frameVValid = false;
     V3 eye; float yaw, pitch; View v;
+    if (g_probeArm && g_cam.phase == Phase::Probe && PlayerCamera(&eye, &yaw, &pitch)) {      // the measuring frame: the eye turned round, drawn once, never shown
+        g_probeArm = false; v = MeasureView(eye, yaw);
+        PutCamera(v); build(); RestoreReal();
+        g_frameV = v; g_frameVValid = true; g_viewsSwapped = true; g_probeView = true; return;
+    }
     if (!g_cam.Active() || !PlayerCamera(&eye, &yaw, &pitch) || !g_cam.ViewFor(eye, yaw, pitch, &v)) return;
     const float* cq = (const float*)(Base() + kCamQuat); float q[4]; QuatFromYawPitch(yaw, pitch, q);
     float e1 = 0, e2 = 0; for (int i = 0; i < 4; ++i) { e1 = fmaxf(e1, fabsf(q[i] - cq[i])); e2 = fmaxf(e2, fabsf(q[i] + cq[i])); }
@@ -85,6 +91,7 @@ void RenderWorldHook() {
     ++g_hookCalls;
     if (!g_frameVValid) { draw(); return; }
     const float* mv = (const float*)(Base() + kMainView); memcpy(g_gameView, mv, 12);      // the view the game is about to draw with
+    g_probeDrawn = g_probeView; g_probeView = false;
     g_viewPos[0] = g_frameV.pos.x; g_viewPos[1] = g_frameV.pos.y; g_viewPos[2] = g_frameV.pos.z; g_viewAng[0] = g_frameV.yaw; g_viewAng[1] = g_frameV.pitch; g_viewUsed = true; ++g_swapped;
     PutCamera(g_frameV);      // (parts of the drawing read the player's camera itself)
     draw();
@@ -131,12 +138,12 @@ void WriteState() {
     const float* vp = (const float*)(Base() + kViewPos);
     fprintf(f, "{\"enabled\":%d,\"phase\":\"%s\",\"blend\":%.4f,\"reason\":\"%s\",\"scale\":%.4f,\"starts\":%u,\"returns\":%u,\"patched\":%d,\"patch_failed\":%d,"
                "\"hook_calls\":%u,\"swapped\":%u,\"frame_view\":%d,\"view\":[%.4f,%.4f,%.4f,%.4f,%.4f],\"eye\":[%.4f,%.4f,%.4f,%.4f,%.4f],"
-               "\"game_view_pos\":[%.4f,%.4f,%.4f],\"offset\":%.4f,\"max_offset\":%.4f,\"self_draws\":%u,\"self_frames\":%u,\"qerr\":%.6f,\"game_view\":[%.4f,%.4f,%.4f],\"probe\":[%.3f,%.3f,%.3f,%.3f,%.3f]}",
+               "\"game_view_pos\":[%.4f,%.4f,%.4f],\"offset\":%.4f,\"max_offset\":%.4f,\"self_draws\":%u,\"self_frames\":%u,\"qerr\":%.6f,\"game_view\":[%.4f,%.4f,%.4f],\"probe\":[%.3f,%.3f,%.3f,%.3f,%.3f],\"measure_frames\":%u,\"skipped_presents\":%u}",
         (g_force >= 0 ? g_force != 0 : GetCfg().emoteThirdPerson) ? 1 : 0, PhaseName(g_cam.phase), g_cam.Active() ? witness::Ease(g_cam.s) : 0.0f, WhyName(g_cam.last), g_cam.scale,
         g_cam.starts, g_cam.returns, g_patched ? 1 : 0, g_patchFailed ? 1 : 0, g_hookCalls, g_swapped, g_frameView ? 1 : 0,
         g_viewPos[0], g_viewPos[1], g_viewPos[2], g_viewAng[0], g_viewAng[1], eye.x, eye.y, eye.z, yaw, pitch,
         Readable(vp, 12) ? vp[0] : 0, Readable(vp, 12) ? vp[1] : 0, Readable(vp, 12) ? vp[2] : 0, g_frameView ? g_lastOffset : 0.0f, g_maxOffset, g_selfDraws, g_selfFrames, g_qErr, g_gameView[0], g_gameView[1], g_gameView[2],
-        g_probeDepth[0], g_probeDepth[1], g_probeDepth[2], g_probeDepth[3], g_probeDepth[4]);
+        g_probeDepth[0], g_probeDepth[1], g_probeDepth[2], g_probeDepth[3], g_probeDepth[4], g_measureFrames, g_skipped);
     fclose(f); MoveFileExW(tmp, path, MOVEFILE_REPLACE_EXISTING);
 }
 } // namespace
@@ -176,7 +183,8 @@ void ThirdPersonFixEye(unsigned before, float pos[3]) {
     memcpy(pos, g_realCp, 12);      // a third-person frame was being drawn while the camera was read: the player's own eye
 }
 void ThirdPersonFrame(float aspect) {
-    g_frameView = g_viewUsed; g_viewUsed = false;
+    g_frameView = g_viewUsed; g_viewUsed = false; g_probeFrame = g_probeDrawn; g_probeDrawn = false;
+    if (g_probeFrame) { g_skipPresent = true; ++g_measureFrames; }
     if (g_frameView) ++g_selfFrames; else ++g_firstPersonFrames;
     ULONGLONG now = GetTickCount64(); float dt = g_lastTick ? float(now - g_lastTick) / 1000.0f : 0; g_lastTick = now; if (dt > 0.1f) dt = 0.1f;
     V3 eye; float yaw, pitch;
@@ -186,25 +194,27 @@ void ThirdPersonFrame(float aspect) {
     bool menu = GamePaused() || DevMenuOpen() || PovRosterOpen() || GuideOpen() || SocialMouseCaptured() || MapGenActive();
     bool clicked = InterlockedExchange(&g_clicks, 0) != 0, moveKey = InterlockedExchange(&g_moveKeys, 0) != 0;
     if (!g_seqInit) { g_seqInit = true; g_lastSeq = seq; }
-    if (seq != g_lastSeq) {      // an emote was started here: measure the room in front of the player in the frame the game just drew (first person)
+    if (seq != g_lastSeq) {      // an emote was started here: the next frame is drawn from the eye turned round to measure the room behind the player
         g_lastSeq = seq;
         if (playing && enabled && !menu && !g_patchFailed && g_cam.Start(emote, eye, yaw, pitch)) {
-            if (MakeProbe(g_cam.p, eye, yaw, pitch, GameProjection().vfovDeg, aspect > 0.2f ? aspect : 16.0f / 9.0f, &g_probe)) { ModelGpuRequestDepthPoints(g_probe.fx, g_probe.fy, 5); g_probeOut = true; }
+            if (MakeProbe(g_cam.p, eye, BackYaw(yaw), 0.0f, GameProjection().vfovDeg, aspect > 0.2f ? aspect : 16.0f / 9.0f, &g_probe)) { g_probeArm = true; g_probeOut = false; g_probeWait = 0; }
             else g_cam.ProbeAnswer(nullptr, nullptr);
         }
     }
-    if (g_cam.phase == Phase::Probe && g_probeOut) {
-        int r = ModelGpuTakeDepthPoints(g_probeDepth, 5);
-        if (r == 1) { g_probeOut = false; g_cam.ProbeAnswer(&g_probe, g_probeDepth); }
-        else if (r < 0) { g_probeOut = false; g_cam.ProbeAnswer(nullptr, nullptr); }
+    if (g_cam.phase == Phase::Probe) {
+        if (g_probeFrame && !g_probeOut) { ModelGpuRequestDepthPoints(g_probe.fx, g_probe.fy, 5); g_probeOut = true; }      // this Present's depth is the measuring frame's (answered by the overlay below)
+        int r = g_probeOut ? ModelGpuTakeDepthPoints(g_probeDepth, 5) : 0;
+        if (r == 1) { g_probeOut = false; g_probeArm = false; if (GetCfg().tpIgnoreWall) for (float& d : g_probeDepth) d = -1; g_cam.ProbeAnswer(&g_probe, g_probeDepth); }      // (tp_ignore_wall: mutant, all sky)
+        else if (r < 0 || ++g_probeWait > 40) { g_probeOut = false; g_probeArm = false; g_cam.ProbeAnswer(nullptr, nullptr); }      // (40 frames without a measuring frame or answer: stay first person)
     }
     if (GetCfg().tpNeverReturn) g_cam.Tick(dt, true, g_cam.eye0, g_cam.yaw0, g_cam.pitch0, false, false, true);      // mutant: nothing ever brings the view back
     else g_cam.Tick(dt, playing, eye, yaw, pitch, clicked, menu, enabled, moveKey);
-    if (g_cam.Active() && !g_patched) {
+    if (g_cam.phase != Phase::Off && !g_patched) {
         g_patched = PatchCalls(); g_patchFailed = !g_patched;
         Log(g_patched ? "thirdperson: the view building and the world drawing now go through the mod (exe+0x69653, 0x699AD, 0x696BD, 0x69A17)" : "thirdperson: the world drawing is not the expected call: the view stays first person");
         if (!g_patched) { g_cam.phase = Phase::Off; g_cam.s = 0; }
     }
+    if (g_cam.phase != Phase::Probe) g_probeArm = false;
     if (g_cam.phase != g_lastPhase) {
         char m[300]; snprintf(m, sizeof m, "thirdperson: %s -> %s (reason %s, emote %d, scale %.2f, depth %.2f, eye moved %.3f %.3f %.3f, look moved %.3f %.3f)", PhaseName(g_lastPhase), PhaseName(g_cam.phase), WhyName(g_cam.last), g_cam.emote, g_cam.scale, g_probeDepth[0],
             eye.x - g_cam.eye0.x, eye.y - g_cam.eye0.y, eye.z - g_cam.eye0.z, WrapAngle(yaw - g_cam.yaw0), pitch - g_cam.pitch0); Log(m);
@@ -218,12 +228,13 @@ bool ThirdPersonViewCam(float pos[3], float ang[2]) {
     memcpy(pos, g_viewPos, 12); ang[0] = g_viewAng[0]; ang[1] = g_viewAng[1]; return true;
 }
 bool ThirdPersonSelf(float pos[3], float* yaw, int* emote, float* seconds) {
-    if (!g_frameView) return false;
+    if (!g_frameView || g_probeFrame) return false;      // (the measuring frame is not shown, and its depth must hold the world alone)
     V3 eye; float pitch; if (!PlayerCamera(&eye, yaw, &pitch)) return false;
     pos[0] = eye.x; pos[1] = eye.y; pos[2] = eye.z;
     unsigned seq; if (!SocialMyEmote(emote, seconds, &seq)) { *emote = 0; *seconds = 0; }
     return true;
 }
+bool ThirdPersonSkipPresent() { if (!g_skipPresent) return false; g_skipPresent = false; ++g_skipped; return true; }
 void ThirdPersonSelfDrawn(bool drawn) { if (drawn) ++g_selfDraws; }
 void ThirdPersonClick() { InterlockedExchange(&g_clicks, 1); }
 void ThirdPersonMoveKey() { InterlockedExchange(&g_moveKeys, 1); }

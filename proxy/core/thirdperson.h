@@ -1,9 +1,10 @@
 #pragma once
 // Third-person view while emoting (game-free; proxy/thirdperson.cpp is the game side). While the local player plays an emote the view
-// swings round to the front of the player, a little above, looking back at them, so they see their own figure do it; it swings back
-// when the emote ends, the player moves or looks away, clicks (a puzzle) or opens a menu.
-// Walls: the camera spot lies on a ray from the player's eye into the view the game has just drawn, so the game's own depth buffer says
-// how far that ray (and four rays round it, the camera's clearance) is free. The distance shrinks to fit; below minDist it stays first person.
+// moves back behind the player, a little above, looking at them (the usual third-person view), so they see their own figure do it; it
+// moves back when the emote ends, the player moves or looks away, clicks (a puzzle) or opens a menu.
+// Walls: the space behind the player is not in the frame the game drew, so one measuring frame is drawn from the eye turned round (never
+// shown: the mod skips its Present) and the game's own depth buffer says how far the ray to the camera spot (and four rays round it,
+// the camera's clearance) is free. The distance shrinks to fit; below minDist it stays first person.
 // Camera convention (build 11370412): z up, yaw about z, pitch up positive; the game's quaternion is x y z w and rotates the camera's
 // local +X (forward) into the view direction: q = Rz(yaw) * Ry(-pitch).
 #include <cmath>
@@ -31,7 +32,7 @@ inline V3 Right(float yaw) { return {std::sin(yaw), -std::cos(yaw), 0}; }
 inline V3 Up(float yaw, float pitch) { return {-std::sin(pitch) * std::cos(yaw), -std::sin(pitch) * std::sin(yaw), std::cos(pitch)}; }
 
 struct Params {
-    float dist = 2.6f;        // metres in front of the eye (horizontal)
+    float dist = 2.6f;        // metres behind the eye (horizontal)
     float height = 0.35f;     // above the eye
     float aimDrop = 0.55f;    // the camera looks at a point this far below the eye (the chest: the whole figure fits at 54 degrees)
     float minDist = 1.2f;     // closer than this: stay first person
@@ -50,7 +51,8 @@ inline const char* WhyName(Why w) {
         case Why::Unmeasurable: return "unmeasurable"; default: return "none"; }
 }
 
-// The five sample points (the camera spot, then right, left, up, down of it) as screen positions (0..1, y down) of the current view.
+// The five sample points (the camera spot, then right, left, up, down of it) as screen positions (0..1, y down) of the measuring view.
+// The spot lies `dist` in front of `yaw` here: the measuring view is the eye turned round (BackYaw), so the spot is behind the player.
 // false: a point is behind the view or off screen, so the space cannot be measured (the caller stays first person).
 struct ProbeSet { float fx[5], fy[5]; float len[5]; float cosView[5]; };
 inline bool MakeProbe(const Params& p, V3 eye, float yaw, float pitch, float vfovDeg, float aspect, ProbeSet* out) {
@@ -75,12 +77,17 @@ inline float FreeScale(const Params& p, const ProbeSet& s, const float viewDepth
     for (int i = 0; i < 5; ++i) {
         if (!(viewDepth[i] > 0) || !std::isfinite(viewDepth[i])) continue;
         float along = viewDepth[i] / s.cosView[i];       // the free length along the ray
+#ifndef TP_MUT_IGNORE_WALL
         float ki = (along - p.margin) / s.len[i]; if (ki < k) k = ki;
+#endif
     }
     return k < 0 ? 0 : k;
 }
 
+inline float BackYaw(float yaw) { return WrapAngle(yaw + kPi); }
+// The view of the measuring frame: the eye turned round, level. It is never shown.
 struct View { V3 pos; float yaw, pitch, blend; };
+inline View MeasureView(V3 eye, float yaw) { return {eye, BackYaw(yaw), 0.0f, 0.0f}; }
 
 class Cam {
 public:
@@ -126,10 +133,13 @@ public:
         if (!Active() || s <= 0) return false;
         float e = Ease(s), D = p.dist * scale, H = p.height * scale;
         V3 fh = {std::cos(yaw0), std::sin(yaw0), 0};
-        V3 offset = Add(Mul(fh, D), V3{0, 0, H});
-        float targetPitch = std::atan2(-(H + p.aimDrop), D);
-        float dYaw = WrapAngle(yaw0 + kPi - yaw); if (dYaw < 0) dYaw += 2 * kPi;      // always swing the same way round (to the left)
-        v->pos = Add(eye, Mul(offset, e)); v->yaw = WrapAngle(yaw + dYaw * e); v->pitch = pitch + (targetPitch - pitch) * e; v->blend = e;
+#ifdef TP_MUT_FRONT
+        V3 offset = Add(Mul(fh, D), V3{0, 0, H});      // mutant: the old camera, in front of the player
+#else
+        V3 offset = Add(Mul(fh, -D), V3{0, 0, H});
+#endif
+        float targetPitch = std::atan2(-(H + p.aimDrop), D);      // looks at the chest; the heading stays the player's own (it follows small looks)
+        v->pos = Add(eye, Mul(offset, e)); v->yaw = yaw; v->pitch = pitch + (targetPitch - pitch) * e; v->blend = e;
         return true;
     }
 };

@@ -39,12 +39,14 @@ $(BUILD)/t0.ok: $(BUILD)/coopfuzz-witness tests/run_t0.py
 	@if python3 tests/run_t0.py --hub $(HUB) > $(BUILD)/t0.log 2>&1; then touch $@; else cat $(BUILD)/t0.log; rm -f $@; exit 1; fi
 
 $(BUILD)/thirdperson: thirdperson.h emotes.h
-# mutant: the third-person view never swings back (TP_MUT_NO_RETURN); the test must fail it
+# mutants: the view never goes back (TP_MUT_NO_RETURN), the camera in front of the player (TP_MUT_FRONT), the wall behind not respected (TP_MUT_IGNORE_WALL); the test must fail each
 $(BUILD)/thirdperson-mut: tests/thirdperson.cpp thirdperson.h emotes.h
 	@mkdir -p $(BUILD)
 	g++ $(CXXF) -DTP_MUT_NO_RETURN -o $@ tests/thirdperson.cpp
+	g++ $(CXXF) -DTP_MUT_FRONT -o $@-front tests/thirdperson.cpp
+	g++ $(CXXF) -DTP_MUT_IGNORE_WALL -o $@-wall tests/thirdperson.cpp
 $(BUILD)/thirdperson-mut.ok: $(BUILD)/thirdperson-mut
-	@if $(BUILD)/thirdperson-mut > $(BUILD)/thirdperson-mut.log 2>&1; then echo "thirdperson mutant NOT caught"; rm -f $@; exit 1; else echo "thirdperson mutant (no return) caught" >> $(BUILD)/thirdperson-mut.log; touch $@; fi
+	@rm -f $@; : > $(BUILD)/thirdperson-mut.log; for m in thirdperson-mut thirdperson-mut-front thirdperson-mut-wall; do if $(BUILD)/$$m >> $(BUILD)/thirdperson-mut.log 2>&1; then echo "thirdperson mutant $$m NOT caught"; exit 1; else echo "thirdperson mutant $$m caught" >> $(BUILD)/thirdperson-mut.log; fi; done; touch $@
 
 STAMPS = $(foreach t,$(TESTS),$(BUILD)/$(t).ok) $(BUILD)/t0.ok $(BUILD)/thirdperson-mut.ok
 test: $(STAMPS)

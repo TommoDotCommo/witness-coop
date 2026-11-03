@@ -1,4 +1,5 @@
-// T0: the third-person emote camera (core/thirdperson.h). Mutant: -DTP_MUT_NO_RETURN (the view never swings back) must fail it.
+// T0: the third-person emote camera (core/thirdperson.h), behind the player. Mutants that must fail it: -DTP_MUT_NO_RETURN (the view never
+// goes back), -DTP_MUT_FRONT (the camera in front of the player), -DTP_MUT_IGNORE_WALL (the room behind is not respected).
 #include "../thirdperson.h"
 #include <cstdio>
 using namespace witness::tp;
@@ -26,7 +27,9 @@ int main() {
     const V3 eye = {10, 20, 3.5f}; const float yaw = 0.4f, pitch = 0.05f, vfov = 54, aspect = 16 / 9.f;
     Params P;
     // the probe: five points on screen, the first near the middle; a free view keeps the whole distance
-    ProbeSet ps; REQUIRE(MakeProbe(P, eye, yaw, pitch, vfov, aspect, &ps));
+    // the measuring view is the eye turned round: the camera spot, behind the player, is in the middle of it
+    View mv = MeasureView(eye, yaw); REQUIRE(Near(std::fabs(WrapAngle(mv.yaw - yaw)), kPi)); REQUIRE(Near(mv.pitch, 0) && Len(Sub(mv.pos, eye)) < 1e-6f);
+    ProbeSet ps; REQUIRE(MakeProbe(P, eye, mv.yaw, mv.pitch, vfov, aspect, &ps));
     REQUIRE(ps.fx[0] > 0.45f && ps.fx[0] < 0.55f && ps.fy[0] < 0.5f && ps.fy[0] > 0.3f);
     REQUIRE(ps.fx[1] > ps.fx[0] && ps.fx[2] < ps.fx[0] && ps.fy[3] < ps.fy[0] && ps.fy[4] > ps.fy[0]);
     float sky[5] = {-1, -1, -1, -1, -1}; REQUIRE(Near(FreeScale(P, ps, sky), 1));
@@ -35,7 +38,7 @@ int main() {
     float k = FreeScale(P, ps, wall); REQUIRE(k < 1 && k > 0);
     for (int i = 0; i < 5; ++i) REQUIRE(ps.len[i] * k <= wall[i] / ps.cosView[i] - P.margin + 1e-3f);
     // looking at the floor: the spot is off screen, nothing can be measured
-    ProbeSet bad; REQUIRE(!MakeProbe(P, eye, yaw, -1.2f, vfov, aspect, &bad));
+    ProbeSet bad; REQUIRE(!MakeProbe(P, eye, mv.yaw, -1.2f, vfov, aspect, &bad));
 
     // the whole cycle: start, probe, swing in, hold, emote ends, swing back, off
     Cam c; REQUIRE(c.Start(3, eye, yaw, pitch)); REQUIRE(c.phase == Phase::Probe); View v; REQUIRE(!c.ViewFor(eye, yaw, pitch, &v));
@@ -44,8 +47,9 @@ int main() {
     Run(c, 30, true, eye, yaw, pitch); REQUIRE(c.phase == Phase::Hold);
     REQUIRE(c.ViewFor(eye, yaw, pitch, &v) && Near(v.blend, 1));
     V3 off = Sub(v.pos, eye); REQUIRE(Near(Len(V3{off.x, off.y, 0}), P.dist) && Near(off.z, P.height));
-    REQUIRE(Dot(V3{off.x, off.y, 0}, V3{std::cos(yaw), std::sin(yaw), 0}) > 0);      // in front of the player ...
-    REQUIRE(Dot(Forward(v.yaw, v.pitch), Mul(off, -1)) > 0.9f * Len(off));                // ... looking back at them
+    REQUIRE(Dot(V3{off.x, off.y, 0}, V3{std::cos(yaw), std::sin(yaw), 0}) < -0.99f * P.dist);      // behind the player (opposite the facing) ...
+    REQUIRE(Dot(Forward(v.yaw, v.pitch), Mul(off, -1)) > 0.9f * Len(off));                // ... looking at them
+    REQUIRE(Near(v.yaw, yaw));                                                            // the player's own heading, no swing round
     REQUIRE(v.pitch < 0);
     Run(c, 3, false, eye, yaw, pitch); REQUIRE(c.phase == Phase::Out && c.last == Why::EmoteEnded);
     Run(c, 30, false, eye, yaw, pitch); REQUIRE(c.phase == Phase::Off && !c.ViewFor(eye, yaw, pitch, &v));
@@ -81,6 +85,10 @@ int main() {
     float mid[5]; for (int i = 0; i < 5; ++i) mid[i] = 2.5f;
     Cam s; s.Start(5, eye, yaw, pitch); s.ProbeAnswer(&ps, mid); REQUIRE(s.phase == Phase::In && s.scale < 1);
     Run(s, 30, true, eye, yaw, pitch); REQUIRE(s.ViewFor(eye, yaw, pitch, &v)); REQUIRE(Len(Sub(v.pos, eye)) * ps.cosView[0] < 2.5f - P.margin * ps.cosView[0] + 1e-3f);
+    // the wall behind the player at 2.0 m, seen from the measuring view as a plane: the camera stays this side of it, still behind the player
+    { float w2[5]; for (int i = 0; i < 5; ++i) w2[i] = 2.0f; Cam q; q.Start(5, eye, yaw, pitch); q.ProbeAnswer(&ps, w2);
+      if (q.phase == Phase::In) { Run(q, 30, true, eye, yaw, pitch); REQUIRE(q.ViewFor(eye, yaw, pitch, &v)); V3 o = Sub(v.pos, eye);
+        REQUIRE(Dot(V3{o.x, o.y, 0}, V3{std::cos(yaw), std::sin(yaw), 0}) < 0); REQUIRE(Len(V3{o.x, o.y, 0}) < 2.0f - P.margin + 1e-3f && q.scale < 0.7f); } else REQUIRE(q.last == Why::Blocked); }
     // moving while the probe is out: nothing starts
     Cam pm; pm.Start(5, eye, yaw, pitch); pm.Tick(1 / 30.f, true, moved, yaw, pitch, false, false, true); REQUIRE(pm.phase == Phase::Off);
     pm.ProbeAnswer(&ps, sky); REQUIRE(pm.phase == Phase::Off);

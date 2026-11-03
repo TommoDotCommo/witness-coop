@@ -16,7 +16,7 @@ No game files are in this repo. You need your own copy of The Witness, Steam bui
 
 ## What works
 
-The adventurer has [24 procedural emotes and proximity speech gestures](docs/GESTURES.md), with game-free pose checks, sync simulation and a software preview. Hold `H` for the wheel, use `Tab` to change its page, and hold `F1` for the binding guide. While you emote the view swings round in front of you so you see your own figure do it (setting: Third-person view when emoting; `proxy/thirdperson.cpp`, checked by `tools/qa.sh thirdperson`). Live visual quality remains unverified.
+The adventurer has [24 procedural emotes and proximity speech gestures](docs/GESTURES.md), with game-free pose checks, sync simulation and a software preview. Hold `H` for the wheel, use `Tab` to change its page, and hold `F1` for the binding guide. While you emote the view moves back behind and a little above you so you see your own figure do it (setting: Third-person view when emoting; `proxy/thirdperson.cpp`, checked by `tools/qa.sh thirdperson`). Live visual quality remains unverified.
 
 Chat, pings, emotes, drawing, voice (with channels: proximity, radio, an open line, one on one), see-through players, a race mode, a lobby in the launcher (invite friends, see and talk to them before and after the game), saves that say who played and a new game that starts with chosen parts of the map done are described in [features.md](features.md); pictures of all of it are in [the showcase](docs/SHOWCASE.md).
 
@@ -549,10 +549,10 @@ typical seconds in `tools/qa_durations.json` (`tools/shard.py`, tested game-free
 scenario, shard, seconds and result and the total wall time. `tools/qa.sh --serial` runs the suite on one pair of games.
 
 `tools/qa.sh thirdperson` checks the third-person view while emoting (`tools/qa_thirdperson.py`, `tools/win/wthird.py`): A emotes and the
-game's own main view (exe+0x649860) stands at the camera in front of A while it draws; A's own figure is drawn doing the emote; the player
+game's own main view (exe+0x649860) stands at the camera behind A (opposite the facing, a little above) while it draws; the room behind is measured by one extra frame drawn from the eye turned round, which is not presented; A's own figure is drawn doing the emote; the player
 entity never moves; B receives A's real eye and stays first person; the view returns when the emote ends, on walking and on a click; with
-the setting off it stays first person; a wall 1.2 m ahead keeps it first person. The mutant `tp_never_return=1` must fail it. The camera
-itself is tested game-free in `make -C proxy/core test` (`proxy/core/tests/thirdperson.cpp`, mutant `TP_MUT_NO_RETURN`).
+the setting off it stays first person; a wall 1.2 m behind A keeps it first person. The mutants `tp_never_return=1` and `tp_ignore_wall=1` must fail it. The camera
+itself is tested game-free in `make -C proxy/core test` (`proxy/core/tests/thirdperson.cpp`, mutants `TP_MUT_NO_RETURN`, `TP_MUT_FRONT`, `TP_MUT_IGNORE_WALL`).
 
 `tools/qa.sh model` runs the adventurer suite (`tools/suite_model.py`, `tools/win/wmodel.py`): visibility, idle/walk/run animation, measured speed, render-thread statistics, occlusion behind the first door, blinking, the glance at a near player and the sun shadow on the floor. It also checks migration from a removed model name. Mutants disable gait, read statistics on the command thread, draw through walls, turn the life layer off and turn the shadow off. The updated live scenarios require a fresh verifier run; no old model-selector results apply to this version.
 
