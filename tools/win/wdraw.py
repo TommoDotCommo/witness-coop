@@ -45,8 +45,9 @@ def leave_puzzle():
         if abs(p.camera()[1][0] - y0) > 0.005: c.send(['mouse -8 0'], 0.1); return
         rclick()
 MOVES = []      # how the player got to each place it stood (in the result)
+HELD = False    # the whole line was already held for a look (WDRAW_HOLD_BEFORE_FINISH): a wrong verdict after it is not held again
 def done(solved, why, traced=0, dist=0.0):
-    if not solved and traced >= 1 and os.environ.get('WDRAW_HOLD_ON_FAIL'):      # (test hook: a line that got part of the way stays on the panel for this many seconds, so a QA scenario can look at it from the other game)
+    if not solved and traced >= 1 and os.environ.get('WDRAW_HOLD_ON_FAIL') and not HELD:      # (test hook: a line that got part of the way stays on the panel for this many seconds, so a QA scenario can look at it from the other game)
         print('HOLD %d %s' % (traced, why), flush=True); time.sleep(float(os.environ['WDRAW_HOLD_ON_FAIL']))
     if not solved: c.send(['shot fail_%x' % eid], 0.8)      # what the game showed, taken while still there
     leave_puzzle()                                           # leave the puzzle if it is still entered (nothing happens otherwise)
@@ -634,6 +635,9 @@ for i in range(1, len(path)):
 # ---- finishing ------------------------------------------------------------------------------------------------------------------------------
 stamp('path drawn'); c.send(['mouse 0 0'], 0.6)
 dbg('before the finishing click: state', state(), 'traced', traced())
+if os.environ.get('WDRAW_HOLD_BEFORE_FINISH') and traced() >= 1 and state() == 0:      # (test hook: the whole line stays on the panel, not yet given to the game, for this many seconds, so a QA
+    # scenario can look at it from the other game. A finished line the game judges wrong is taken off the panel after its error flash, about 10 s later: too soon to be looked at.)
+    print('HOLD %d the whole path is drawn, before the finishing click' % traced(), flush=True); time.sleep(float(os.environ['WDRAW_HOLD_BEFORE_FINISH'])); HELD = True
 c.send(['button L down'], 0.12); c.send(['button L up'], 0.12)
 t_end = time.time()
 while time.time() - t_end < 8 and not is_solved() and state() != 2: time.sleep(0.2)      # solved flags, or the game's verdict "wrong" (state 2)
