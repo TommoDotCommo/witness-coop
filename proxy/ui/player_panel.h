@@ -66,7 +66,7 @@ inline Layout Compute(float W, float H, size_t n, const Options& o) {
     L.togglesY = rowsEnd + 12 * k; L.sessionY = L.togglesY + 30 * k; L.hintY = L.sessionY + 34 * k;
     float ty = L.togglesY + 2 * k, right = x + w - 8 * k;
     // toggles line: "Voice volume 80% [-][+]" on the left, [Name tags: on] [Partner picture: large] on the right
-    L.voiceDown = {x + 150 * k, ty, 22 * k, bh}; L.voiceUp = {x + 214 * k, ty, 22 * k, bh};
+    L.voiceDown = {x + 150 * k, ty, 22 * k, bh}; L.voiceUp = {x + 228 * k, ty, 22 * k, bh};
     L.partner = {right - 190 * k, ty, 190 * k, bh}; L.tags = {L.partner.x - 4 * k - 120 * k, ty, 120 * k, bh};
     float sy = L.sessionY + 4 * k;
     if (o.confirmLeave) { L.yes = {right - 200 * k, sy, 96 * k, bh}; L.no = {right - 100 * k, sy, 100 * k, bh}; }
