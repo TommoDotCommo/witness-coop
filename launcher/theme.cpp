@@ -132,12 +132,12 @@ void PaintHeader(HDC dc, const RECT& client, int height, const wchar_t* subtitle
     SelectObject(dc, g_body); SetTextColor(dc, kAccent); RECT sr = {26, 52, client.right - 220, height - 4}; DrawTextW(dc, subtitle, -1, &sr, DT_LEFT | DT_SINGLELINE);
     int px = client.right - 196, py = 12, pw = 172, ph = height - 28;      // the panel
     HBRUSH pb = CreateSolidBrush(kSurface); HPEN pe = CreatePen(PS_SOLID, 1, kSurface2); HGDIOBJ op = SelectObject(dc, pe), ob = SelectObject(dc, pb); RoundRect(dc, px, py, px + pw, py + ph, 8, 8); SelectObject(dc, op); SelectObject(dc, ob); DeleteObject(pe); DeleteObject(pb);
-    const int gx[] = {px + 22, px + 64, px + 108, px + 150}, gy[] = {py + 16, py + ph / 2, py + ph - 16};
+    const int gx[] = {px + 22, px + 64, px + 108, px + 150}, gy[] = {py + 16, py + ph - 16};
     LOGBRUSH gb = {BS_SOLID, kSurface2, 0}; HPEN gridP = ExtCreatePen(PS_GEOMETRIC | PS_SOLID | PS_ENDCAP_ROUND, 5, &gb, 0, nullptr); op = SelectObject(dc, gridP);      // the panel's grid, unlit
-    for (int x : gx) { MoveToEx(dc, x, gy[0], nullptr); LineTo(dc, x, gy[2]); }
+    for (int x : gx) { MoveToEx(dc, x, gy[0], nullptr); LineTo(dc, x, gy[1]); }
     for (int y : gy) { MoveToEx(dc, gx[0], y, nullptr); LineTo(dc, gx[3], y); }
     SelectObject(dc, op); DeleteObject(gridP);
-    POINT pts[] = {{gx[0], gy[2]}, {gx[0], gy[0]}, {gx[1], gy[0]}, {gx[1], gy[2]}, {gx[2], gy[2]}, {gx[2], gy[0]}, {px + pw - 10, gy[0]}};
+    POINT pts[] = {{gx[0], gy[1]}, {gx[0], gy[0]}, {gx[1], gy[0]}, {gx[1], gy[1]}, {gx[2], gy[1]}, {gx[2], gy[0]}, {px + pw - 10, gy[0]}};
     LOGBRUSH lb = {BS_SOLID, kLine, 0}; HPEN lineP = ExtCreatePen(PS_GEOMETRIC | PS_SOLID | PS_ENDCAP_ROUND | PS_JOIN_ROUND, 5, &lb, 0, nullptr); op = SelectObject(dc, lineP); Polyline(dc, pts, 7); SelectObject(dc, op); DeleteObject(lineP);
     LOGBRUSH lb2 = {BS_SOLID, kAccent, 0}; HPEN litP = ExtCreatePen(PS_GEOMETRIC | PS_SOLID | PS_ENDCAP_ROUND | PS_JOIN_ROUND, 5, &lb2, 0, nullptr); op = SelectObject(dc, litP); Polyline(dc, pts, 4); SelectObject(dc, op); DeleteObject(litP);
     DrawDot(dc, pts[0].x, pts[0].y, 8, kAccent, true);      // the start circle, lit
