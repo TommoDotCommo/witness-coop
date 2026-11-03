@@ -603,7 +603,7 @@ void LayoutSection(HWND p, int s, int W, int H) {
         y += 40;
     }
     std::vector<Field*> rows; for (auto& f : g_fields) if (f.section == s) rows.push_back(&f);
-    auto rowH = [](const Field* f) { return f->kind == kMulti ? 96 : f->kind == kNoteK ? 64 : f->hHint ? 50 : 36; };
+    auto rowH = [](const Field* f) { return f->kind == kMulti ? 96 : f->kind == kNoteK ? 64 : f->hHint ? 56 : 36; };
     int total = 0; for (auto* f : rows) total += rowH(f);
     int cols = (W >= 900 && total > std::max(200, H - y - 8)) ? 2 : 1, colW = (W - (cols - 1) * 28) / cols;
     int per = 0, x = 0, cy = y, target = (total + cols - 1) / cols;
@@ -623,7 +623,7 @@ void LayoutSection(HWND p, int s, int W, int H) {
 #endif
         else if (f->kind == kKeyBtn) Place(f->h, cx, cy + 1, std::min(cw, 200), 30);
         else Place(f->h, cx, cy + 3, std::min(cw, 300), 28);
-        if (f->hHint) Place(f->hHint, x, cy + 30, colW, 18);
+        if (f->hHint) Place(f->hHint, x, cy + 34, colW, 18);
         cy += rh; per += rh;
     }
 }
