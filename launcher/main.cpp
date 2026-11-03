@@ -1134,7 +1134,7 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, LPWSTR cmdline, int show) {
     { wchar_t e[MAX_PATH]; if (g_statFile.empty() && GetEnvironmentVariableW(L"WITNESS_LAUNCHER_STAT_FILE", e, MAX_PATH)) g_statFile = e; if (g_cmdFile.empty() && GetEnvironmentVariableW(L"WITNESS_LAUNCHER_CMD_FILE", e, MAX_PATH)) g_cmdFile = e; }      // (tests: a launcher the game started by itself)
     if (!Exists(g_dir + L"\\witness64_d3d11.exe") && !Exists(g_dir + L"\\witness_d3d11.exe") && Exists(Dir(g_dir) + L"\\witness64_d3d11.exe")) g_dir = Dir(g_dir);
     SetEnvironmentVariableW(handover::kSessionEnv, L"1");      // every game this launcher starts carries it: that game never hands over to a launcher again (common/handover.h)
-    { wchar_t e[8]; if (GetEnvironmentVariableW(L"SteamDeck", e, 8) && e[0] == L'1') fill = true; }      // Game Mode on a Steam Deck: the window fills the screen (K8)
+    bool deck = false; { wchar_t e[8]; if (GetEnvironmentVariableW(L"SteamDeck", e, 8) && e[0] == L'1') fill = deck = true; }      // a Steam Deck: the window fills the screen, without a frame (K8; Game Mode shows one window; Steam's menu quits)
     { std::wstring ld = LogsFolder(); if (!ld.empty() && g_log.Open(ld, L"launcher_p", (unsigned long long)100 * 1024 * 1024)) {
         g_logOpen = true; char l[200]; snprintf(l, sizeof l, "session %s: mod %s", g_log.KeyUtf8().c_str(), MOD_VERSION); Dlog(l); Dlog(("launcher started, game folder " + U(g_dir)).c_str());
         diag::CrashOptions co; co.session = &g_log; co.dataModule = GetModuleHandleW(nullptr); co.log = Dlog; diag::InstallCrashHandler(co); } }
@@ -1156,6 +1156,7 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, LPWSTR cmdline, int show) {
     g_hints = Make(g_main, L"STATIC", L"", SS_LEFT | SS_ENDELLIPSIS, 0, 0, 10, 10, ID_HINTS); th::MarkMuted(g_hints);
     g_sess.SetModVersion(MOD_VERSION); g_upd.Init(g_dir, MOD_VERSION, [](const std::string& l) { Dlog(l.c_str()); });
     LoadAll(); g_upd.StartAuto(); SetTimer(g_main, 1, 100, nullptr); SetTimer(g_main, 2, 16, nullptr);
+    if (deck) { SetWindowLongPtrW(g_main, GWL_STYLE, WS_POPUP | WS_CLIPCHILDREN); MONITORINFO mi = {sizeof mi}; GetMonitorInfoW(MonitorFromWindow(g_main, MONITOR_DEFAULTTOPRIMARY), &mi); SetWindowPos(g_main, nullptr, mi.rcMonitor.left, mi.rcMonitor.top, mi.rcMonitor.right - mi.rcMonitor.left, mi.rcMonitor.bottom - mi.rcMonitor.top, SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED); fill = false; }
     if (fill && g_noActivate) { MONITORINFO mi = {sizeof mi}; GetMonitorInfoW(MonitorFromWindow(g_main, MONITOR_DEFAULTTOPRIMARY), &mi); SetWindowPos(g_main, nullptr, mi.rcWork.left, mi.rcWork.top, mi.rcWork.right - mi.rcWork.left, mi.rcWork.bottom - mi.rcWork.top, SWP_NOZORDER | SWP_NOACTIVATE); }
     LayoutAll(); ShowWindow(g_main, g_noActivate ? SW_SHOWNOACTIVATE : (fill ? SW_SHOWMAXIMIZED : SW_SHOW)); LayoutAll();
     if (g_autoJoin) { JoinSteamLobby(g_autoJoin); startPage = 0; } if (startPage < 0 || startPage >= g_npages) startPage = 0;
