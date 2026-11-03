@@ -113,7 +113,8 @@ def panel_scene(vi):
     V = games[vi]; drawer = games[1 if vi == 0 else 0]
     plan = PLAN
     V.send(['menusel 293', 'menudo teleport'], 4.0); snap(V, 'panel_0_before', 'The cable-driving maze, unsolved, seen by player %d.' % (vi + 1))
-    if not plan: print('  no drawing plan (no panel manifest): skipping the drawing'); return
+    if not plan:
+        drawer.send(['solve 293'], 4.0); snap(V, 'panel_2_solved', 'Player %d solves the panel (the solve test command, not a drawn line): it is solved in this game too and the cable is lit.' % (drawer.idx + 1)); return
     pid_, nodes = plan.split(':', 1); import subprocess
     pr = subprocess.Popen([sys.executable, '-I', os.path.join(HERE, 'wdraw.py'), str(drawer.pid), drawer.dir, pid_, nodes], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
     t = time.time(); k = 0
@@ -197,6 +198,18 @@ def pad_scene(vi):
     V.send(['pad 0 0 0 0 0 0 0'], 0.6)
     V.send(['pad 220 0 0 0 0 0 0'], 0.3); V.send(['pad 20 0 0 0 30000 0 0'], 0.5); snap(V, 'pad_quick', 'Pad: the quick chat wheel (View + RB): Ready, Wait for me, Over here, ...'); V.send(['pad 0 0 0 0 0 0 0'], 0.5); V.send(['pad off'], 0.5)
 
+def hide_paths(h):
+    """Privacy: every child window whose text is a game folder of this PC (the About page's Game folder box) shows a generic path in the picture instead."""
+    import ctypes, ctypes.wintypes as wt
+    u = ctypes.WinDLL('user32', use_last_error=True); E = ctypes.WINFUNCTYPE(wt.BOOL, wt.HWND, wt.LPARAM); u.SendMessageW.argtypes = [wt.HWND, wt.UINT, wt.WPARAM, wt.LPARAM]
+    dirs = {g.dir.rstrip('\\').lower() for g in games}
+    @E
+    def cb(c, l):
+        b = ctypes.create_unicode_buffer(520); u.GetWindowTextW(c, b, 520)
+        if b.value.rstrip('\\').lower() in dirs: u.SendMessageW(c, 0x000C, 0, ctypes.cast(ctypes.c_wchar_p('C:\\Games\\The Witness'), ctypes.c_void_p).value)
+        return True
+    u.EnumChildWindows(h, cb, 0)
+
 def window_picture(h, name, caption):
     """A picture of one window, asked of the window itself (PrintWindow): nothing in front of it can end up in the picture."""
     import ctypes, ctypes.wintypes as wt
@@ -204,7 +217,7 @@ def window_picture(h, name, caption):
     u.GetWindowRect.argtypes = [wt.HWND, ctypes.POINTER(wt.RECT)]; u.PrintWindow.argtypes = [wt.HWND, wt.HDC, wt.UINT]; u.GetWindowDC.restype = wt.HDC; u.GetWindowDC.argtypes = [wt.HWND]; u.ReleaseDC.argtypes = [wt.HWND, wt.HDC]
     g32.CreateCompatibleDC.restype = ctypes.c_void_p; g32.CreateCompatibleBitmap.restype = ctypes.c_void_p; g32.SelectObject.argtypes = [ctypes.c_void_p, ctypes.c_void_p]; g32.GetDIBits.argtypes = [ctypes.c_void_p, ctypes.c_void_p, wt.UINT, wt.UINT, ctypes.c_void_p, ctypes.c_void_p, wt.UINT]
     g32.CreateCompatibleBitmap.argtypes = [wt.HDC, ctypes.c_int, ctypes.c_int]; g32.CreateCompatibleDC.argtypes = [wt.HDC]; g32.DeleteObject.argtypes = [ctypes.c_void_p]; g32.DeleteDC.argtypes = [ctypes.c_void_p]
-    u.RedrawWindow.argtypes = [wt.HWND, ctypes.c_void_p, ctypes.c_void_p, wt.UINT]; u.RedrawWindow(h, None, None, 0x1 | 0x80 | 0x100); time.sleep(0.3)      # every control painted before the picture (a button that was enabled a moment ago was missing once)
+    hide_paths(h); u.RedrawWindow.argtypes = [wt.HWND, ctypes.c_void_p, ctypes.c_void_p, wt.UINT]; u.RedrawWindow(h, None, None, 0x1 | 0x80 | 0x100); time.sleep(0.3)      # every control painted before the picture (a button that was enabled a moment ago was missing once)
     r = wt.RECT(); u.GetWindowRect(h, ctypes.byref(r)); w, hh = r.right - r.left, r.bottom - r.top
     dc = u.GetWindowDC(h); mdc = g32.CreateCompatibleDC(dc); bmp = g32.CreateCompatibleBitmap(dc, w, hh); g32.SelectObject(mdc, bmp); u.PrintWindow(h, mdc, 2)
     class BIH(ctypes.Structure): _fields_ = [('size', wt.DWORD), ('w', ctypes.c_long), ('h', ctypes.c_long), ('planes', wt.WORD), ('bits', wt.WORD), ('comp', wt.DWORD), ('img', wt.DWORD), ('x', ctypes.c_long), ('y', ctypes.c_long), ('u', wt.DWORD), ('i', wt.DWORD)]
@@ -329,9 +342,9 @@ def launcher_scene(vi):
              (2, 4, 'launcher_display', 'Settings, Display: the game\'s own Launcher.variables (screen mode, resolution, frame limit, quality).'),
              (2, 5, 'launcher_network', 'Settings, Network: port and how friends find each other.'),
              (2, 6, 'launcher_launcher', 'Settings, Launcher: show at start, updates, and the experimental options (off by default).'),
-             (3, 0, 'launcher_about', 'About: version, updates, the quick guide, Report a problem, links and credits.')]
+             (3, 0, 'launcher_about', 'About: version, updates, the quick guide, Send diagnostics, links, the game folder (a generic path is shown here instead of this PC\'s) and credits.')]
     for page, section, name, caption in pages:
-        p = subprocess.Popen([exe, '--dir', games[vi].dir, '--page', str(page), '--section', str(section), '--no-activate'], startupinfo=si); h = None; t0 = time.time()
+        p = subprocess.Popen([exe, '--dir', games[vi].dir, '--page', str(page), '--section', str(section), '--no-activate'] + (['--size', '1280', '900'] if name == 'launcher_keys' else []), startupinfo=si); h = None; t0 = time.time()
         while time.time() - t0 < 10 and not h: h = find(p.pid, 'WitnessLauncher'); time.sleep(0.2)
         time.sleep(0.8)
         if h:

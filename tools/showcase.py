@@ -34,6 +34,7 @@ def prepare(c, config):
 
 def draw_plan():
     """The maze's solution as a node list for wdraw (from the panel manifest and the rule solver), 'id:node,node,...' or '' when there is no manifest."""
+    if os.environ.get('SHOWCASE_NO_PLAN'): return ''      # the drawing bot failed on this build; the panel scene then uses the solve command
     try:
         import sweep, solver
         manifest = {q['id']: q for q in sweep.load(sweep.MANIFEST, [])}; q = manifest[0x293]; path = solver.solve(q)
