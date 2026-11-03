@@ -16,7 +16,7 @@ No game files are in this repo. You need your own copy of The Witness, Steam bui
 
 ## What works
 
-The adventurer has [24 procedural emotes and proximity speech gestures](docs/GESTURES.md), with game-free pose checks, sync simulation and a software preview. Hold `H` for the wheel, use `Tab` to change its page, and hold `F1` for the binding guide. Live visual quality remains unverified.
+The adventurer has [24 procedural emotes and proximity speech gestures](docs/GESTURES.md), with game-free pose checks, sync simulation and a software preview. Hold `H` for the wheel, use `Tab` to change its page, and hold `F1` for the binding guide. While you emote the view swings round in front of you so you see your own figure do it (setting: Third-person view when emoting; `proxy/thirdperson.cpp`, checked by `tools/qa.sh thirdperson`). Live visual quality remains unverified.
 
 Chat, pings, emotes, drawing, voice (with channels: proximity, radio, an open line, one on one), see-through players, a race mode, a lobby in the launcher (invite friends, see and talk to them before and after the game), saves that say who played and a new game that starts with chosen parts of the map done are described in [features.md](features.md); pictures of all of it are in [the showcase](docs/SHOWCASE.md).
 

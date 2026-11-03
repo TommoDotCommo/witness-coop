@@ -99,7 +99,7 @@ void AddFields() {
     }
     add(6, "Player number (1, 2, ...)", "cfg:id", kEdit, {}, "1"); add(6, "Name shown to the others", "cfg:name", kEdit); add(6, "UDP port to listen on", "cfg:listen", kEdit, {}, "47001");
     add(6, "Other players: number,address,port", "cfgmulti:peer", kMulti);
-    add(6, "Developer menu (F8)", "cfg:dev_menu", kCheck); add(6, "See through players in the way of a puzzle", "cfg:see_through", kCheck, {}, "1"); add(6, "Keep running when this window is not active", "cfg:run_unfocused", kCheck, {}, "0", "two windows on one PC: stays smooth");
+    add(6, "Developer menu (F8)", "cfg:dev_menu", kCheck); add(6, "See through players in the way of a puzzle", "cfg:see_through", kCheck, {}, "1"); add(6, "Third-person view when emoting", "cfg:emote_third_person", kCheck, {}, "1", "the view swings round so you see yourself"); add(6, "Keep running when this window is not active", "cfg:run_unfocused", kCheck, {}, "0", "two windows on one PC: stays smooth");
 }
 Field* ByKey(const std::string& k) { for (auto& f : g_fields) if (f.key == k) return &f; return nullptr; }
 std::string GetVal(Field& f) {
