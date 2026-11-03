@@ -43,7 +43,7 @@ if ($Scenario -in 'all', 'hash') {
     $dir = ($r.message -replace '(?s).*extracted: ', '').Trim()
     Check ($dir -eq (Join-Path $lad 'witness-coop\setup\v0.0.0-test')) "extract: lands in %LOCALAPPDATA%\witness-coop\setup\<version> ($dir)"
     if ($PackageDir) {
-        foreach ($f in 'AnselSDK64.dll', 'witness_launcher.exe', 'install-state.ps1', 'witness-coop.ps1', 'installer-gui.ps1', 'install-policy.exe', 'witness_models\adventurer.glb') {
+        foreach ($f in 'dsound.dll', 'witness_launcher.exe', 'install-state.ps1', 'witness-coop.ps1', 'installer-gui.ps1', 'install-policy.exe', 'witness_models\adventurer.glb') {
             Check ((Test-Path (Join-Path $dir $f)) -and (Hash (Join-Path $dir $f)) -eq (Hash (Join-Path $PackageDir $f))) "extract: $f identical to the package's"
         }
     }

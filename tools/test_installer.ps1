@@ -4,7 +4,8 @@ param(
     [Parameter(Mandatory=$true)][string]$GameDir,
     [Parameter(Mandatory=$true)][string]$PackageDir,
     [string]$TestRoot,
-    [switch]$OnlyRefusals    # only the refusal checks (qa_installer.sh runs them against a mutant package that must fail)
+    [switch]$OnlyRefusals,   # only the refusal checks (qa_installer.sh runs them against a mutant package that must fail)
+    [switch]$OnlyMigration   # only the old-layout migration and chain checks (the same, for the migration mutants)
 )
 $ErrorActionPreference = 'Stop'
 $base = if ($TestRoot) { $TestRoot } else { Join-Path (Split-Path -Parent $PSScriptRoot) 'local\tests' }
@@ -24,7 +25,7 @@ foreach ($name in 'AnselSDK64.dll', 'AnselSDK64_real.dll', 'AnselSDK64.dll.coop-
     if ((Test-Path $p) -and (Get-CoopHash $p) -eq $script:WitnessAnselSha) { $sourceAnsel = $p; break }
 }
 Check ($sourceAnsel -ne $null) 'the source game has its original Ansel DLL'
-$proxyHash = Get-CoopHash (Join-Path $PackageDir 'AnselSDK64.dll')
+$proxyHash = Get-CoopHash (Join-Path $PackageDir 'dsound.dll')
 Check ($proxyHash -ne $script:WitnessAnselSha) 'the package ships the proxy, not the original'
 function Fixture($name, $withAnsel = $true) {
     $dir = Join-Path $root $name
@@ -45,8 +46,9 @@ function Status($dir) {
     return ($json | ConvertFrom-Json)
 }
 function Installed($dir) {
-    (Get-CoopHash (Join-Path $dir 'AnselSDK64.dll')) -eq $proxyHash -and
-    (Get-CoopHash (Join-Path $dir 'AnselSDK64_real.dll')) -eq $script:WitnessAnselSha -and
+    (Get-CoopHash (Join-Path $dir 'dsound.dll')) -eq $proxyHash -and
+    (Get-CoopHash (Join-Path $dir 'AnselSDK64.dll')) -eq $script:WitnessAnselSha -and
+    -not (Test-Path (Join-Path $dir 'AnselSDK64_real.dll')) -and -not (Test-Path (Join-Path $dir 'AnselSDK64.dll.coop-receipt.json')) -and
     (Get-CoopHash (Join-Path $dir 'witness_launcher.exe')) -eq (Get-CoopHash (Join-Path $PackageDir 'witness_launcher.exe')) -and
     (Get-CoopHash (Join-Path $dir 'witness_models\adventurer.glb')) -eq (Get-CoopHash (Join-Path $PackageDir 'witness_models\adventurer.glb')) -and
     (Test-Path (Join-Path $dir 'witness_models\adventurer.glb.txt'))
@@ -61,13 +63,13 @@ function Test-Refusals {
     Check ($status.build -eq 'conflict' -and $status.actions.blocked) 'another build is reported and blocks setup'
     Check ($status.report.sha -and $status.report.store -eq 'unknown') 'the status says what was found'
     $text = (Install $other @() 1 | Out-String)
-    Check (-not (Test-Path (Join-Path $other 'AnselSDK64_real.dll')) -and (Get-CoopHash (Join-Path $other 'AnselSDK64.dll')) -eq $script:WitnessAnselSha -and -not (Test-Path (Join-Path $other 'witness_launcher.exe'))) 'another build: nothing changed'
+    Check (-not (Test-Path (Join-Path $other 'dsound.dll')) -and (Get-CoopHash (Join-Path $other 'AnselSDK64.dll')) -eq $script:WitnessAnselSha -and -not (Test-Path (Join-Path $other 'witness_launcher.exe'))) 'another build: nothing changed'
     Check ($text -match 'Found:' -and $text -match 'SHA-256 starting [0-9a-f]{12}' -and $text -match 'Needed: Steam build 11370412' -and $text -match 'What to do:' -and $text -match 'faq-not-the-supported-build') 'another build: the refusal says what was found, what is needed, what to do, and links the FAQ'
     $truncated = Fixture 'truncated'
     $head = New-Object byte[] 4096; $fs = [IO.File]::OpenRead($sourceExe); [void]$fs.Read($head, 0, 4096); $fs.Dispose()
     [IO.File]::WriteAllBytes((Join-Path $truncated 'witness64_d3d11.exe'), $head)
     $text = (Install $truncated @() 1 | Out-String)
-    Check ($text -match 'only 4096 bytes' -and $text -match 'Verify integrity' -and -not (Test-Path (Join-Path $truncated 'AnselSDK64_real.dll'))) 'a truncated exe is refused as damaged, with the Steam advice'
+    Check ($text -match 'only 4096 bytes' -and $text -match 'Verify integrity' -and -not (Test-Path (Join-Path $truncated 'dsound.dll'))) 'a truncated exe is refused as damaged, with the Steam advice'
     # a Steam library layout: the build id comes from the store's manifest
     $steamRoot = Join-Path $root 'steam-lib'; $steamGame = Join-Path $steamRoot 'steamapps\common\The Witness'
     New-Item -ItemType Directory -Force $steamGame | Out-Null
@@ -77,11 +79,90 @@ function Test-Refusals {
     Check ($text -match 'Steam copy \(Steam build 99999999\)' -and $text -match 'Properties > Betas > choose None') 'a Steam copy: its build id and the Betas > None advice'
     $gog = Fixture 'gog-copy'; [IO.File]::WriteAllBytes((Join-Path $gog 'witness64_d3d11.exe'), $bytes); Set-Content (Join-Path $gog 'goggame-1234.info') '{}' -Encoding ASCII
     $text = (Install $gog @() 1 | Out-String)
-    Check ($text -match 'GOG copy' -and $text -match 'not supported yet' -and -not (Test-Path (Join-Path $gog 'AnselSDK64_real.dll'))) 'a GOG copy: named, and told it is not supported yet'
+    Check ($text -match 'GOG copy' -and $text -match 'not supported yet' -and -not (Test-Path (Join-Path $gog 'dsound.dll'))) 'a GOG copy: named, and told it is not supported yet'
     $status = Status $gog
     Check ($status.actions.blocked -and $status.build -eq 'conflict') 'a GOG copy blocks setup'
 }
 if ($OnlyRefusals) { Test-Refusals; Write-Output "PASS: $script:checks refusal checks"; return }
+
+# ---- the old layout (v0.1.0-alpha: the proxy in AnselSDK64.dll, the game's own renamed AnselSDK64_real.dll) and other mods' dsound.dll
+$oldProxy = [Text.Encoding]::ASCII.GetBytes("MZ fixture: the co-op proxy of v0.1.0-alpha (real Ansel DLL %s)")
+function Write-Receipt($target, $original, $installed) {
+    [IO.File]::WriteAllText("$target.coop-receipt.json", (@{ schema=1; original=$original; installed=$installed; pending=$null } | ConvertTo-Json -Compress))
+}
+function Legacy-Fixture($name, [switch]$BySetup) {
+    $dir = Fixture $name $false
+    $a = Join-Path $dir 'AnselSDK64.dll'; $r = Join-Path $dir 'AnselSDK64_real.dll'
+    [IO.File]::WriteAllBytes($a, $oldProxy); Copy-Item $sourceAnsel $r
+    if ($BySetup) {      # what the alpha's Setup left: receipts for both, the original kept beside the proxy
+        Copy-Item $sourceAnsel "$a.coop-original"
+        Write-Receipt $a $script:WitnessAnselSha (Get-CoopHash $a)
+        Write-Receipt $r $null $script:WitnessAnselSha
+    }
+    return $dir
+}
+function Snapshot($dir) { (Get-ChildItem -Recurse -File $dir | Sort-Object FullName | ForEach-Object { "$($_.FullName.Substring($dir.Length))=$(Get-CoopHash $_.FullName)" }) -join ';' }
+function Test-Migration {
+    $setupMade = Legacy-Fixture 'legacy-setup' -BySetup
+    $status = Status $setupMade
+    Check ($status.legacy -and $status.actions.install -eq 'Update' -and -not $status.actions.blocked) 'an alpha install made by Setup is seen as the old layout and offers Update'
+    $text = (Install $setupMade @() | Out-String)
+    Check (Installed $setupMade) 'alpha (Setup) -> new layout: the game''s own AnselSDK64.dll back, dsound.dll, no AnselSDK64_real.dll or old receipts'
+    Check (-not (Test-Path (Join-Path $setupMade 'AnselSDK64.dll.coop-original')) -and $text -match 'the game''s own file is back') 'the old backup is retired and the migration is reported'
+    $status = Status $setupMade
+    Check (-not $status.legacy -and -not $status.actions.install -and $status.actions.uninstall) 'after the migration: up to date'
+    $byHand = Legacy-Fixture 'legacy-hand'
+    Install $byHand @() | Out-Null
+    Check (Installed $byHand) 'alpha (by hand, no receipts) -> new layout'
+    Install $byHand @('-Uninstall') | Out-Null
+    Check ((Get-CoopHash (Join-Path $byHand 'AnselSDK64.dll')) -eq $script:WitnessAnselSha -and -not (Test-Path (Join-Path $byHand 'dsound.dll'))) 'uninstall after a migration: the game''s own files only'
+    # interrupted: (a) the game's file already back, the old pieces still there; (b) the staged copy written, the old proxy not yet replaced
+    $cutA = Legacy-Fixture 'legacy-cut-a' -BySetup
+    Copy-Item $sourceAnsel (Join-Path $cutA 'AnselSDK64.dll') -Force
+    Install $cutA @() | Out-Null
+    Check (Installed $cutA -and -not (Test-Path (Join-Path $cutA 'AnselSDK64.dll.coop-original'))) 'a migration interrupted after the restore finishes on the next run'
+    $cutB = Legacy-Fixture 'legacy-cut-b' -BySetup
+    Copy-Item $sourceAnsel (Join-Path $cutB 'AnselSDK64.dll.coop-stage')
+    Install $cutB @() | Out-Null
+    Check (Installed $cutB -and -not (Test-Path (Join-Path $cutB 'AnselSDK64.dll.coop-stage'))) 'a migration interrupted with the staged copy written finishes on the next run'
+    $uninstallOnly = Legacy-Fixture 'legacy-uninstall' -BySetup
+    Install $uninstallOnly @('-Uninstall') | Out-Null
+    Check ((Get-CoopHash (Join-Path $uninstallOnly 'AnselSDK64.dll')) -eq $script:WitnessAnselSha -and -not (Test-Path (Join-Path $uninstallOnly 'AnselSDK64_real.dll'))) 'uninstall of an alpha install puts the game''s own AnselSDK64.dll back'
+    # unknown hashes block, in words, and nothing is touched
+    $tampered = Legacy-Fixture 'legacy-tampered' -BySetup
+    $bytes = [IO.File]::ReadAllBytes((Join-Path $tampered 'AnselSDK64_real.dll')); $bytes[100] = $bytes[100] -bxor 1
+    [IO.File]::WriteAllBytes((Join-Path $tampered 'AnselSDK64_real.dll'), $bytes); Remove-Item (Join-Path $tampered 'AnselSDK64.dll.coop-original')
+    $before = Snapshot $tampered
+    Check ((Status $tampered).actions.blocked) 'an AnselSDK64_real.dll that is not the game''s own blocks setup'
+    $text = (Install $tampered @() 1 | Out-String)
+    Check ((Snapshot $tampered) -eq $before -and $text -match 'is not the game''s own Ansel DLL' -and $text -match 'Verify integrity') 'tampered original: refused in words, nothing changed (no unverified file put back as AnselSDK64.dll)'
+    $foreign = Legacy-Fixture 'legacy-foreign'
+    [IO.File]::WriteAllText((Join-Path $foreign 'AnselSDK64.dll'), 'another program''s AnselSDK64.dll')
+    $before = Snapshot $foreign
+    $text = (Install $foreign @() 1 | Out-String)
+    Check ((Snapshot $foreign) -eq $before -and $text -match 'neither the game''s own file nor this mod''s old proxy') 'an AnselSDK64.dll that is not ours: refused, nothing changed'
+    # another mod's dsound.dll: kept as dsound.chain.dll, put back on uninstall; an unowned dsound.dll of this mod is not chained
+    $other = Fixture 'chain'
+    [IO.File]::WriteAllText((Join-Path $other 'dsound.dll'), 'MZ another mod''s dsound.dll')
+    $text = (Install $other @() | Out-String)
+    Check ((Installed $other) -and [IO.File]::ReadAllText((Join-Path $other 'dsound.chain.dll')) -eq 'MZ another mod''s dsound.dll' -and $text -match 'dsound.chain.dll') 'another mod''s dsound.dll is kept as dsound.chain.dll'
+    $status = Status $other
+    Check ($status.chain -and -not $status.actions.install -and -not $status.actions.blocked) 'with a chain file: up to date'
+    Install $other @() | Out-Null
+    Check ([IO.File]::ReadAllText((Join-Path $other 'dsound.chain.dll')) -eq 'MZ another mod''s dsound.dll') 'a second install keeps the chain file as it is'
+    Install $other @('-Uninstall') | Out-Null
+    Check ([IO.File]::ReadAllText((Join-Path $other 'dsound.dll')) -eq 'MZ another mod''s dsound.dll' -and -not (Test-Path (Join-Path $other 'dsound.chain.dll')) -and -not (Test-Path (Join-Path $other 'dsound.dll.coop-original'))) 'uninstall puts the other mod''s dsound.dll back and removes the chain copy'
+    $ours = Fixture 'own-unowned'
+    Copy-Item (Join-Path $PackageDir 'dsound.dll') (Join-Path $ours 'dsound.dll')
+    Install $ours @() | Out-Null
+    Check ((Installed $ours) -and -not (Test-Path (Join-Path $ours 'dsound.chain.dll'))) 'this mod''s own dsound.dll (copied in by hand) is not chained'
+    $clash = Fixture 'chain-clash'
+    [IO.File]::WriteAllText((Join-Path $clash 'dsound.dll'), 'MZ mod one'); [IO.File]::WriteAllText((Join-Path $clash 'dsound.chain.dll'), 'MZ mod two')
+    $before = Snapshot $clash
+    $text = (Install $clash @() 1 | Out-String)
+    Check ((Snapshot $clash) -eq $before -and $text -match 'dsound.chain.dll is already in the game folder') 'a different dsound.chain.dll already there: refused, nothing changed'
+}
+if ($OnlyMigration) { Test-Migration; Write-Output "PASS: $script:checks migration checks"; return }
 
 # The shipped native bootstrap: starts PowerShell without a console window (a headless script stands in for the GUI).
 if (Test-Path (Join-Path $PackageDir 'Witness-Coop-Setup.exe')) {
@@ -116,11 +197,11 @@ $fresh = Fixture 'fresh'
 Check ((Status $fresh).actions.install -eq 'Install') 'a fresh game offers Install'
 $found = Install $fresh @('-FindOnly')
 Check (($found | Out-String) -match 'Game folder: ') 'FindOnly reports the folder'
-Check (-not (Test-Path (Join-Path $fresh 'AnselSDK64_real.dll'))) 'FindOnly changes nothing'
+Check (-not (Test-Path (Join-Path $fresh 'dsound.dll'))) 'FindOnly changes nothing'
 Install $fresh @()
-Check (Installed $fresh) 'proxy, original under the proxy''s name, launcher and model installed'
+Check (Installed $fresh) 'proxy (dsound.dll), launcher and model installed'
 Check ((Get-CoopHash (Join-Path $fresh 'witness64_d3d11.exe')) -eq $script:WitnessExeSha) 'the game executable is untouched'
-Check ((Get-CoopHash (Join-Path $fresh 'AnselSDK64.dll.coop-original')) -eq $script:WitnessAnselSha) 'the original Ansel DLL is kept for uninstall'
+Check (-not (Test-Path (Join-Path $fresh 'AnselSDK64.dll.coop-original')) -and -not (Test-Path (Join-Path $fresh 'dsound.dll.coop-original')) -and -not (Test-Path (Join-Path $fresh 'dsound.chain.dll'))) 'the game''s own AnselSDK64.dll is not touched, nothing is backed up or chained'
 Check (-not (Test-Path (Join-Path $fresh 'witness_coop.cfg'))) 'no cfg is written: the launcher owns it'
 foreach ($relative in $script:WitnessManaged) { Check (Test-Path (Join-Path $fresh "$relative.coop-receipt.json")) "receipt for $relative" }
 $status = Status $fresh
@@ -128,7 +209,7 @@ Check (-not $status.actions.install -and $status.actions.uninstall -and -not $st
 Install $fresh @()
 Check (Installed $fresh) 'a second install is harmless'
 # Update: an older owned proxy is replaced; Repair: a missing managed file is restored.
-Install-CoopFile (Join-Path $fresh 'AnselSDK64.dll') ([Text.Encoding]::ASCII.GetBytes('previous release fixture'))
+Install-CoopFile (Join-Path $fresh 'dsound.dll') ([Text.Encoding]::ASCII.GetBytes('previous release fixture'))
 Check ((Status $fresh).actions.install -eq 'Update') 'an older owned proxy offers Update'
 Install $fresh @()
 Check (Installed $fresh) 'update deploys the current proxy'
@@ -137,41 +218,32 @@ Check ((Status $fresh).actions.install -eq 'Repair') 'a missing managed file off
 Install $fresh @()
 Check (Installed $fresh) 'repair restores the launcher'
 # A file changed by hand is never replaced.
-[IO.File]::WriteAllText((Join-Path $fresh 'AnselSDK64.dll'), 'user modification')
+[IO.File]::WriteAllText((Join-Path $fresh 'dsound.dll'), 'user modification')
 Check ((Status $fresh).actions.blocked) 'a modified proxy blocks setup'
 Install $fresh @() 1
-Check ([IO.File]::ReadAllText((Join-Path $fresh 'AnselSDK64.dll')) -eq 'user modification') 'the modified file is kept'
-[IO.File]::WriteAllBytes((Join-Path $fresh 'AnselSDK64.dll'), [IO.File]::ReadAllBytes((Join-Path $PackageDir 'AnselSDK64.dll')))
+Check ([IO.File]::ReadAllText((Join-Path $fresh 'dsound.dll')) -eq 'user modification') 'the modified file is kept'
+[IO.File]::WriteAllBytes((Join-Path $fresh 'dsound.dll'), [IO.File]::ReadAllBytes((Join-Path $PackageDir 'dsound.dll')))
 # Uninstall puts the game's own DLL back and keeps the player's settings and log.
 Set-Content (Join-Path $fresh 'witness_coop.cfg') "name=Tester`r`n" -Encoding ASCII
 Set-Content (Join-Path $fresh 'witness_proxy.log') 'log line' -Encoding ASCII
 Install $fresh @('-Uninstall')
-Check ((Get-CoopHash (Join-Path $fresh 'AnselSDK64.dll')) -eq $script:WitnessAnselSha) 'uninstall restores the original Ansel DLL'
-Check (-not (Test-Path (Join-Path $fresh 'AnselSDK64_real.dll'))) 'uninstall removes the renamed copy it made'
+Check ((Get-CoopHash (Join-Path $fresh 'AnselSDK64.dll')) -eq $script:WitnessAnselSha) 'after uninstall the game''s own Ansel DLL is as it was'
+Check (-not (Test-Path (Join-Path $fresh 'dsound.dll'))) 'uninstall removes the proxy'
 Check (-not (Test-Path (Join-Path $fresh 'witness_launcher.exe'))) 'uninstall removes the launcher'
 Check (-not (Test-Path (Join-Path $fresh 'witness_models'))) 'uninstall removes the model folder'
-Check (-not (Test-Path (Join-Path $fresh 'AnselSDK64.dll.coop-receipt.json')) -and -not (Test-Path (Join-Path $fresh 'AnselSDK64.dll.coop-original'))) 'uninstall retires receipts and backups'
+Check (-not (Test-Path (Join-Path $fresh 'dsound.dll.coop-receipt.json')) -and -not (Test-Path (Join-Path $fresh 'dsound.dll.coop-original'))) 'uninstall retires receipts and backups'
 Check ((Get-Content (Join-Path $fresh 'witness_coop.cfg') -Raw) -match 'name=Tester') 'uninstall keeps witness_coop.cfg'
 Check (Test-Path (Join-Path $fresh 'witness_proxy.log')) 'uninstall keeps the log'
 Check ((Status $fresh).actions.install -eq 'Install') 'after uninstall the game offers Install again'
 
 Test-Refusals
+Test-Migration
 
-# A game whose Ansel DLL is not the original (and no renamed original anywhere) is refused.
+# A game whose AnselSDK64.dll is something else (not the game's, not the mod's old proxy) is refused: Setup cannot tell what it is.
 $noAnsel = Fixture 'no-original' $false
 [IO.File]::WriteAllText((Join-Path $noAnsel 'AnselSDK64.dll'), 'something else')
 Install $noAnsel @() 1
-Check ([IO.File]::ReadAllText((Join-Path $noAnsel 'AnselSDK64.dll')) -eq 'something else' -and -not (Test-Path (Join-Path $noAnsel 'AnselSDK64_real.dll'))) 'missing original: nothing changed'
-
-# A copy prepared by hand (original already renamed, an older proxy in place) installs, and uninstall puts back what was there.
-$manual = Fixture 'manual' $false
-Copy-Item $sourceAnsel (Join-Path $manual 'AnselSDK64_real.dll')
-[IO.File]::WriteAllText((Join-Path $manual 'AnselSDK64.dll'), 'old proxy by hand')
-Install $manual @()
-Check (Installed $manual) 'a hand-prepared copy installs'
-Install $manual @('-Uninstall')
-Check ([IO.File]::ReadAllText((Join-Path $manual 'AnselSDK64.dll')) -eq 'old proxy by hand') 'uninstall restores exactly what was there'
-Check ((Get-CoopHash (Join-Path $manual 'AnselSDK64_real.dll')) -eq $script:WitnessAnselSha) 'a renamed original that was already there stays'
+Check ([IO.File]::ReadAllText((Join-Path $noAnsel 'AnselSDK64.dll')) -eq 'something else' -and -not (Test-Path (Join-Path $noAnsel 'dsound.dll'))) 'unknown AnselSDK64.dll: nothing changed'
 
 # Uninstall never removes files it did not install.
 $unowned = Fixture 'unowned'

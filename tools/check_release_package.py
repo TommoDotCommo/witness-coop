@@ -16,11 +16,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from pack_payload import unpack
 from pe_signature import is_signed
 
-EXPECTED = ['Witness-Coop-Setup.exe', 'AnselSDK64.dll', 'witness_launcher.exe', 'witness_models/adventurer.glb',
+EXPECTED = ['Witness-Coop-Setup.exe', 'dsound.dll', 'witness_launcher.exe', 'witness_models/adventurer.glb',
             'witness_models/adventurer.glb.txt', 'witness-coop.ps1', 'installer-gui.ps1', 'install-state.ps1',
             'install-policy.exe', 'install-linux.sh', 'README.txt', 'LICENSE.txt']
 ONE_FILE_SKIPS = {'Witness-Coop-Setup.exe', 'install-linux.sh'}      # in the zip only
-PE_FILES = ['Witness-Coop-Setup.exe', 'AnselSDK64.dll', 'witness_launcher.exe', 'install-policy.exe']
+PE_FILES = ['Witness-Coop-Setup.exe', 'dsound.dll', 'witness_launcher.exe', 'install-policy.exe']
 ORIGINAL_ANSEL = '3b0677ae1e01fc17645c903c8322497785768145abbe3758364299fdaa8aff15'
 
 
@@ -52,9 +52,11 @@ def check(archive, policy_source=None, single=None, require_signed=False):
         assert set(package.namelist()) == {root + f for f in EXPECTED}, 'unexpected release inventory'
         for payload in PE_FILES:
             assert package.read(root + payload)[:2] == b'MZ', 'not a Windows PE'
-        proxy = package.read(root + 'AnselSDK64.dll')
+        assert not any('ansel' in n.lower() for n in package.namelist()), 'the zip holds an Ansel DLL: the game\'s own file must never be shipped or replaced'
+        proxy = package.read(root + 'dsound.dll')
         assert hashlib.sha256(proxy).hexdigest() != ORIGINAL_ANSEL, 'the zip holds the game\'s own Ansel DLL, not the proxy'
-        assert b'witness_coop.cfg' in proxy, 'AnselSDK64.dll is not the co-op proxy'
+        assert b'witness_coop.cfg' in proxy and b'witness-coop:proxy:dsound' in proxy, 'dsound.dll is not the co-op proxy'
+        assert b'DirectSoundCreate8' in proxy and b'DirectSoundEnumerateA' in proxy, 'dsound.dll does not export the DirectSound functions the game imports'
         readme = package.read(root + 'README.txt')
         assert b'@VERSION@' not in readme, 'README.txt version not substituted'
         source = policy_source or Path(__file__).resolve().parents[1] / 'dist/install-state.ps1'
