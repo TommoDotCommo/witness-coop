@@ -6,7 +6,7 @@ certificate gives them a publisher to trust and lets the download build a reputa
 
 ## What is ready
 
-`tools/release.sh` signs **in place, before anything is hashed or embedded**: the proxy `AnselSDK64.dll`, `witness_launcher.exe`,
+`tools/release.sh` signs **in place, before anything is hashed or embedded**: the proxy `dsound.dll`, `witness_launcher.exe`,
 `install-policy.exe`, the zip's thin `Witness-Coop-Setup.exe`; then it packs those into the one-file setup, signs that last, builds the zip and
 hashes it. Afterwards `tools/pe_signature.py` confirms every signed file carries a certificate block, `SIGN_VERIFY_CMD` (if set) verifies it for real,
 and `tools/check_release_package.py ... --require-signed` checks the zip, the one-file setup and the files inside its payload. A signer that misses a file, or
@@ -35,7 +35,7 @@ Submit the signed files to the vendor so the detection is removed for everyone:
 
 1. **Microsoft Defender / SmartScreen:** open the Microsoft Security Intelligence file submission page (search "Microsoft Security Intelligence submit a file"),
    sign in, choose *Software developer*, upload `Witness-Coop-Setup.exe` (and the zip if it is flagged), and say what the program is: a mod installer for the game
-   The Witness, open source at the repository URL, that replaces `AnselSDK64.dll` in the game's folder and starts Windows PowerShell for its setup window. Pick *Incorrectly detected as malware/malicious*
+   The Witness, open source at the repository URL, that adds a `dsound.dll` to the game's folder and starts Windows PowerShell for its setup window. Pick *Incorrectly detected as malware/malicious*
    and give the detection name Defender reported. Keep the submission ID. Re-submit each new version until its reputation builds.
 2. **SmartScreen reputation** ("Windows protected your PC") is per file hash and per publisher certificate. A signed file warns less over time as people run it; an EV certificate may shorten that.
 3. **Other antivirus vendors:** most have a free false-positive form on their site; upload the same signed file with the same description. VirusTotal shows which engines flag it.

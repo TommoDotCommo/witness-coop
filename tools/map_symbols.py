@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Map a module offset from a crash report to a place in the proxy, with the linker map `make -C proxy` writes (proxy/AnselSDK64.map).
+"""Map a module offset from a crash report to a place in the proxy, with the linker map `make -C proxy` writes (proxy/dsound.map).
 
-    python3 tools/map_symbols.py proxy/AnselSDK64.map 0x2a30 [0x...]       offsets (the number after AnselSDK64.dll+ in a crash line)
-    python3 tools/map_symbols.py --stamp proxy/AnselSDK64.dll              the DLL's link time stamp, to tell which build a map belongs to
+    python3 tools/map_symbols.py proxy/dsound.map 0x2a30 [0x...]           offsets (the number after dsound.dll+ in a crash line)
+    python3 tools/map_symbols.py --stamp proxy/dsound.dll                  the DLL's link time stamp, to tell which build a map belongs to
 
 A map belongs to one build: each link changes the addresses. The crash dump carries the DLL's link time stamp, so diag_report.py can
 tell a matching map from another build's (--dll).

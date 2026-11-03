@@ -74,7 +74,7 @@ dump = bytearray(crash_dump.read_bytes()) if crash_dump else bytearray(b"MDMP" +
 # plant the strings in the dump the ways memory holds them: ASCII and UTF-16, and the profile path
 cut = user[:-1]       # a name cut short by the end of a block of memory in the dump
 dump += b"\0\0" + b"\\Users\\" + cut.encode() + b"\0\0" + ("\\Users\\" + cut).encode("utf-16-le") + b"\0\0" + b"\0\0" + user.encode() + b"\0" + user.encode("utf-16-le") + b"\0\0" + host.encode() + b"\0" + host.encode("utf-16-le") + b"\0" + planted_path + b"\0" + b"192.168.1.20\0" + b"76561198012345678\0"
-(logs / "2026-10-26T10-00-00Z_p1.log").write_bytes(session([b"session a: mod v-test", planted, b"crash: unhandled exception 0xc0000005 at AnselSDK64.dll+0x2a30 (thread 1, writing 0000000000000000)"], clean=False))
+(logs / "2026-10-26T10-00-00Z_p1.log").write_bytes(session([b"session a: mod v-test", planted, b"crash: unhandled exception 0xc0000005 at dsound.dll+0x2a30 (thread 1, writing 0000000000000000)"], clean=False))
 (logs / "2026-10-26T10-00-00Z_p1.crash").write_bytes(b"")
 (logs / "2026-10-26T10-00-00Z_p1.dmp").write_bytes(bytes(dump))
 (logs / "2026-10-26T10-00-00Z_p1.flight-0-crash.txt").write_text(
@@ -154,14 +154,14 @@ if zp:
     check("a log with a line missing is marked broken", chains["2026-10-25T10-00-00Z_p0.log"]["status"] == "broken", chains)
 
     # --- the report
-    mp = here / "proxy/AnselSDK64.map"
+    mp = here / "proxy/dsound.map"
     cmd = [sys.executable, str(here / "tools/diag_report.py"), str(zp), "--json"] + (["--map", str(mp)] if mp.exists() else [])
     rep = subprocess.run(cmd, capture_output=True, text=True)
     check("the report flags the broken log (exit 1)", rep.returncode == 1, rep.stdout[-300:])
     data = json.loads(rep.stdout)[0]
     sessions = {s["session"]: s for s in data["sessions"]}
     s1 = sessions["2026-10-26T10-00-00Z_p1"]
-    check("the report sees the crash, its module and offset", s1["crashed"] and s1["crash"]["module"] == "AnselSDK64.dll" and s1["crash"]["offset"] == 0x2a30, s1.get("crash"))
+    check("the report sees the crash, its module and offset", s1["crashed"] and s1["crash"]["module"] == "dsound.dll" and s1["crash"]["offset"] == 0x2a30, s1.get("crash"))
     if mp.exists():
         check("a proxy crash is mapped to an object file of the proxy", s1["crash"]["map"] and ".o" in s1["crash"]["map"] or "in " in (s1["crash"]["map"] or ""), s1["crash"]["map"])
     check("the report reads the dump", crash_dump is None or (s1["crash"]["dump"] and s1["crash"]["dump"]["code"] == "0xc0000005"), s1["crash"])

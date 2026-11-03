@@ -93,7 +93,7 @@ own SteamID is refused and the game plays alone, saying why. Up to 15 peers (16 
   transport down and opens no UDP socket; B) the launcher hosts a Steam lobby whose id, mod key, protocol key, code and member limit read back
   through the Steam API, starts its game from it (`transport=steam`), the mod reports the game's own Steam connection up (app 210970), and the
   launcher is back in the same lobby after the game; the game (with Steam's overlay in it) is still running a minute later. Mutant: a proxy whose
-  Present loop with the overlay is not broken (`make -C proxy build/AnselSDK64_PRESENT_LOOP.dll`) must be seen to crash there.
+  Present loop with the overlay is not broken (`make -C proxy build/dsound_PRESENT_LOOP.dll`) must be seen to crash there.
 * Not provable on one PC with one Steam account: two members in one Steam lobby, and two games exchanging messages through Steam. That is the
   owner's two-account test below.
 

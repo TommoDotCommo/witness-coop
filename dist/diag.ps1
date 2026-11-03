@@ -164,7 +164,7 @@ public static class WitChain {
             Line ("graphics: {0}, driver {1} ({2:yyyy-MM-dd}), {3}x{4} @ {5} Hz" -f $g.Name, $g.DriverVersion, $g.DriverDate, $g.CurrentHorizontalResolution, $g.CurrentVerticalResolution, $g.CurrentRefreshRate)
         }
         Line "powershell: $($PSVersionTable.PSVersion)    culture: $((Get-Culture).Name)"
-        foreach ($rel in 'witness64_d3d11.exe', 'AnselSDK64.dll', 'AnselSDK64_real.dll', 'witness_launcher.exe') {
+        foreach ($rel in 'witness64_d3d11.exe', 'dsound.dll', 'dsound.chain.dll', 'AnselSDK64.dll', 'AnselSDK64_real.dll', 'witness_launcher.exe') {      # (AnselSDK64_real.dll: the old layout)
             $p = Join-Path $GameDir $rel
             if (Test-Path -LiteralPath $p) {
                 $fi = Get-Item -LiteralPath $p
@@ -193,7 +193,7 @@ public static class WitChain {
         Line '== Windows Defender detections that mention the mod'
         $found = 0
         try {
-            Get-MpThreatDetection -ErrorAction Stop | Where-Object { ($_.Resources -join ' ') -match 'AnselSDK64|witness' } | Select-Object -First 5 | ForEach-Object {
+            Get-MpThreatDetection -ErrorAction Stop | Where-Object { ($_.Resources -join ' ') -match 'dsound|AnselSDK64|witness' } | Select-Object -First 5 | ForEach-Object {
                 $found++
                 Line ("  {0:yyyy-MM-dd HH:mm}  threat {1}: {2}" -f $_.InitialDetectionTime, $_.ThreatID, ($_.Resources -join ', '))
             }
