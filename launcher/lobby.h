@@ -55,6 +55,7 @@ public:
     Lobby(bool host, const std::string& name, uint16_t gamePort, const std::string& token, Send send);
     void Join(const Addr& host);
     void SetSession(uint32_t s) { session_ = s; }
+    void SetInviteOnly(bool b) { inviteOnly_ = b; }       // B9, host: invite only (the default) needs the invite's code to join; open to my networks lets anybody who finds the lobby in, without a code
     void SetModVersion(const std::string& v);              // this launcher's mod version (a build stamp); before Join / the first Tick. Players on different versions cannot play together.
     void SetSteamId(uint64_t id) { steamId_ = id; if (host_) Refresh(); }      // a Steam lobby: this member's own SteamID (the host lists it for the games' cfg)          // host: a number that is different on every start of the lobby (the clock), so clients can tell a restarted host from a late packet
     void Tick(uint64_t now);
@@ -90,7 +91,7 @@ private:
     void PushChat(unsigned from, const std::string& text);
     void Refresh();
     void Rebuild();
-    bool host_; uint64_t steamId_ = 0; std::string name_, token_, modVersion_ = "dev", hostVersion_; uint16_t gamePort_; Send send_; Addr hostAddr_;
+    bool host_, inviteOnly_ = true; uint64_t steamId_ = 0; std::string name_, token_, modVersion_ = "dev", hostVersion_; uint16_t gamePort_; Send send_; Addr hostAddr_;
     bool joined_ = false, ready_ = false, inGame_ = false, speaking_ = false, launched_ = false; JoinResult refused_ = kPending; unsigned id_ = 0; State st_; uint64_t startAt_ = 0, nextState_ = 0, nextHello_ = 0, lastHost_ = 0, backSince_ = 0;
     std::map<Addr, Peer> peers_; unsigned nextId_ = 2; uint32_t chatNext_ = 1;         // host
     std::vector<std::pair<uint32_t, std::string>> out_; uint32_t outSeq_ = 0, outAcked_ = 0, seenChat_ = 0, stateSeq_ = 0, session_ = 0, hostSession_ = 0; bool seenInGame_ = false; uint64_t startedAt_ = 0;   // client (session_: the host's)

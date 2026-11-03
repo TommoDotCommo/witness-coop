@@ -80,7 +80,7 @@ try:
     a, b = wait(lambda a, b: True, 20); check('0. both launchers are up and write their state', a and b and not a['lobby']['active'] and not b['lobby']['active'], (a and a['lobby'], b and b['lobby']))
     # 1. host and join
     cmd(dirA, 'host %d' % lport); a, b = wait(lambda a, b: a['lobby']['active'] and a['invite'], 10)
-    check('1. A hosts a lobby and has an invite (address:port/CODE)', a and re.match(r'^[0-9.]+:%d/[A-Z0-9]{6}$' % lport, a['invite']), a and a['invite'])
+    check('1. A hosts a lobby and has an invite (address:port/CODE)', a and re.match(r'^[0-9.]+:%d/[A-Z0-9]{6,8}$' % lport, a['invite']), a and a['invite'])
     inv = a['invite']; wrong = inv[:-6] + 'ZZZZZZ' if not inv.endswith('ZZZZZZ') else inv[:-6] + 'YYYYYY'
     cmd(dirB, 'join ' + wrong); a, b = wait(lambda a, b: b['lobby']['refused'] == 1, 12)
     check('   B with a wrong code is refused and is not in the lobby', b and b['lobby']['refused'] == 1 and not b['lobby']['joined'] and len(a['members']) == 1, b and b['lobby'])

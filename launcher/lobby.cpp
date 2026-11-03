@@ -173,7 +173,11 @@ void Lobby::OnPacket(const Addr& from, const uint8_t* d, size_t n, uint64_t now)
             } send_(from, w.done()); };
             if (ver != kVersion) { reply(kBadVersion, 0); return; }      // (an older launcher's JOIN has another layout: answered before it is read)
             std::string tok = r.str(), nm = r.str(); unsigned port = r.u16(); theirs = CleanVersion(r.str()); if (r.bad) return;
-            if (!twins.noToken && tok != token_) { reply(kBadToken, 0); return; }
+            bool needCode = inviteOnly_;      // B9: a lobby open to my networks takes anybody who found it; an invite-only lobby only the invite's code
+#ifdef WLB_MUT_INVITE_ONLY_OPEN
+            needCode = false;      // mutant: an invite-only lobby lets anybody in
+#endif
+            if (!twins.noToken && needCode && tok != token_) { reply(kBadToken, 0); return; }
 #if !defined(WLB_MUT_VERSION_NOT_CHECKED) && !defined(WL_MUT_LOBBY_VERSION_ANY)
             if (theirs != modVersion_) { reply(kVersionMismatch, 0, true); return; }
 #endif

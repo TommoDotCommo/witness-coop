@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstdio>
 #include "../common/steam_ids.h"
+#include "joinglue.h"
 
 namespace lw {
 namespace {
@@ -22,9 +23,15 @@ uint32_t LocalIp() {      // this PC's address on the local network: a private-r
     for (addrinfo* p = res; p; p = p->ai_next) { uint32_t ip = ntohl(((sockaddr_in*)p->ai_addr)->sin_addr.s_addr); int score = (ip >> 24) == 192 && ((ip >> 16) & 255) == 168 ? 4 : (ip >> 24) == 10 ? 3 : (ip >> 24) == 172 ? 2 : (ip >> 24) == 127 ? 0 : 1; if (score > bestScore) { bestScore = score; best = ip; } }
     freeaddrinfo(res); return best;
 }
+uint32_t Random32() {      // the lobby secret: RtlGenRandom, else the clock
+    typedef BOOLEAN (WINAPI *gen_fn)(PVOID, ULONG); HMODULE adv = LoadLibraryExW(L"advapi32.dll", nullptr, 0x00000800); gen_fn gen = adv ? (gen_fn)(void (*)(void))GetProcAddress(adv, "SystemFunction036") : nullptr; uint32_t v = 0;
+    if (!gen || !gen(&v, sizeof v)) { LARGE_INTEGER t; QueryPerformanceCounter(&t); v = (uint32_t)t.QuadPart * 2654435761u ^ (uint32_t)GetTickCount64() ^ (GetCurrentProcessId() << 16); }
+    if (adv) FreeLibrary(adv); return v ? v : 1;
+}
 std::string Token() { static const char* k = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; unsigned s = (unsigned)GetTickCount64() ^ (unsigned)GetCurrentProcessId() * 2654435761u; std::string t; for (int i = 0; i < 6; ++i) { s = s * 1664525u + 1013904223u; t += k[(s >> 16) % 32]; } return t; }
 }  // namespace
 
+uint32_t Session::Resolve(const std::string& host) { Wsa(); return HostByName(host); }
 Session::Session() {}
 Session::~Session() { Stop(); }
 bool Session::Open(uint16_t port, std::string* err) {
@@ -35,10 +42,10 @@ bool Session::Open(uint16_t port, std::string* err) {
 }
 bool Session::Host(const std::string& name, uint16_t gamePort, uint16_t lobbyPort, const std::string& advertise, std::string* err) {
     Stop(); if (!Open(lobbyPort, err)) return false;
-    std::string tok = Token(); uint32_t ip = advertise.empty() ? LocalIp() : HostByName(advertise); if (!ip) { *err = "Cannot find the address \"" + advertise + "\""; closesocket(sock_); sock_ = INVALID_SOCKET; return false; }
+    secret_ = Random32(); lobbyPort_ = lobbyPort; std::string tok = jg::TokenOf(secret_); uint32_t ip = advertise.empty() ? LocalIp() : HostByName(advertise); if (!ip) { *err = "Cannot find the address \"" + advertise + "\""; closesocket(sock_); sock_ = INVALID_SOCKET; return false; }
     SOCKET s = sock_;
     lobby_ = std::make_unique<wlobby::Lobby>(true, name, gamePort, tok, [s](const wlobby::Addr& to, const wlobby::Bytes& b) { sockaddr_in a = {}; a.sin_family = AF_INET; a.sin_addr.s_addr = htonl(to.ip); a.sin_port = htons(to.port); sendto(s, (const char*)b.data(), (int)b.size(), 0, (sockaddr*)&a, sizeof a); }); lobby_->SetModVersion(modVersion_);
-    lobby_->SetSession((uint32_t)GetTickCount64() ^ 0x5bd1e995u);
+    lobby_->SetSession((uint32_t)GetTickCount64() ^ 0x5bd1e995u); lobby_->SetInviteOnly(inviteOnly_);
     lobby_->onVoice = [this](const wvoice::Packet& p) { if (sink_) sink_(p); };
     char b[80]; snprintf(b, sizeof b, "%s:%u/%s", wlobby::IpText(ip).c_str(), lobbyPort, tok.c_str()); invite_ = b; host_ = true; hostIp_ = ip; stop_ = false; active_ = true; th_ = CreateThread(nullptr, 0, Run, this, 0, nullptr); return true;
 }
@@ -48,14 +55,18 @@ bool Session::Join(const std::string& invite, const std::string& name, uint16_t 
     std::string host = inv.substr(0, colon), tok = inv.substr(slash + 1); unsigned port = (unsigned)atoi(inv.substr(colon + 1, slash - colon - 1).c_str());
     if (host.empty() || port < 1 || port > 65535 || tok.empty()) { *err = "The invite looks like 192.168.1.20:47100/ABC123"; return false; }
     Wsa(); uint32_t ip = HostByName(host); if (!ip) { *err = "Cannot find the address \"" + host + "\""; return false; }
+    if (!JoinAt(ip, (uint16_t)port, tok, name, gamePort, err)) return false; invite_ = inv; return true;
+}
+bool Session::JoinAt(uint32_t ip, uint16_t port, const std::string& tok, const std::string& name, uint16_t gamePort, std::string* err) {
+    Stop(); Wsa(); if (!ip || !port) { *err = "No address to join."; return false; }
     if (!Open(0, err)) return false; SOCKET s = sock_;
     lobby_ = std::make_unique<wlobby::Lobby>(false, name, gamePort, tok, [s](const wlobby::Addr& to, const wlobby::Bytes& b) { sockaddr_in a = {}; a.sin_family = AF_INET; a.sin_addr.s_addr = htonl(to.ip); a.sin_port = htons(to.port); sendto(s, (const char*)b.data(), (int)b.size(), 0, (sockaddr*)&a, sizeof a); }); lobby_->SetModVersion(modVersion_);
     lobby_->onVoice = [this](const wvoice::Packet& p) { if (sink_) sink_(p); };
-    lobby_->Join({ip, (uint16_t)port}); invite_ = inv; host_ = false; hostIp_ = ip; stop_ = false; active_ = true; th_ = CreateThread(nullptr, 0, Run, this, 0, nullptr); return true;
+    lobby_->Join({ip, (uint16_t)port}); invite_ = wlobby::IpText(ip) + ":" + std::to_string(port) + "/" + tok; hostPort_ = port; host_ = false; hostIp_ = ip; stop_ = false; active_ = true; th_ = CreateThread(nullptr, 0, Run, this, 0, nullptr); return true;
 }
 void Session::Stop() {
     if (th_) { stop_ = true; if (!host_ && lobby_) { Guard l(mu_); lobby_->Leave(); } if (steamMode_) Sleep(50); WaitForSingleObject(th_, 3000); CloseHandle(th_); th_ = nullptr; }
-    Guard l(mu_); if (sock_ != INVALID_SOCKET) { closesocket(sock_); sock_ = INVALID_SOCKET; } lobby_.reset(); active_ = false; invite_.clear();
+    Guard l(mu_); if (sock_ != INVALID_SOCKET) { closesocket(sock_); sock_ = INVALID_SOCKET; } lobby_.reset(); active_ = false; invite_.clear(); delete rate_; rate_ = nullptr;
     if (steamMode_ && steam_) steam_->Leave(); steamMode_ = false; pausedSince_ = pausedTotal_ = 0;
 }
 uint64_t Session::VNow() { uint64_t t = GetTickCount64(); return t - pausedTotal_ - (pausedSince_ ? t - pausedSince_ : 0); }
@@ -81,7 +92,20 @@ void Session::Loop() {
               }
           } else {
               if (!lobby_) break; sockaddr_in from; int fl = sizeof from; int n; uint64_t now = GetTickCount64();
-              while ((n = recvfrom(sock_, (char*)buf, sizeof buf, 0, (sockaddr*)&from, &fl)) > 0) { wlobby::Addr a{ntohl(from.sin_addr.s_addr), ntohs(from.sin_port)}; lobby_->OnPacket(a, buf, (size_t)n, now); fl = sizeof from; }
+              while ((n = recvfrom(sock_, (char*)buf, sizeof buf, 0, (sockaddr*)&from, &fl)) > 0) {
+                  if (jg::IsProbe(buf, (size_t)n)) {      // a Join list looking (CPQ2 "WIT ", or v1 CPQ1): the host answers, rate limited; an invite-only lobby is not listed (joinglue.h)
+                      if (host_) {
+                          if (!rate_) { rate_ = new cd_rate; memset(rate_, 0, sizeof *rate_); }
+                          const wlobby::State& st = lobby_->state(); jg::HostInfo hi; hi.name = st.members.empty() ? std::string() : st.members[0].name; hi.version = lobby_->modVersion(); hi.phase = st.phase; hi.players = (unsigned)std::max<size_t>(1, st.members.size()); hi.limit = wlobby::kMaxMembers; hi.inviteOnly = inviteOnly_;
+                          uint8_t reply[CD_REPLY_MAX]; int k = jg::Answer(rate_, buf, (size_t)n, ntohl(from.sin_addr.s_addr), (uint32_t)now, hi, reply);
+#ifdef WL_MUT_NO_PROBE_ANSWER
+                          k = 0;      // mutant: the lobby never answers a Join list
+#endif
+                          if (k > 0) { sendto(sock_, (const char*)reply, k, 0, (sockaddr*)&from, fl); ++probes_; }
+                      }
+                      fl = sizeof from; continue;
+                  }
+                  wlobby::Addr a{ntohl(from.sin_addr.s_addr), ntohs(from.sin_port)}; lobby_->OnPacket(a, buf, (size_t)n, now); fl = sizeof from; }
               lobby_->Tick(now);
           } }
         Sleep(5);
@@ -93,7 +117,7 @@ bool Session::SteamInit(const std::wstring& gameDir, std::string* err) {
 }
 bool Session::HostSteam(const std::string& name, uint16_t gamePort, const std::wstring& gameDir, std::string* err) {
     Stop(); if (!SteamInit(gameDir, err)) return false;
-    Guard l(mu_); steamCode_ = Token(); steamName_ = name; steamGamePort_ = gamePort;
+    Guard l(mu_); steamCode_ = Token(); steamName_ = name; steamGamePort_ = gamePort; secret_ = Random32();
     if (!steam_->Host(steamCode_)) { *err = steam_->Status(); return false; }
     steamMode_ = true; host_ = true; hostIp_ = 0; stop_ = false; active_ = true; th_ = CreateThread(nullptr, 0, Run, this, 0, nullptr); return true;
 }

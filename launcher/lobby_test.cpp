@@ -56,7 +56,11 @@ int main() {
       Net n2; n2.add(true, "H", "T", {}); for (int i = 0; i < 16; ++i) n2.add(false, "P" + std::to_string(i), "T"); n2.advance(6000);
       unsigned in = 0; for (size_t i = 1; i < n2.n.size(); ++i) in += n2.n[i]->joined(); check("join: at most 16 members (the 16th client is refused as full)", in == 15 && n2.n[16]->refused() == kFull && n2.n[0]->state().members.size() == 16);
       Net n3; Lobby::Twins tw; tw.noToken = true; n3.add(true, "H", "TOKEN1", tw); unsigned m3 = n3.add(false, "Mallory", "NOPE"); n3.advance(3000);
-      check("twin noToken: a host that does not check the invite lets a stranger in", n3.n[m3]->joined()); }
+      check("twin noToken: a host that does not check the invite lets a stranger in", n3.n[m3]->joined());
+      Net n4; unsigned h4 = n4.add(true, "H", "C0FFEE01"); n4.n[h4]->SetInviteOnly(false); unsigned o4 = n4.add(false, "Fox", ""); n4.advance(3000);
+      check("open to my networks (B9): a player who found the lobby in the Join list joins without a code", n4.n[o4]->joined() && n4.n[h4]->state().members.size() == 2);
+      Net n5; unsigned h5 = n5.add(true, "H", "C0FFEE01"); n5.n[h5]->SetInviteOnly(true); unsigned e5 = n5.add(false, "Fox", ""), w5 = n5.add(false, "Owl", "C0FFEE02"), k5 = n5.add(false, "Bee", "C0FFEE01"); n5.advance(3000);
+      check("invite only (B9): no code and a wrong code are refused, the invite's code joins", !n5.n[e5]->joined() && n5.n[e5]->refused() == kBadToken && !n5.n[w5]->joined() && n5.n[k5]->joined() && n5.n[h5]->state().members.size() == 2); }
     // 2. ready, settings, start, the roster
     { Net net(15, 60); unsigned h = net.add(true, "Host", "ABC123", {}, 47001); unsigned a = net.add(false, "Alpha", "ABC123", {}, 47002), b = net.add(false, "Beta", "ABC123", {}, 47003); net.advance(4000);
       Settings s; s.mode = kRace; s.raceGoal = "count:9"; s.progress = "area:Symmetry_Island;lasers:2"; net.n[h]->SetSettings(s); net.advance(2500);

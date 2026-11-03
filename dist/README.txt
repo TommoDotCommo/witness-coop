@@ -121,13 +121,20 @@ If something is wrong the launcher says so in plain words (Steam not running, of
 or gone, a different version of the mod). Everyone needs the same version of the mod.
 
 On a LAN, or by hand (Direct):
-Host: Play > Host a game > Direct > Open lobby. Send your friend the invite shown (address:port/CODE)
-with Copy invite. Joining: Play > Join a friend, paste the invite > Join. An invite link
-(witness-coop://...) opens the launcher with the invite already in the join box: check it, then press Join.
+Host: Play > Host a game > Direct > Open lobby. "Friends can join by" shows which ways work
+(Same network, Tailscale, Internet, Windows Firewall) and what to do about the others.
+Joining: Play > Join a friend. Games on your network and your Tailscale devices are listed:
+pick one and press Join. Or press Copy invite on the host ("Fox is hosting The Witness.
+Join: https://.../#WIT-...") and paste the whole message, the link or the WIT- code into the box,
+then Join. The box also takes a Steam lobby number, an address or a computer name. An invite link
+(witness-coop://...) opens the launcher with the invite already in the box: check it, then press Join.
+Settings > Co-op rules > Who can see my lobby: Open to my networks, or Invite only (not listed;
+friends need the invite).
 Ports and firewall: Windows asks once to allow witness_launcher.exe and the game through
-the firewall: allow them on private networks. Direct play over the internet needs the host to
-forward UDP 47100 (the lobby) and UDP 47001 (the host's game), and sometimes the joiner 47002;
-use the Steam lobby instead. On a LAN nothing needs forwarding.
+the firewall: allow them on private networks. Over the internet the launcher asks your router to
+open UDP 47100 (the lobby) and 47001 (the host's game) while you host (UPnP / NAT-PMP; Settings >
+Network to turn it off). If your router or provider does not allow that, use the Steam lobby
+or Tailscale. On a LAN nothing needs forwarding.
 
 A new game or continue: the host chooses in the lobby. "New game" can start with parts of the
 island already done. Saves are the game's own, in %APPDATA%\The Witness, as usual.

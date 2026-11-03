@@ -146,7 +146,7 @@ Four tabs, the same in every co-op mod: **Play**, **Saves**, **Settings**, **Abo
 
 - **Play**: your name, three choices (*Host a game*, *Join a friend*, *Play solo*) and one button that says what it does (*Open lobby*, *Join*, *Play solo*);
   the last choice is remembered (`launcher_choice=`). Hosting or joining turns the tab into **Lobby**: players (host mark, ready, speaking light, mute me,
-  deafen) | chat | the invite and *What to play* (the host chooses co-op or race, a new game, parts of the map done). The host's button reads *Start game*
+  deafen) | chat | *Friends can join by* with the invite above *What to play* (the host chooses co-op or race, a new game, parts of the map done). The host's button reads *Start game*
   or *Waiting for <names>*; the others tick *Ready*; *Leave* is one click. An available update is a banner on Play (*Update*, *What's new*), never over a lobby.
 - **Saves**: the co-op saves (who played, progress, lasers, time) and *New game...* (the parts of the map that are done at the start).
 - **Settings**: sections in the shared order (Co-op rules, Players and interface, Voice and sound, Controls, Display, Network, Launcher). Every change is
@@ -189,6 +189,56 @@ checks nor updates. A downgrade (a release that is not newer) is refused. Tests:
 truncated archives, hash mismatch, interrupted apply, downgrade, the old-layout migration, 39 source mutants), `python3 tools/test_launcher_update_win.py --mutants` (the Windows code against a local fake release server),
 `python3 tools/qa_lobby_version.py` (real launchers, three versions), `python3 tools/test_update_installer.py <game build folder> --mutant` (a folder installed by the real PowerShell installer is updated by the Windows updater; the new package's installer must then call every file current and uninstall must restore the original). The maintenance rules for publishing a release the updater accepts are in [docs/UPDATER.md](docs/UPDATER.md).
 
+### Playing with friends: finding each other and the invite
+
+**Join a friend** fills its list as soon as it is chosen and asks again every 5 s while it is on screen; nothing is sent while it is not. It asks with a 13-byte
+query (`CPQ2`, a random number, the game id `WIT `; no name, address or version) on the lobby port and the default 47100, each with the next three:
+
+- **Network**: the directed broadcast address of *every* network adapter this PC has (Ethernet, Wi-Fi, VPN adapters; never 255.255.255.255, which Windows sends
+  out of one adapter only), so a host on the same network or on a layer-2 VPN answers.
+- **Tailscale**: when Tailscale is installed, `tailscale status --json` (no window) lists your tailnet; each online device (shared-in devices too) is asked directly.
+- **Recent**: every host you joined before (remembered after each successful join, in `recents.tsv` in the mod's data folder).
+- **Steam**: friends' Steam lobbies come as Steam invites (*Join Game* in Steam), not as rows.
+
+Each source is named above the list with a tick when it is done. A row says the host's name, *in lobby* / *in game* / *full*, the players of 16, how it was
+reached (LAN, Tailscale, Recent) and the ping; a host on another version is listed greyed with its version. Pick a row and press **Join <name>**: a lobby that
+is *open to my networks* lets you in without a code.
+
+The box above the list takes **whatever a friend sent** and says what it recognised before you press Join: the whole invite message, the link
+`https://tommodotcommo.github.io/coop-mod-kit/join/#WIT-...`, a `witness-coop://` link, the code `WIT-XXXXX-...` alone (case does not matter; I/L read as 1, O as 0),
+a Steam lobby number, an address (`192.168.1.20`, `192.168.1.20:47100`), a host name or a Tailscale name (`fox-pc`, `fox-pc.tail1234.ts.net`). The invites of
+earlier versions (`address:port/CODE`) still work for this release. A code is tried on all its routes at once; the first answer wins, a better route (LAN, then
+Tailscale, then internet) answering within 300 ms instead. A cut code says *This code is incomplete. Ask for the whole invite again.*; an MDK2 code says
+*That invite is for MDK2.* When the launcher gets the focus with an invite for The Witness on the clipboard it offers it (*Fox's invite is on your clipboard.
+Join?*); the clipboard is read for that check only, never stored, logged or sent.
+
+![Join a friend: the list of games found, with the sources ticked, and the paste box](docs/showcase/launcher_join.jpg)
+
+**Hosting.** The lobby's right column has **Friends can join by**, each way with its check and, when it needs a look, the fix:
+
+- **Steam**: a Steam lobby (friends-only) or *not used* for a Direct lobby.
+- **Same network**: this PC's address and port; the lobby is asked on its own address to prove it answers.
+- **Tailscale**: this PC's Tailscale name, *not installed* (optional) or *not connected*.
+- **Internet**: while the lobby is open the launcher asks the router to open the lobby port and the game port (UPnP-IGD, else NAT-PMP), renews the mapping and
+  removes it when the lobby closes or the launcher quits. A router whose internet address is private or in 100.64.0.0/10 means *Your internet provider shares
+  your address with other customers ... Use Steam or Tailscale*.
+- **Windows Firewall**: the rules for the launcher (lobby) and the game on Private and Public networks (read only; Setup's option adds them).
+
+**Copy invite** copies *Fox is hosting The Witness. Join: https://tommodotcommo.github.io/coop-mod-kit/join/#WIT-...*. The code carries every way that works
+(up to two LAN addresses, Tailscale, the internet address only when the router opened the port and the address is really yours), the port and the lobby's
+secret; a Steam host's code carries the Steam lobby. The join page reads the code from the part after `#` (it never reaches a server) and offers *Open in launcher*.
+*Settings, Co-op rules, Who can see my lobby*: **Open to my networks** (listed in friends' Join lists, joinable without a code) or **Invite only** (not listed,
+the code's secret is required). Steam lobbies stay friends-only. *Settings, Network*: the lobby port, *Find games on my network*, *Find friends on Tailscale*,
+*Open the router port while hosting*, *Put my internet address in invites* (all on by default) and *Friends reach this PC at* (blank: found by itself; an address
+or name there is the invite's only way in).
+
+The invite code (v1), the probe (CPQ2/CPS2), the Join list model and the router and firewall checks are shared with the MDK2 co-op mod
+([common/VENDORED.md](common/VENDORED.md)). Tests: `python3 tools/test_coop_discovery.py`, `tools/test_coop_join.py`, `tools/test_coop_host.py` (the shared code,
+fuzzed, with 101 source mutants that must fail, the router code against a fake UPnP router and NAT-PMP responder), `make -C launcher joinglue-test lobby-test` (the paste box,
+the probe answer, the invite, invite-only lobbies; mutants), `python3 tools/test_coop_witness.py` (the wiring), and `tools/qa.sh join` (two real launchers, no
+game: B lists A from the LAN within 6 s and joins from the row, then from a pasted code; A shows *Same network* OK; an invite-only lobby is not listed and its code
+still joins; a launcher that ignores the answers must fail it). `tools/qa.sh join pictures` retakes the two launcher pictures with 127.0.0.1 as the address.
+
 ### Play over the internet (Steam, no port forwarding)
 
 With Steam running, the host chooses **Host a game**, *Through Steam*, and **Open lobby** (a friends-only Steam lobby for up to 16) and invites friends through the Steam
@@ -199,8 +249,8 @@ Witness (app 210970) through the `SteamAppId` environment variable, which the ga
 connection and never falls back to UDP by itself. Details, the cfg syntax (`peer=<id>,steam:<steamid64>`, `transport=steam`), the
 messages a player sees when something is wrong, and the two-account test: [docs/STEAM.md](docs/STEAM.md).
 
-**Direct (LAN / manual)**: *Host a game*, *Direct* gives the invite `address:port/CODE`; the host's lobby port is UDP 47100 and the
-games use 47001 and 47002, so over the internet every player would need reachable ports. Use it on a LAN.
+**Direct**: *Host a game*, *Direct* opens a lobby on UDP 47100 (the games use 47001 and 47002). Friends on the same network or tailnet find it in their Join
+list; over the internet the router port has to open (above), else use Steam or Tailscale.
 
 ### Manual install (no Setup)
 

@@ -19,10 +19,17 @@ save yet), the game's typeface and its yellow for the main button and the select
 **Play** has your name, three tiles (Host a game, Join a friend, Play solo) and one button that says what it does. Here Host a game is chosen, through Steam or direct, and the
 button reads *Open lobby*.
 
-![The lobby: players, chat, the invite, what to play](showcase/launcher_lobby.jpg)
+![Join a friend: the games found on the network, the sources ticked, the paste box](showcase/launcher_join.jpg)
+
+**Join a friend** lists the games it finds on every network of this PC, on Tailscale and among the hosts you joined before, each source named with a tick when it is done; a row says
+the host, *in lobby*, the players of 16, how it was reached and the ping. The box above takes whatever a friend sent (the invite message, the link, the WIT- code, a Steam lobby number,
+an address or a name) and says what it recognised before Join.
+
+![The lobby: players, chat, Friends can join by, the invite, what to play](showcase/launcher_lobby.jpg)
 
 Hosting or joining turns Play into the **lobby** (the tab is called Lobby). Three columns: who is here (a lit dot beside the name of whoever is talking, an amber one for a player who has
-said they are ready, *Mute me* and *Deafen* below), the chat, and the invite (*Copy invite*; the address in the picture is the test harness's loopback address) above *What to play*,
+said they are ready, *Mute me* and *Deafen* below), the chat, and **Friends can join by** (Steam, Same network, Tailscale, Internet, Windows Firewall, each with its check and, when it
+needs a look, the fix) with the WIT- invite and *Copy invite* (the address in the picture is the test harness's loopback address, set as *Friends reach this PC at*) above *What to play*,
 which the host chooses: co-op or a race, a new game, parts of the map already done. The host's *Start game* starts it when everybody is ready; when the games end everybody is back in
 the lobby.
 

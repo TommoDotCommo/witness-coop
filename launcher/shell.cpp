@@ -35,7 +35,9 @@ static std::vector<Row> Build() {
     std::vector<Row> v;
     const std::vector<std::string> q = {"Low", "Medium", "High"};
     // Co-op rules (host): who can see the lobby and the player limit come with the Join list; what to play is chosen in the lobby
-    { Row n = R("note:rules", "Who can see your lobby and the player limit come with the Join list. What to play (co-op or race, new game, parts done) is chosen in the lobby by the host.", kRules, kNote); v.push_back(n); }
+    { Row r = Choice_("cfg:lobby_visibility", "Who can see my lobby", kRules, {"Open to my networks", "Invite only"}, "open"); r.values = {"open", "invite"}; r.hostDecides = true;
+      r.hint = "open: listed in friends' Join lists on your network and Tailscale, joinable without a code; invite only: friends need the invite. Steam lobbies stay friends-only"; v.push_back(r); }
+    { Row n = R("note:rules", "Up to 16 players. What to play (co-op or race, new game, parts done) is chosen in the lobby by the host.", kRules, kNote); v.push_back(n); }
     // Players and interface
     { Row r = R("cfg:name", "Your name", kPlayers, kText); r.hint = "shown to the others"; v.push_back(r); }
     {
@@ -105,7 +107,11 @@ static std::vector<Row> Build() {
     // Network
     { Row r = R("cfg:lobby_port", "Lobby port", kNetwork, kPort); r.def = "47100"; v.push_back(r); }
     { Row r = R("cfg:listen", "Game port", kNetwork, kPort); r.def = "47001"; v.push_back(r); }
-    { Row r = R("cfg:lobby_advertise", "Friends reach this PC at", kNetwork, kText); r.hint = "blank: automatic"; v.push_back(r); }
+    v.push_back(Toggle("cfg:find_lan", "Find games on my network", kNetwork, "1", "the Join list asks every network this PC is on"));
+    v.push_back(Toggle("cfg:find_tailscale", "Find friends on Tailscale", kNetwork, "1", "when Tailscale is installed: asks your tailnet's online devices"));
+    v.push_back(Toggle("cfg:upnp", "Open the router port while hosting", kNetwork, "1", "UPnP or NAT-PMP, removed when the lobby closes"));
+    v.push_back(Toggle("cfg:internet_in_invite", "Put my internet address in invites", kNetwork, "1", "only when the router opened the port and the address is really yours"));
+    { Row r = R("cfg:lobby_advertise", "Friends reach this PC at", kNetwork, kText); r.hint = "blank: found by itself; an address or name here is the only way in the invite"; v.push_back(r); }
     { Row r = R("cfgmulti:peer", "Direct play without a lobby: number,address,port per line", kNetwork, kPeers); r.hint = "advanced; the lobby fills this in itself"; v.push_back(r); }
     // Launcher
     v.push_back(Toggle("cfg:show_launcher", "Show the launcher at start", kLauncher, "1", "off: Play in Steam starts the game directly; hold Shift while it starts to see the launcher"));

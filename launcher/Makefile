@@ -38,23 +38,32 @@ VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 $(BUILD)/version.h: FORCE
 	@mkdir -p $(BUILD); printf '#define MOD_VERSION "%s"\n' '$(VERSION)' > $(BUILD)/version.h.new; cmp -s $(BUILD)/version.h.new $(BUILD)/version.h && rm $(BUILD)/version.h.new || mv $(BUILD)/version.h.new $(BUILD)/version.h
 FORCE:
-LMUTANTS = NO_MONITOR NO_VIDEO_WRITE NO_SAVE_WRITE CFG_DROP LOBBY_NO_CFG LOBBY_NO_RESULT LOBBY_NO_RESTORE LOBBY_NO_VOICE WIDE_COMBOS TAB_REPAINT_ALWAYS LONG_LABELS LOBBY_VERSION_ANY NO_SAVE_ON_CHANGE NO_STEAM_AT_START
+LMUTANTS = NF_MUT_IGNORE_REPLIES NO_PROBE_ANSWER NO_MONITOR NO_VIDEO_WRITE NO_SAVE_WRITE CFG_DROP LOBBY_NO_CFG LOBBY_NO_RESULT LOBBY_NO_RESTORE LOBBY_NO_VOICE WIDE_COMBOS TAB_REPAINT_ALWAYS LONG_LABELS LOBBY_VERSION_ANY NO_SAVE_ON_CHANGE NO_STEAM_AT_START
 launcher-mutants: $(addsuffix .exe,$(addprefix $(BUILD)/witness_launcher_,$(LMUTANTS)))
-$(BUILD)/witness_launcher_%.exe: ../common/guide.h ../common/bindings.def ../proxy/config.h main.cpp shell.cpp shell.h ../common/handover.h update_win.h update.h ../dist/install-policy.h core.cpp core.h ../proxy/core/appearance.h theme.cpp theme.h lobby.cpp lobby.h lobby_win.cpp lobby_win.h lobby_steam.cpp lobby_steam.h ../common/steam_abi.h ../common/steam_ids.h ../proxy/voice/voice.cpp $(BUILD)/launcher_res.o ../proxy/progress/progress.cpp ../proxy/progress/progress_data.cpp ../proxy/progress/savemeta.cpp $(BUILD)/diag_ps1.h $(BUILD)/version.h ../common/diag_log.h ../common/crash_handler.h
-	$(CXX) -std=c++17 -O2 -I$(BUILD) -D_WIN32_WINNT=0x0601 -mwindows -municode -static -DWL_MUT_$* -o $@ main.cpp shell.cpp core.cpp theme.cpp lobby.cpp lobby_win.cpp lobby_steam.cpp ../proxy/voice/voice.cpp ../proxy/progress/progress.cpp ../proxy/progress/progress_data.cpp ../proxy/progress/savemeta.cpp $(BUILD)/launcher_res.o -lcomctl32 -lshell32 -lole32 -luuid -luxtheme -lws2_32 -lwinmm -lgdi32 -lmsimg32 -lwininet
+# finding each other and the hosting checks (C: the shared Windows headers vendored from MDK2 are C)
+NF_HDRS = netfind.h ../common/coop_witness.h ../common/coop_invite.h ../common/coop_discover.h ../common/coop_discover_win.h ../common/launcher_join.h ../common/launcher_host_core.h ../common/launcher_host_win.h joinglue.h
+$(BUILD)/netfind.o: netfind.c $(NF_HDRS)
+	mkdir -p $(BUILD)
+	x86_64-w64-mingw32-gcc -std=c99 -O2 -Wall -Wextra -Wno-unused-parameter -D_WIN32_WINNT=0x0601 -c -o $@ netfind.c
+$(BUILD)/netfind_%.o: netfind.c $(NF_HDRS)
+	mkdir -p $(BUILD)
+	x86_64-w64-mingw32-gcc -std=c99 -O2 -Wno-unused-parameter -D_WIN32_WINNT=0x0601 -D$* -c -o $@ netfind.c
+$(BUILD)/witness_launcher_NF_MUT_IGNORE_REPLIES.exe: $(BUILD)/netfind_NF_MUT_IGNORE_REPLIES.o      # (the Join list mutant is in netfind.c)
+$(BUILD)/witness_launcher_%.exe: $(NF_HDRS) $(BUILD)/netfind.o ../common/guide.h ../common/bindings.def ../proxy/config.h main.cpp shell.cpp shell.h ../common/handover.h update_win.h update.h ../dist/install-policy.h core.cpp core.h ../proxy/core/appearance.h theme.cpp theme.h lobby.cpp lobby.h lobby_win.cpp lobby_win.h lobby_steam.cpp lobby_steam.h ../common/steam_abi.h ../common/steam_ids.h ../proxy/voice/voice.cpp $(BUILD)/launcher_res.o ../proxy/progress/progress.cpp ../proxy/progress/progress_data.cpp ../proxy/progress/savemeta.cpp $(BUILD)/diag_ps1.h $(BUILD)/version.h ../common/diag_log.h ../common/crash_handler.h
+	$(CXX) -std=c++17 -O2 -I$(BUILD) -D_WIN32_WINNT=0x0601 -mwindows -municode -static -DWL_MUT_$* -o $@ main.cpp shell.cpp core.cpp theme.cpp lobby.cpp lobby_win.cpp lobby_steam.cpp ../proxy/voice/voice.cpp ../proxy/progress/progress.cpp ../proxy/progress/progress_data.cpp ../proxy/progress/savemeta.cpp $(if $(filter NF_MUT_%,$*),$(BUILD)/netfind_$*.o,$(BUILD)/netfind.o) $(BUILD)/launcher_res.o -lcomctl32 -lshell32 -lole32 -luuid -luxtheme -lws2_32 -lwinmm -lgdi32 -lmsimg32 -lwininet
 # the manifest plus a VERSIONINFO (ProductName "The Witness Co-op", the mod version): tools/versioninfo.py writes the version part
 $(BUILD)/launcher_res.o: launcher.rc launcher.manifest ../tools/versioninfo.py $(BUILD)/version.h
 	mkdir -p $(BUILD)
 	python3 -I ../tools/versioninfo.py '$(VERSION)' witness_launcher.exe 'The Witness Co-op launcher' $(BUILD)/launcher_version.rc
 	{ cat launcher.rc; cat $(BUILD)/launcher_version.rc; } > $(BUILD)/launcher_all.rc
 	x86_64-w64-mingw32-windres -I . $(BUILD)/launcher_all.rc -o $@
-$(BUILD)/witness_launcher.exe: ../common/guide.h ../common/bindings.def ../proxy/config.h main.cpp shell.cpp shell.h ../common/handover.h update_win.h update.h ../dist/install-policy.h core.cpp core.h ../proxy/core/appearance.h theme.cpp theme.h lobby.cpp lobby.h lobby_win.cpp lobby_win.h lobby_steam.cpp lobby_steam.h ../common/steam_abi.h ../common/steam_ids.h ../proxy/voice/voice.cpp $(BUILD)/launcher_res.o ../proxy/progress/progress.cpp ../proxy/progress/progress_data.cpp ../proxy/progress/savemeta.cpp $(BUILD)/diag_ps1.h $(BUILD)/version.h ../common/diag_log.h ../common/crash_handler.h
-	$(CXX) -std=c++17 -O2 -Wall -I$(BUILD) -D_WIN32_WINNT=0x0601 -mwindows -municode -static -o $@ main.cpp shell.cpp core.cpp theme.cpp lobby.cpp lobby_win.cpp lobby_steam.cpp ../proxy/voice/voice.cpp ../proxy/progress/progress.cpp ../proxy/progress/progress_data.cpp ../proxy/progress/savemeta.cpp $(BUILD)/launcher_res.o -lcomctl32 -lshell32 -lole32 -luuid -luxtheme -lws2_32 -lwinmm -lgdi32 -lmsimg32 -lwininet
+$(BUILD)/witness_launcher.exe: $(NF_HDRS) $(BUILD)/netfind.o ../common/guide.h ../common/bindings.def ../proxy/config.h main.cpp shell.cpp shell.h ../common/handover.h update_win.h update.h ../dist/install-policy.h core.cpp core.h ../proxy/core/appearance.h theme.cpp theme.h lobby.cpp lobby.h lobby_win.cpp lobby_win.h lobby_steam.cpp lobby_steam.h ../common/steam_abi.h ../common/steam_ids.h ../proxy/voice/voice.cpp $(BUILD)/launcher_res.o ../proxy/progress/progress.cpp ../proxy/progress/progress_data.cpp ../proxy/progress/savemeta.cpp $(BUILD)/diag_ps1.h $(BUILD)/version.h ../common/diag_log.h ../common/crash_handler.h
+	$(CXX) -std=c++17 -O2 -Wall -I$(BUILD) -D_WIN32_WINNT=0x0601 -mwindows -municode -static -o $@ main.cpp shell.cpp core.cpp theme.cpp lobby.cpp lobby_win.cpp lobby_steam.cpp ../proxy/voice/voice.cpp ../proxy/progress/progress.cpp ../proxy/progress/progress_data.cpp ../proxy/progress/savemeta.cpp $(BUILD)/netfind.o $(BUILD)/launcher_res.o -lcomctl32 -lshell32 -lole32 -luuid -luxtheme -lws2_32 -lwinmm -lgdi32 -lmsimg32 -lwininet
 .PHONY: launcher
 
 # the lobby (game-free): the same kind of test and mutants
 LSRC = lobby.cpp lobby_test.cpp core.cpp ../proxy/voice/voice.cpp ../proxy/progress/savemeta.cpp ../proxy/progress/progress.cpp ../proxy/progress/progress_data.cpp
-LOBBY_MUTANTS = NO_CHECKSUM GATE_OPEN VERSION_NOT_CHECKED REPLY_NO_VERSIONS LIST_NO_VERSION
+LOBBY_MUTANTS = NO_CHECKSUM GATE_OPEN VERSION_NOT_CHECKED REPLY_NO_VERSIONS LIST_NO_VERSION INVITE_ONLY_OPEN
 $(BUILD)/lobby-test.exe: $(LSRC) lobby.h core.h ../proxy/voice/voice.h ../common/steam_ids.h
 	mkdir -p $(BUILD)
 	$(CXX) -std=c++17 -O2 -Wall -Wextra -static -o $@ $(LSRC)
@@ -100,3 +109,18 @@ update-test:
 	python3 -I ../tools/test_launcher_update.py
 .PHONY: update-test
 test: update-test
+
+# finding each other and the invite (joinglue.h around the shared code in common/, VENDORED.md): game-free, with mutants
+JG_HDRS = joinglue.h ../common/coop_witness.h ../common/coop_invite.h ../common/coop_discover.h ../common/launcher_join.h ../common/launcher_host_core.h
+JOINGLUE_MUTANTS = NO_STEAM_INVITE OLD_FORM_DROPPED WRONG_GAME_ID
+$(BUILD)/joinglue-test.exe: joinglue_test.cpp $(JG_HDRS)
+	mkdir -p $(BUILD)
+	$(CXX) -std=c++17 -O2 -Wall -Wextra -I../common -static -o $@ joinglue_test.cpp
+$(BUILD)/joinglue-mutant-%.exe: joinglue_test.cpp $(JG_HDRS)
+	mkdir -p $(BUILD)
+	$(CXX) -std=c++17 -O2 -I../common -static -DJG_MUT_$* -o $@ joinglue_test.cpp
+joinglue-test: $(BUILD)/joinglue-test.exe $(addsuffix .exe,$(addprefix $(BUILD)/joinglue-mutant-,$(JOINGLUE_MUTANTS)))
+	$(BUILD)/joinglue-test.exe
+	@for m in $(JOINGLUE_MUTANTS); do if $(BUILD)/joinglue-mutant-$$m.exe >/dev/null; then echo "MUTANT joinglue $$m SURVIVED (the test cannot fail for it)"; exit 1; else echo "joinglue mutant $$m killed"; fi; done
+.PHONY: joinglue-test
+test: joinglue-test
