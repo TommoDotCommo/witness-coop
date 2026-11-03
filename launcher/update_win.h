@@ -1,7 +1,7 @@
 #pragma once
 // The launcher's self-update on Windows: GitHub's release list over WinINet on a worker thread (the window stays responsive), the verified download, and the apply
 // through update.h (the installer's receipts). No telemetry: one GET of the public release list a day at most, one GET per asset when the player says Update; nothing
-// about the player or the PC is sent. A failure of the automatic check is only logged. Settings (a small key=value file next to the launcher, witness_launcher_update.cfg):
+// about the player or the PC is sent. A failure of the automatic check is only logged. Settings (a small key=value file in the mod's data folder, witness_launcher_update.cfg: %LOCALAPPDATA%\witness-coop, or beside the launcher for a per-instance copy):
 //   update_check=1|0           the automatic check when the launcher starts (once a day at most)
 //   update_prereleases=auto|1|0   auto: pre-releases are offered only to an installed pre-release
 //   update_api_url=...         tests only: https://, or http://127.0.0.1:<port> / http://localhost:<port>
@@ -37,8 +37,8 @@ inline bool GameRunningIn(const std::wstring& dir) {
 class Updater {
 public:
     // dir: the game folder (the launcher's own); version: the stamped mod version; log: where failures go
-    void Init(const std::wstring& dir, const std::string& version, std::function<void(const std::string&)> log) {
-        dir_ = dir; dirA_ = Narrow(dir); for (auto& c : dirA_) if (c == '\\') c = '/'; version_ = version; log_ = log; cfgPath_ = dir + L"\\witness_launcher_update.cfg";
+    void Init(const std::wstring& dir, const std::wstring& dataDir, const std::string& version, std::function<void(const std::string&)> log) {
+        dir_ = dir; dirA_ = Narrow(dir); for (auto& c : dirA_) if (c == '\\') c = '/'; version_ = version; log_ = log; cfgPath_ = dataDir + L"\\witness_launcher_update.cfg";
         InitializeCriticalSection(&cs_); inited_ = true; snap_.version = version; apiUrl_ = WUP_DEFAULT_API;
         LoadSettings(); int rec = lu_recover_interrupted(dirA_.c_str());
         if (rec > 0) { Set(kError, "An interrupted update was rolled back to the previous version."); Log("update: an interrupted update was rolled back"); }

@@ -6,7 +6,7 @@ int main(int argc, char** argv) {
     if (argc < 5) return 2;
     int n; wchar_t** w = CommandLineToArgvW(GetCommandLineW(), &n); (void)w;
     std::wstring dir; { int len = MultiByteToWideChar(CP_UTF8, 0, argv[1], -1, nullptr, 0); dir.resize(len - 1); MultiByteToWideChar(CP_UTF8, 0, argv[1], -1, &dir[0], len); }
-    wup::Updater u; u.Init(dir, argv[2], [](const std::string& s) { printf("log: %s\n", s.c_str()); });
+    wup::Updater u; u.Init(dir, dir, argv[2], [](const std::string& s) { printf("log: %s\n", s.c_str()); });
     u.SetApiUrl(argv[3]); std::string cmd = argv[4];
     int r = 0;
     if (cmd == "auto") { u.StartAuto(); for (int i = 0; i < 200 && (u.Busy() || i < 3); ++i) Sleep(50); }

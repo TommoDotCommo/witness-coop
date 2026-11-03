@@ -33,8 +33,7 @@ static std::wstring g_dir;
 const std::wstring& DiagDir() { return g_dir; }
 
 static void RotateProxyLog() {      // witness_proxy.log is the last run: the one before it is kept as witness_proxy.previous.log
-    wchar_t path[MAX_PATH], prev[MAX_PATH]; GetModuleFileNameW(g_selfModule(), path, MAX_PATH);
-    wchar_t* sl = wcsrchr(path, L'\\'); if (sl) *(sl + 1) = 0;
+    wchar_t path[MAX_PATH], prev[MAX_PATH]; wcscpy_s(path, DataDir().c_str());
     wcscpy_s(prev, path); wcscat_s(path, L"witness_proxy.log"); wcscat_s(prev, L"witness_proxy.previous.log");
     MoveFileExW(path, prev, MOVEFILE_REPLACE_EXISTING);
 }

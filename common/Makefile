@@ -20,7 +20,19 @@ build/buildid-test: buildid_test.cpp buildid.h sha256.h buildid_fixture.h
 build/buildid-mutant: buildid_test.cpp buildid.h sha256.h buildid_fixture.h
 	mkdir -p build
 	$(CXX) $(CXXFLAGS) -DBI_MUT_SKIP_TEXT -o $@ $<
-test: build/guide-test $(addprefix build/mutant-,$(MUTANTS)) build/buildid-test build/buildid-mutant build/notices-test $(addprefix build/notices-mutant-,$(NOTICE_MUTANTS))
+# where the settings and logs live (userdata.h): a Windows program (WSL interop or Windows); mutants: every cfg is an override / the old cfg is kept after the move
+WINCXX ?= x86_64-w64-mingw32-g++
+USERDATA_MUTANTS = ANY_CFG_IS_INSTANCE KEEP_OLD
+build/userdata-test.exe: userdata_test.cpp userdata.h
+	mkdir -p build
+	$(WINCXX) -std=c++17 -O2 -Wall -Wextra -static -o $@ $<
+build/userdata-mutant-%.exe: userdata_test.cpp userdata.h
+	mkdir -p build
+	$(WINCXX) -std=c++17 -O2 -Wall -static -DUSERDATA_MUT_$* -o $@ $<
+userdata-test: build/userdata-test.exe $(addsuffix .exe,$(addprefix build/userdata-mutant-,$(USERDATA_MUTANTS)))
+	build/userdata-test.exe
+	@for m in $(USERDATA_MUTANTS); do if build/userdata-mutant-$$m.exe >/dev/null; then echo "MUTANT userdata $$m SURVIVED"; exit 1; else echo "mutant userdata $$m killed"; fi; done
+test: userdata-test build/guide-test $(addprefix build/mutant-,$(MUTANTS)) build/buildid-test build/buildid-mutant build/notices-test $(addprefix build/notices-mutant-,$(NOTICE_MUTANTS))
 	build/notices-test
 	@for m in $(NOTICE_MUTANTS); do if build/notices-mutant-$$m >/dev/null 2>&1; then echo "MUTANT notices $$m SURVIVED"; exit 1; else echo "mutant notices $$m killed"; fi; done
 	build/buildid-test $(BUILDID_EXE)
@@ -29,4 +41,4 @@ test: build/guide-test $(addprefix build/mutant-,$(MUTANTS)) build/buildid-test 
 	@for m in $(MUTANTS); do if build/mutant-$$m >/dev/null 2>&1; then echo "MUTANT $$m SURVIVED"; exit 1; else echo "mutant $$m killed"; fi; done
 clean:
 	rm -rf build
-.PHONY: test clean
+.PHONY: test clean userdata-test

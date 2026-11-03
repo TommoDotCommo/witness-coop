@@ -220,7 +220,7 @@ std::string ProgressText(const std::vector<unsigned>& ids) { std::string t; char
 std::wstring ProgressSidecar() { std::wstring d = SaveFolder(); return d.empty() ? L"" : d + L"\\coop_progress.txt"; }
 std::string ReadAll(const std::wstring& p) { std::string t; FILE* f = p.empty() ? nullptr : _wfopen(p.c_str(), L"rb"); if (f) { char b[4096]; size_t k; while ((k = fread(b, 1, sizeof b, f)) > 0) t.append(b, k); fclose(f); } return t; }
 void DisarmStartProgress() {      // witness_coop.cfg: the start_progress line becomes a comment, so the next start is an ordinary one
-    wchar_t p[MAX_PATH]; GetModuleFileNameW(g_selfModule(), p, MAX_PATH); wchar_t* s = wcsrchr(p, L'\\'); if (s) *(s + 1) = 0; std::wstring path = std::wstring(p) + L"witness_coop.cfg";
+    std::wstring path = DataDir() + L"witness_coop.cfg";
     std::string t = ReadAll(path), out; size_t pos = 0; bool changed = false;
     while (pos < t.size()) { size_t e = t.find('\n', pos); if (e == std::string::npos) e = t.size() - 1; std::string line = t.substr(pos, e - pos + 1); if (!line.compare(0, 15, "start_progress=")) { line = "# applied: " + line; changed = true; } out += line; pos = e + 1; }
     if (changed) { FILE* f = _wfopen(path.c_str(), L"wb"); if (f) { fwrite(out.data(), 1, out.size(), f); fclose(f); } }

@@ -74,7 +74,7 @@ static std::atomic<unsigned> g_myId{0};
 static void EventLog(const char* t) {
     static FILE* f; static double scale;
     if (!f) {
-        wchar_t path[MAX_PATH]; GetModuleFileNameW(g_selfModule(), path, MAX_PATH); wchar_t* sl = wcsrchr(path, L'\\'); if (sl) sl[1] = 0;
+        wchar_t path[MAX_PATH]; wcscpy_s(path, DataDir().c_str());
         wcscat_s(path, L"witness_events.log"); f = _wfopen(path, L"a"); LARGE_INTEGER fr; QueryPerformanceFrequency(&fr); scale = 1000.0 / (double)fr.QuadPart;
         if (!f) return;
     }
@@ -131,8 +131,7 @@ void CoopDumpStatus(unsigned submittedPlayers, const SocialSnapshot* uiState) {
 }
 
 static DWORD WINAPI NetThread(LPVOID) {
-    wchar_t wp[MAX_PATH]; GetModuleFileNameW(g_selfModule(), wp, MAX_PATH);
-    wchar_t* sl = wcsrchr(wp, L'\\'); if (sl) *(sl + 1) = 0; wcscat_s(wp, L"witness_coop.cfg");
+    wchar_t wp[MAX_PATH]; wcscpy_s(wp, DataDir().c_str()); wcscat_s(wp, L"witness_coop.cfg");
     FILE* f = _wfopen(wp, L"r");
     if (!f) { Log("coop: no witness_coop.cfg, networking off"); return 0; }
     witness::Flags flags; int id = 0, listenPort = 0, peerPort = 0; char host[64] = "127.0.0.1", line[200], name[32] = ""; int dropPct = 0; uint32_t dropState = 1;
