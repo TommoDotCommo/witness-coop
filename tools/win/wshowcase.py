@@ -111,8 +111,10 @@ def devmenu_scene(vi):
 def panel_scene(vi):
     """Shared panels and lines: one player draws the maze solution with real mouse input while another stands in front of it and watches the line appear."""
     V = games[vi]; drawer = games[1 if vi == 0 else 0]
-    plan = PLAN
+    plan = PLAN; time.sleep(20.0)      # (changes in the first seconds after the world is stable are start-up noise to the mod and not shared)
     V.send(['menusel 293', 'menudo teleport'], 4.0); snap(V, 'panel_0_before', 'The cable-driving maze, unsolved, seen by player %d.' % (vi + 1))
+    (vx, vy, vz), (th, ph) = V.cam()      # the camera player steps aside (the drawer walks to the same spot in front of the panel) and watches at an angle
+    V.send(['tp %.3f %.3f %.3f %.4f %.4f' % (vx + math.sin(th) * 2.2, vy - math.cos(th) * 2.2, vz - 1.69, th + 0.6, 0.0)], 2.5)
     if not plan:
         drawer.send(['solve 293'], 4.0); snap(V, 'panel_2_solved', 'Player %d solves the panel (the solve test command, not a drawn line): it is solved in this game too and the cable is lit.' % (drawer.idx + 1)); return
     pid_, nodes = plan.split(':', 1); import subprocess
@@ -202,11 +204,11 @@ def hide_paths(h):
     """Privacy: every child window whose text is a game folder of this PC (the About page's Game folder box) shows a generic path in the picture instead."""
     import ctypes, ctypes.wintypes as wt
     u = ctypes.WinDLL('user32', use_last_error=True); E = ctypes.WINFUNCTYPE(wt.BOOL, wt.HWND, wt.LPARAM); u.SendMessageW.argtypes = [wt.HWND, wt.UINT, wt.WPARAM, wt.LPARAM]
-    dirs = {g.dir.rstrip('\\').lower() for g in games}
+    dirs = {g.dir.rstrip('\\').lower() for g in games}; fake = ctypes.create_unicode_buffer('C:\\Games\\The Witness')
     @E
     def cb(c, l):
         b = ctypes.create_unicode_buffer(520); u.GetWindowTextW(c, b, 520)
-        if b.value.rstrip('\\').lower() in dirs: u.SendMessageW(c, 0x000C, 0, ctypes.cast(ctypes.c_wchar_p('C:\\Games\\The Witness'), ctypes.c_void_p).value)
+        if b.value.rstrip('\\').lower() in dirs: u.SendMessageW(c, 0x000C, 0, ctypes.addressof(fake))
         return True
     u.EnumChildWindows(h, cb, 0)
 
@@ -237,13 +239,12 @@ def hero_scene(vi):
     B.send(['key W down'], 1.0); snap(V, 'hero_walk', 'The same character walking toward the camera (its walk clip, at the speed the clip was made for).'); B.send(['key W up'], 1.0)
 
 def ghost_scene(vi):
-    """See-through players: one stands between the camera and the first panel and becomes a ghost, then steps aside and is solid again."""
-    V = games[vi]; B = games[1 if vi == 0 else 0]
-    B.send(['menusel 64', 'menudo teleport'], 5.0); V.send(['menusel 64', 'menudo teleport'], 5.0); (vx, vy, vz), (th, ph) = V.cam()      # both go to the panel first (a plain tp is refused beyond 28 m)
-    B.send(['tp %.3f %.3f %.3f %.4f 0' % (vx + math.cos(th) * 1.7, vy + math.sin(th) * 1.7, vz - 1.69, th)], 3.5)
-    snap(V, 'ghost_in_way', 'See-through players: player %d stands between the camera and the puzzle panel and is drawn as a ghost, so the puzzle can be read through them.' % (B.idx + 1))
-    B.send(['tp %.3f %.3f %.3f %.4f 0' % (vx + math.cos(th) * 2.2 + math.sin(th) * 1.4, vy + math.sin(th) * 2.2 - math.cos(th) * 1.4, vz - 1.69, th)], 3.5)
-    snap(V, 'ghost_aside', 'The same player a step to the side, out of the line to the panel: solid again.')
+    """See-through players: another player walks into the camera player's body (overlap) and fades to a ghost; a step to the side and it is solid again. (A player in front of a puzzle stays opaque now.)"""
+    V = games[vi]; B = games[1 if vi == 0 else 0]; (bx, by, ground), th, h_o, others = stage(vi)
+    for g in others:
+        if g is not B: g.send(['tp %.3f %.3f %.3f %.4f 0' % (bx - math.cos(th) * 30, by - math.sin(th) * 30, ground, h_o)])      # everybody else out of the picture
+    B.send(['tp %.3f %.3f %.3f %.4f 0' % (bx + math.cos(th) * 3.0, by + math.sin(th) * 3.0, ground, h_o)], 3.0); snap(V, 'ghost_solid', 'Another player three metres in front of the camera: drawn solid.')
+    B.send(['tp %.3f %.3f %.3f %.4f 0' % (bx + math.cos(th) * 0.35, by + math.sin(th) * 0.35, ground, h_o)], 3.5); snap(V, 'ghost_overlap', 'The same player standing in the camera player\'s body: it fades to a ghost so the view is not blocked.')
 
 def lobby_scene():
     """The lobby of the launcher with two members: A hosts (its player talks with a test voice), B joins with the invite, they chat."""
