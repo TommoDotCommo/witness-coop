@@ -24,6 +24,8 @@ int main(int argc, char** argv)
     volatile LONG* gate = (volatile LONG*)GetProcAddress(m, "coop_gate");
     Sleep(1500);            // the proxy's start-up thread runs now
     if (gate) printf("gate=%ld,%ld,%ld,%ld,%ld\n", gate[0], gate[1], gate[2], gate[3], gate[4]);
+    volatile LONG* dl = (volatile LONG*)GetProcAddress(m, "coop_diaglines");
+    if (dl) printf("diaglines=%ld\n", *dl);
     typedef long (*Fn)(const void*, void*, void*);
     Fn id = (Fn)GetProcAddress(m, "GetDeviceID");
     printf("GetDeviceID=0x%lx\n", id ? (unsigned long)id(nullptr, nullptr, nullptr) : 0ul);

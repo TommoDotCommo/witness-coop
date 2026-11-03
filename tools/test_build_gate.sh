@@ -80,6 +80,7 @@ echo "the alpha's AnselSDK64.dll proxy loaded too:"
 build "$work/oldcopy" -DCOOP_TEST_SPEC="$spec"; cp "$work/oldproxy.dll" "$work/oldcopy/AnselSDK64.dll"
 out="$(run "$work/oldcopy")"
 echo "$out" | grep -q '^old=1$' && echo "$out" | grep -q '^gate=0,0,0,0,0$' && forwarded "$out" && grep -q '^OTHER COPY: ' "$work/oldcopy/witness_proxy.log" && check 'with the old proxy mapped: nothing hooked or started, forwarded, logged' ok || check 'with the old proxy mapped: nothing hooked or started, forwarded, logged' no
+echo "$out" | grep -q '^diaglines=0$' && echo "$(run "$work/known")" | grep -q '^diaglines=[1-9]' && check 'the passive copy opens no session log (a normal start does)' ok || check 'the passive copy opens no session log (a normal start does)' no
 build "$work/oldreal" -DCOOP_TEST_SPEC="$spec"; cp "$work/real.dll" "$work/oldreal/AnselSDK64.dll"
 echo "$(run "$work/oldreal")" | grep -q '^gate=1,1,1,1,1$' && check 'the game'"'"'s own AnselSDK64.dll (not the old proxy) does not hold the mod back' ok || check 'the game'"'"'s own AnselSDK64.dll (not the old proxy) does not hold the mod back' no
 echo "mutant (the old proxy not looked for) must be caught:"

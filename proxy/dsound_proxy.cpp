@@ -27,8 +27,10 @@ static FARPROC g_fn[12];
 // Release tools and Setup recognise a dsound.dll of this mod by this text (any version); another file of that name is chained.
 extern "C" __attribute__((used)) const char kCoopProxyMarker[] = "witness-coop:proxy:dsound";
 
+static bool g_otherCopy;      // the alpha's AnselSDK64.dll proxy is in this process too: this copy stays passive (see OldProxyMapped)
 void Log(const char* msg) {
-    DiagLine(msg);      // this run's own session log (and the rotation of witness_proxy.log on the first line)
+    if (!g_otherCopy) DiagLine(msg);      // this run's own session log (and the rotation of witness_proxy.log on the first line); a passive copy opens none
+
     wchar_t path[MAX_PATH];
     GetModuleFileNameW(g_self, path, MAX_PATH);
     wchar_t* slash = wcsrchr(path, L'\\');
@@ -124,7 +126,6 @@ static void ChainLoad() {
 // too (an alpha install with the new files copied over it, or a test copy prepared by older tools), two copies of the mod would hook the
 // same game: this one stays passive (forwarding only) and the old one runs co-op alone. Decided in DllMain from the images the loader has
 // already mapped (all static imports are mapped before any DllMain runs): no file I/O, only a scan of that module's readable pages.
-static bool g_otherCopy;
 static bool OldProxyMapped() {
 #ifdef COOP_MUT_NO_OTHER_COPY
     return false;              // mutant: the old proxy is not looked for
