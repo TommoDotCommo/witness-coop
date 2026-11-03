@@ -75,9 +75,11 @@ for page in range(3):
     expect('wheel page %d selection'%page,lambda n,r,d:d.get('emote')==3+8*page)
     assert abs(A.camera()[1][0]-before)<.01, 'wheel leaked mouse-look'
     send(da,['emote 0'],.5)
-send(da,['key F1 down','key F1 up'])
-expect('F1 guide toggles',lambda n,r,d:n.get('guide') is True,directory=da)
-send(da,['key F1 down','key F1 up','key T down','key T up','key ESC down','key ESC up'],.3)
+send(da,['key F1 down'],.3)
+expect('F1 guide is open while held',lambda n,r,d:n.get('guide') is True,directory=da)
+send(da,['key F1 up'],.3)
+expect('F1 released: the guide closes',lambda n,r,d:n.get('guide') is False,directory=da)
+send(da,['key T down','key T up','key ESC down','key ESC up'],.3)
 expect('chat Escape swallowed without pausing',lambda n,r,d:n.get('paused') is False,directory=da)
 # Silence in PTT cannot trigger; activity in proximity must lift the actual wrist.
 expect('silent hand stays down',lambda n,r,d:not r.get('proximity_speaking') and d.get('talk',1)<.02)
