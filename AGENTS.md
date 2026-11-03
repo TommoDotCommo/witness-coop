@@ -47,6 +47,10 @@ prepare a reviewable diff before asking to publish. Never force-push.
   `tools/check_release_package.py` and `tools/test_mod_manifest.py`; Setup's owner detection (Setup, a mod manager's hard links, a hand copy that gets adopted), install cards,
   options (shortcut, firewall rule, `witness-coop://` handler) and verbs are in `dist/install-state.ps1`, `dist/witness-coop.ps1`, `dist/installer-gui.ps1`, `dist/installer.c`
   and `dist/install-linux.sh`; tests `tools/test_setup_options.ps1`, `tools/test_setup_verbs.ps1`, `tools/test_install_linux.sh`, live `tools/userdata_live.sh`.
+- Finding each other and the invite (standard B, C): `common/coop_invite.h`, `common/coop_discover.h`, `common/coop_discover_win.h`, `common/launcher_join.h`, `common/launcher_host_core.h`,
+  `common/launcher_host_win.h` (vendored from MDK2 unchanged apart from `#ifndef` constants: `common/VENDORED.md`; the Witness's constants and the only include path are `common/coop_witness.h`),
+  `launcher/joinglue.h` (paste box, probe answer, the copied invite), `launcher/netfind.c` (Join list, recents, invite routes at once, Friends can join by, router mapping, firewall check);
+  tests `python3 tools/test_coop_discovery.py`, `tools/test_coop_join.py`, `tools/test_coop_host.py`, `tools/test_coop_witness.py`, `make -C launcher joinglue-test`, live `tools/qa.sh join` (no game).
 - `local/`: ignored private configuration, disposable test copies, release zips (`local/release/`) and QA evidence.
 
 ## Build and validation
