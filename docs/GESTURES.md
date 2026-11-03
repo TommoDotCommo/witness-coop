@@ -3,8 +3,14 @@
 Hold the configured emote key (`H` by default), point at a slot, then release.
 While held, `Tab` advances the page and resets the pointer to its dead zone.
 Release in the centre or press `Esc` to cancel the selection. The wheel remembers
-its page. `F1` toggles the guide; its single binding table also drives social key
+its page. `F1` is a hold: the guide is shown while it is down. Its single binding table also drives social key
 dispatch, including configured keys. `emote 0` cancels the current animation.
+The press keys act once per press: the autorepeat of a held key (about 30 presses a second) changes nothing for `F2`,
+`F3`, `F4`, `F8`, `F9`, `[`, `]`, ping (`V`), the drawing canvas (`Z`), the voice channel (`Y`), a keyboard ink colour key
+and, with the experimental TV, `F10`, `F11` and its seat and deploy keys. The hold keys (`F1`, `Tab`, `H`, `X`, `B`, `R`)
+act on the press and the release. In the chat box, the developer menu and the player panel a held key still repeats.
+The rule is `proxy/ui/key_repeat.h` (game-free test in `make -C proxy/ui test`); `tools/qa.sh ui keys` holds F8, Tab, Z
+and V in a game, with the twin `key_repeat_toggle=1`.
 
 | Page | IDs, clockwise from the top |
 | --- | --- |
