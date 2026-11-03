@@ -77,6 +77,8 @@ send(da, ['key XBUTTON1 up'], 1.0)
 # 4. hold Tab: the panel lists B; Release closes it
 send(da, ['key TAB down'], 0.6); p0 = pstat(da)
 check('Tab held: the panel is open and lists B (one row)', p0 and p0['open'] == 1 and p0['rows'] == 1 and p0['first_id'] == B_ID, p0)
+pb0 = pstat(db)
+check('the invite the launcher shared is offered (Copy invite shown) on A, hidden on B', p0['invite'] == 1 and p0['copyx'] > 0 and pb0['invite'] == 0 and pb0['copyx'] == 0, (p0['invite'], p0['copyx'], pb0['invite'], pb0['copyx']))
 click_at(da, p0['mutex'], p0['mutey']); p1 = pstat(da)
 check('clicking Mute on B\'s row mutes B (voice volume 0)', p1['first_muted'] == 1 and p1['actions'] == p0['actions'] + 1, p1)
 click_at(da, p0['mutex'], p0['mutey']); p2 = pstat(da)

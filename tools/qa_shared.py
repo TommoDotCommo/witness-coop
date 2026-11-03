@@ -7,7 +7,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from witness import TOOLS, DIR1, DIR2, PYW, pid, win
 import qa_sweep
 
-OLD = 'key_ping=P\nkey_voice=N\nkey_emote=G\nkey_voice_channel=H\nkey_color=B\nvoice_mode=ptt\nvoice_test_tone=120,1000,5500\nvoice_volume=50\n'
+OLD = 'key_ping=P\nkey_voice=N\nkey_emote=G\nkey_voice_channel=H\nkey_color=B\nvoice_mode=ptt\nvoice_test_tone=120,1000,5500\nvoice_volume=50\ninvite=Alpha is hosting. Join: test-invite\n'
 
 def run(cfg_a='', cfg_b=''):
     for d in (DIR1, DIR2):      # the one-time list is written once per user: start from none

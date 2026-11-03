@@ -392,9 +392,11 @@ bool PovPanelClick() {
 bool PovKey(unsigned vk, bool down) {       // hold Tab: the player panel; [ previous player, ] next player (the screen you watch); V is the ping (social.cpp) and no longer watches
     bool noView = GetCfg().noPartnerView && !DevMenuEnabled();
     if (vk == guide::Roster && !GetCfg().noPlayerPanel) {
-        if (!down) { if (!g_rosterOpen.load()) return false; g_rosterOpen = false; g_leaveAsk = false; return true; }
+        static bool tabDown;      // (a held key repeats: only a fresh press opens the panel, so Esc closes it for good until Tab is released)
+        if (!down) { tabDown = false; if (!g_rosterOpen.load()) return false; g_rosterOpen = false; g_leaveAsk = false; return true; }
+        bool fresh = !tabDown; tabDown = true;
         if (g_rosterOpen.load()) return true;      // (autorepeat)
-        if (DevMenuOpen() || SocialBusy() || GamePaused()) return false;
+        if (!fresh || DevMenuOpen() || SocialBusy() || GamePaused()) return false;
         PanelOpen(); return true;
     }
     if (g_rosterOpen.load()) {
