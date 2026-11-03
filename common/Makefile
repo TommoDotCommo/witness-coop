@@ -7,6 +7,16 @@ build/guide-test: guide_test.cpp guide.h movedkeys.h bindings.def ../proxy/confi
 build/mutant-%: guide_test.cpp guide.h movedkeys.h bindings.def ../proxy/config.h ../proxy/bindings.h
 	mkdir -p build
 	$(CXX) $(CXXFLAGS) -DGUIDE_MUT_$* -o $@ $<
+PAD_MUTANTS = LEAK STUCK_GLYPHS
+build/padlayer-test: padlayer_test.cpp padlayer.h
+	mkdir -p build
+	$(CXX) $(CXXFLAGS) -o $@ $<
+build/padlayer-mutant-%: padlayer_test.cpp padlayer.h
+	mkdir -p build
+	$(CXX) $(CXXFLAGS) -DPAD_MUT_$* -o $@ $<
+pad-test: build/padlayer-test $(addprefix build/padlayer-mutant-,$(PAD_MUTANTS))
+	build/padlayer-test
+	@for m in $(PAD_MUTANTS); do if build/padlayer-mutant-$$m >/dev/null 2>&1; then echo "MUTANT pad $$m SURVIVED"; exit 1; else echo "mutant pad $$m killed"; fi; done
 NOTICE_MUTANTS = WORDS REPEAT NEVER_LEFT
 build/notices-test: notices_test.cpp notices.h
 	mkdir -p build
@@ -32,7 +42,7 @@ build/userdata-mutant-%.exe: userdata_test.cpp userdata.h
 userdata-test: build/userdata-test.exe $(addsuffix .exe,$(addprefix build/userdata-mutant-,$(USERDATA_MUTANTS)))
 	build/userdata-test.exe
 	@for m in $(USERDATA_MUTANTS); do if build/userdata-mutant-$$m.exe >/dev/null; then echo "MUTANT userdata $$m SURVIVED"; exit 1; else echo "mutant userdata $$m killed"; fi; done
-test: userdata-test build/guide-test $(addprefix build/mutant-,$(MUTANTS)) build/buildid-test build/buildid-mutant build/notices-test $(addprefix build/notices-mutant-,$(NOTICE_MUTANTS))
+test: pad-test userdata-test build/guide-test $(addprefix build/mutant-,$(MUTANTS)) build/buildid-test build/buildid-mutant build/notices-test $(addprefix build/notices-mutant-,$(NOTICE_MUTANTS))
 	build/notices-test
 	@for m in $(NOTICE_MUTANTS); do if build/notices-mutant-$$m >/dev/null 2>&1; then echo "MUTANT notices $$m SURVIVED"; exit 1; else echo "mutant notices $$m killed"; fi; done
 	build/buildid-test $(BUILDID_EXE)
@@ -41,4 +51,4 @@ test: userdata-test build/guide-test $(addprefix build/mutant-,$(MUTANTS)) build
 	@for m in $(MUTANTS); do if build/mutant-$$m >/dev/null 2>&1; then echo "MUTANT $$m SURVIVED"; exit 1; else echo "mutant $$m killed"; fi; done
 clean:
 	rm -rf build
-.PHONY: test clean userdata-test
+.PHONY: test clean userdata-test pad-test
