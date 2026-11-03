@@ -16,16 +16,34 @@ def alive(pid):
     h = k32.OpenProcess(0x1000, False, int(pid))      # PROCESS_QUERY_LIMITED_INFORMATION
     if not h: return False
     code = wt.DWORD(); k32.GetExitCodeProcess(h, ctypes.byref(code)); k32.CloseHandle(h); return code.value == 259      # STILL_ACTIVE
-def log_text():
-    try: return open(LOG, errors='ignore').read()
+LOGS = os.path.join(os.environ.get('LOCALAPPDATA', ''), 'witness-coop', 'logs')      # each run's own log (common/diag_log.h), named by its pid
+def log_text(pid=None):
+    paths = [LOG]
+    if pid:
+        try: paths = [os.path.join(LOGS, f) for f in sorted(os.listdir(LOGS)) if f.endswith('_p%d.log' % pid)][-1:] or [LOG]
+        except OSError: pass
+    try: return open(paths[0], errors='ignore').read()
     except OSError: return ''
-def wait_re(pattern, secs, after=0):
+def fresh_log():      # each game rewrites the log when it starts: the old one goes, so a match is from the new game
+    for _ in range(20):
+        try: os.remove(LOG); return
+        except FileNotFoundError: return
+        except OSError: time.sleep(0.5)
+def wait_re(pattern, secs, after=0, pid=None):
     end = time.time() + secs
     while time.time() < end:
-        m = re.search(pattern, log_text()[after:])
+        m = re.search(pattern, log_text(pid)[after:])
         if m: return m
         time.sleep(0.3)
     return None
+class PE(ctypes.Structure): _fields_ = [('dwSize', wt.DWORD), ('cntUsage', wt.DWORD), ('pid', wt.DWORD), ('heap', ctypes.c_void_p), ('mod', wt.DWORD), ('thr', wt.DWORD), ('ppid', wt.DWORD), ('pri', ctypes.c_long), ('flags', wt.DWORD), ('exe', ctypes.c_wchar * 260)]
+k32.CreateToolhelp32Snapshot.restype = ctypes.c_void_p; k32.Process32FirstW.argtypes = [ctypes.c_void_p, ctypes.c_void_p]; k32.Process32NextW.argtypes = [ctypes.c_void_p, ctypes.c_void_p]; k32.CloseHandle.argtypes = [ctypes.c_void_p]
+def game_children(parent):      # the games a process started (the launcher's game is found by its parent, not from the log, so it is always registered)
+    snap = k32.CreateToolhelp32Snapshot(2, 0); pe = PE(); pe.dwSize = ctypes.sizeof(PE); out = []; more = k32.Process32FirstW(snap, ctypes.byref(pe))
+    while more:
+        if pe.ppid == parent and pe.exe.lower() == 'witness64_d3d11.exe': out.append(pe.pid)
+        more = k32.Process32NextW(snap, ctypes.byref(pe))
+    k32.CloseHandle(snap); return out
 def kill(pid):
     if pid and alive(pid): subprocess.run(['taskkill', '/PID', str(pid), '/F'], capture_output=True)
 def place(pid):
@@ -47,7 +65,7 @@ try:
     g = subprocess.Popen([exe], cwd=gdir, env=env, startupinfo=si); open(os.path.join(run, 'pidA.txt'), 'w').write(str(g.pid))
     m = wait_re(r'handover: the launcher runs \(pid (\d+)\)', 60)
     if m: launcher_pid = int(m[1]); open(os.path.join(run, 'pidL.txt'), 'w').write(str(launcher_pid))
-    dec = wait_re(r'handover: steam (\d) launcher_session (\d).*-> (\S+)', 5)
+    dec = wait_re(r'handover: steam (\d) launcher_session (\d).*-> (\S+)', 5, pid=g.pid)
     check('A1. the decision saw Steam and no launcher session', dec and dec[1] == '1' and dec[2] == '0' and dec[3] == 'launcher', dec and dec[0])
     end = time.time() + 20
     while time.time() < end and g.poll() is None: time.sleep(0.2)
@@ -61,11 +79,14 @@ try:
     check('A4. the launcher shows its Play tab (its state file)', re.search(r'ui tab 0 label Play', st), next((l for l in st.splitlines() if l.startswith('ui ')), ''))
     # B) the launcher's own game
     print('B) Play solo in that launcher: the game it starts stays', flush=True)
-    mark = len(log_text())
+    fresh_log(); mark = 0
     open(cmdf + '.tmp', 'w').write('choice solo\nprimary\n'); os.replace(cmdf + '.tmp', cmdf)
-    m = wait_re(r'proxy loaded: pid=(\d+)', 60, after=mark)
-    if m: game_b = int(m[1]); open(os.path.join(run, 'pidB.txt'), 'w').write(str(game_b)); place(game_b)
-    dec = wait_re(r'handover: steam (\d) launcher_session (\d).*-> (\S+)', 20, after=mark)
+    end = time.time() + 30
+    while time.time() < end and not game_b:
+        kids = game_children(launcher_pid) if launcher_pid else []
+        if kids: game_b = kids[0]; open(os.path.join(run, 'pidB.txt'), 'w').write(str(game_b)); place(game_b)
+        time.sleep(0.3)
+    dec = wait_re(r'handover: steam (\d) launcher_session (\d).*-> (\S+)', 20, pid=game_b)
     check('B1. the launcher\'s game carries the launcher session and inherited Steam\'s environment (one Steam launch)', dec and dec[1] == '1' and dec[2] == '1' and dec[3] == 'stay', dec and dec[0])
     time.sleep(25)
     check('B2. the launcher\'s game is still running 25 s later (it did not hand over again)', game_b and alive(game_b), game_b)
@@ -73,14 +94,14 @@ try:
     kill(game_b); time.sleep(2)
     # C) the test tools' way: no Steam environment
     print('C) the game started without Steam\'s environment stays', flush=True)
-    mark = len(log_text())
+    fresh_log(); mark = 0
     g = subprocess.Popen([exe], cwd=gdir, env=base, startupinfo=si); game_c = g.pid; open(os.path.join(run, 'pidC.txt'), 'w').write(str(game_c))
-    dec = wait_re(r'handover: steam (\d) launcher_session (\d).*-> (\S+)', 60, after=mark)
+    dec = wait_re(r'handover: steam (\d) launcher_session (\d).*-> (\S+)', 60, pid=game_c)
     check('C1. without Steam\'s environment the decision is stay', dec and dec[1] == '0' and dec[3] == 'stay', dec and dec[0])
     time.sleep(10); check('C2. that game is running', alive(game_c))
 finally:
     try: open(cmdf, 'w').write('quit\n')
     except OSError: pass
     time.sleep(2)
-    for p in (game_b, game_c, launcher_pid): kill(p)
+    for p in ([game_b, game_c] + (game_children(launcher_pid) if launcher_pid else []) + [launcher_pid]): kill(p)
 print('ALL OK' if ok else 'FAILED')
