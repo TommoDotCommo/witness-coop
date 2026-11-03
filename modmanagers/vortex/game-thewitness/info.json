@@ -1,0 +1,6 @@
+{
+  "name": "Game: The Witness",
+  "author": "The Witness Co-op",
+  "version": "1.0.0",
+  "description": "Support for The Witness, and for the Witness Co-op package (drop-in zip: the proxy, the launcher, the player model)"
+}

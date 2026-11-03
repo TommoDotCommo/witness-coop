@@ -214,6 +214,27 @@ Coming from v0.1.0-alpha by hand: delete the old proxy `AnselSDK64.dll` and rena
 Uninstall by hand: delete `dsound.dll`, `witness_launcher.exe` and `witness_models\` (your settings and logs in `%LOCALAPPDATA%\witness-coop\` may stay; rename a
 `dsound.chain.dll` back to `dsound.dll`). A later Setup can adopt a hand install: it backs up what it replaces.
 
+### Mod managers (Vortex, Mod Organizer 2, by hand)
+
+The zip mirrors the game folder, so any manager can carry it; Setup is not needed (the game folder is `witness64_d3d11.exe`'s folder). The managers do not know
+The Witness yet, so this repository carries the two small plug-ins (`modmanagers/`; Nexus game domain `thewitness`, Steam app 210970, GOG 1461060839):
+
+- **Vortex.** Install the extension `game-thewitness-<version>.zip` (the release assets; or drop the `modmanagers/vortex/game-thewitness` folder into Vortex's
+  `plugins` folder), manage The Witness, then drag in `witness-coop-<version>.zip` from the release or Nexus page. The extension's installer reads `coop-mod.json`
+  and deploys only the game-folder files (`dsound.dll`, `witness_launcher.exe`, `witness_models\`), without the zip's top folder, Setup or its scripts. Mod path is
+  the game folder itself. *The Witness Co-op launcher* is a tool and, once installed, what Play runs. Vortex deploys by hard link; Setup and the launcher
+  recognise that and say *Installed by Vortex: update or remove it there*. Update by installing the new zip over the old.
+- **Mod Organizer 2.** Copy `modmanagers/mo2/game_thewitness.py` into MO2's `plugins/basic_games/games/` folder, restart MO2, create an instance for The Witness
+  and install the zip: the plug-in moves the zip's top folder up (no data directory to choose) and lists *The Witness Co-op launcher* and *The Witness* as executables.
+  **Known limit: the proxy is a DLL in the game root, and MO2's virtual file system is not reliable for root DLLs** that the game loads while it starts
+  (not tested here: no game was run for this plug-in). If the launcher reports that co-op is not loaded, install the mod through the *Root Builder* plug-in
+  (it copies root files into the game folder before the start), or copy the three items into the game folder by hand or with Setup.
+- **By hand.** [Manual install](#manual-install-no-setup) above.
+
+In all three the mod writes nothing into the game folder while you play (settings, logs and update data are in `%LOCALAPPDATA%\witness-coop\`), so removing the
+files is a complete uninstall. Game-free tests: `modmanagers/test.sh` (stub Vortex and MO2 APIs, ten mutants that must fail). Build the extension zip:
+`python3 modmanagers/vortex/build_extension.py <folder>` (`tools/release.sh` does it).
+
 ### Steam Deck and Linux (Proton): untested
 
 Not run on a real Steam Deck or Linux PC yet (tracked in Known issues). What is expected, from how Wine and Proton load DLLs:

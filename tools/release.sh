@@ -90,6 +90,9 @@ z.close()' "$name")
 (cd "$out" && sha256sum "$name.zip" > "$name.zip.sha256")
 # one version everywhere: GitHub Releases is canonical; Nexus gets this very zip under the same version string (a copy note, nothing is uploaded)
 python3 -I "$here/tools/mod_manifest.py" --nexus-note "$out/$name.zip" > "$out/NEXUS-$ver.txt"
+# the mod manager plug-ins, as release assets next to the zip (Vortex extension zip, MO2 basic_games plug-in); nothing is uploaded here
+python3 -I "$here/modmanagers/vortex/build_extension.py" "$out" > /dev/null
+cp "$here/modmanagers/mo2/game_thewitness.py" "$out/"
 check=(python3 -I "$here/tools/check_release_package.py" "$out/$name.zip" --single "$single/Witness-Coop-Setup.exe")
 [ -n "${SIGN_CMD:-}" ] && check+=(--require-signed)
 "${check[@]}"
@@ -97,4 +100,5 @@ check=(python3 -I "$here/tools/check_release_package.py" "$out/$name.zip" --sing
 rm -rf "$out/$name.symbols"; mkdir -p "$out/$name.symbols"; cp "$here/proxy/dsound.map" "$here/proxy/dsound.dll" "$out/$name.symbols/"
 echo "$out/$name.zip ($(du -h "$out/$name.zip" | cut -f1)); symbols for crash reports: $out/$name.symbols"
 echo "$out/NEXUS-$ver.txt (copy note for Nexus Mods)"
+echo "$out/game-thewitness-*.zip (Vortex extension), $out/game_thewitness.py (MO2 plug-in)"
 echo "$single/Witness-Coop-Setup.exe ($(du -h "$single/Witness-Coop-Setup.exe" | cut -f1)) <- the main download"

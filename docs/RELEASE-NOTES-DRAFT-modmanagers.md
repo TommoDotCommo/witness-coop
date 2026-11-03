@@ -13,6 +13,8 @@
 - **A Setup that finds every install.** Steam libraries, GOG and Epic installs are cards with a build check; options for a desktop shortcut, the Windows Firewall rule
   *The Witness Co-op (UDP)* (game and launcher, Private and Public, one administrator prompt) and *Open invite links in the launcher* (`witness-coop://`).
   Uninstall removes all three. The last screen offers Play.
+- **Vortex and Mod Organizer 2 know The Witness.** A Vortex extension (`game-thewitness-<version>.zip`: the game, the package installer, the co-op launcher as the Play tool) and an MO2
+  basic_games plug-in (`game_thewitness.py`) are release assets; the README section *Mod managers* has the steps and the MO2 root-DLL caveat (Root Builder).
 
-Checks (game-free): `make -C common userdata-test`, `python3 -I tools/test_mod_manifest.py`, `tools/test_setup_options.ps1 -Mutants`, `tools/test_setup_verbs.ps1 -Mutants`,
+Checks (game-free): `modmanagers/test.sh`, `make -C common userdata-test`, `python3 -I tools/test_mod_manifest.py`, `tools/test_setup_options.ps1 -Mutants`, `tools/test_setup_verbs.ps1 -Mutants`,
 `tools/test_install_linux.sh`, `python3 -I tools/test_launcher_update.py`, `make -C launcher test`, `tools/qa_installer.sh`. Live (one slot): `tools/userdata_live.sh`.
