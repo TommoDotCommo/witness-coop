@@ -297,17 +297,17 @@ def launcher_scene(vi):
         u.EnumWindows(cb, 0); return found[0] if found else None
     grab_window = window_picture
     si = subprocess.STARTUPINFO(); si.dwFlags |= subprocess.STARTF_USESHOWWINDOW; si.wShowWindow = 4
-    pages = [(1, 'launcher_play', 'The launcher (witness_launcher.exe): Play. Continue starts the game on the latest save with the settings of every page; New game asks what is already completed.'),
-             (2, 'launcher_video', 'Video: the game\'s own Launcher.variables, edited outside the game and written in its format (render profile, full screen, vsync, resolution or a custom size, anti-aliasing, the quality settings).'),
-             (3, 'launcher_sound', 'Sound and voice: the game\'s volume (set on its Windows audio session), voice mode, push-to-talk key, voice and microphone volume, proximity and radio ranges.'),
-             (5, 'launcher_options', 'Game options: the options that live inside each save (mouse speed, invert, brightness, field of view, ...), patched in place with a copy of the save kept.'),
-             (7, 'launcher_saves', 'Saves: each save with the players who were in the game and how far it got (panels, lasers, time played); the details on the right of the list show the progress by area.')]
-    for page, name, caption in pages:
-        p = subprocess.Popen([exe, '--dir', games[vi].dir, '--page', str(page), '--no-activate'], startupinfo=si); h = None; t0 = time.time()
+    pages = [(0, 0, 'launcher_play', 'The launcher (witness_launcher.exe): Play. Your name, Host a game / Join a friend / Play solo, and one button that says what it does; hosting or joining turns the tab into the lobby.'),
+             (2, 4, 'launcher_video', 'Settings, Display: the game\'s own Launcher.variables (full screen, resolution or a custom size, frame limit, anti-aliasing, the quality settings), saved as they change.'),
+             (2, 2, 'launcher_sound', 'Settings, Voice and sound: voice chat mode, push-to-talk key (press a key), voice and microphone volume, hearing and radio ranges, the game\'s volume; sliders with units.'),
+             (2, 3, 'launcher_options', 'Settings, Controls: every co-op key by press-a-key, and the options that live inside a save (mouse speed, invert, ...), changed in the save chosen in Save to change.'),
+             (1, 0, 'launcher_saves', 'Saves: each save with the players who were in the game and how far it got (panels, lasers, time played), and New game with chosen parts of the map done.')]
+    for page, section, name, caption in pages:
+        p = subprocess.Popen([exe, '--dir', games[vi].dir, '--page', str(page), '--section', str(section), '--no-activate'], startupinfo=si); h = None; t0 = time.time()
         while time.time() - t0 < 10 and not h: h = find(p.pid, 'WitnessLauncher'); time.sleep(0.2)
         time.sleep(0.8)
         if h:
-            if page == 7:      # select the newest save so the details are shown
+            if page == 1:      # select the newest save so the details are shown
                 pass
             grab_window(h, name, caption)
         p.kill()
