@@ -13,7 +13,7 @@ bad() { echo "  FAIL: $1"; fail=1; }
 echo "signed build:"
 v=v0.0.0-signed
 SIGN_CMD="python3 -I $here/tools/fake_sign.py {}" "$here/tools/release.sh" $v > "$rel/sign.log" 2>&1 && ok 'release.sh succeeds with a signer' || { bad 'release.sh with a signer'; tail -5 "$rel/sign.log"; }
-grep -q 'signed: Witness-Coop-Setup.exe' "$rel/sign.log" && grep -q 'signed: AnselSDK64.dll' "$rel/sign.log" && ok 'the log names the signed files' || bad 'signing log'
+grep -q 'signed: Witness-Coop-Setup.exe' "$rel/sign.log" && grep -q 'signed: dsound.dll' "$rel/sign.log" && ok 'the log names the signed files' || bad 'signing log'
 python3 -I "$here/tools/check_release_package.py" "$rel/witness-coop-$v.zip" --single "$rel/witness-coop-$v-single/Witness-Coop-Setup.exe" --require-signed >/dev/null && ok 'zip, one-file setup and its payload are all signed' || bad 'signatures present'
 python3 -I "$here/tools/pe_signature.py" "$rel/witness-coop-$v-single/Witness-Coop-Setup.exe" && ok 'the main download carries a signature' || bad 'single signed'
 
