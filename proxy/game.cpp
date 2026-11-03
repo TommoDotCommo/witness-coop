@@ -9,6 +9,7 @@
 #include <string>
 #include "game.h"
 #include "povui.h"
+#include "../common/guide.h"
 void TracerCommand(const char* line);      // tracer.cpp
 #include "race_game.h"
 #include "model_gpu.h"
@@ -178,6 +179,7 @@ static DWORD WINAPI CmdThread(LPVOID) {
             else if (!strncmp(line, "netstate", 8)) { EnterCriticalSection(&g_lock); if (g_n < 64) g_q[g_n++] = {7, 0, 0, 0, 0, false, 0, 0, 0}; LeaveCriticalSection(&g_lock); }
             else if (sscanf(line, "atlasdump %15s", a) == 1) UiDumpAtlas(a);
             else if (!strncmp(line, "tagstat", 7)) OverlayLogTags();
+            else if (!strncmp(line, "keystat", 7)) { std::string t = "keystat:"; for (const auto& b : guide::bindings) t += std::string(" ") + b.config + " " + std::to_string(GetCfg().*b.member); Log(t.c_str()); }
             else if (!strncmp(line, "panelstat", 9)) PovPanelStat();
             else if (sscanf(line, "inkwheel %d", &wheelDelta) == 1) { bool took = SocialWheel(wheelDelta); char mm[60]; snprintf(mm, sizeof mm, "inkwheel: %d took %d", wheelDelta, took ? 1 : 0); Log(mm); }      // a wheel step (the ink colour while drawing)
             else if (!strncmp(line, "povstat", 7)) { unsigned w, s, rq, aimed; int ro; unsigned sent, recv, dec; VideoPovStats(&w, &s, &rq); VideoStats(&sent, &recv, &dec); OverlayPovState(&aimed, &ro); unsigned box, pic; OverlayPovDrawn(&box, &pic); char m[240]; snprintf(m, sizeof m, "povstat: watching %u subscribers %u requests_sent %u pictures_sent %u received %u decoded %u aimed %u roster %d box %u pic %u", w, s, rq, sent, recv, dec, aimed, ro, box, pic); Log(m); }

@@ -17,7 +17,7 @@ static std::wstring DllDir() {
 
 #include "../common/movedkeys.h"
 void WriteMovedKeys() {
-    const Cfg& c = GetCfg(); std::wstring dir = DllDir(); bool perUser = c.diagDir.empty();
+    const Cfg& c = GetCfg(); std::wstring dir = DllDir(); bool perUser = c.diagDir.empty() && c.saveDir.empty();      // (a lab copy has save_dir=instance: its files stay beside the cfg)
     if (perUser) { wchar_t la[MAX_PATH]; DWORD n = GetEnvironmentVariableW(L"LOCALAPPDATA", la, MAX_PATH); if (n && n < MAX_PATH) { dir = std::wstring(la) + L"\\witness-coop\\"; CreateDirectoryW(dir.c_str(), nullptr); } }
     auto utf8 = [](const std::wstring& w) { int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, nullptr, 0, nullptr, nullptr); std::string s(n > 0 ? n - 1 : 0, '\0'); if (n > 1) WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, &s[0], n, nullptr, nullptr); return s; };
     movedkeys::WriteOnce(utf8(dir), c.movedKeys);

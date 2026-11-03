@@ -411,8 +411,14 @@ bool PovKey(unsigned vk, bool down) {       // hold Tab: the player panel; [ pre
     if (vk == guide::PrevView) { VideoPrev(PlayerIds()); return true; }
     return false;
 }
-void PovPanelStat() {      // witness_cmd.txt `panelstat`
-    char m[200]; snprintf(m, sizeof m, "panelstat: open %d leave_ask %d sel %d actions %u last %u tags_off %d voice_volume %d cursor %.0f,%.0f", g_rosterOpen.load() ? 1 : 0, g_leaveAsk.load() ? 1 : 0, g_nav.sel, g_panelActs.load(), g_panelLast.load(), g_tagsOff.load() ? 1 : 0, VoiceGlobalVolume(), g_panelCx.load(), g_panelCy.load()); Log(m);
+void PovPanelStat() {      // witness_cmd.txt `panelstat`: the state and, for the tests, where the controls are (screen pixels) and who is listed
+    auto rows = PanelRows(); wpanel::Options o = PanelOptions(); wpanel::Layout L = wpanel::Compute(float(g_panelW.load()), float(g_panelH.load()), rows.size(), o);
+    auto cx = [](const wpanel::Rect& r) { return int(r.x + r.w / 2); }; auto cy = [](const wpanel::Rect& r) { return int(r.y + r.h / 2); };
+    char m[700]; int n = snprintf(m, sizeof m, "panelstat: open %d leave_ask %d sel %d actions %u last %u tags_off %d voice_volume %d cursorx %.0f cursory %.0f rows %zu first_id %u first_muted %d invite %d",
+        g_rosterOpen.load() ? 1 : 0, g_leaveAsk.load() ? 1 : 0, g_nav.sel, g_panelActs.load(), g_panelLast.load(), g_tagsOff.load() ? 1 : 0, VoiceGlobalVolume(), g_panelCx.load(), g_panelCy.load(), rows.size(), rows.empty() ? 0u : rows[0].id, rows.empty() ? 0 : (int)rows[0].muted, o.hasInvite ? 1 : 0);
+    if (!rows.empty()) n += snprintf(m + n, sizeof m - n, " watchx %d watchy %d mutex %d mutey %d", cx(L.rows[0].watch), cy(L.rows[0].watch), cx(L.rows[0].mute), cy(L.rows[0].mute));
+    snprintf(m + n, sizeof m - n, " leavex %d leavey %d tagsx %d tagsy %d voiceupx %d voiceupy %d copyx %d copyy %d", cx(L.leave), cy(L.leave), cx(L.tags), cy(L.tags), cx(L.voiceUp), cy(L.voiceUp), cx(L.copyInvite), cy(L.copyInvite));
+    Log(m);
 }
 struct TagInfo { unsigned id; char name[25]; int ping; bool onScreen; float dist; };
 static CRITICAL_SECTION g_tagLock; static bool g_tagLockInit; static std::vector<TagInfo> g_tags;
