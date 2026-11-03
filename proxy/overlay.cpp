@@ -715,7 +715,7 @@ static HRESULT HookPresentBody(IDXGISwapChain* sc, UINT sync, UINT flags) {
     }
     { DXGI_SWAP_CHAIN_DESC d; if (SUCCEEDED(sc->GetDesc(&d))) { g_gameWnd = d.OutputWindow; InstallDevWndProc(d.OutputWindow); TracerTick(); InputPump(d.OutputWindow); } }
     if (g_shotName[0] && g_ready) { char n[64]; strcpy(n, g_shotName); g_shotName[0] = 0; TakeShot(sc, n); }
-    HRESULT hr = (g_useBypass && g_bypass ? g_bypass : g_origPresent)(sc, sync, flags);
+    HRESULT hr = ThirdPersonSkipPresent() ? S_OK : (g_useBypass && g_bypass ? g_bypass : g_origPresent)(sc, sync, flags);      // (the third-person view's measuring frame is not shown)
     if (int cap = GetCfg().capFps; cap > 0) {   // frame cap: sleep out the rest of the frame (Sleep(1) until close, then spin)
         static LARGE_INTEGER freq, next; if (!freq.QuadPart) { QueryPerformanceFrequency(&freq); QueryPerformanceCounter(&next); }
         LARGE_INTEGER now; QueryPerformanceCounter(&now);

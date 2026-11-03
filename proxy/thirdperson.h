@@ -9,6 +9,7 @@ void ThirdPersonFixEye(unsigned genBefore, float pos[3]);   // the position beco
 void ThirdPersonFrame(float aspect);   // render thread, once per Present, before the world overlays are drawn (aspect: the window's width / height)
 bool ThirdPersonViewCam(float pos[3], float ang[2]);   // the camera this frame's world was drawn from, when it was not the player's own
 bool ThirdPersonSelf(float pos[3], float* yaw, int* emote, float* seconds);   // this player's own figure is to be drawn (the third-person view is out)
+bool ThirdPersonSkipPresent();   // render thread, just before the real Present: true for the one measuring frame, which must not be shown
 void ThirdPersonSelfDrawn(bool drawn);   // overlay.cpp: the figure was submitted this frame
 void ThirdPersonClick();        // a mouse button went down (the game's message loop): the view returns
 void ThirdPersonMoveKey();      // a movement key went down: the view returns (also when a wall stops the player)

@@ -97,6 +97,7 @@ struct Cfg {
     bool oldVWatch = false;      // test mutant old_v_watch=1: V watches the player (the pre-2026-11 key) instead of pinging
     bool noPlayerPanel = false;  // test mutant no_player_panel=1: holding Tab does not open the player panel
     bool emoteThirdPerson = true; // emote_third_person=0: the view stays first person while this player emotes (the launcher's "Third-person view when emoting")
+    bool tpIgnoreWall = false;    // test mutant tp_ignore_wall=1: the measured room behind the player is ignored (the camera may stand in the wall)
     bool tpNeverReturn = false;   // test mutant tp_never_return=1: the third-person view never swings back to first person
 };
 const Cfg& GetCfg();

@@ -1,4 +1,4 @@
-"""T2 third-person view while emoting. A emotes: the world is drawn from a camera in front of A (the mod's state bridge and the game's
+"""T2 third-person view while emoting. A emotes: the world is drawn from a camera behind A (the mod's state bridge and the game's
 own camera memory, read from outside, say so), A's own figure is drawn doing the emote (A's model bridge lists A's own id), and the view
 returns to first person when the emote ends, when A moves and when A clicks. B sees nothing different: the pose B receives is A's real eye,
 and B's view never leaves first person. No log lines or screenshots are asserted (the shots are kept for a person to look at).
@@ -63,34 +63,38 @@ print('PASS nothing patched before the first emote', flush=True)
 assert calls_patched(A) == [False, False], 'the game code changed before any emote'
 send(da, ['menusel c335', 'menudo teleport'], 4)
 (cx, cy, cz), (heading, _) = A.camera()
-# B stands 6 m behind A, looking at A; A tries headings until one has room in front (the probe may refuse a wall: that is the feature)
+# B stands 6 m behind A, looking at A; A tries headings until one has room behind (the probe may refuse a wall: that is the feature)
 send(db, ['tp %.5f %.5f %.5f %.5f 0' % (cx - 6 * math.cos(heading), cy - 6 * math.sin(heading), cz - 1.69, heading)], 3)
 chosen = None
 for hi, dh in enumerate((math.pi, math.pi / 2, -math.pi / 2, 0.0, 3 * math.pi / 4, -3 * math.pi / 4)):
     h = heading + dh
     send(da, ['tp %.5f %.5f %.5f %.5f 0' % (cx, cy, cz - 1.69, h)], 1.5)
+    send(da, ['shot tp_before'], .4)      # first person, for the before/after pair
     send(da, ['emote 13'], .1)      # Thinking: loops until something ends it
     s = expect('heading %d: the probe answered' % hi, lambda s: s['phase'] != 'probe', timeout=3)
     if s['phase'] in ('in', 'hold'): chosen = h; break
     print('  heading %d refused: %s (probe depths %s)' % (hi, s['reason'], s['probe']), flush=True)
     send(da, ['emote 0'], .8)
-assert chosen is not None, 'no heading with room in front of the player'
+assert chosen is not None, 'no heading with room behind the player'
 s = expect('the view swings out (hold)', lambda s: s['phase'] == 'hold' and s['frame_view'] == 1 and s['offset'] > 1.0)
 send(da, ['shot tp_out'], .5)
+assert s['measure_frames'] >= 1 and s['skipped_presents'] == s['measure_frames'], 'the measuring frame was shown or never drawn: %r' % s
+print('PASS the room behind was measured by %d frame drawn from the eye turned round, and it was not presented' % s['measure_frames'], flush=True)
 assert calls_patched(A) == [True, True], 'the world drawing is not routed through the mod'
 print('PASS both calls of the world drawing go through the mod', flush=True)
-# the camera is in front of A, above the eye, looking back at A; never further than the measured free space allows
+# the camera is behind A (opposite the facing), above the eye, looking at A; never further than the measured free space allows
 eye, view = s['eye'], s['view']
 fwd = (math.cos(eye[3]), math.sin(eye[3])); off = [view[i] - eye[i] for i in range(3)]
-assert off[0] * fwd[0] + off[1] * fwd[1] > 1.0 and off[2] > 0, s
+assert off[0] * fwd[0] + off[1] * fwd[1] < -1.0 and off[2] > 0, s
+assert abs(math.sin(view[3] - eye[3])) < 0.05 and math.cos(view[3] - eye[3]) > 0, 'the camera does not look the way the player faces: %r' % s
 look = (math.cos(view[4]) * math.cos(view[3]), math.cos(view[4]) * math.sin(view[3]), math.sin(view[4]))
 assert -sum(look[i] * off[i] for i in range(3)) / math.sqrt(sum(o * o for o in off)) > 0.9, 'the camera does not look back at the player: %r' % s
 probe0, L = s['probe'][0], math.sqrt(sum(o * o for o in off))
 if probe0 > 0:      # the free length along the camera's ray, from the depth the game drew in first person (0.45 m kept free)
-    f3 = (math.cos(eye[4]) * math.cos(eye[3]), math.cos(eye[4]) * math.sin(eye[3]), math.sin(eye[4]))
+    f3 = (-math.cos(eye[3]), -math.sin(eye[3]), 0.0)      # the measuring view: the eye turned round, level
     along = probe0 / max(.05, sum(f3[i] * off[i] for i in range(3)) / L)
     assert L <= along - 0.45 + 0.05, 'the camera is not clear of the first surface: %.2f m of %.2f free: %r' % (L, along, s)
-print('PASS the camera stands %.2f m in front of the player, %.2f m up, looking back (scale %.2f)' % (math.hypot(off[0], off[1]), off[2], s['scale']), flush=True)
+print('PASS the camera stands %.2f m behind the player, %.2f m up, looking at them (scale %.2f)' % (math.hypot(off[0], off[1]), off[2], s['scale']), flush=True)
 gv = s['game_view']      # the game's own main view (exe+0x649860), read as the game was about to draw: it must be the third-person camera
 assert dist(gv, view) < 0.05, 'the game did not draw from the third-person camera: its view stood at %r, ours at %r' % (gv, view[:3])
 print('PASS the game draws its world from the third-person camera (its own view struct)', flush=True)
@@ -153,10 +157,14 @@ starts = tp(da)['starts']; send(da, ['emote 2'], 1.5)
 s = tp(da); assert s['phase'] == 'off' and s['starts'] == starts and s['frame_view'] == 0, s
 send(da, ['tpforce cfg', 'emote 0'])
 print('PASS with the setting off the view stays first person', flush=True)
-# 5) a wall close in front (the panel A was put in front of, about 2.8 m ahead at the first heading): no room, the view stays first person
-send(da, ['tp %.5f %.5f %.5f %.5f 0' % (cx + 1.6 * math.cos(heading), cy + 1.6 * math.sin(heading), cz - 1.69, heading)], 1.5)
+# 5) a wall close behind (the panel A was put in front of, about 2.8 m ahead at the first heading; A now stands 1.2 m from it, back to it): no room, the view stays first person
+send(da, ['tp %.5f %.5f %.5f %.5f 0' % (cx + 1.6 * math.cos(heading), cy + 1.6 * math.sin(heading), cz - 1.69, heading + math.pi)], 1.5)
 send(da, ['emote 13'], .1)
-s = expect('a wall close in front: the view stays first person', lambda s: s['phase'] == 'off' and s['reason'] == 'blocked' and s['frame_view'] == 0, timeout=3)
+s = expect('a wall close behind: the view stays first person', lambda s: s['phase'] == 'off' and s['reason'] == 'blocked' and s['frame_view'] == 0, timeout=3)
 send(da, ['shot tp_blocked', 'emote 0'], .3)
 print('  (probe depths %s)' % s['probe'], flush=True)
+if len(sys.argv) > 5:      # a person's look at the pictures: copy this run's shots (the game's copy is removed with the lease)
+    import shutil; os.makedirs(sys.argv[5], exist_ok=True)
+    for n in os.listdir(os.path.join(da, 'shots')):
+        if n.startswith('tp_'): shutil.copy(os.path.join(da, 'shots', n), sys.argv[5])
 print('ALL OK', flush=True)

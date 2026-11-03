@@ -52,6 +52,7 @@ const Cfg& GetCfg() {
             else if (sscanf(line, "no_name_tags=%d", &v) == 1) r.noNameTags = v != 0;
             else if (sscanf(line, "emote_third_person=%d", &v) == 1) r.emoteThirdPerson = v != 0;
             else if (sscanf(line, "tp_never_return=%d", &v) == 1) r.tpNeverReturn = v != 0;
+            else if (sscanf(line, "tp_ignore_wall=%d", &v) == 1) r.tpIgnoreWall = v != 0;
             else if (sscanf(line, "ui_tight_atlas=%d", &v) == 1) r.uiTightAtlas = v != 0;
             else if (sscanf(line, "no_pov_request=%d", &v) == 1) r.noPovRequest = v != 0;
             else if (sscanf(line, "no_line_depth=%d", &v) == 1) r.noLineDepth = v != 0;
