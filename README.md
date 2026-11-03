@@ -114,7 +114,31 @@ program: it runs the scripts beside it, and when they are missing (it was starte
 PowerShell is started with `-ExecutionPolicy Bypass` for that one process, because Windows' default policy refuses every unsigned script;
 the scripts are readable, and signing the exe and dll files (below) is what makes the download trustworthy to Windows.
 
-Then both players start the game from the launcher (Lobby tab). The player's own copy of the instructions is `dist/README.txt`.
+Then both players open the launcher (or press Play in Steam: a game Steam starts on its own hands over to the launcher) and play from its **Play** tab.
+The player's own copy of the instructions is `dist/README.txt`.
+
+### The launcher
+
+Four tabs, the same in every co-op mod: **Play**, **Saves**, **Settings**, **About**.
+
+- **Play**: your name, three choices (*Host a game*, *Join a friend*, *Play solo*) and one button that says what it does (*Open lobby*, *Join*, *Play solo*);
+  the last choice is remembered (`launcher_choice=`). Hosting or joining turns the tab into **Lobby**: players (host mark, ready, speaking light, mute me,
+  deafen) | chat | the invite and *What to play* (the host chooses co-op or race, a new game, parts of the map done). The host's button reads *Start game*
+  or *Waiting for <names>*; the others tick *Ready*; *Leave* is one click. An available update is a banner on Play (*Update*, *What's new*), never over a lobby.
+- **Saves**: the co-op saves (who played, progress, lasers, time) and *New game...* (the parts of the map that are done at the start).
+- **Settings**: sections in the shared order (Co-op rules, Players and interface, Voice and sound, Controls, Display, Network, Launcher). Every change is
+  saved at once (no Save button); *Reset section* puts a section back to its defaults. Volumes, ranges, the frame limit, FOV and brightness are sliders with
+  units; keys are set by pressing them (F1 and a key another action uses are refused, with the reason); only names, addresses and ports are typed. The game's
+  own options (mouse, FOV, brightness, ...) live inside a save: they are marked *(in a save)* and change the save chosen in *Save to change*. The player
+  number is gone from the settings: the lobby assigns it. *Show the launcher at start* off lets Play in Steam start the game directly (hold Shift while it
+  starts to get the launcher).
+- **About**: version and updates, the quick guide, *Send diagnostics*, links, credits, the game folder.
+
+Keyboard: Enter, Esc (back), Tab, Ctrl+Tab (tabs), Ctrl+Enter (the page's main button), hold F1 (quick guide). A pad (XInput: Xbox pads, the Steam Deck's
+controls) works too: stick or D-pad move, A selects, B goes back, LB/RB change tabs, Start presses the page's main button, X and Y are the actions the footer
+names. The window is resizable, opens at 1280x800 (or the screen when that is smaller) and fills the screen on a Steam Deck. The shape is in `launcher/shell.h`,
+tested game-free by `make -C launcher shell-test` (with mutants); the launcher's command file (`--cmd-file`: `tab`, `section`, `choice`, `pad <buttons hex> <lx> <ly>`,
+`capture <key> <vk>`, `setting <key> <value>`) drives it in tests.
 
 ### Updating
 
@@ -126,8 +150,8 @@ in the game and the log (*"Player 2 is on v0.1.0, you are on v0.2.0: update both
 
 **The launcher updates itself from GitHub releases** (`launcher/update.h`, `update_win.h`; ported from the MDK2 launcher's updater). At start it asks for the latest release of
 `TommoDotCommo/witness-coop` (at most once a day; nothing about you is sent: one plain request for the public release list, and one per file if you press Update; failures are only written to the
-launcher's log). When a newer release exists the bottom bar shows *Update available: vX (first line of the notes)* with **Update** and **Later**; the Play page has the full notes, a *Check for
-updates* button, and the two settings (also in `witness_launcher_update.cfg` next to the launcher: `update_check=0` turns the automatic check off, `update_prereleases=auto|1|0`;
+launcher's log). When a newer release exists the Play tab shows *Update available: vX (first line of the notes)* with **Update**, **What's new** and **Later**; the About tab has the full notes, a *Check for
+updates* button, and the two settings (Settings, Launcher) (also in `witness_launcher_update.cfg` next to the launcher: `update_check=0` turns the automatic check off, `update_prereleases=auto|1|0`;
 *auto* offers pre-releases only to an installed pre-release). **Update** downloads `witness-coop-<tag>.zip` and its `.sha256`, checks the size and SHA-256, opens the archive in memory
 (CRC of every file, no path may leave its folder, the executables must be 64-bit), and then replaces `dsound.dll`, `witness_launcher.exe` and `witness_models\*` through **the
 installer's own receipt rules** (`dist/install-policy.h`): a file is replaced only if its `.coop-receipt.json` says the installer put exactly that file there, with the receipt journal
@@ -142,7 +166,7 @@ truncated archives, hash mismatch, interrupted apply, downgrade, the old-layout 
 
 ### Play over the internet (Steam, no port forwarding)
 
-With Steam running, the host clicks **Host on Steam** (a friends-only Steam lobby for up to 16) and invites friends through the Steam
+With Steam running, the host chooses **Host a game**, *Through Steam*, and **Open lobby** (a friends-only Steam lobby for up to 16) and invites friends through the Steam
 overlay, through a Steam chat invite from the launcher's list of online friends, or by giving them the lobby number; a friend accepts
 in Steam (or **Join Game** in the friends list, or pastes the number and clicks Join). The lobby and then the games talk through
 Steam, which relays the traffic when there is no direct path, so nobody forwards a port. The launcher starts the Steam API as The
@@ -150,7 +174,7 @@ Witness (app 210970) through the `SteamAppId` environment variable, which the ga
 connection and never falls back to UDP by itself. Details, the cfg syntax (`peer=<id>,steam:<steamid64>`, `transport=steam`), the
 messages a player sees when something is wrong, and the two-account test: [docs/STEAM.md](docs/STEAM.md).
 
-**Direct (LAN / manual)**: "Host direct (LAN)" gives the invite `address:port/CODE`; the host's lobby port is UDP 47100 and the
+**Direct (LAN / manual)**: *Host a game*, *Direct* gives the invite `address:port/CODE`; the host's lobby port is UDP 47100 and the
 games use 47001 and 47002, so over the internet every player would need reachable ports. Use it on a LAN.
 
 ### Manual install (no Setup)
@@ -159,7 +183,7 @@ Close the game; open its folder (Steam: Properties > Installed Files > Browse, t
 
 1. Copy `dsound.dll` (the proxy), `witness_launcher.exe` and the folder `witness_models\` from the zip into the game folder. Nothing is renamed.
    (If the folder already has a `dsound.dll` of another mod, rename that one to `dsound.chain.dll` first: the proxy loads it after itself.)
-2. Start `witness_launcher.exe` there.
+2. Start `witness_launcher.exe` there (or press Play in Steam: the game hands over to the launcher).
 
 Coming from v0.1.0-alpha by hand: delete the old proxy `AnselSDK64.dll` and rename `AnselSDK64_real.dll` back to `AnselSDK64.dll` (or let Steam's
 *Verify integrity of game files* restore it), then step 1.
@@ -183,10 +207,14 @@ Not run on a real Steam Deck or Linux PC yet (tracked in Known issues). What is 
   fallback, the Steam launch option `WINEDLLOVERRIDES="dsound=n,b" %command%` (The Witness > Properties > Launch options). `status` reports whether the
   override is in place. `tools/test_install_linux.sh` tests all of it on fixture folders and fixture prefixes (in WSL) with mutants (an override for the wrong
   exe, an uninstall that leaves it). Untested on a real prefix.
-- The launcher is a Windows program and must run in the game's Proton prefix: add `witness_launcher.exe` as a **non-Steam game**, Start In = the game folder,
-  Compatibility = the same Proton version as The Witness, Launch Options = `STEAM_COMPAT_DATA_PATH="<library>/steamapps/compatdata/210970" %command%`. Its lobby then
-  starts the game inside that prefix. (Decision: the launcher is the entry point for co-op, as the desktop shortcut is on Windows. Starting the game from Steam as
-  usual loads the mod alone.)
+- **Play in Steam opens the co-op launcher**, Game Mode included; no non-Steam shortcut is needed. Steam starts `witness64_d3d11.exe` with its environment
+  (`SteamAppId`); the mod sees a game Steam started with no launcher session and starts `witness_launcher.exe` beside it in the same Proton prefix instead,
+  then closes the game before it opens a window (`common/handover.h`; the proxy log says `handover: ... -> launcher`). The launcher inherits Steam's
+  environment and every game it starts carries `WITNESS_COOP_LAUNCHER=1`, which never hands over again, so the whole session (launcher, game, back to the
+  lobby) is one Steam launch. A Steam invite (`+connect_lobby`) goes to the launcher the same way. *Show the launcher at start* off (`show_launcher=0`)
+  makes Play start the game directly; hold Shift while it starts to get the launcher back. On a Deck (`SteamDeck=1`) the launcher fills the screen (1280x800)
+  and is driven with the Deck's controls (stick or D-pad, A, B, LB/RB, Start, X/Y as the footer says). Typing (a name, an invite) needs the Steam keyboard
+  (Steam + X) for now.
 - Unknown: whether Proton's `dsound` loaded by full path from `system32` (what the proxy forwards to) behaves as on Windows, overlay and model drawing
   under DXVK, voice (microphone) under Proton, window placement on the Deck's screen. Reports welcome.
 
@@ -304,7 +332,7 @@ from another PC is only useful with its logs, so:
    round trip and lost packets to each player, the sync queue) next to its log, and sends the marker to the other players, so every
    machine saves the same moment under the same number. A toast says "Marker N saved". If a custom binding already uses F2 the marker is on F12
    (the F1 guide names it).
-2. Open **witness_launcher.exe** and press **Send diagnostics** (bottom bar; it works after a crash too). A few seconds later a zip,
+2. Open **witness_launcher.exe** and press **Send diagnostics** (About tab; it works after a crash too). A few seconds later a zip,
    `witness-coop-diag_<date>_<id>.zip`, appears on the desktop with Explorer pointing at it, and the launcher says what is in it:
    the logs of recent game and launcher runs, flight recordings, a crash dump if the game crashed, `witness_coop.cfg`,
    `witness_proxy.log` (the last run), and a summary of the PC (mod version, the game's build hash, Windows version, graphics card
@@ -571,7 +599,7 @@ read-only; `wkeys.py`, `wshot.py`, `wplace.py`, `wfocus.py` and `launch.py` driv
 
 ## Known issues
 
-- **Steam Deck / Linux (Proton) is untested.** The install script, the DLL override it writes into the game's prefix and the launcher as a non-Steam game are expected to
+- **Steam Deck / Linux (Proton) is untested.** The install script, the DLL override it writes into the game's prefix and Play handing over to the launcher are expected to
   work and have not been run on a real Deck or Linux PC. The script itself is tested on fixture folders and fixture prefixes. Overlay under DXVK, voice under Proton and
   window placement are unknown.
 - **Another mod named `dsound.dll` is chained for its start-up only.** Its exports get no calls (the game's DirectSound goes to Windows' copy), so a full
