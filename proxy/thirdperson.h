@@ -10,5 +10,6 @@ void ThirdPersonFrame(float aspect);   // render thread, once per Present, befor
 bool ThirdPersonViewCam(float pos[3], float ang[2]);   // the camera this frame's world was drawn from, when it was not the player's own
 bool ThirdPersonSelf(float pos[3], float* yaw, int* emote, float* seconds);   // this player's own figure is to be drawn (the third-person view is out)
 void ThirdPersonSelfDrawn(bool drawn);   // overlay.cpp: the figure was submitted this frame
-void ThirdPersonClick();        // a mouse button went down (raw input): the view returns
+void ThirdPersonClick();        // a mouse button went down (the game's message loop): the view returns
+void ThirdPersonMoveKey();      // a movement key went down: the view returns (also when a wall stops the player)
 bool ThirdPersonCommand(const char* line);   // witness_cmd.txt: tpstate (writes witness_tp.json) | tpforce on|off|cfg (test override of the setting) | tpwatch <rva>|dump|0 (developer: who writes there)

@@ -64,6 +64,10 @@ int main() {
         d.Tick(1 / 30.f, true, t.eye, t.yaw, t.pitch, t.click, t.menu, t.enabled); REQUIRE(d.phase == Phase::Out && d.last == t.why);
         Run(d, 30, true, t.eye, t.yaw, t.pitch, t.click, t.menu, t.enabled); REQUIRE(d.phase == Phase::Off);
     }
+    {   // a movement key: walking into a wall moves nothing, the view still returns
+        Cam d; d.Start(2, eye, yaw, pitch); d.ProbeAnswer(&ps, sky); Run(d, 30, true, eye, yaw, pitch);
+        d.Tick(1 / 30.f, true, eye, yaw, pitch, false, false, true, true); REQUIRE(d.phase == Phase::Out && d.last == Why::Moved);
+    }
     // the view eases back to the live first-person camera, even after the player moved
     Cam m; m.Start(2, eye, yaw, pitch); m.ProbeAnswer(&ps, sky); Run(m, 30, true, eye, yaw, pitch);
     V3 moved = {10.5f, 20.2f, 3.5f}; m.Tick(1 / 30.f, true, moved, yaw, pitch, false, false, true);

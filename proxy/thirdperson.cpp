@@ -38,7 +38,7 @@ unsigned g_hookCalls = 0, g_swapped = 0, g_selfDraws = 0, g_selfFrames = 0, g_fi
 bool g_viewUsed = false, g_frameView = false; float g_viewPos[3], g_viewAng[2];      // set by the hook; g_frameView: this Present's frame was drawn from it
 float g_qErr = -1, g_maxOffset = 0, g_lastOffset = 0, g_gameView[3] = {0, 0, 0};      // g_gameView: where the game's own main view stood when it drew the last third-person frame
 View g_frameV; bool g_frameVValid = false, g_viewsSwapped = false;      // g_qErr: how far the game's own quaternion is from QuatFromYawPitch (a convention check, logged)
-volatile LONG g_clicks = 0, g_stateReq = 0; volatile LONG g_force = -1;      // g_force: test override of the setting (-1: the cfg's)
+volatile LONG g_moveKeys = 0, g_clicks = 0, g_stateReq = 0; volatile LONG g_force = -1;      // g_force: test override of the setting (-1: the cfg's)
 unsigned g_lastSeq = 0; bool g_seqInit = false; ULONGLONG g_lastTick = 0;
 ProbeSet g_probe; bool g_probeOut = false; float g_probeDepth[5] = {0, 0, 0, 0, 0};
 Phase g_lastPhase = Phase::Off;
@@ -184,7 +184,7 @@ void ThirdPersonFrame(float aspect) {
     int emote = 0; float t = 0; unsigned seq = 0; bool playing = SocialMyEmote(&emote, &t, &seq);
     bool enabled = g_force >= 0 ? g_force != 0 : GetCfg().emoteThirdPerson;
     bool menu = GamePaused() || DevMenuOpen() || PovRosterOpen() || GuideOpen() || SocialMouseCaptured() || MapGenActive();
-    bool clicked = InterlockedExchange(&g_clicks, 0) != 0;
+    bool clicked = InterlockedExchange(&g_clicks, 0) != 0, moveKey = InterlockedExchange(&g_moveKeys, 0) != 0;
     if (!g_seqInit) { g_seqInit = true; g_lastSeq = seq; }
     if (seq != g_lastSeq) {      // an emote was started here: measure the room in front of the player in the frame the game just drew (first person)
         g_lastSeq = seq;
@@ -199,7 +199,7 @@ void ThirdPersonFrame(float aspect) {
         else if (r < 0) { g_probeOut = false; g_cam.ProbeAnswer(nullptr, nullptr); }
     }
     if (GetCfg().tpNeverReturn) g_cam.Tick(dt, true, g_cam.eye0, g_cam.yaw0, g_cam.pitch0, false, false, true);      // mutant: nothing ever brings the view back
-    else g_cam.Tick(dt, playing, eye, yaw, pitch, clicked, menu, enabled);
+    else g_cam.Tick(dt, playing, eye, yaw, pitch, clicked, menu, enabled, moveKey);
     if (g_cam.Active() && !g_patched) {
         g_patched = PatchCalls(); g_patchFailed = !g_patched;
         Log(g_patched ? "thirdperson: the view building and the world drawing now go through the mod (exe+0x69653, 0x699AD, 0x696BD, 0x69A17)" : "thirdperson: the world drawing is not the expected call: the view stays first person");
@@ -226,6 +226,7 @@ bool ThirdPersonSelf(float pos[3], float* yaw, int* emote, float* seconds) {
 }
 void ThirdPersonSelfDrawn(bool drawn) { if (drawn) ++g_selfDraws; }
 void ThirdPersonClick() { InterlockedExchange(&g_clicks, 1); }
+void ThirdPersonMoveKey() { InterlockedExchange(&g_moveKeys, 1); }
 bool ThirdPersonCommand(const char* line) {
     if (!strncmp(line, "tpstate", 7)) { InterlockedExchange(&g_stateReq, 1); return true; }
     if (!strncmp(line, "tpwatch", 7)) {      // developer diagnostic: only with the dev menu on

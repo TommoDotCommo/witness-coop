@@ -102,14 +102,15 @@ public:
         if (p.dist * k < p.minDist) { phase = Phase::Off; last = Why::Blocked; return; }
         scale = k; phase = Phase::In; last = Why::None; ++starts;
     }
-    // Once per frame. emoteActive: the local emote still plays; eye/yaw/pitch: the first-person camera now.
-    void Tick(float dt, bool emoteActive, V3 eye, float yaw, float pitch, bool clicked, bool menu, bool enabled) {
+    // Once per frame. emoteActive: the local emote still plays; eye/yaw/pitch: the first-person camera now; clicked: a mouse button went
+    // down (entering a puzzle is a click); moveKey: a movement key went down (walking into a wall moves nothing).
+    void Tick(float dt, bool emoteActive, V3 eye, float yaw, float pitch, bool clicked, bool menu, bool enabled, bool moveKey = false) {
         if (phase == Phase::Off) return;
         Why w = Why::None;
         if (!enabled) w = Why::Disabled;
         else if (menu) w = Why::Menu;
         else if (clicked) w = Why::Clicked;
-        else if (Len(Sub(eye, eye0)) > p.moveCancel) w = Why::Moved;
+        else if (moveKey || Len(Sub(eye, eye0)) > p.moveCancel) w = Why::Moved;
         else if (std::fabs(WrapAngle(yaw - yaw0)) > p.lookCancel || std::fabs(pitch - pitch0) > p.lookCancel) w = Why::Looked;
         else if (!emoteActive) w = Why::EmoteEnded;
         if (phase == Phase::Probe) { if (w != Why::None) { phase = Phase::Off; last = w; } return; }
