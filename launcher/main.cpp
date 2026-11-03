@@ -1012,7 +1012,7 @@ void WriteStat() {      // tests: what the lobby is, as text lines, rewritten ev
     { wchar_t sb[400] = {}; GetWindowTextW(LB(ID_LB_STATUS), sb, 400); o += "lobbystatus " + U(sb) + "\n"; }
     o += std::string("guide ") + (g_guideHold.Open() ? "1\n" : "0\n");
     snprintf(b, sizeof b, "invite %s\n", g_sess.Invite().c_str()); o += b;
-    { std::string code, msg; bool ok = g_sess.Active() && g_sess.IsHost() && HostInvite(&code, &msg); o += "invite_code " + (ok ? code : std::string("-")) + "\n" + "invite_text " + (ok ? msg : std::string("-")) + "\n";
+    { std::string code, msg; bool ok = g_sess.Active() && g_sess.IsHost() && HostInvite(&code, &msg); o += "hostinvite_code " + (ok ? code : std::string("-")) + "\n" + "hostinvite_text " + (ok ? msg : std::string("-")) + "\n";      // (not "invite...": older test parsers read every line that starts so)
       char hd[2048]; hd[0] = 0; if (g_sess.Active() && g_sess.IsHost()) nf_host_dump(hd, sizeof hd); o += hd;
       snprintf(b, sizeof b, "probes answered %u invite_only %d\n", g_sess.ProbesAnswered(), g_sess.InviteOnly() ? 1 : 0); o += b;
       int st[LJ_SRCS], fd[LJ_SRCS]; nf_join_source_states(st, fd); snprintf(b, sizeof b, "joinlist shown %d scans %d rows %zu lan %d/%d tailscale %d/%d recent %d/%d steam %d recents %d route %d\n", JoinListShown() ? 1 : 0, nf_join_scans(), g_rows.size(), st[0], fd[0], st[1], fd[1], st[2], fd[2], st[3], nf_recents_count(), g_joinRoute); o += b;

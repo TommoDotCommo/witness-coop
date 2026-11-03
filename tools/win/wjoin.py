@@ -32,7 +32,7 @@ def stat(d):
             m = re.match(r'hostrow (\d) state (\d) (.*)', l)
             if m: r['hostrow'][int(m[1])] = (int(m[2]), m[3])
         elif l.startswith('joinlist '): v = l.split(); r['joinlist'] = {v[i]: v[i + 1] for i in range(1, len(v) - 1, 2)}
-        elif l.startswith('invite_code '): r['invite_code'] = l[12:].strip()
+        elif l.startswith('hostinvite_code '): r['invite_code'] = l[16:].strip()
         elif l.startswith('lobbystatus '): r['status'] = l[12:]
         elif l.startswith('uistatus '): r['ui'] = l[9:]
         elif l.startswith('probes '): m = re.match(r'probes answered (\d+) invite_only (\d)', l); r['probes'] = int(m[1]); r['invite_only'] = int(m[2])
