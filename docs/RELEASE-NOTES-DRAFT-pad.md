@@ -13,3 +13,5 @@
 - **Hints follow your hands.** The player panel, the emote wheel, the chat box, the microphone line and the quick guide show pad buttons after pad input
   and keys after keyboard input, switching at once. The quick guide and the launcher's Controls page list the pad's co-op buttons from one table.
 - Drawing stays on the keyboard (hold X): it aims with the camera, and every free pad chord would take the right stick from the game while you draw.
+- **Steam controller layout** "The Witness Co-op (pad layer)" (Steam Deck and any pad through Steam Input): presents an Xbox gamepad (the game's own Steam
+  config presents only keyboard and mouse), Deck L4 = View (ping, player list), R4 = push to talk. See "Steam Deck and controllers" in the README.
