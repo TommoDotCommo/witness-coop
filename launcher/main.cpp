@@ -615,7 +615,11 @@ void LayoutSection(HWND p, int s, int W, int H) {
         Place(f->hLabel, x, cy + 6, lw, 22);
         if (f->kind == kCheck) Place(f->h, cx, cy + 4, 28, 26);
         else if (f->kind == kSlider) { int sw = std::min(380, std::max(80, cw - 104)); Place(f->h, cx - 6, cy + 2, sw, 30); Place(f->hValue, cx + sw + 4, cy + 6, 96, 22); }
+#ifdef WL_MUT_WIDE_COMBOS
+        else if (f->kind == kCombo) Place(f->h, cx, cy + 2, std::min(cw, 260) + 320, 300);      // (mutant: a dropdown over the next column)
+#else
         else if (f->kind == kCombo) Place(f->h, cx, cy + 2, std::min(cw, 260), 300);
+#endif
         else if (f->kind == kKeyBtn) Place(f->h, cx, cy + 1, std::min(cw, 200), 30);
         else Place(f->h, cx, cy + 3, std::min(cw, 300), 28);
         if (f->hHint) Place(f->hHint, x, cy + 30, colW, 18);

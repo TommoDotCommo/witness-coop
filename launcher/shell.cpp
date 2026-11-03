@@ -58,7 +58,11 @@ static std::vector<Row> Build() {
     v.push_back(Toggle("cfg:voice_radio", "Radio sound when far away", kVoice, "1"));
     v.push_back(Toggle("cfg:radio_enabled", "Handheld radio", kVoice, "1", "hold the radio key to transmit"));
     v.push_back(Slider("cfg:game_volume", "Game volume", kVoice, 0, 100, 1, 5, "%", "100"));
+#ifdef WL_MUT_LONG_LABELS
+    v.push_back(Toggle("cfg:launcher_no_sound", "Game sound off (starts the game with -no_sound, the game's own sound switched off entirely)", kVoice, "0", "starts the game with -no_sound"));      // (mutant: a label longer than its box)
+#else
     v.push_back(Toggle("cfg:launcher_no_sound", "Game sound off", kVoice, "0", "starts the game with -no_sound"));
+#endif
     // Controls: every key of the one binding table (push to talk is in Voice and sound), then the game's own mouse options (inside a save)
     for (const auto& b : guide::bindings) {
         if (std::string(b.config) == "key_voice") continue;
