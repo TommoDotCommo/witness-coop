@@ -54,7 +54,7 @@ $(BUILD)/witness_launcher.exe: ../common/guide.h ../common/bindings.def ../proxy
 
 # the lobby (game-free): the same kind of test and mutants
 LSRC = lobby.cpp lobby_test.cpp core.cpp ../proxy/voice/voice.cpp ../proxy/progress/savemeta.cpp ../proxy/progress/progress.cpp ../proxy/progress/progress_data.cpp
-LOBBY_MUTANTS = NO_CHECKSUM GATE_OPEN VERSION_NOT_CHECKED REPLY_NO_VERSIONS LIST_NO_VERSION
+LOBBY_MUTANTS = NO_CHECKSUM GATE_OPEN VERSION_NOT_CHECKED REPLY_NO_VERSIONS LIST_NO_VERSION INVITE_ONLY_OPEN
 $(BUILD)/lobby-test.exe: $(LSRC) lobby.h core.h ../proxy/voice/voice.h ../common/steam_ids.h
 	mkdir -p $(BUILD)
 	$(CXX) -std=c++17 -O2 -Wall -Wextra -static -o $@ $(LSRC)
@@ -100,3 +100,18 @@ update-test:
 	python3 -I ../tools/test_launcher_update.py
 .PHONY: update-test
 test: update-test
+
+# finding each other and the invite (joinglue.h around the shared code in common/, VENDORED.md): game-free, with mutants
+JG_HDRS = joinglue.h ../common/coop_witness.h ../common/coop_invite.h ../common/coop_discover.h ../common/launcher_join.h ../common/launcher_host_core.h
+JOINGLUE_MUTANTS = NO_STEAM_INVITE OLD_FORM_DROPPED WRONG_GAME_ID
+$(BUILD)/joinglue-test.exe: joinglue_test.cpp $(JG_HDRS)
+	mkdir -p $(BUILD)
+	$(CXX) -std=c++17 -O2 -Wall -Wextra -I../common -static -o $@ joinglue_test.cpp
+$(BUILD)/joinglue-mutant-%.exe: joinglue_test.cpp $(JG_HDRS)
+	mkdir -p $(BUILD)
+	$(CXX) -std=c++17 -O2 -I../common -static -DJG_MUT_$* -o $@ joinglue_test.cpp
+joinglue-test: $(BUILD)/joinglue-test.exe $(addsuffix .exe,$(addprefix $(BUILD)/joinglue-mutant-,$(JOINGLUE_MUTANTS)))
+	$(BUILD)/joinglue-test.exe
+	@for m in $(JOINGLUE_MUTANTS); do if $(BUILD)/joinglue-mutant-$$m.exe >/dev/null; then echo "MUTANT joinglue $$m SURVIVED (the test cannot fail for it)"; exit 1; else echo "joinglue mutant $$m killed"; fi; done
+.PHONY: joinglue-test
+test: joinglue-test
