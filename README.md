@@ -173,7 +173,7 @@ in the game and the log (*"Player 2 is on v0.1.0, you are on v0.2.0: update both
 **The launcher updates itself from GitHub releases** (`launcher/update.h`, `update_win.h`; ported from the MDK2 launcher's updater). At start it asks for the latest release of
 `TommoDotCommo/witness-coop` (at most once a day; nothing about you is sent: one plain request for the public release list, and one per file if you press Update; failures are only written to the
 launcher's log). When a newer release exists the Play tab shows *Update available: vX (first line of the notes)* with **Update**, **What's new** and **Later**; the About tab has the full notes, a *Check for
-updates* button, and the two settings (Settings, Launcher) (also in `witness_launcher_update.cfg` next to the launcher: `update_check=0` turns the automatic check off, `update_prereleases=auto|1|0`;
+updates* button, and the two settings (Settings, Launcher) (also in `witness_launcher_update.cfg` in the mod's data folder, `%LOCALAPPDATA%\witness-coop\`: `update_check=0` turns the automatic check off, `update_prereleases=auto|1|0`;
 *auto* offers pre-releases only to an installed pre-release). **Update** downloads `witness-coop-<tag>.zip` and its `.sha256`, checks the size and SHA-256, opens the archive in memory
 (CRC of every file, no path may leave its folder, the executables must be 64-bit), and then replaces `dsound.dll`, `witness_launcher.exe` and `witness_models\*` through **the
 installer's own receipt rules** (`dist/install-policy.h`): a file is replaced only if its `.coop-receipt.json` says the installer put exactly that file there, with the receipt journal
