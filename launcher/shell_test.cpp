@@ -49,6 +49,15 @@ int main() {
     auto in = [](const char* k, ls::Section s) { const ls::Row* r = ls::FindRow(k); return r && r->section == s; };
     Check(in("cfg:voice_mode", ls::kVoice) && in("cfg:key_voice", ls::kVoice) && in("cfg:voice_range", ls::kVoice) && in("cfg:key_chat", ls::kControls) && in("vid:resolution", ls::kDisplay) && in("cfg:cap_fps", ls::kDisplay)
           && in("cfg:lobby_port", ls::kNetwork) && in("cfg:show_launcher", ls::kLauncher) && in("upd:auto", ls::kLauncher) && in("cfg:name", ls::kPlayers), "rows are in the standard's sections");
+    {   // t85 (K4, K5, H5): the pad layer's lines come from padlayer.h's one table onto the Controls page; voice is Automatic by default; a stick click can be push to talk
+        const ls::Row* n = ls::FindRow("note:pad"); std::string missing;
+        for (const auto& l : padlayer::kLines) if (std::string(l.id) != "voice" && (!n || n->label.find(std::string(l.buttons) + ": " + l.text) == std::string::npos)) missing += std::string(" ") + l.buttons;
+        Check(n && n->section == ls::kControls && missing.empty(), "the Controls page lists every line of the pad layer", missing);
+        const ls::Row* v = ls::FindRow("cfg:voice_mode"); const ls::Row* pv = ls::FindRow("cfg:pad_voice"); const ls::Row* pl = ls::FindRow("cfg:pad_layer");
+        Check(v && v->def == "auto" && v->values.size() == 4 && v->values[3] == "auto", "voice chat defaults to Automatic");
+        Check(pv && pv->section == ls::kVoice && pv->def == "none" && pv->values == std::vector<std::string>({"none", "ls", "rs"}), "push to talk on the pad: none, left or right stick click");
+        Check(pl && pl->section == ls::kControls && pl->kind == ls::kToggle && pl->def == "1", "the pad's co-op buttons can be turned off (on by default)");
+    }
     {   // t90: the TV features are one experimental option, off by default, in the Launcher section; its keys keep their rows
         const ls::Row* e = ls::FindRow("cfg:experimental_tv");
         Check(e && e->section == ls::kLauncher && e->kind == ls::kToggle && e->def == "0" && e->label == "Experimental: TV features", "Experimental: TV features is a Launcher toggle, off by default");

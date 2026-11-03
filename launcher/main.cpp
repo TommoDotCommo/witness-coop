@@ -159,8 +159,10 @@ Cfg GuideSettings(bool migrate) {
         if (f) keys.*b.member = GetVal(*f).empty() ? b.initial : guide::MigrateDefault(b.config, guide::ParseKey(GetVal(*f)));      // (a key still on its old default shows the new default)
     }
     if (migrate) guide::MigrateF1(keys);
-    if (auto* f = ByKey("cfg:experimental_tv")) keys.experimentalTv = GetVal(*f) == "1";
-    if (auto* f = ByKey("cfg:experimental_radio")) keys.experimentalRadio = GetVal(*f) == "1";      // (the guide lists the TV keys only while the option is on)
+    if (auto* f = ByKey("cfg:experimental_tv")) keys.experimentalTv = GetVal(*f) == "1";      // (the guide lists the TV and radio keys only while their option is on)
+    if (auto* f = ByKey("cfg:experimental_radio")) keys.experimentalRadio = GetVal(*f) == "1";
+    if (auto* f = ByKey("cfg:pad_voice")) { std::string v = GetVal(*f); keys.padVoice = v == "ls" ? 1 : v == "rs" ? 2 : 0; }      // (the guide's controller lines)
+    if (auto* f = ByKey("cfg:voice_mode")) { std::string v = GetVal(*f); keys.voiceMode = v == "off" ? 0 : v == "open" ? 1 : v == "ptt" ? 2 : 3; }
     return keys;
 }
 void MigrateGuideKeys() {
@@ -397,7 +399,7 @@ std::wstring g_statFile, g_cmdFile; ULONGLONG g_statAt, g_launchedAt; unsigned g
 void LobbyStatus(const std::wstring& s) { SetWindowTextW(LB(ID_LB_STATUS), s.c_str()); if (!g_sess.Active()) Status(s); }
 std::string CfgGet(const char* k, const char* d = "") { return LoadCfg().Get(k, d); }
 lw::VoiceCfg VoiceCfgNow() {
-    wl::CfgFile c = LoadCfg(); lw::VoiceCfg v; std::string m = c.Get("voice_mode", "ptt"); v.mode = m == "off" ? 0 : m == "open" ? 1 : 2; Cfg keys;
+    wl::CfgFile c = LoadCfg(); lw::VoiceCfg v; std::string m = c.Get("voice_mode", "auto"); v.mode = m == "off" ? 0 : m == "open" ? 1 : m == "ptt" ? 2 : g_padLast ? 1 : 2; Cfg keys;      // (automatic: open mic when the launcher was last used with a pad)
     for (const auto& b : guide::bindings) {
         unsigned k = guide::MigrateDefault(b.config, guide::ParseKey(c.Get(b.config, guide::KeyName(b.initial))));
         if (k) keys.*b.member = k;
@@ -608,7 +610,7 @@ void LayoutSection(HWND p, int s, int W, int H) {
         y += 40;
     }
     std::vector<Field*> rows; for (auto& f : g_fields) if (f.section == s) rows.push_back(&f);
-    auto rowH = [](const Field* f) { return f->kind == kMulti ? 96 : f->kind == kNoteK ? 64 : f->hHint ? 56 : 36; };
+    auto rowH = [](const Field* f) { int lines = 1; for (char ch : f->label) lines += ch == '\n'; return f->kind == kMulti ? 96 : f->kind == kNoteK ? std::max(64, 20 * lines + 12) : f->hHint ? 56 : 36; };
     int total = 0; for (auto* f : rows) total += rowH(f);
     int cols = (W >= 900 && total > std::max(200, H - y - 8)) ? 2 : 1, colW = (W - (cols - 1) * 28) / cols;
     int per = 0, x = 0, cy = y, target = (total + cols - 1) / cols;

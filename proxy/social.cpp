@@ -22,6 +22,8 @@
 #include "input.h"
 #include "model_gpu.h"
 #include "playercolor.h"
+#include "pad.h"
+#include "../common/padlayer.h"
 #include <strings.h>
 
 void Log(const char* msg);
@@ -46,7 +48,8 @@ bool g_open = false; std::string g_input;
 bool g_pingReq = false, g_pingAsked = false; ULONGLONG g_pingAt = 0;
 unsigned g_chatSeen = 0, g_marksSeen = 0;
 unsigned g_emoteSeq = 0; int g_emote = 0; ULONGLONG g_emoteAt = 0;
-bool g_wheel = false; float g_wx = 0, g_wy = 0;
+bool g_wheel = false, g_quick = false; float g_wx = 0, g_wy = 0;      // the emote wheel, the quick chat wheel (pad: View + RB) and where the mouse or the right stick points on them
+bool g_osk = false, g_padChat = false;      // the chat line has our on-screen keyboard / was opened from the pad (either keyboard)
 struct RemoteEmote { bool seen = false; uint8_t seq = 0; int id = 0; ULONGLONG start = 0; };
 std::map<unsigned, RemoteEmote> g_remoteEmotes;
 int g_emotePage = 0; witness::EmoteGate g_emoteGate;
@@ -188,8 +191,8 @@ unsigned SocialInkVerts(const float cam[3], std::vector<LineVert>& out, size_t m
 }
 SocialSnapshot SocialState() { Lock l; return {g_emote,g_emoteSeq,g_emotePage,g_wheel,GuideOpen(),GamePaused()}; }
 bool SocialCapturing() { Lock l; return g_open; }
-bool SocialMouseCaptured() { Lock l; return g_open || g_wheel || g_canvas; }
-void SocialRawMove(int dx, int dy) { Lock l; if (g_canvas && !g_wheel && !g_open) { g_ox += dx * 1.6f; g_oy += dy * 1.6f; return; } if (g_wheel) { g_wx += float(dx); g_wy += float(dy); float m = sqrtf(g_wx * g_wx + g_wy * g_wy); if (m > 140) { g_wx *= 140 / m; g_wy *= 140 / m; } } }
+bool SocialMouseCaptured() { Lock l; return g_open || g_wheel || g_quick || g_canvas; }
+void SocialRawMove(int dx, int dy) { Lock l; if (g_canvas && !g_wheel && !g_open) { g_ox += dx * 1.6f; g_oy += dy * 1.6f; return; } if (g_wheel || g_quick) { g_wx += float(dx); g_wy += float(dy); float m = sqrtf(g_wx * g_wx + g_wy * g_wy); if (m > 140) { g_wx *= 140 / m; g_wy *= 140 / m; } } }
 const char* SocialEmoteName(int e) { return e >= 1 && witness::ValidEmote(e) ? witness::kEmotes[e].name : ""; }
 bool SocialEmoteOf(unsigned id, int* emote, float* seconds) {
     Lock l; auto it = g_remoteEmotes.find(id); if (it == g_remoteEmotes.end() || !it->second.id) return false;
@@ -244,7 +247,39 @@ bool SocialWheel(int delta) {      // the mouse wheel: the ink colour while draw
     if (c.keyColor != guide::Wheel || !delta || GamePaused() || g_open || g_wheel || !(g_canvas || g_pen)) return false;
     g_penColor = uint8_t((g_penColor + (delta > 0 ? 1 : kInks - 1)) % kInks); return true;
 }
-bool SocialBusy() { Lock l; return g_open || g_wheel; }
+bool SocialBusy() { Lock l; return g_open || g_wheel || g_quick; }
+// ---- the pad layer (pad.cpp)
+void SocialPadPing() { Lock l; if (GamePaused() || g_open) return; g_pingReq = true; g_pingAsked = false; g_pingAt = GetTickCount64(); }
+bool SocialPadChat(bool steamKeyboard) {
+    Lock l; if (GamePaused() || g_open || GetCfg().noChatUi) return false;
+    g_wheel = g_quick = false; g_open = true; g_input.clear(); g_padChat = true; g_osk = !steamKeyboard; return true;
+}
+void SocialPadUseSteamKeyboard() { Lock l; g_osk = false; }
+bool SocialOskOpen() { Lock l; return g_open && g_osk; }
+bool SocialPadChatOpen() { Lock l; return g_open && g_padChat; }
+bool SocialInputEmpty() { Lock l; return g_input.empty(); }
+void SocialOskKey(int key, char ch) {
+    Lock l; if (!g_open) return; using K = padlayer::OskKey; ULONGLONG now = GetTickCount64();
+    switch (K(key)) {
+    case K::Char: if (g_input.size() < kMaxInput) g_input.push_back(ch); break;
+    case K::Space: if (g_input.size() < kMaxInput) g_input.push_back(' '); break;
+    case K::Back: if (!g_input.empty()) g_input.pop_back(); break;
+    case K::Send: SendInput(now); g_open = false; break;
+    case K::Close: g_open = false; g_input.clear(); break;
+    default: break;
+    }
+}
+void SocialPadWheel(int kind, bool open) {
+    Lock l; ULONGLONG now = GetTickCount64();
+    if (open) { if (g_open || g_wheel || g_quick || GamePaused()) return; (kind == 1 ? g_wheel : g_quick) = true; g_wx = g_wy = 0; return; }
+    if (kind == 1 && g_wheel) { int sl = WheelSlot(); g_wheel = false; if (sl >= 0) TriggerEmote(sl + 1, now); }
+    if (kind == 2 && g_quick) {      // the quick chat line goes out as a chat line, from this player, like a typed one
+        int sl = padlayer::WheelSlot(g_wx, g_wy, padlayer::kQuickCount); g_quick = false;
+        if (sl >= 0) { g_input = padlayer::kQuickChat[sl]; SendInput(now); }
+    }
+}
+void SocialPadAim(float x, float y) { Lock l; if ((g_wheel || g_quick) && (x || y)) { g_wx = x * 140; g_wy = y * 140; } }
+void SocialPadEmotePage() { Lock l; if (g_wheel) g_emotePage = (g_emotePage + 1) % 3; }
 bool SocialChar(unsigned ch) {
     Lock l; if (!g_open) return false;
     if (ch >= 32 && ch < 127 && g_input.size() < kMaxInput) g_input.push_back(char(ch));
@@ -255,6 +290,8 @@ void SocialFrame(float W, float H, const float* cam, const float* ang) {
     ULONGLONG now = GetTickCount64(); witness::SyncCore* core = CoopCore(); const Cfg& cfg = GetCfg();
 
     Lock l;
+    if (!g_open) g_osk = g_padChat = false;
+    if (GamePaused() && g_quick) g_quick = false;
     if (GamePaused() || g_open || g_wheel) { VoiceRadioKey(false,true); VoiceKey(cfg.keyVoice,false); VoiceKey(cfg.keyVoiceAlt,false); }
     if (core) {
         for (const auto& m : core->takeChat()) { if (DiagChat(m.from, m.text)) continue; AddChat(m.from, m.text, now); }
@@ -327,7 +364,8 @@ void SocialFrame(float W, float H, const float* cam, const float* ang) {
     if (cfg.voiceMode != 0) {      // my own microphone: what the key does, and a bar that follows the level while it is open
         bool talk = VoiceSpeaking(); int lvl = VoiceMicLevel(); char b[80];
         char chn[64]; VoiceChannelText(chn, sizeof chn);
-        char pre[48]; if (talk) snprintf(pre, sizeof pre, "MIC  talking"); else if (cfg.voiceMode == 2) snprintf(pre, sizeof pre, "MIC  hold %s to talk", guide::KeyName(cfg.keyVoice ? cfg.keyVoice : cfg.keyVoiceAlt).c_str()); else snprintf(pre, sizeof pre, "MIC  open");
+        char pre[48]; const char* padKey = PadVoiceButtonName(); std::string key = guide::KeyName(cfg.keyVoice ? cfg.keyVoice : cfg.keyVoiceAlt);
+        if (talk) snprintf(pre, sizeof pre, "MIC  talking"); else if (VoiceModeNow() == 2) snprintf(pre, sizeof pre, "MIC  hold %s to talk", padlayer::Hint(PadGlyphs(), key.c_str(), padKey)); else snprintf(pre, sizeof pre, "MIC  open");
         snprintf(b, sizeof b, "%s  [%s]", pre, chn);
         float tw = UiTextWidth(b, 0.8f * k), bx = 24 * k, by = H - 50 * k;
         UiRect(bx - 6 * k, by - 4 * k, tw + 90 * k, UiLineHeight(0.8f * k) + 8 * k, Rgba(0, 0, 0, 0.5f)); UiText(bx, by, b, talk ? Rgba(0.5f, 1, 0.6f, 1) : Rgba(0.8f, 0.85f, 0.95f, 1), 0.8f * k);
@@ -392,7 +430,19 @@ void SocialFrame(float W, float H, const float* cam, const float* ang) {
             float tw = UiTextWidth(SocialEmoteName(g_emotePage*8+i+1), 1.0f * k); UiText(px - tw / 2, py - UiLineHeight(1.0f * k) / 2, SocialEmoteName(g_emotePage*8+i+1), on ? uitheme::Text : uitheme::Muted, 1.0f * k);
         }
         UiLine(cx, cy, cx + g_wx * R / 140.0f, cy + g_wy * R / 140.0f, Rgba(col[0], col[1], col[2], 1), 3 * k); UiRect(cx - 5 * k, cy - 5 * k, 10 * k, 10 * k, Rgba(col[0], col[1], col[2], 1));
-        const char* hint = "point and release to play | Tab: next page | centre: cancel selection"; float hw = UiTextWidth(hint, 0.8f * k); UiText(cx - hw / 2, cy + R + 40 * k, hint, uitheme::Muted, 0.8f * k);
+        const char* hint = padlayer::Hint(PadGlyphs(), "point and release to play | Tab: next page | centre: cancel selection", "right stick picks, let go of View plays | LB: next page | centre: cancel"); float hw = UiTextWidth(hint, 0.8f * k); UiText(cx - hw / 2, cy + R + 40 * k, hint, uitheme::Muted, 0.8f * k);
+    }
+    if (g_quick) {      // the quick chat wheel (pad: View + RB): five lines round the middle, the one the stick points to lit
+        float cx = W / 2, cy = H / 2, R = 140 * k; int sel = padlayer::WheelSlot(g_wx, g_wy, padlayer::kQuickCount); float col[3]; PlayerColor(CoopMyId(), col);
+        UiRect(cx - R - 110 * k, cy - R - 40 * k, 2 * R + 220 * k, 2 * R + 80 * k, Rgba(0, 0, 0, 0.35f));
+        for (int i = 0; i < padlayer::kQuickCount; ++i) {
+            float a = -1.5707963f + i * 6.2831853f / padlayer::kQuickCount, px = cx + cosf(a) * R, py = cy + sinf(a) * R; bool on = i == sel;
+            const char* t = padlayer::kQuickChat[i]; float bw = std::max(112 * k, UiTextWidth(t, k) + 24 * k), bh = 34 * k;
+            UiRect(px - bw / 2 - 2, py - bh / 2 - 2, bw + 4, bh + 4, on ? uitheme::Accent : uitheme::Border); UiRect(px - bw / 2, py - bh / 2, bw, bh, on ? uitheme::Selected : uitheme::Surface);
+            UiText(px - UiTextWidth(t, k) / 2, py - UiLineHeight(k) / 2, t, on ? uitheme::Text : uitheme::Muted, k);
+        }
+        UiLine(cx, cy, cx + g_wx * R / 140.0f, cy + g_wy * R / 140.0f, Rgba(col[0], col[1], col[2], 1), 3 * k); UiRect(cx - 5 * k, cy - 5 * k, 10 * k, 10 * k, Rgba(col[0], col[1], col[2], 1));
+        const char* hint = "Quick chat: right stick picks, let go of View sends | centre: nothing"; float hw = UiTextWidth(hint, 0.8f * k); UiText(cx - hw / 2, cy + R + 40 * k, hint, uitheme::Muted, 0.8f * k);
     }
     // the chat log (bottom left) and the box
     float lh = UiLineHeight(0.95f * k) + 4 * k, x = 24 * k, base = H - (g_open ? 150 : 120) * k; int shown = 0;
@@ -423,7 +473,17 @@ void SocialFrame(float W, float H, const float* cam, const float* ang) {
         // Keep the insertion point visible as the single-line editor scrolls.
         while (!shownText.empty() && UiTextWidth(shownText.c_str(), k) > bw - 20 * k) shownText.erase(0, 1);
         UiText(x + 10 * k, by + 8 * k, shownText.c_str(), uitheme::Text, k);
-        UiText(x, by + bh + 6 * k, "Enter: send   Esc: cancel", uitheme::Muted, 0.75f * k);
+        UiText(x, by + bh + 6 * k, g_osk ? "A: type   Y: space   B: delete (empty: close)   Menu: send" : g_padChat ? "Steam keyboard: type, Enter sends" : padlayer::Hint(PadGlyphs(), "Enter: send   Esc: cancel", "Menu: send   B: delete"), uitheme::Muted, 0.75f * k);
+        if (g_osk) {      // our on-screen keyboard (K6) when Steam's cannot be shown: above the chat box... below it, it would leave the screen
+            int row = 0, colSel = 0; PadOskCursor(&row, &colSel);
+            float cw = 34 * k, ch = 30 * k, gx = x, gy = by - 10 * k - padlayer::kOskRowsN * (ch + 4 * k);
+            UiRect(gx - 6 * k, gy - 6 * k, padlayer::kOskCols * (cw + 4 * k) + 8 * k, padlayer::kOskRowsN * (ch + 4 * k) + 8 * k, Rgba(0, 0, 0, 0.55f));
+            for (int r = 0; r < padlayer::kOskRowsN; ++r) for (int c = 0; c < padlayer::kOskCols; ++c) {
+                bool on = r == row && c == colSel; float px = gx + c * (cw + 4 * k), py = gy + r * (ch + 4 * k); char t[2] = {padlayer::kOskRows[r][c], 0};
+                UiRect(px, py, cw, ch, on ? uitheme::Accent : uitheme::Surface); UiFrame(px, py, cw, ch, uitheme::Border);
+                UiText(px + cw / 2 - UiTextWidth(t, k) / 2, py + ch / 2 - UiLineHeight(k) / 2, t, uitheme::Text, k);
+            }
+        }
     }
     (void)shown;
 }

@@ -3,13 +3,14 @@
 #include "ui/theme.h"
 #include "ui/guide_layout.h"
 #include "../common/guide.h"
+#include "pad.h"
 namespace { guide::Hold hold; }
 bool GuideKey(unsigned vk, bool down) { return hold.Key(vk, down); }
 bool GuideOpen() { return hold.Open(); }
 void GuideReset() { hold.Reset(); }
 void GuideDraw(float w, float h) {
     if (!GuideOpen()) return;
-    auto layout = uitext::FitGuide(w, h, guide::Content(GetCfg()), UiTextWidth);
+    auto layout = uitext::FitGuide(w, h, guide::Content(GetCfg(), PadGlyphs()), UiTextWidth);
     const auto& cols = layout.columns;
     float sc = layout.scale, row = layout.rowHeight, cw = layout.columnWidth;
     UiRect(0, 0, w, h, uitheme::Canvas);
@@ -18,7 +19,7 @@ void GuideDraw(float w, float h) {
     UiFrame(cardX, cardY, cardW, cardH, uitheme::Border);
     UiRect(cardX, cardY, 4 * sc, cardH, uitheme::Accent);
     UiText(cardX + 18 * sc, cardY + 12 * sc, "THE WITNESS CO-OP - QUICK GUIDE", uitheme::Text, sc * 1.25f);
-    UiText(cardX + 18 * sc, cardY + 42 * sc, "Hold F1 to read / release to return", uitheme::Muted, sc * 0.85f);
+    UiText(cardX + 18 * sc, cardY + 42 * sc, PadGlyphs() ? "Hold View + Y to read / release to return" : "Hold F1 to read / release to return", uitheme::Muted, sc * 0.85f);
     float topY = cardY + 70 * sc, paneH = cardH - (topY - cardY) - 14 * sc;
     for (int c = 0; c < 3; ++c) {
         float x = cardX + 14 + c * cw, y = topY + 10 * sc;

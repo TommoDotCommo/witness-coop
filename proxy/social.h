@@ -25,6 +25,17 @@ struct LineVert;
 unsigned SocialInkVerts(const float cam[3], std::vector<LineVert>& out, size_t maxVerts);   // render thread: the ink as ribbons for the line pipeline; returns the number of segments
 unsigned SocialSpeakDrawn();                  // speaker marks drawn in the last frame (tests)
 bool SocialMicHudDrawn();
+// the pad layer (pad.cpp, render thread)
+void SocialPadPing();                         // tap View: ping what the crosshair is on
+bool SocialPadChat(bool steamKeyboard);       // View + D-pad down: open the chat line (false: it could not open)
+void SocialPadUseSteamKeyboard();             // Steam's floating keyboard is up for it (not ours)
+bool SocialOskOpen();                         // the chat line is open with our on-screen keyboard
+bool SocialPadChatOpen();                     // the chat line was opened from the pad (either keyboard)
+bool SocialInputEmpty();
+void SocialOskKey(int key, char ch);          // padlayer::OskKey: a character, a space, delete, send, close
+void SocialPadWheel(int kind, bool open);     // 1 the emote wheel, 2 the quick chat wheel: open / close (closing chooses)
+void SocialPadAim(float x, float y);          // the right stick on an open wheel (-1..1, y down; 0 0: keep the last aim)
+void SocialPadEmotePage();
 bool VoiceKey(unsigned vk, bool down);        // voice_audio.cpp: the push-to-talk key (true: taken)
 bool VoiceCycleChannel();                     // voice_audio.cpp: the next voice channel (proximity, radio, global, direct to each player); true: taken
 void VoiceSetChannel(const char* text);       // test command voicechannel <proximity|radio|global|direct:N>

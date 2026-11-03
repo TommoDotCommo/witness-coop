@@ -48,8 +48,11 @@ static std::vector<Row> Build() {
     v.push_back(Toggle("cfg:emote_third_person", "Third-person view when emoting", kPlayers, "1"));
     v.push_back(Toggle("cfg:dev_menu", "Developer menu (F8)", kPlayers, "0"));
     // Voice and sound
-    v.push_back(Choice_("cfg:voice_mode", "Voice chat", kVoice, {"Off", "Open mic (voice gate)", "Push to talk"}, "ptt")); v.back().values = {"off", "open", "ptt"};
+    v.push_back(Choice_("cfg:voice_mode", "Voice chat", kVoice, {"Off", "Open mic (voice gate)", "Push to talk", "Automatic"}, "auto")); v.back().values = {"off", "open", "ptt", "auto"};
+    v.back().hint = "Automatic: push to talk on keys, open mic after pad input";
     { Row r = R("cfg:key_voice", "Push-to-talk key", kVoice, kKey); r.def = guide::KeyName('B'); v.push_back(r); }
+    v.push_back(Choice_("cfg:pad_voice", "Push to talk on the pad", kVoice, {"None", "Left stick click", "Right stick click"}, "none")); v.back().values = {"none", "ls", "rs"};
+    v.back().hint = "the game uses both stick clicks too: the one chosen becomes push to talk only";
     v.push_back(Choice_("cfg:voice_channel", "Who hears you", kVoice, {"Players nearby", "Everyone", "Radio"}, "proximity")); v.back().values = {"proximity", "global", "radio"};      // (Radio is last: the launcher leaves it out unless Experimental: handheld radio is on)
     v.push_back(Slider("cfg:voice_volume", "Voice volume", kVoice, 0, 100, 1, 5, "%", "100"));
     v.push_back(Slider("cfg:mic_volume", "Microphone volume", kVoice, 0, 100, 1, 5, "%", "100"));
@@ -71,6 +74,10 @@ static std::vector<Row> Build() {
         if (guide::IsRadioBinding(b)) r.hint = "only with Experimental: handheld radio (Launcher)";
         v.push_back(r);
     }
+    // the controller (K4, H5): the co-op layer on View, listed from the one table (common/padlayer.h) the quick guide lists too
+    v.push_back(Toggle("cfg:pad_layer", "Co-op buttons on the pad (View)", kControls, "1", "off: the game gets the whole pad"));
+    { std::string t = "Controller:"; for (const auto& l : padlayer::kLines) if (std::string(l.id) != "voice") t += std::string("\n") + l.buttons + ": " + l.text;
+      Row n = R("note:pad", t, kControls, kNote); v.push_back(n); }
     for (const auto& d : wl::SaveOptionDefs()) {
         std::string n = d.name; bool display = n == "user_brightness" || n == "user_fov_vertical" || n == "user_reticle" || n == "user_vignetting";
         Section s = display ? kDisplay : kControls; Row r;

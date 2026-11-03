@@ -133,6 +133,7 @@ struct Nav {
     }
 };
 inline constexpr const char* kHint = "Up/Down: choose  Enter: watch  M: mute  Left/Right: volume  L: leave  Esc: close";
+inline constexpr const char* kPadHint = "Right stick: point  RT or A: click  Let go of View: close";      // after pad input (K7)
 // The confirmation text before leaving (the standard's I7): what happens to the others.
 inline std::string LeaveText(bool host) { return host ? "Leave? Everyone returns to the lobby." : "Leave? The others keep playing."; }
 }  // namespace wpanel

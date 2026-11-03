@@ -43,7 +43,10 @@ struct Cfg {
     std::string startProgress;   // start_progress=<spec>: the next new game starts with these parts of the map completed (the launcher arms it; progress/progress.h says how a spec reads); disarmed once applied
     bool noSaveMeta = false;     // test mutant: no <save>.coop.txt is written
     bool noStartProgress = false, progressNoPrereq = false;      // test mutants: the setting is ignored / only the chosen panels are solved, not what the game needs before them
-    int voiceMode = 2;           // voice_mode=off|open|ptt (0, 1, 2): voice chat is off / the microphone is open (a voice-activity gate) / push to talk with key_voice (default)
+    int voiceMode = 3;           // voice_mode=off|open|ptt|auto (0, 1, 2, 3): voice chat is off / the microphone is open (a voice-activity gate) / push to talk with key_voice / automatic (default): push to talk after keyboard input, open mic after pad input (common/padlayer.h)
+    bool padLayer = true;        // pad_layer=0: the co-op pad layer on View is off (the game gets the whole pad)
+    int padVoice = 0;            // pad_voice=none|ls|rs: a stick click held is push to talk (the game's own hints use both stick clicks, so none by default)
+    bool padLeak = false;        // test mutant pad_leak=1: only View is taken from the game, the D-pad, the face buttons and the sticks still reach it while View is held
     int voiceVolume = 100, micVolume = 100, gameVolume = 100;      // voice_volume= mic_volume= game_volume= percent (the game's volume is set on its Windows audio session)
     float voiceRange = 25.0f, voiceRadioRange = 0.0f;              // voice_range= metres within which players are heard in the world; voice_radio_range= metres beyond which not even the radio carries (0: no limit)
     bool voiceRadio = true;      // voice_radio=0: a voice beyond the range is not heard at all

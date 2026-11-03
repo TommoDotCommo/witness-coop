@@ -1,3 +1,4 @@
+#include "pad.h"
 #include "../common/guide.h"
 // Import-table hooks on the game's own executable (build 11370412), installed from DllMain before the game starts:
 //  - SHGetFolderPathW: the game finds its save folder with CSIDL_APPDATA, so every copy (and the owner's real game) shares
@@ -125,6 +126,7 @@ static FARPROC WINAPI HookGetProcAddress(HMODULE m, LPCSTR name) {
     if (p && !IS_INTRESOURCE(name) && !strcmp(name, "GetActiveWindow") && GetCfg().forceActive) {
         g_realGAW = (GetActiveWindowFn)p; Log("hooks: GetActiveWindow resolved by the game -> always the game window (force_active)"); return (FARPROC)FakeGetActiveWindow;
     }
+    if (p && !IS_INTRESOURCE(name) && !strcmp(name, "XInputGetState")) return (FARPROC)PadHookGetState((void*)p);      // the co-op pad layer (pad.cpp) answers the game's pad reads
     return p;
 }
 

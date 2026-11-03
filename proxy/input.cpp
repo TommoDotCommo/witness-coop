@@ -9,6 +9,7 @@
 #include "video.h"
 #include "povui.h"
 #include "social.h"
+#include "pad.h"
 
 bool HookImport(const char* dll, const char* fn, void* hook, void** orig);   // hooks.cpp
 void Log(const char* msg);
@@ -145,6 +146,7 @@ static BOOL WINAPI HookPeekMessageA(LPMSG m, HWND w, UINT lo, UINT hi, UINT rm) 
     BOOL r = g_origPeekA(m, w, lo, hi, rm);
     if (!r || !m || !(rm & PM_REMOVE)) return r;
     if (m->message == WM_KILLFOCUS || (m->message == WM_ACTIVATEAPP && !m->wParam)) GuideReset();
+    if (m->message == WM_KEYDOWN || m->message == WM_SYSKEYDOWN || m->message == WM_LBUTTONDOWN || m->message == WM_RBUTTONDOWN || m->message == WM_MBUTTONDOWN || m->message == WM_XBUTTONDOWN) PadNoteKeyboard();      // the hints show keys again (K7)
     if ((m->message == WM_KEYDOWN || m->message == WM_SYSKEYDOWN || m->message == WM_KEYUP || m->message == WM_SYSKEYUP) &&
         GuideKey((unsigned)m->wParam, m->message == WM_KEYDOWN || m->message == WM_SYSKEYDOWN)) { m->message = WM_NULL; return r; }
     if (m->message == WM_LBUTTONDOWN || m->message == WM_RBUTTONDOWN || m->message == WM_MBUTTONDOWN) ThirdPersonClick();      // a click (a puzzle): the emote view returns
