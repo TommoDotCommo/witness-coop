@@ -63,7 +63,14 @@ function Resolve-GameDir {
 }
 
 function Check-NotRunning($dir) {
-    $running = Get-Process witness64_d3d11, witness_launcher -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith($dir, 'OrdinalIgnoreCase') }
+    # Setup's PowerShell is 32-bit and cannot read the path of the 64-bit game through Get-Process: ask WMI for the image path instead.
+    $running = $null
+    try {
+        $running = Get-CimInstance Win32_Process -Filter "Name='witness64_d3d11.exe' OR Name='witness_launcher.exe'" -ErrorAction Stop |
+            Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($dir, 'OrdinalIgnoreCase') }
+    } catch {
+        $running = Get-Process witness64_d3d11, witness_launcher -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith($dir, 'OrdinalIgnoreCase') }
+    }
     if ($running) { Fail 'The Witness (or its co-op launcher) is running from that folder. Close it and run this again.' $ExitRunning }
 }
 
