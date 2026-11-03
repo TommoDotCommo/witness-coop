@@ -8,7 +8,7 @@ Project page and bug reports: https://github.com/TommoDotCommo/witness-coop
 
 You need The Witness on Steam, build 11370412 (the current one). Setup checks the game's
 exe and refuses any other build: the mod uses that build's addresses. Every player needs
-their own copy and this same mod version (the launcher shows it, and offers to update itself when a newer release is out: Play page, "About and updates"). If Setup says your build is not supported, see
+their own copy and this same mod version (the launcher shows it on its About tab, and offers to update itself when a newer release is out: a banner on Play). If Setup says your build is not supported, see
 "Setup says my build is not supported" below.
 
 
@@ -20,9 +20,11 @@ Install (easiest): the single file
 2. Setup finds The Witness in your Steam libraries (or asks for the folder), checks the build and
    shows what it will change. Click Install. Windows asks for administrator permission only if
    the game folder is protected.
-3. Click Play (launcher) when it finishes, or create a desktop shortcut. From now on start the
-   game through witness_launcher.exe in the game folder, not from Steam, when you want co-op.
-   Starting it from Steam still works: alone, with the mod loaded but nobody to connect to.
+3. Click Play when it finishes. From now on press Play on The Witness in Steam as usual: the game
+   opens the co-op launcher first, and the launcher starts the game for you (alone or with friends).
+   Do not want it? Settings > Launcher > "Show the launcher at start" off: Play in Steam then starts
+   the game directly; hold Shift while it starts to get the launcher back. witness_launcher.exe in the
+   game folder (or Setup's desktop shortcut) opens the launcher too.
 
 The single file unpacks itself into %LOCALAPPDATA%\witness-coop\setup\<version>\, runs the
 setup window from there and removes that folder when you close the window.
@@ -48,7 +50,7 @@ Install by hand (no Setup)
      witness_models\        (the whole folder: the player model)
    If the game folder already has a dsound.dll (another mod), rename that one to dsound.chain.dll
    first: the co-op mod loads it after itself.
-3. Start witness_launcher.exe from the game folder.
+3. Press Play on The Witness in Steam: the game opens the co-op launcher (or start witness_launcher.exe).
 Coming from v0.1.0-alpha: delete the old AnselSDK64.dll (the old co-op mod) and rename
 AnselSDK64_real.dll back to AnselSDK64.dll (or let Steam's Verify integrity of game files restore it).
 Setup does this for you, after checking the file is the game's own.
@@ -73,13 +75,10 @@ Not tried on a real Steam Deck yet. What should work, from how Proton and Wine l
   after The Witness has run once under Proton: if it is missing, start the game once and run the
   script again, or set this launch option in Steam (The Witness > Properties > Launch options):
     WINEDLLOVERRIDES="dsound=n,b" %command%
-- The launcher is a Windows program and has to run in the game's own Proton prefix. In Steam
-  (Desktop mode): Games > Add a Non-Steam Game > Browse to witness_launcher.exe in the game folder.
-  Open its Properties: Start In = the game folder; Compatibility = force the same Proton version as
-  The Witness; Launch Options =
-    STEAM_COMPAT_DATA_PATH="<your Steam library>/steamapps/compatdata/210970" %command%
-  Start that entry instead of the game for co-op. Its Lobby starts the game inside the same prefix.
-  Starting The Witness from Steam as usual loads the mod alone, like on Windows.
+- Press Play on The Witness in Steam, Game Mode included: the game opens the co-op launcher inside the
+  same Steam launch and Proton prefix, and the launcher starts the game from its lobby. Nothing else to
+  add to Steam. On a Steam Deck the launcher fills the screen and works with the controls: stick or
+  D-pad to move, A to choose, B to go back, LB/RB for the tabs, Start for the main button.
 - Unknown until someone tries: the overlay and model drawing under DXVK, voice chat (microphone) under Proton,
   the game window position on the Deck's screen. Please report what you see (the address is at the end).
 
@@ -99,27 +98,32 @@ shows one message ("Co-op is off") and the game runs as normal. Run Setup again 
 
 Playing with a friend
 ---------------------
-One of you hosts, the other joins. Both open witness_launcher.exe, with Steam running and online.
+One of you hosts, the other joins. Both press Play on The Witness in Steam (or open witness_launcher.exe),
+with Steam running and online. The launcher has four tabs: Play, Saves, Settings, About. On Play you
+choose Host a game, Join a friend or Play solo; hosting or joining turns Play into the Lobby, and
+Leave brings you back. Settings are saved as you change them.
 
 Over the internet (Steam, nothing to forward):
 Host:
-1. Lobby tab > Host on Steam. The launcher makes a friends-only Steam lobby and shows its number.
-2. Invite your friend: "Invite (overlay)" opens Steam's invite window if the overlay is there;
+1. Play > Host a game > Through Steam > Open lobby. The launcher makes a friends-only Steam lobby
+   and shows its number.
+2. Invite your friend: "Steam overlay" opens Steam's invite window if the overlay is there;
    or pick your friend in the list next to it and click "Invite friend" (a Steam chat invite);
    or tell them the lobby number.
-3. When your friend is in the lobby, choose Co-op (or a race) and press Start the game.
-   A countdown runs and both games start by themselves.
+3. When your friend is in the lobby and Ready, choose what to play (co-op or a race) and press
+   Start game. A countdown runs and both games start by themselves.
 Joining:
 1. Accept the invite in Steam (or "Join Game" on the host in your friends list). If the launcher
    is closed, Steam starts The Witness, which opens the launcher in the host's lobby instead.
-   Or paste the lobby number into the Invite field and press Join.
-2. Tick Ready. The host starts; your game starts with it.
+   Or Play > Join a friend, paste the lobby number and press Join.
+2. Press Ready. The host starts; your game starts with it.
 If something is wrong the launcher says so in plain words (Steam not running, offline, lobby full
 or gone, a different version of the mod). Everyone needs the same version of the mod.
 
 On a LAN, or by hand (Direct):
-Host: Lobby tab > Host direct (LAN). Send your friend the invite shown (address:port/CODE) with the
-Copy button. Joining: paste the invite > Join.
+Host: Play > Host a game > Direct > Open lobby. Send your friend the invite shown (address:port/CODE)
+with Copy invite. Joining: Play > Join a friend, paste the invite > Join. An invite link
+(witness-coop://...) opens the launcher with the invite already in the join box: check it, then press Join.
 Ports and firewall: Windows asks once to allow witness_launcher.exe and the game through
 the firewall: allow them on private networks. Direct play over the internet needs the host to
 forward UDP 47100 (the lobby) and UDP 47001 (the host's game), and sometimes the joiner 47002;
@@ -151,7 +155,7 @@ Known limits of this alpha
 - Nobody who joins after progress has been made gets the whole world yet; start together.
 - Everybody must have the same mod version (the lobby says so if not).
 - Steam Deck / Linux (Proton) is untested (see above). Copies of the game that are not Steam build 11370412 are not supported.
-- The game's own Launcher.variables (video settings) is written by the launcher's Video tab.
+- The game's own Launcher.variables (video settings) is written by the launcher (Settings > Display).
 
 Mod managers and scripts
 ------------------------
@@ -197,7 +201,7 @@ MIT licensed (LICENSE.txt). The Witness itself is not included.
 Reporting a problem
 -------------------
 Press F2 in the game the moment something goes wrong: the game saves the last minute and tells the other players' games to do the
-same. Then open witness_launcher.exe and press "Send diagnostics" (it works after a crash too). A zip appears on your desktop. It holds
+same. Then open the launcher and press About > "Send diagnostics" (it works after a crash too). A zip appears on your desktop. It holds
 the logs of your recent runs, a crash dump if the game crashed, your witness_coop.cfg and a summary of your PC. Your Windows and
 computer names, IP addresses and Steam IDs are replaced; no saves and no game files are in it, and nothing is uploaded. Attach it to
 a bug report at https://github.com/TommoDotCommo/witness-coop/issues/new?template=bug.yml , with your mod version, how you connected
