@@ -79,6 +79,7 @@ def make_zip(tag, fill, deflate=True, skip=(), machine=0x8664, extra=None, nomz=
             if name == 'dsound.dll' and nomz: data = b'XX' + data[2:]
             z.writestr(f'{PREFIX}-{tag}/{name}', data)
         z.writestr(f'{PREFIX}-{tag}/README.txt', b'readme')
+        z.writestr(f'{PREFIX}-{tag}/coop-mod.json', b'{}'); z.writestr('coop-mod.json', b'{}')      # (a release also holds the manifest in its top folder and at the zip root; the updater takes only the members it names)
         if extra: z.writestr(extra, b'evil')
     return buf.getvalue()
 

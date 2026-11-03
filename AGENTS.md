@@ -40,6 +40,12 @@ prepare a reviewable diff before asking to publish. Never force-push.
 - Keys and the player panel: `common/bindings.def` is the one binding table (guide, launcher Controls page and cfg parser read it); `common/guide.h` holds key codes (mouse buttons and the wheel are codes below 8),
   the shared co-op keys, the migration of moved defaults and the shared-key rules; `common/movedkeys.h` writes the one-time moved-keys list; `common/notices.h` is the one table of join/leave/lost/reconnect/version wording;
   `proxy/ui/player_panel.h` is the hold-Tab panel's model (rows, layout, hit test, keys), drawn by `proxy/overlay.cpp`. Tests: `make -C common test`, `make -C proxy/ui test`, `tools/qa.sh shared`.
+- Where run-time files live (J4): `common/userdata.h` decides it for the DLL and the launcher (`%LOCALAPPDATA%\witness-coop\`, or the game folder when its `witness_coop.cfg`
+  carries an instance key: `save_dir`, `force_active`, `run_unfocused`, `diag_dir`; test tools write such a file, the mod never does); `make -C common userdata-test`.
+- Package for mod managers (J5-J9): `tools/mod_manifest.py` (coop-mod.json, the Nexus copy note), `tools/versioninfo.py` (VERSIONINFO of every binary), checked by
+  `tools/check_release_package.py` and `tools/test_mod_manifest.py`; Setup's owner detection (Setup, a mod manager's hard links, a hand copy that gets adopted), install cards,
+  options (shortcut, firewall rule, `witness-coop://` handler) and verbs are in `dist/install-state.ps1`, `dist/witness-coop.ps1`, `dist/installer-gui.ps1`, `dist/installer.c`
+  and `dist/install-linux.sh`; tests `tools/test_setup_options.ps1`, `tools/test_setup_verbs.ps1`, `tools/test_install_linux.sh`, live `tools/userdata_live.sh`.
 - `local/`: ignored private configuration, disposable test copies, release zips (`local/release/`) and QA evidence.
 
 ## Build and validation
