@@ -82,7 +82,7 @@ crash-test: $(BUILD)/crash-test.exe $(addsuffix .exe,$(addprefix $(BUILD)/crash-
 
 # the launcher's shape (shell.h: tabs, settings rows, key capture, pad navigation, hints) and the Steam start decision (common/handover.h): game-free, with mutants
 SHSRC = shell.cpp shell_test.cpp core.cpp ../proxy/progress/savemeta.cpp ../proxy/progress/progress.cpp ../proxy/progress/progress_data.cpp
-SHELL_MUTANTS = SHELL_MUT_ALLOW_F1 SHELL_MUT_PAD_LEVEL HANDOVER_MUT_IGNORE_SESSION SHELL_MUT_TYPED_VOLUME SHELL_MUT_PLAYER_NUMBER SHELL_MUT_TV_DEFAULT_ON
+SHELL_MUTANTS = SHELL_MUT_ALLOW_F1 SHELL_MUT_PAD_LEVEL HANDOVER_MUT_IGNORE_SESSION SHELL_MUT_TYPED_VOLUME SHELL_MUT_PLAYER_NUMBER SHELL_MUT_TV_DEFAULT_ON SHELL_MUT_RADIO_DEFAULT_ON
 $(BUILD)/shell-test.exe: $(SHSRC) shell.h core.h ../common/handover.h ../common/guide.h ../common/bindings.def ../proxy/config.h
 	mkdir -p $(BUILD)
 	$(CXX) -std=c++17 -O2 -Wall -Wextra -static -o $@ $(SHSRC)

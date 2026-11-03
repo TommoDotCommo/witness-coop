@@ -34,6 +34,7 @@ struct Row {
     std::string zeroText;       // sliders: what 0 means ("none", "unlimited"), empty when 0 is a number
     std::string hint;
     bool hostDecides = false;   // E2: tagged "host decides"
+    bool hideAtDefault = false; // the launcher shows the row only when the cfg holds a value other than the default
     bool inSave = false;        // the game's own option inside a save: "save to change" applies
 };
 const std::vector<Row>& Rows();                           // every row, in section order

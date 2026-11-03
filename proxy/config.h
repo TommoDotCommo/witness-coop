@@ -55,7 +55,9 @@ struct Cfg {
     bool runUnfocused = false;      // run_unfocused=1: the game keeps running at full speed (not the ~10 fps of a background window) when its window is not active; the keyboard and mouse still only reach the window that has the focus
     bool noSeeThrough = false; float ghostAlpha = 0.22f;      // see_through=0: players stay solid when they are in the way of a puzzle; ghost_alpha=: how see-through they become (ghost/ghost.h)
     bool showLauncher = true;      // show_launcher=0: Play in Steam starts the game itself instead of the co-op launcher (hold Shift while it starts to get the launcher; common/handover.h)
-    bool radioEnabled = true; // radio_enabled=0: hide and disable the handheld radio
+    bool experimentalRadio = false; // experimental_radio=1: the handheld radio (key R, prop, antenna light, Radio channel, RADIO mark) exists; 0: none of it runs, draws, is sent or listens; the far-voice radio sound is not part of it
+    bool radioEnabled = true; // radio_enabled=0: also switch the handheld radio off when experimental_radio is on (test and old configs)
+    bool RadioOn() const { return experimentalRadio && radioEnabled; }
     bool noRadioView = false, noRadioPose = false; // test mutants: omit the view model / right-arm overlay
     std::string voiceChannel = "proximity";      // voice_channel=proximity|radio|global|direct:<player id>: who hears this player and how (voice/voice.h)
     std::string voiceTestTone;   // voice_test_tone=120,1000,5500: the transmitted voice is a sum of these tones instead of the microphone (tests)

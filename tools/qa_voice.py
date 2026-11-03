@@ -12,7 +12,7 @@ import qa_sweep
 TONES = 'voice_test_tone=120,1000,5500\nvoice_mute_output=1\n'
 
 def run(mode, cfg_a='', cfg_b='', gv=35):
-    a = ('name=Alpha\n' + TONES + ('voice_mode=open\n' if mode in ('open', 'channels') else 'voice_mode=ptt\n') + cfg_a).strip()
+    a = ('name=Alpha\n' + TONES + ('voice_mode=open\n' if mode in ('open', 'channels') else 'voice_mode=ptt\n') + ('experimental_radio=1\n' if mode == 'channels' else '') + cfg_a).strip()
     b = ('name=Beta\nvoice_mute_output=1\nvoice_mode=off\n' + ('voice_volume=50\nvoice_radio_range=100\ngame_volume=%d\n' % gv if mode == 'open' else 'voice_volume=50\n' if mode == 'channels' else '') + cfg_b).strip()
     qa_sweep.restart(a, b)
     args = [str(pid('A')), win(DIR1), str(pid('B')), win(DIR2), mode] + (['0.5', '100', '%.2f' % (gv / 100.0)] if mode == 'open' else ['0.5'] if mode == 'channels' else [])

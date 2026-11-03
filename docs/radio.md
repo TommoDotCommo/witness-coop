@@ -1,5 +1,14 @@
 # Handheld radio
 
+**Experimental, off by default.** Everything below (key R, the hold, the prop in first person and on the adventurer, the antenna light, the Radio entry of the
+channel list, the RADIO mark in the player panel) exists only with `experimental_radio=1` (launcher: Settings, Launcher, *Experimental: handheld radio*,
+next to *Experimental: TV features*; applies at the next start). Off, R does nothing and stays bound, `voice_channel=radio` and `Y` give the proximity
+channel and skip radio, the quick guide does not mention it, and nothing radio-specific is sent. `radio_enabled=0` still switches it off when the option is on.
+The far-voice radio sound (`voice_radio`, `voice_radio_range`, a player beyond `voice_range` sounds like a walkie-talkie) is **not** part of it: it is ordinary
+proximity voice, and its two launcher rows are shown only when the cfg changes them.
+Mixed groups: a player with it off still hears a radio-channel sender (everybody hears the radio channel, band-limited), sees no prop or arm and no RADIO mark on them;
+a player with it on sees no prop on the one with it off, who sends no radio flags.
+
 Hold **R** to talk on the session radio. **B** retains the selected voice channel;
 **Y** cycles channels. Releasing R returns to that selection. **F1** shows the
 configured bindings. The launcher's Settings (Controls), configuration parser and guide

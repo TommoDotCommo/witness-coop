@@ -141,8 +141,9 @@ In the game
 - Hold X to draw on the world where you look, in your colour; everyone sees it, in puzzles too.
   Shift+X clears your ink, B changes the colour. Z toggles a pen you move over the screen for
   precise lines (Backspace undoes).
-- Hold N to talk (push to talk); hold R to talk on the radio (everyone, at any distance). H steps
-  through the voice channels: nearby players hear you as if you were there, radio, or an open line.
+- Hold N to talk (push to talk); Y steps through the voice
+  channels: nearby players hear you as if you were there, or an open line. Players far away sound like
+  a walkie-talkie. (The handheld radio on R is experimental: Settings, Launcher, Experimental.)
 - V watches the other player's screen (small picture); F9 changes its size.
 - What is shared: solved panels, opened doors, powered panels and lit cables, the lines you draw
   on a panel. Not shared yet: lasers, bridges, plates and a few special puzzles (both of you can
