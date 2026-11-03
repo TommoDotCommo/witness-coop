@@ -77,11 +77,16 @@ inline int Answer(cd_rate* rate, const uint8_t* q, size_t n, uint32_t fromIp, ui
 inline bool IsProbe(const uint8_t* q, size_t n) { return lj_is_probe(q, n) != 0; }
 
 // ---- C3: the invite the host copies. Direct: every working route best first, the port, the secret. Steam: the Steam lobby (no routes: a Steam lobby has no UDP listener).
-struct InviteIn { std::string name; uint32_t secret = 0; unsigned port = 0; bool inviteOnly = false; const lh_addr* lan = nullptr; int nlan = 0; uint32_t tailscaleIp = 0, internetIp = 0; bool internetOk = false; uint64_t steamLobby = 0; };
+struct InviteIn { std::string name; uint32_t secret = 0; unsigned port = 0; bool inviteOnly = false; const lh_addr* lan = nullptr; int nlan = 0; uint32_t tailscaleIp = 0, internetIp = 0; bool internetOk = false; uint64_t steamLobby = 0;
+                  uint32_t advertiseIp = 0; };      // advertiseIp: Settings > Network "Friends reach this PC at" (blank: found by itself): the only route then
 inline bool MakeInvite(const InviteIn& in, std::string* code, std::string* message) {
     ci_invite v; memset(&v, 0, sizeof v); char c[CI_CODE_MAX], m[CI_CODE_MAX + 160];
     v.secret = in.secret; v.port = (uint16_t)in.port; v.flags = (uint8_t)(in.inviteOnly ? CI_FLAG_INVITE_ONLY : 0);
     if (in.steamLobby) { v.flags |= CI_FLAG_STEAM; v.steam_lobby = in.steamLobby; }
+    else if (in.advertiseIp) {
+        int wan = lh_wan_class(in.advertiseIp); v.n = 1; lh_ip_put(v.route[0].ip, in.advertiseIp);
+        v.route[0].kind = (uint8_t)(cd_tailscale_ip(in.advertiseIp) ? CI_VPN : wan == LH_WAN_PUBLIC ? CI_INTERNET : CI_LAN);
+    }
     else lh_invite_routes(&v, in.lan, in.nlan, in.tailscaleIp, in.internetIp, in.internetOk ? 1 : 0);
     if ((!v.n && !in.steamLobby) || !ci_encode(&v, LJ_GAME, c, sizeof c)) return false;
     if (!ci_message(in.name.empty() ? "Player" : in.name.c_str(), WC_PRODUCT, WC_JOIN_PAGE, c, m, sizeof m)) return false;

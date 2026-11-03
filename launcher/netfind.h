@@ -41,7 +41,8 @@ int nf_invite_probe_result(uint32_t *ip, unsigned *port, int *route);   /* -1 ru
 enum { NF_STEAM, NF_LAN, NF_TAILSCALE, NF_INTERNET, NF_FIREWALL, NF_ROWS };
 enum { NF_CHECKING, NF_OK, NF_WARN, NF_OFF };
 struct nf_host_row { int state; char title[24], result[200], fix[240]; };
-void nf_host_open(unsigned lobby_port, unsigned game_port, int steam, int invite_only, const struct nf_settings *s, const char *launcher_exe, const char *game_exe);
+void nf_host_open(unsigned lobby_port, unsigned game_port, int steam, int invite_only, const struct nf_settings *s, const char *launcher_exe, const char *game_exe,
+                  uint32_t advertise_ip);   /* advertise_ip: "Friends reach this PC at" (0: this PC's own addresses) */
 void nf_host_close(void);                               /* removes the router mappings; the launcher closing calls it too */
 int nf_host_rows(struct nf_host_row *out);              /* NF_ROWS rows */
 /* the routes an invite may carry: LAN addresses (best first), this PC's Tailscale address, the internet address and whether it may go in */

@@ -43,6 +43,11 @@ int main() {
     std::string scode; check("Steam invite: made without routes", jg::MakeInvite(sin, &scode, nullptr));
     jg::Plan ps = jg::PlanPaste(scode, 47100);
     check("paste a Steam host's code: joins that Steam lobby", ps.action == jg::kSteam && ps.lobby == 109775241234567890ull, ps.said);
+    jg::InviteIn adv = in; adv.advertiseIp = IP(127, 0, 0, 1); std::string acode; jg::MakeInvite(adv, &acode, nullptr); jg::Plan pv = jg::PlanPaste(acode, 47100);
+    check("\"Friends reach this PC at\": that address is the invite's only route", pv.action == jg::kProbeInvite && pv.invite.n == 1 && cd_ip(pv.invite.route[0].ip) == IP(127, 0, 0, 1) && pv.invite.route[0].kind == CI_LAN, pv.said);
+    adv.advertiseIp = IP(100, 70, 1, 2); jg::MakeInvite(adv, &acode, nullptr); pv = jg::PlanPaste(acode, 47100);
+    adv.advertiseIp = IP(203, 0, 113, 9); std::string icode; jg::MakeInvite(adv, &icode, nullptr); jg::Plan pi = jg::PlanPaste(icode, 47100);
+    check("   a Tailscale address goes as Tailscale, a public one as internet", pv.invite.route[0].kind == CI_VPN && pi.invite.route[0].kind == CI_INTERNET);
     jg::InviteIn none; none.name = "Fox"; none.port = 47100;
     check("no route and no Steam lobby: no invite to copy", !jg::MakeInvite(none, nullptr, nullptr));
 

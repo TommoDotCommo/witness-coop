@@ -280,6 +280,7 @@ enum { RT_OFF, RT_TRYING, RT_MAPPED, RT_FAILED };
 enum { TS_CHECKING, TS_RUNNING, TS_ABSENT, TS_STOPPED };
 static volatile LONG host_gen;
 static struct {
+    uint32_t advertise;
     int open, steam, invite_only, nlan, ts_state, router_state, lan_probe, fw_done, game_mapped;
     unsigned port, game_port;
     uint32_t ts_ip;
@@ -342,7 +343,8 @@ static DWORD WINAPI host_worker(void *param)
     memset(lan, 0, sizeof(lan));
     memset(&router, 0, sizeof(router)); memset(&grouter, 0, sizeof(grouter));
     wsa();
-    n = lan_addresses(lan, NF_ADDRS);
+    if (H.advertise) { lan[0].ip = H.advertise; lan[0].prefix = 32; n = 1; }      /* the address the player set: the only one shown and probed */
+    else n = lan_addresses(lan, NF_ADDRS);
     EnterCriticalSection(&lk);
     if (gen == host_gen) { memcpy(H.lan, lan, sizeof(lan)); H.nlan = n; }
     LeaveCriticalSection(&lk);
@@ -400,7 +402,8 @@ static DWORD WINAPI host_worker(void *param)
     LeaveCriticalSection(&lk);
     return 0;
 }
-void nf_host_open(unsigned lobby_port, unsigned game_port, int steam, int invite_only, const struct nf_settings *s, const char *launcher_exe, const char *game_exe)
+void nf_host_open(unsigned lobby_port, unsigned game_port, int steam, int invite_only, const struct nf_settings *s, const char *launcher_exe, const char *game_exe,
+                  uint32_t advertise_ip)
 {
     lock_make();
     nf_host_close();
@@ -409,7 +412,7 @@ void nf_host_open(unsigned lobby_port, unsigned game_port, int steam, int invite
     H.open = 1; H.steam = steam; H.invite_only = invite_only; H.port = lobby_port; H.game_port = game_port; H.set = *s;
     snprintf(H.launcher_exe, sizeof(H.launcher_exe), "%s", launcher_exe ? launcher_exe : "");
     snprintf(H.game_exe, sizeof(H.game_exe), "%s", game_exe ? game_exe : "");
-    H.ts_state = TS_CHECKING;
+    H.ts_state = TS_CHECKING; H.advertise = advertise_ip;
     H.router_state = !steam && s->upnp ? RT_TRYING : RT_OFF;
     LeaveCriticalSection(&lk);
     H.thread = CreateThread(NULL, 0, host_worker, (void *)(INT_PTR)InterlockedIncrement(&host_gen), 0, NULL);
@@ -428,7 +431,7 @@ void nf_host_close(void)
     H.thread = NULL;
     H.open = 0;
 }
-static const char *fix_firewall = "Setup can add the rule (tick \"Allow hosting through Windows Firewall\"), or allow The Witness when Windows asks, on Private and Public networks.";
+static const char *fix_firewall = "Run Setup and tick \"Allow hosting through Windows Firewall\", or allow The Witness when Windows asks (Private and Public).";
 int nf_host_rows(struct nf_host_row *r)
 {
     char lan[16], ext[16], ts[16];

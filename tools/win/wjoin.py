@@ -2,10 +2,11 @@
 # its Join list shows A from the LAN scan within 6 s, and B joins from the row (no code). B leaves and joins again by pasting A's WIT- invite code (every route at once).
 # A's "Friends can join by" says Same network OK (the lobby answered its own LAN-address probe). B remembered A as a recent host. Then A hosts invite only:
 # B's list no longer shows A, and the pasted code still joins (the code carries the secret). Every check reads the launchers' stat files (state, not pictures).
-# usage: wjoin.py <launcher A> <dir A> <launcher B> <dir B> <lobby port> <name A> <rect A> <rect B> [mutant]
+# usage: wjoin.py <launcher A> <dir A> <launcher B> <dir B> <lobby port> <name A> <rect A> <rect B> [mutant | pictures <folder>]
+#   pictures: the windows at 1280x800, and window pictures (PrintWindow: nothing else on the desktop) of B's Join list and A's lobby into <folder> as BMP
 #   mutant: B is a build that ignores every CPS2 answer: A must not be listed (the run must fail its list checks)
 import os, re, subprocess, sys, time
-exeA, dirA, exeB, dirB, lport, nameA, rectA, rectB = sys.argv[1:9]; lport = int(lport); mutant = len(sys.argv) > 9 and sys.argv[9] == 'mutant'
+exeA, dirA, exeB, dirB, lport, nameA, rectA, rectB = sys.argv[1:9]; lport = int(lport); mutant = len(sys.argv) > 9 and sys.argv[9] == 'mutant'; pics = sys.argv[10] if len(sys.argv) > 10 and sys.argv[9] == 'pictures' else ''
 here = os.path.dirname(os.path.abspath(__file__))
 def sp(d): return os.path.join(d, 'launcher_stat.txt')
 def cp(d): return os.path.join(d, 'launcher_cmd.txt')
@@ -48,6 +49,26 @@ def wait(d, pred, secs):
 ok = True
 def check(name, cond, detail=''):
     global ok; ok = ok and bool(cond); print('  %-120s %s  (%s)' % (name, 'ok' if cond else 'FAILED', str(detail)[:260]), flush=True)
+def picture(pid, name):
+    import ctypes, ctypes.wintypes as wt, struct
+    u = ctypes.WinDLL('user32'); g32 = ctypes.WinDLL('gdi32'); found = []
+    u.GetWindowDC.restype = wt.HDC; u.GetWindowDC.argtypes = [wt.HWND]; u.ReleaseDC.argtypes = [wt.HWND, wt.HDC]; u.PrintWindow.argtypes = [wt.HWND, wt.HDC, wt.UINT]; u.RedrawWindow.argtypes = [wt.HWND, ctypes.c_void_p, ctypes.c_void_p, wt.UINT]
+    for f, r, a in (('CreateCompatibleDC', ctypes.c_void_p, [wt.HDC]), ('CreateCompatibleBitmap', ctypes.c_void_p, [wt.HDC, ctypes.c_int, ctypes.c_int]), ('SelectObject', ctypes.c_void_p, [ctypes.c_void_p, ctypes.c_void_p]),
+                    ('GetDIBits', ctypes.c_int, [ctypes.c_void_p, ctypes.c_void_p, wt.UINT, wt.UINT, ctypes.c_void_p, ctypes.c_void_p, wt.UINT]), ('DeleteObject', wt.BOOL, [ctypes.c_void_p]), ('DeleteDC', wt.BOOL, [ctypes.c_void_p])):
+        getattr(g32, f).restype = r; getattr(g32, f).argtypes = a
+    @ctypes.WINFUNCTYPE(wt.BOOL, wt.HWND, wt.LPARAM)
+    def cb(h, l):
+        p = wt.DWORD(); u.GetWindowThreadProcessId(h, ctypes.byref(p)); c = ctypes.create_unicode_buffer(40); u.GetClassNameW(h, c, 40)
+        if p.value == pid and c.value == 'WitnessLauncher' and u.IsWindowVisible(h): found.append(h)
+        return True
+    u.EnumWindows(cb, 0)
+    if not found: print('  no window for the picture', name); return
+    h = found[0]; u.RedrawWindow(h, None, None, 0x1 | 0x80 | 0x100); time.sleep(0.4)
+    r = wt.RECT(); u.GetWindowRect(h, ctypes.byref(r)); w, hh = r.right - r.left, r.bottom - r.top
+    dc = u.GetWindowDC(h); mdc = g32.CreateCompatibleDC(dc); bmp = g32.CreateCompatibleBitmap(dc, w, hh); g32.SelectObject(mdc, bmp); u.PrintWindow(h, mdc, 2)
+    hdr = struct.pack('<IiiHHIIiiII', 40, w, -hh, 1, 32, 0, w * hh * 4, 0, 0, 0, 0); buf = ctypes.create_string_buffer(w * hh * 4); g32.GetDIBits(mdc, bmp, 0, hh, buf, hdr, 0)
+    with open(os.path.join(pics, name + '.bmp'), 'wb') as f: f.write(struct.pack('<2sIHHI', b'BM', 54 + w * hh * 4, 0, 0, 54) + hdr + bytes(buf))
+    g32.DeleteObject(bmp); g32.DeleteDC(mdc); u.ReleaseDC(h, dc); print('  picture', name, w, hh, flush=True)
 def listed(s): return [r for r in s['rows'] if r['name'] == nameA]
 for d in (dirA, dirB):
     for f in (sp(d), cp(d)):
@@ -59,7 +80,7 @@ try:
         p = subprocess.Popen([exe, '--dir', d, '--no-activate', '--stat-file', sp(d), '--cmd-file', cp(d)], startupinfo=si); procs.append(p)
         print('LAUNCHERPID %d' % p.pid, flush=True)
     for p, rect in zip(procs, (rectA, rectB)):
-        time.sleep(1.0); x, y, w, h = rect.split(); subprocess.run([sys.executable, os.path.join(here, 'wplace.py'), str(p.pid), x, y, w, h], capture_output=True, timeout=30)
+        time.sleep(1.0); x, y, w, h = rect.split(); w, h = ('1280', '800') if pics else (w, h); subprocess.run([sys.executable, os.path.join(here, 'wplace.py'), str(p.pid), x, y, w, h], capture_output=True, timeout=30)
     a = wait(dirA, lambda s: True, 20); b = wait(dirB, lambda s: True, 20)
     check('0. both launchers are up', a and b, '')
     cmd(dirA, 'tab 0', 'choice host', 'host %d' % lport)
@@ -72,11 +93,14 @@ try:
     check('2. B chooses Join a friend: its Join list shows A from the LAN within 6 s', b and listed(b) and listed(b)[0]['route'] == 0 and dt <= 6.5, b and (round(dt, 1), b['rows'], b['joinlist']))
     row = b and listed(b) and listed(b)[0]
     check('   the row says in lobby, 1 of 16, LAN, a ping; same version (not greyed)', row and 'in lobby' in row['line'] and '1 of 16' in row['line'] and 'LAN' in row['line'] and not row['mismatch'], row)
+    if pics: time.sleep(1.0); picture(procs[1].pid, 'launcher_join')
     a = stat(dirA); check('   A answered B\'s probes (CPQ2 "WIT ")', a and a.get('probes', 0) >= 1, a and a.get('probes'))
     if not mutant:
         cmd(dirB, 'joinrow ' + nameA)
         b = wait(dirB, lambda s: s['lobby']['joined'] and len(s['members']) == 2, 15); a = wait(dirA, lambda s: len(s['members']) == 2, 10)
         check('3. B joins from the row (no code: the lobby is open to my networks); both lists show two members', b and a and b['lobby'].get('joined') and len(a['members']) == 2, b and (b['lobby'], b['status']))
+        if pics:
+            cmd(dirA, 'chat Everybody here? The panel in the garden is a good start.'); cmd(dirB, 'chat Here. Ready when you are.', 'ready 1'); time.sleep(2.0); picture(procs[0].pid, 'launcher_lobby')
         b = wait(dirB, lambda s: s['joinlist'].get('recents') == '1', 5)
         check('   B remembered A as a recent host (route LAN)', b and b['joinlist'].get('recents') == '1' and b['joinlist'].get('route') == '0', b and b['joinlist'])
         code = a['invite_code']

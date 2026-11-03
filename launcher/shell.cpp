@@ -111,7 +111,7 @@ static std::vector<Row> Build() {
     v.push_back(Toggle("cfg:find_tailscale", "Find friends on Tailscale", kNetwork, "1", "when Tailscale is installed: asks your tailnet's online devices"));
     v.push_back(Toggle("cfg:upnp", "Open the router port while hosting", kNetwork, "1", "UPnP or NAT-PMP, removed when the lobby closes"));
     v.push_back(Toggle("cfg:internet_in_invite", "Put my internet address in invites", kNetwork, "1", "only when the router opened the port and the address is really yours"));
-    { Row r = R("cfg:lobby_advertise", "Friends reach this PC at", kNetwork, kText); r.hint = "blank: automatic"; v.push_back(r); }
+    { Row r = R("cfg:lobby_advertise", "Friends reach this PC at", kNetwork, kText); r.hint = "blank: found by itself; an address or name here is the only way in the invite"; v.push_back(r); }
     { Row r = R("cfgmulti:peer", "Direct play without a lobby: number,address,port per line", kNetwork, kPeers); r.hint = "advanced; the lobby fills this in itself"; v.push_back(r); }
     // Launcher
     v.push_back(Toggle("cfg:show_launcher", "Show the launcher at start", kLauncher, "1", "off: Play in Steam starts the game directly; hold Shift while it starts to see the launcher"));
