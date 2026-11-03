@@ -9,6 +9,7 @@ Lines for the next beta's notes. Not published.
 - **Coming from v0.1.0-alpha:** Setup, `install-linux.sh` and the launcher's updater put the game's own `AnselSDK64.dll` back (only after
   checking its SHA-256), remove the old proxy and `AnselSDK64_real.dll`, and install the new layout. A file that is not the game's own stops
   this with a plain message and nothing is changed; *Verify integrity of game files* fixes it. An interrupted migration finishes on the next run.
+  New files copied over an alpha install by hand never run two copies of the mod: the new `dsound.dll` stays passive while the old proxy is there.
 - **Another mod named `dsound.dll`** (an ASI loader, for example) is kept as `dsound.chain.dll` and loaded by the co-op mod right after itself;
   uninstall puts it back. Its own DirectSound exports are not used (a full DirectSound replacement does not combine with co-op).
 - **Steam Deck / Linux:** `install-linux.sh` writes the DLL override for `witness64_d3d11.exe` into the game's Proton prefix (with a backup of

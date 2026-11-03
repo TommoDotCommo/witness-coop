@@ -102,7 +102,9 @@ Every file Setup writes gets a `.coop-receipt.json` beside it, so Uninstall remo
 - **Coming from v0.1.0-alpha** (the proxy in `AnselSDK64.dll`, the game's own file renamed `AnselSDK64_real.dll`): Setup, `install-linux.sh` and the launcher's
   updater put the game's own `AnselSDK64.dll` back first (only after checking its SHA-256 `3b0677ae...`; a staged copy, one replacing rename; an interrupted
   run finishes on the next one), then remove the old proxy and its receipts. A file whose hash is not the game's stops the migration with a plain message and
-  nothing is changed: *Verify integrity of game files* in Steam fixes it.
+  nothing is changed: *Verify integrity of game files* in Steam fixes it. If the new files are copied over an alpha install by hand without that step, the
+  game would load both copies of the mod: the new `dsound.dll` sees the old proxy already mapped and stays passive (it only passes the sound calls on and
+  logs `OTHER COPY`), so the old copy runs co-op alone until Setup finishes the move.
 
 The one-file Setup checks its embedded payload against a SHA-256 compiled into it, unpacks it into a fresh
 `%LOCALAPPDATA%\witness-coop\setup\<version>\` (created exclusively: an existing folder is never reused, a link anywhere on the way is
