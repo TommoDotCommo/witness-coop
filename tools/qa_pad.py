@@ -2,7 +2,7 @@
 """T2 scenario for the co-op pad layer (tools/win/wpad.py): A stands in for a pad through the game's own XInputGetState path; hold View opens the player
 panel, View + D-pad up the emote wheel while the player stays put, View + RB quick chat reaches B, a tap pings, View + D-pad down types on the on-screen keyboard.
 Mutant: pad_leak=1 (only View is taken: the D-pad and the sticks reach the game while View is held) must fail.
-usage: qa_pad.py [clean] (called by tools/qa.sh pad; `clean`: without the mutant)"""
+usage: qa_pad.py [clean|mutant] (called by tools/qa.sh pad; `clean`: without the mutant, `mutant`: only the mutant)"""
 import os, subprocess, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from witness import TOOLS, DIR1, DIR2, PYW, pid, win
@@ -17,7 +17,8 @@ def run(cfg_a=''):
 
 def main():
     results = []
-    print('=== pad: clean build', flush=True); ok = run(); results.append(('clean', ok)); print('clean: %s' % ('PASS' if ok else 'FAIL'), flush=True)
+    if sys.argv[1:] != ['mutant']:
+        print('=== pad: clean build', flush=True); ok = run(); results.append(('clean', ok)); print('clean: %s' % ('PASS' if ok else 'FAIL'), flush=True)
     if sys.argv[1:] != ['clean']:
         print('=== pad: MUTANT pad_leak (the D-pad and the sticks reach the game while View is held)', flush=True)
         caught = not run('pad_leak=1'); results.append(('pad_leak', caught)); print('mutant: %s' % ('caught' if caught else 'NOT CAUGHT'), flush=True)
