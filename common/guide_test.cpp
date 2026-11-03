@@ -149,7 +149,7 @@ int main() {
         char tmpl[] = "/tmp/mkXXXXXX"; std::string d = mkdtemp(tmpl) ? std::string(tmpl) + "/" : "";
         check(movedkeys::WriteOnce(d, n), "first start writes the list"); check(!movedkeys::WriteOnce(d, n), "second start writes nothing");
         check(movedkeys::SchemeOf(d) == movedkeys::kScheme, "scheme recorded");
-        check(movedkeys::Dir("C:\\g\\", false, "C:\\U") == "C:\\U\\witness-coop\\" && movedkeys::Dir("C:\\g\\", true, "C:\\U") == "C:\\g\\", "per-user folder, or beside the cfg for a lab instance");
+        check(movedkeys::Dir("C:\\g\\", false, "C:\\U") == "C:\\U\\witness-coop\\" && movedkeys::Dir("C:\\g\\", true, "C:\\U") == "C:\\g\\", "per-user folder, or beside the cfg for a test copy");
         std::remove((d + "moved_keys.txt").c_str()); std::remove((d + "keys_scheme").c_str()); rmdir(tmpl); }
 
     std::cout << (failures ? "FAILED" : "ALL OK") << '\n';

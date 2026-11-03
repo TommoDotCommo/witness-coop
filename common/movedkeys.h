@@ -23,7 +23,7 @@ inline FILE* Open(const std::string& utf8, const char* mode) {      // UTF-8 pat
 }
 constexpr int kScheme = 2;      // 1: the keys before 2026-11 (P ping, N talk, G emote, H channel, B ink, V watch, F5 list); 2: the shared co-op keys
 // `cfgDir`: the folder of witness_coop.cfg with a trailing separator. The per-user folder (%LOCALAPPDATA%\witness-coop\, where the logs live) is used unless
-// `instance` is true; lab copies (`instance`: a per-instance diag_dir) and installs without one keep the files beside the cfg.
+// `instance` is true; test copies (`instance`: a per-instance diag_dir or save folder) and installs without one keep the files beside the cfg.
 inline std::string Dir(const std::string& cfgDir, bool instance, const char* localAppData = nullptr) {
     if (!instance) {
         const char* la = localAppData ? localAppData : std::getenv("LOCALAPPDATA");
