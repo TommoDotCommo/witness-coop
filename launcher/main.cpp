@@ -396,7 +396,7 @@ std::wstring g_statFile, g_cmdFile; ULONGLONG g_statAt, g_launchedAt; unsigned g
 void LobbyStatus(const std::wstring& s) { SetWindowTextW(LB(ID_LB_STATUS), s.c_str()); if (!g_sess.Active()) Status(s); }
 std::string CfgGet(const char* k, const char* d = "") { return LoadCfg().Get(k, d); }
 lw::VoiceCfg VoiceCfgNow() {
-    wl::CfgFile c = LoadCfg(); lw::VoiceCfg v; std::string m = c.Get("voice_mode", "auto"); v.mode = m == "off" ? 0 : m == "open" ? 1 : m == "ptt" ? 2 : g_padLast ? 1 : 2;      // automatic: open mic when the launcher was last used with a pad Cfg keys;
+    wl::CfgFile c = LoadCfg(); lw::VoiceCfg v; std::string m = c.Get("voice_mode", "auto"); v.mode = m == "off" ? 0 : m == "open" ? 1 : m == "ptt" ? 2 : g_padLast ? 1 : 2; Cfg keys;      // (automatic: open mic when the launcher was last used with a pad)
     for (const auto& b : guide::bindings) {
         unsigned k = guide::MigrateDefault(b.config, guide::ParseKey(c.Get(b.config, guide::KeyName(b.initial))));
         if (k) keys.*b.member = k;
