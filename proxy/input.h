@@ -9,4 +9,5 @@ void InputChar(unsigned ch);                   // a typed character (WM_CHAR) fo
 void InputMouse(int dx, int dy, unsigned buttonFlags);      // RI_MOUSE_* flags, 0 for a pure move
 bool InputIdle();                               // nothing queued (the last event has gone to the game)
 void InputPump(HWND wnd);                      // render thread, once per frame: post the queued events to the game window
+bool InputRepeatIgnored(unsigned vk, long long lParam);      // WM_KEYDOWN autorepeat (bit 30) of a press key (F2-F4, F8-F11, [ ], V, Z, Y, the TV keys): taken and ignored (ui/key_repeat.h)
 unsigned InputStats(int which);                // 0 posted, 1 answered, 2 hook calls for real handles, 3 hook calls for our handles

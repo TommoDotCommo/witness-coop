@@ -29,7 +29,7 @@ struct Cfg {
     int modelShading = 1;        // model_shading=0: the old flat shading (no normal map, no specular, no shadow), for comparison
     bool noModelLife = false;    // test mutant: no blinks, glances, breathing, cloth or fidgets
     bool noModelNormalMap = false, noModelMaterialMap = false;   // diagnostics: ignore the baked normal map / the material map (flat relief; roughness 0.6, no metal)
-    bool footsteps = true; int footstepVolume = 100;             // footsteps=0: the other players walk silently (a test mutant); footstep_volume= percent
+    bool footsteps = true, footstepOldLevel = false; int footstepVolume = 100;             // footsteps=0: the other players walk silently (a test mutant); footstep_volume= percent (100 = the default level, about 16 dB under a voice; footstep_old_level=1 is a test mutant: the level before 2026-11)
     bool pauseWrongFlag = false; // test mutant: the first, wrong pause flag (it flips with F6 / F7 and with entering a puzzle)
 #define BIND(name, member, key, text, label) unsigned member = key;
 #include "../common/bindings.def"
@@ -86,7 +86,10 @@ struct Cfg {
     bool noPovRequest = false;     // twin: this game watches a player but never asks for the pictures
     std::string uiFont = "karmina"; // ui_font=karmina|notoserif|segoe: the face of the co-op text; the first two are read from the player's own data-pc.zip at start (common/gamefont.h), Segoe UI when that fails
     bool uiTightAtlas = false;     // twin: the old glyph atlas (no room under the glyphs, no clipping): '[' and ']' leave bits over 't' and 'v'
+    bool nearFade = true; float nearFadeStart = 1.4f, nearFadeEnd = 0.6f; // camera-to-eye distance, metres
+    bool tagsThroughWalls = false; // tags_through_walls=1: mutant/opt-in for player markers without scene occlusion
     bool noNameTags = false;       // twin: no name tags over the other players
+    bool keyRepeatToggle = false;  // twin: the press keys (F3, F4, F8, F9, F2, [ ], V, Z, Y, the TV keys) act again on every autorepeat press: a held F8 opens and closes the menu 30 times a second
     bool oldProjection = false;    // twin: world drawing assumes a 60 degree vertical field of view instead of the game's own
     bool noLineDraw = false;       // twin: remote lines are received but not drawn
     bool noLineMirror = false;     // twin: on a symmetry panel only the one traced path is drawn, not its reflection (the owner's report)

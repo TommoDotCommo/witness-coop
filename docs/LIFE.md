@@ -47,12 +47,31 @@ thread reports each plant (`voice/footsteps.h`: `FootstepTracker`, forwards or i
 the voice playback thread renders it beside the voices as a short synthesized footfall (`Foley`: a soft low-passed thud with a
 crisp scuff at the start, 2 ms attack, a decay of 170 ms walking and 215 ms running, a run landing harder) placed like a proximity
 voice: inverse distance, panned to the walker's side, gone beyond the voice range (`ComputeMix`), never clipping the output.
-`footsteps=0` silences them (the test mutant), `footstep_volume=` scales them. `voicestat` reports `footsteps N footsteps_dropped M`.
+`footsteps=0` silences them (the test mutant), `footstep_volume=` scales them (percent of the default level below).
+
+**Level (changed 2026-11).** A step is a short impact and must sit well under speech from the same spot. Measured with `make -C proxy/voice levels`
+(the loudest 20 ms RMS of a rendered step, next to a talker at -20 dBFS RMS through the same distance curve):
+
+| distance | gait | before: peak / re speech | now: peak / re speech |
+|---|---|---|---|
+| 1 m | walk | 0.158 / -4.3 dB | 0.043 / -15.5 dB |
+| 3 m | walk | 0.132 / -4.3 dB | 0.036 / -15.5 dB |
+| 3 m | run | 0.188 / -0.6 dB | 0.051 / -11.9 dB |
+| 6 m | walk | 0.066 / -4.3 dB | 0.018 / -15.5 dB |
+| 12 m | walk | 0.033 / -4.3 dB | 0.004 / -22.5 dB |
+| 20 m | walk | 0.019 / -4.3 dB | silent (dropped) |
+
+Before, a walking step was only 4 dB under a voice and a running one as loud as the voice, audible to the end of the voice range. Now a walking
+step is 16 dB and a running step 12 dB under speech at the same distance (a real footfall at 3 m is 10 to 20 dB under speech), and the range is
+capped at 10 m (`kStepRange`; with the 25 m voice range a step is gone by 16 m, a shorter voice range shortens it further). Only the viewer's game renders
+a walker's steps (they are planted from the remote figure's gait in `ModelGpuDraw`, which draws other players only), so the walker hears nothing of
+their own steps from the mod and nothing is doubled; two walkers add at most 12 overlapping steps. The live readout is `step_peak` / `step_dist` in `voicestat`.
+`footstep_old_level=1` restores the old gain (a test mutant). `voicestat` reports `footsteps N footsteps_dropped M`.
 The playback thread runs even with voice chat off, so the steps are heard whenever the mod can open a playback device.
 
-Game-free: `make -C proxy/voice test` (15 footstep checks; mutants `FS_NO_STEPS`, `FS_NO_DISTANCE`, `FS_NO_PAN`, `FS_NO_DECAY`).
-Live: `tools/win/wmodel.py` counts the mixer's footsteps across the 1.2 s walk (at least two); `MUTANT: adventurer footsteps off`
-must fail that check.
+Game-free: `make -C proxy/voice test` (23 footstep checks; mutants `FS_NO_STEPS`, `FS_NO_DISTANCE`, `FS_NO_PAN`, `FS_NO_DECAY`, `FS_OLD_LEVEL`).
+Live: `tools/win/wmodel.py` counts the mixer's footsteps across the 1.2 s walk (at least two) and bounds the loudest step of a walker 3 to 5 m away (`step_peak` between 0.003 and 0.045); `MUTANT: adventurer footsteps off`
+must fail the count and `MUTANT: adventurer footsteps at the old level` the bound.
 
 ## Shading
 
@@ -127,3 +146,58 @@ Live (two clients, `tools/qa.sh model`): `tools/win/wmodel.py` now also checks t
 in 12 s, that it casts a shadow on the tunnel floor (shadow pixels from the query) and that a figure 2 m away, face to face,
 is glancing. `MUTANT: adventurer life layer off` (`no_model_life=1`) must fail the first and the third; `MUTANT: adventurer
 shadow off` (`model_shadow=0`) must fail the second.
+
+## Release note: players seen through walls (2026-11)
+
+The other player's figure is occluded by comparing each pixel with the game's scene depth buffer, which the proxy finds by watching the depth-stencil
+views the game binds (`depth.cpp`). The shader read **four** samples of a multisampled depth buffer whatever the buffer had: with 2x multisampling
+the two missing samples read as zero (infinitely far), so a figure behind a wall stayed visible (measured: 60 094 of 444 211 pixels behind the tunnel
+door at 2x; 0 at 4x, 8x and without multisampling; at the automatic high profile (4x), explicit high, and the lowest options the old build already hid the figure, `debug_depth=1`
+showing the scene buffer found at 1920x1080, 4 samples (automatic high) or 1 sample (lowest)). The proxy now passes the buffer's real sample count. It also follows the back buffer's size
+every frame (the buffer is looked for at that size; before, the size was read once at start-up, so a swap chain resized later could have hidden
+the scene buffer for good; not observed in the lab, where the back buffer never changes), and when no scene depth is found it
+logs a `model: WARNING scene depth not found` line every 5 s, and `modelstat` carries `scene_depth` (0 not found, 1 single sample, 2 multisampled,
+-1 switched off by the `no_model_depth=1` mutant). Gate: `tools/qa.sh occlusion` (`tools/qa_occlusion.py`; automatic high profile, explicit high,
+2x/4x/8x multisampling, multisampling off, lowest options, plus mutants with no scene depth), which asserts on the occlusion query that a figure
+behind the closed door shows under 2 % of the pixels of one in front of it and, in the open world, that a figure buried under the terrain is hidden.
+
+Player name tags, speaking bars and radio labels, typing/chat bubbles, emote captions,
+and the aimed-player watch/deploy prompts hide when scene geometry covers the player's
+head. They sample the same scene depth used by the body, including every MSAA sample;
+a 10 cm plus 0.5% depth bias avoids flicker at doorways. They stay hidden while depth is
+unavailable. `tags_through_walls=1` opts into the old marker behavior (default `0`);
+it also supplies the occlusion test mutant. The legacy body/facing markers use this
+check if the character model cannot load; ghost transparency does not bypass body depth.
+The player roster, chat history, partner-view picture, watch reminders, deployed-TV
+controls and race standings remain HUD information. Map player icons stay visible on
+the map for navigation; no separate world-space roster pointer or ghost marker exists.
+Location pings and their edge arrows deliberately remain visible navigation aids: they mark a chosen destination rather than a player's current position.
+
+`tools/qa.sh --serial tags_occlusion` checks GPU-counted tag fragments in the open
+and behind the closed tutorial wall, with a `tags_through_walls=1` mutant that must
+fail the wall check. `tagstat` includes `visible_px`, `query_ready` and `scene_depth`;
+`onscreen` continues to mean the tag projects into the viewport. The query counts
+fragments after scene-depth and transparent-atlas discard, rather than queued UI quads.
+
+## Release note: a player sharing your viewpoint (2026-11)
+
+Remote bodies now fade from full opacity at `near_fade_start=1.4` metres to zero
+at `near_fade_end=0.6` metres, measured from the viewing camera to the remote eyes.
+The eye position comes from the remote camera pose, so the same measurement works
+for bodies, name tags and attached speaking, chat, radio and emote markers. Only
+heads within the central 65% of each screen axis trigger the distance fade (75%
+to leave that region); a 4 cm distance deadband prevents opacity flutter. A camera
+inside the head/torso envelope (35 cm horizontal radius, from 1.71 m below the eyes
+to 22 cm above them) hides the figure even when its head cannot project in front
+of the near plane. Each viewer applies this locally; panel input is unaffected.
+The body takes the stronger of this fade and the overlap ghost opacity (never both multiplied), and carried props and shadows follow it.
+At the configured endpoints opacity is exactly zero or one; invalid distance pairs
+fall back to the defaults. `near_fade=0` disables this protection and supplies its
+mutant. These are config-file options: the launcher does not expose
+`footstep_volume` or these distance controls and preserves unrecognised config keys.
+
+`tools/qa.sh --serial near_fade` checks body and name-tag GPU fragments at coincident
+viewpoints, half a metre ahead and three metres ahead, including restoration after
+separating. It runs with lowest options and automatic high, with `near_fade=0`
+mutants that must fail the near-body assertions. Game-free coverage is included in
+`make -C proxy/core test` (`near-fade-test`).

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """T2 scenario for name tags and ping: B is started with a name, A (the viewer) must list it with a measured ping and an on-screen tag. Mutants: tags off (A lists nobody),
 a game that never answers pings (no ping), a game that never sends its name (A shows a placeholder). usage: qa_tags.py (called by tools/qa.sh tags)"""
-import os, subprocess, sys, time
+import os, shutil, subprocess, sys, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from witness import TOOLS, DIR1, DIR2, PYW, pid, win
 import qa_sweep
@@ -9,7 +9,14 @@ import qa_sweep
 def run(cfg_a='', cfg_b=''):
     qa_sweep.restart(('name=Alpha\n' + cfg_a).strip(), ('name=Beta\n' + cfg_b).strip())
     r = subprocess.run([PYW, '-I', win(os.path.join(TOOLS, 'win', 'wtags.py')), str(pid('A')), win(DIR1), str(pid('B')), win(DIR2), 'Beta'], capture_output=True, text=True, timeout=300)
-    print(r.stdout, end=''); return r.returncode == 0 and 'ALL OK' in r.stdout
+    evidence = os.environ.get('QA_TAGS_KEEP')
+    if evidence:
+        os.makedirs(evidence, exist_ok=True)
+        label = ''.join(c if c.isalnum() else '_' for c in (cfg_a + cfg_b)) or 'clean'
+        open(os.path.join(evidence, 'tags_' + label + '_result.txt'), 'w').write(r.stdout + r.stderr)
+        for side, directory in (('A', DIR1), ('B', DIR2)):
+            shutil.copy(os.path.join(directory, 'witness_proxy.log'), os.path.join(evidence, 'tags_' + label + '_' + side + '.log'))
+    print(r.stdout, r.stderr, end=''); return r.returncode == 0 and 'ALL OK' in r.stdout
 
 def main():
     results = []

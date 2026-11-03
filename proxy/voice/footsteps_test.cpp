@@ -39,8 +39,8 @@ int main() {
         wvoice::Foley f; f.Plant(2.0f, 1.2f, 1.3f, false, s);
         std::vector<float> L, R; float peak; Render(f, 400, &L, &R, &peak);
         float first = std::max(L[0], R[0]), late = std::max(L[15], R[15]);
-        CHECK(peak > 0.04f && peak < 0.7f, "peak %.3f of a step 2 m away", peak);
-        CHECK(first > 0.01f && late < first * 0.02f, "a step rings on: frame 0 rms %.4f, 300 ms later %.5f", first, late);
+        CHECK(peak > 0.008f && peak < 0.2f, "peak %.3f of a step 2 m away", peak);
+        CHECK(first > 0.002f && late < first * 0.02f, "a step rings on: frame 0 rms %.4f, 300 ms later %.5f", first, late);
         int loud = 0; for (size_t k = 0; k < L.size(); k++) if (std::max(L[k], R[k]) > first * 0.05f) loud++;
         CHECK(loud >= 3 && loud <= 10, "the burst lasts %d frames of 20 ms", loud);
         CHECK(R[0] > L[0] * 1.5f, "a walker to the right: left rms %.4f right %.4f", L[0], R[0]);
@@ -54,6 +54,25 @@ int main() {
         float mx = 0; for (float v : voicesAndSteps) mx = std::max(mx, std::fabs(v)); CHECK(mx <= 1.0f, "twelve steps over a loud voice peaked at %.3f", mx);
         wvoice::Foley runner; runner.Plant(2.0f, 0, 3.0f, true, s); std::vector<float> rl, rr; float rpeak; Render(runner, 40, &rl, &rr, &rpeak);
         CHECK(rpeak > peak * 1.1f, "a running step (%.3f) is louder than a walking one (%.3f)", rpeak, peak);
+    }
+    // ---- the level (owner playtest 2026-10-31: far too loud): next to speech at -20 dBFS RMS through the same distance curve, a step is quiet and carries less far
+    {
+        wvoice::Settings s; s.range = 25; s.volume = 1;
+        auto loudest = [&](float d, bool run, float* peakOut) { wvoice::Foley f; f.Plant(d, 0, run ? 3.0f : 1.8f, run, s); float best = 0, pk = 0;
+            for (int k = 0; k < 20 && !f.active.empty(); k++) { float st[wvoice::kFrame * 2] = {}; f.Render(st, wvoice::kFrame); double e = 0; for (int i = 0; i < wvoice::kFrame; i++) { e += st[i * 2] * st[i * 2]; pk = std::max(pk, std::fabs(st[i * 2])); } best = std::max(best, (float)std::sqrt(e / wvoice::kFrame)); }
+            if (peakOut) *peakOut = pk; return best; };
+        auto speechRms = [&](float d) { return 0.10f * wvoice::ComputeMix(d, 0, s).prox; };
+        auto rel = [&](float d, bool run) { return 20.0f * std::log10(std::max(loudest(d, run, nullptr), 1e-9f) / speechRms(d)); };
+        float pk3; float walk3 = loudest(3.0f, false, &pk3);
+        CHECK(rel(3.0f, false) < -12.0f && rel(3.0f, false) > -24.0f, "a walking step 3 m away is %.1f dB re speech there (want -24..-12)", rel(3.0f, false));
+        CHECK(rel(3.0f, true) < -8.0f && rel(3.0f, true) > -20.0f, "a running step 3 m away is %.1f dB re speech there (want -20..-8)", rel(3.0f, true));
+        CHECK(pk3 < 0.06f && walk3 > 0.002f, "a walking step 3 m away peaks at %.4f (rms %.4f): quiet but there", pk3, walk3);
+        CHECK(loudest(6.0f, false, nullptr) > 0.0015f, "a step 6 m away is still audible (rms %.5f)", loudest(6.0f, false, nullptr));
+        CHECK(20.0f * std::log10(loudest(12.0f, false, nullptr) / walk3) < -8.0f, "a step 12 m away is %.1f dB under one 3 m away (want < -8)", 20.0f * std::log10(loudest(12.0f, false, nullptr) / walk3));
+        wvoice::Foley gone; gone.Plant(17.0f, 0, 1.8f, false, s); CHECK(gone.active.empty() && gone.dropped == 1, "a step 17 m away (inside the 25 m voice range) was still played");
+        wvoice::Settings small = s; small.range = 6; wvoice::Foley tight; tight.Plant(13.0f, 0, 1.8f, false, small); CHECK(tight.active.empty(), "a short voice range must shorten the steps' range too");
+        wvoice::Foley half; half.volume = 0.5f; half.Plant(3.0f, 0, 1.8f, false, s); float hp = 0; { std::vector<float> a, b; Render(half, 200, &a, &b, &hp); }
+        CHECK(hp < pk3 * 0.55f && hp > pk3 * 0.45f, "footstep_volume 50%% halves the step: %.4f vs %.4f", hp, pk3);
     }
     printf("%s: %d checks, %d failed\n", g_fail ? "FAILED" : "ok", g_n, g_fail);
     return g_fail ? 1 : 0;

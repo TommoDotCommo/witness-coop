@@ -22,6 +22,7 @@ void VoiceFootstep(unsigned id, const float pos[3], float speed, bool run);     
 #include "tv/mesh.h"
 static_assert(offsetof(wm::Vertex, appearanceGroup) == 56, "appearance input layout must match Vertex");
 #include "config.h"
+#include "near_fade_runtime.h"
 #include "depth.h"
 HMODULE g_selfModule();
 #include "devmenu.h"
@@ -92,6 +93,7 @@ float SceneVis(float2 pos, float dist, float extra) {
   if (depthp.x < 1.5) return (scene1.Load(int3(px, 0)) <= zm) ? 1 : 0;
   int ns = (int)depthp.y; float s = 0; for (int k = 0; k < ns; k++) s += (sceneMS.Load(px, k) <= zm) ? 1 : 0; return s / ns; }
 float4 PS(VOut i) : SV_TARGET {
+  clip(tint.w - 0.001);
   float3 n = normalize(i.n);
   float3 base = lerp(float3(1, 1, 1), tex.Sample(smp, i.uv).rgb, i.c.a) * i.c.rgb;      // c.a: 1 where the vertex samples the model's texture, 0 for a flat-colour material
   float3 c;
@@ -138,7 +140,7 @@ float4 PSMask(VOut i) : SV_TARGET { return float4(1, 1, 1, 1); }      // the fla
 struct LIn { float3 p : POSITION; float4 c : COLOR0; };
 struct LOut { float4 pos : SV_POSITION; float4 c : COLOR0; float dist : TEXCOORD1; };
 LOut VSLine(LIn v) { LOut o; o.pos = mul(viewProj, float4(v.p, 1)); o.dist = o.pos.w; o.c = v.c; return o; }
-float4 PSLine(LOut i) : SV_TARGET {      // a line lies in the panel's own surface: it counts as 1.5% nearer than the scene so it is not hidden by the panel it is drawn on
+float4 PSLine(LOut i) : SV_TARGET { clip(i.c.a - 0.001);      // a line lies in the panel's own surface: it counts as 1.5% nearer than the scene so it is not hidden by the panel it is drawn on
   if (depthp.x > 0.5) {
     int2 px = int2(i.pos.xy); float zm = depthp.w / i.dist * (1 + depthp.z + 0.015); float vis = 1;
     if (depthp.x < 1.5) vis = (scene1.Load(int3(px, 0)) <= zm) ? 1 : 0;
@@ -430,6 +432,7 @@ static void RunDepthDump(UINT w, UINT h, ID3D11ShaderResourceView* sceneSrv, boo
 
 bool ModelGpuDraw(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Cam& cam, bool valid, unsigned seq, const float pos[3], float yaw, unsigned playerId, bool first, const ModelExtra* extra) {
     if (!g_ready) return false;
+    DepthBackBuffer(w, h);      // follow a resized or full-screen swap chain: the scene depth buffer has the back buffer's size
     InterlockedExchange(&g_modelRenderThread, (LONG)GetCurrentThreadId());
     if (first && InterlockedExchange(&g_centerReq, 0)) AnswerCenterDepth(w, h);
     if (first && InterlockedExchange(&g_ptsReq, 0)) AnswerDepthPoints(w, h);
@@ -522,18 +525,25 @@ bool ModelGpuDraw(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Cam& ca
         } else gs.target = 1.0f;
         gs.alpha = wghost::Approach(gs.alpha, gs.target, dt, 5.0f); T[3] = gs.alpha;
     }
+    float nearAng[2]={cam.theta,cam.phi};
+    T[3] = wnear::BodyOpacity(T[3], NearFadeAlpha(playerId,cam.pos,nearAng,pos,cam.aspect));      // one fade, not two: the stronger of the overlap ghost and the near-camera fade
     memcpy(fc.tint, T, 16);
     ID3D11ShaderResourceView* sceneSrv = nullptr; bool ms = false;
-    bool haveScene = !cfg.noModelDepth && DepthScene(&sceneSrv, &ms);
+    unsigned ns = 4; bool haveScene = !cfg.noModelDepth && DepthScene(&sceneSrv, &ms, &ns);
+    g_stats.sceneDepth = cfg.noModelDepth ? -1 : !haveScene ? 0 : ms ? 2 : 1;
+    if (!haveScene && !cfg.noModelDepth) {      // loud: with no scene depth the figure is drawn over every wall, so never let that pass silently
+        static ULONGLONG s_lastWarn; ULONGLONG nowW = GetTickCount64();
+        if (nowW - s_lastWarn > 5000) { s_lastWarn = nowW; Log("model: WARNING scene depth not found: players are drawn WITHOUT occlusion (seen through walls); see debug_depth=1"); }
+    }
     if (InterlockedExchange(&g_probeReq, 0)) { if (haveScene) RunProbe(w, h, sceneSrv, ms); else Log("probe: no scene depth buffer found"); }
     if (InterlockedExchange(&g_gridReq, 0)) { if (haveScene) RunProbeGrid(w, h, sceneSrv, ms); else Log("probegrid: no scene depth buffer found"); }
     fc.screen[0] = (float)w; fc.screen[1] = (float)h;
-    fc.depthp[0] = haveScene ? (ms ? 2.0f : 1.0f) : 0.0f; fc.depthp[1] = 4; fc.depthp[2] = cfg.depthBias; fc.depthp[3] = cfg.depthNear;
+    fc.depthp[0] = haveScene ? (ms ? 2.0f : 1.0f) : 0.0f; fc.depthp[1] = (float)ns; fc.depthp[2] = cfg.depthBias; fc.depthp[3] = cfg.depthNear;
     g_ctx->UpdateSubresource(g_cbFrame, 0, nullptr, &fc, 0, 0); g_ctx->UpdateSubresource(g_cbBones, 0, nullptr, bones.data(), 0, 0);
     if (first) g_ctx->ClearDepthStencilView(g_dsv, D3D11_CLEAR_DEPTH, 1.0f, 0);
     D3D11_VIEWPORT vp = {0, 0, (float)w, (float)h, 0, 1};
     g_ctx->OMSetRenderTargets(1, &rtv, g_dsv); g_ctx->RSSetViewports(1, &vp); g_ctx->RSSetState(g_rs);
-    g_ctx->OMSetBlendState(haveScene ? g_blendAlpha : g_blend, nullptr, 0xffffffff); g_ctx->OMSetDepthStencilState(g_dss, 0);
+    g_ctx->OMSetBlendState(g_blendAlpha, nullptr, 0xffffffff); g_ctx->OMSetDepthStencilState(g_dss, 0);
     UINT stride = sizeof(wm::Vertex), off = 0;
     g_ctx->IASetInputLayout(g_layout); g_ctx->IASetVertexBuffers(0, 1, &g_L->vb, &stride, &off); g_ctx->IASetIndexBuffer(g_L->ib, DXGI_FORMAT_R32_UINT, 0);
     g_ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -643,7 +653,7 @@ bool ModelGpuDraw(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Cam& ca
             float model[3], world[3];
             for(int k=0;k<3;++k) model[k]=radioHand[k]*local[0]+radioHand[4+k]*local[1]+radioHand[8+k]*local[2]+radioHand[12+k];
             for(int k=0;k<3;++k) world[k]=fc.model[k]*model[0]+fc.model[4+k]*model[1]+fc.model[8+k]*model[2]+fc.model[12+k];
-            LineVert vert; memcpy(vert.p,world,12); memcpy(vert.c,v.c,16); item.push_back(vert);
+            LineVert vert; memcpy(vert.p,world,12); memcpy(vert.c,v.c,16); vert.c[3] *= T[3]; item.push_back(vert);
         }
         float wrist[3]; for(int k=0;k<3;++k) wrist[k]=fc.model[k]*radioHand[12]+fc.model[4+k]*radioHand[13]+fc.model[8+k]*radioHand[14]+fc.model[12+k];
         if(ModelGpuDrawLines(rtv,w,h,cam,item.data(),item.size(),1,true)) RadioRecord(playerId,radio.first.value,(unsigned)item.size(),wrist);
@@ -662,8 +672,8 @@ bool ModelGpuDrawAudience(ID3D11RenderTargetView* rtv,UINT w,UINT h,const wm::Ca
     if(!g_vbAudience){ D3D11_BUFFER_DESC d={}; d.ByteWidth=1024*sizeof(wm::Vertex); d.Usage=D3D11_USAGE_DYNAMIC; d.BindFlags=D3D11_BIND_VERTEX_BUFFER; d.CPUAccessFlags=D3D11_CPU_ACCESS_WRITE; if(FAILED(g_dev->CreateBuffer(&d,nullptr,&g_vbAudience))) return false; }
     FrameCB fc={}; wtv::audiencePalette(fc.appearance); wm::ViewProj(cam,fc.viewProj); for(unsigned i=0;i<4;++i) fc.model[i*5]=1;
     float L[4]={.35f,.25f,.9f,.55f},T[4]={1,1,1,1}; memcpy(fc.light,L,16); memcpy(fc.tint,T,16); fc.screen[0]=float(w); fc.screen[1]=float(h);
-    const Cfg& cfg=GetCfg(); ID3D11ShaderResourceView* sceneSrv=nullptr; bool ms=false; bool haveScene=!cfg.noModelDepth && DepthScene(&sceneSrv,&ms);
-    fc.depthp[0]=haveScene?(ms?2.f:1.f):0; fc.depthp[1]=4; fc.depthp[2]=cfg.depthBias; fc.depthp[3]=cfg.depthNear;
+    const Cfg& cfg=GetCfg(); ID3D11ShaderResourceView* sceneSrv=nullptr; bool ms=false; unsigned ns=4; bool haveScene=!cfg.noModelDepth && DepthScene(&sceneSrv,&ms,&ns);
+    fc.depthp[0]=haveScene?(ms?2.f:1.f):0; fc.depthp[1]=(float)ns; fc.depthp[2]=cfg.depthBias; fc.depthp[3]=cfg.depthNear;
     std::vector<float> bones(wm::kMaxJoints*16,0); for(unsigned i=0;i<wm::kMaxJoints;++i) for(unsigned k=0;k<4;++k) bones[i*16+k*5]=1;
     g_ctx->UpdateSubresource(g_cbBones,0,nullptr,bones.data(),0,0); g_ctx->UpdateSubresource(g_cbFrame,0,nullptr,&fc,0,0);
     if(g_playerDraws.empty()) g_ctx->ClearDepthStencilView(g_dsv,D3D11_CLEAR_DEPTH,1.f,0);
@@ -697,13 +707,13 @@ bool ModelGpuDrawLines(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Ca
     memcpy(ms2.pData, verts, count * sizeof(LineVert)); g_ctx->Unmap(g_vbLine, 0);
     FrameCB fc; memset(&fc, 0, sizeof fc); wm::ViewProj(cam, fc.viewProj);
     ID3D11ShaderResourceView* sceneSrv = nullptr; bool ms = false;
-    bool haveScene = !viewModel && !cfg.noLineDepth && DepthScene(&sceneSrv, &ms);
+    unsigned ns = 4; bool haveScene = !viewModel && !cfg.noLineDepth && DepthScene(&sceneSrv, &ms, &ns);
     fc.screen[0] = (float)w; fc.screen[1] = (float)h;
-    fc.depthp[0] = haveScene ? (ms ? 2.0f : 1.0f) : 0.0f; fc.depthp[1] = 4; fc.depthp[2] = cfg.depthBias; fc.depthp[3] = cfg.depthNear;
+    fc.depthp[0] = haveScene ? (ms ? 2.0f : 1.0f) : 0.0f; fc.depthp[1] = (float)ns; fc.depthp[2] = cfg.depthBias; fc.depthp[3] = cfg.depthNear;
     g_ctx->UpdateSubresource(g_cbFrame, 0, nullptr, &fc, 0, 0);
     D3D11_VIEWPORT vp = {0, 0, (float)w, (float)h, 0, 1};
     g_ctx->OMSetRenderTargets(1, &rtv, prop ? g_dsv : nullptr); g_ctx->RSSetViewports(1, &vp); g_ctx->RSSetState(g_rs);
-    g_ctx->OMSetBlendState(g_blend, nullptr, 0xffffffff); g_ctx->OMSetDepthStencilState(prop ? g_dss : nullptr, 0);
+    g_ctx->OMSetBlendState(prop ? g_blendAlpha : g_blend, nullptr, 0xffffffff); g_ctx->OMSetDepthStencilState(prop ? g_dss : nullptr, 0);
     UINT stride = sizeof(LineVert), off = 0;
     g_ctx->IASetInputLayout(g_layoutLine); g_ctx->IASetVertexBuffers(0, 1, &g_vbLine, &stride, &off); g_ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     g_ctx->VSSetShader(g_vsLine, nullptr, 0); g_ctx->PSSetShader(g_psLine, nullptr, 0);
@@ -739,7 +749,7 @@ void ModelGpuDumpPlayers() {
 void ModelGpuLogStats() {
     char t[100]; snprintf(t, sizeof t, "modelthread: render %lu caller %lu", (unsigned long)InterlockedCompareExchange(&g_modelRenderThread, 0, 0), (unsigned long)GetCurrentThreadId()); Log(t);
     ModelDrawStats s = ModelGpuStats(); char m[480];
-    snprintf(m, sizeof m, "modelstat: visible_px %u drawn %d clip %d speed %.2f anim %.3f from %d blend %.2f eye %.3f yaw %.3f frames %u model %s pos %.2f %.2f %.2f cam %.2f %.2f %.2f fx emote %d lift %.3f lean %.3f roll %.3f dyaw %.3f", s.visiblePixels, (int)s.drawn, s.clip, s.speed, s.animTime, s.from, s.blend, s.eye, s.yaw, s.frames, "adventurer", s.pos[0], s.pos[1], s.pos[2], s.cam[0], s.cam[1], s.cam[2], s.emote, s.lift, s.lean, s.roll, s.dyaw); Log(m);
+    snprintf(m, sizeof m, "modelstat: visible_px %u drawn %d clip %d speed %.2f anim %.3f from %d blend %.2f eye %.3f yaw %.3f frames %u model %s pos %.2f %.2f %.2f cam %.2f %.2f %.2f fx emote %d lift %.3f lean %.3f roll %.3f dyaw %.3f scene_depth %d", s.visiblePixels, (int)s.drawn, s.clip, s.speed, s.animTime, s.from, s.blend, s.eye, s.yaw, s.frames, "adventurer", s.pos[0], s.pos[1], s.pos[2], s.cam[0], s.cam[1], s.cam[2], s.emote, s.lift, s.lean, s.roll, s.dyaw, s.sceneDepth); Log(m);
     for (const auto& kv : g_ghost) { snprintf(m, sizeof m, "ghoststat: %u alpha %.3f target %.3f panels %zu", kv.first, kv.second.alpha, kv.second.target, g_panelCount); Log(m); }
     snprintf(m, sizeof m, "lifestat: blinks %u blink %.2f glancing %d head_yaw %.3f head_pitch %.3f breath %.3f exertion %.2f scarf %.3f fidgets %u fidgeting %d shadow_px %u shading %d", s.blinks, s.blink, (int)s.glancing, s.headYaw, s.headPitch, s.breath, s.exertion, s.scarf, s.fidgets, (int)s.fidgeting, s.shadowPixels, GetCfg().modelShading); Log(m);
 }

@@ -118,7 +118,7 @@ DWORD WINAPI PlayThread(LPVOID) {
     else if (!cfg.voiceMuteOutput) Log("voice: no playback device could be opened");
     ULONGLONG next = GetTickCount64(); int cur = 0;
     for (;;) {
-        float st[wvoice::kFrame * 2]; { Lock l; g_mixer.Configure(MixSettings()); g_mixer.Render(Speakers(), st); g_foley.volume = cfg.footstepVolume / 100.0f; g_foley.Render(st, wvoice::kFrame); }      // the other players' footsteps go in with their voices
+        float st[wvoice::kFrame * 2]; { Lock l; g_mixer.Configure(MixSettings()); g_mixer.Render(Speakers(), st); g_foley.volume = cfg.footstepVolume / 100.0f * (cfg.footstepOldLevel ? 0.22f / wvoice::kStepGain : 1.0f); g_foley.Render(st, wvoice::kFrame); }      // the other players' footsteps go in with their voices
         if (device) {
             while (!(hdr[cur].dwFlags & WHDR_DONE)) Sleep(2);
             for (int i = 0; i < wvoice::kFrame * 2; ++i) bufs[cur][i] = (int16_t)(st[i] * 32767.0f);
@@ -207,9 +207,9 @@ void VoicePlayerVolume(unsigned id, float volume) { if (!g_lkInit) return; Lock 
 bool VoiceSpeaking() { return g_transmitting != 0 && !GetCfg().noSpeakingFlag; }
 int VoiceMicLevel() { return (int)g_micLevel; }
 void VoiceStat() {
-    char m[300]; const Cfg& c = GetCfg();
-    unsigned steps = 0, stepsDropped = 0; { Lock l; steps = g_foley.played; stepsDropped = g_foley.dropped; }
-    snprintf(m, sizeof m, "voicestat: mode %d ptt %ld transmitting %ld sent %ld captured %ld received %ld played %ld game_volume %.2f hud_speakers %u hud_mic %d channel %s to %u footsteps %u footsteps_dropped %u effective %d", c.voiceMode, g_ptt, g_transmitting, g_sent, g_captured, g_received, g_played, g_gameVolumeRead, SocialSpeakDrawn(), SocialMicHudDrawn() ? 1 : 0, wvoice::ChannelName(g_channel), g_to, steps, stepsDropped, VoiceModeNow()); Log(m);
+    char m[420]; const Cfg& c = GetCfg();
+    unsigned steps = 0, stepsDropped = 0; float stepPeak = 0, stepDist = -1; { Lock l; steps = g_foley.played; stepsDropped = g_foley.dropped; stepPeak = g_foley.TakePeak(&stepDist); }
+    snprintf(m, sizeof m, "voicestat: mode %d ptt %ld transmitting %ld sent %ld captured %ld received %ld played %ld game_volume %.2f hud_speakers %u hud_mic %d channel %s to %u footsteps %u footsteps_dropped %u effective %d step_peak %.4f step_dist %.2f", c.voiceMode, g_ptt, g_transmitting, g_sent, g_captured, g_received, g_played, g_gameVolumeRead, SocialSpeakDrawn(), SocialMicHudDrawn() ? 1 : 0, wvoice::ChannelName(g_channel), g_to, steps, stepsDropped, VoiceModeNow(), stepPeak, stepDist); Log(m);
     if (!g_lkInit) return; Lock l;
     for (const auto& s : g_mixer.Stats()) { snprintf(m, sizeof m, "voicestat: speaker %u talking %d prox %.3f radio %.3f pan %.3f rms %.4f tone %.4f %.4f %.4f packets %u concealed %u dropped %u channel %u", s.id, s.talking ? 1 : 0, s.prox, s.radio, s.pan, s.rms, s.tone[0], s.tone[1], s.tone[2], s.packets, s.concealed, s.dropped, (unsigned)s.channel); Log(m); }
 }

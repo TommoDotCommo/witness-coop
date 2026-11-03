@@ -42,6 +42,11 @@ cyan is **not established**: see the open question below.
   the line as mirrored (`linestat ... mirrored 1`), about twice the ribbon vertices (1.8 to 2.2) and at least 1.5 times the
   visible pixels (GPU occlusion query) of the same line with the reflection switched off (`linemirror 0`). Both directions run;
   the mutant is `no_line_mirror=1` on the watcher and must fail. `tools/qa.sh lines` is unchanged.
+* The drawer's line must be on its panel for the whole look, read from the drawing game (traced edges and trace state, `tools/win/wlinestate.py`):
+  the bot holds a whole line before its finishing click (`WDRAW_HOLD_BEFORE_FINISH`). A finished line the game judges wrong is taken off
+  the panel after its error flash, about 10 s later, before the other game was looked at: that made the scenario fail in both directions
+  (the watcher held (0, 0, 0, 0)) whenever the bot drew the whole path instead of getting stuck part of the way (2026-11-04).
+  A look without the drawer's line is a failed try and the line is drawn again; it never counts as a pass or as the mutant's catch.
 
 ## Open question for the owner
 

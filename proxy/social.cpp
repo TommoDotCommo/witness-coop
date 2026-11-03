@@ -15,6 +15,7 @@
 #include "diag.h"
 #include "coop.h"
 #include "config.h"
+#include "near_fade_runtime.h"
 #include "gamecam.h"
 #include "ui.h"
 #include "ui/text.h"
@@ -214,6 +215,8 @@ bool SocialKey(unsigned vk, bool down) {
     return took;
 }
 bool SocialSwallowRaw(unsigned vk) { Lock l; auto it = g_swallow.find(vk); return it != g_swallow.end() && GetTickCount64() - it->second < 600; }      // (looked at, not used up: the game reads one event more than once)
+static unsigned g_canvasFlips, g_pingKeys;      // test oracle (command keystat): canvas toggles and ping key presses
+void SocialKeyStats(unsigned* canvasFlips, unsigned* pingKeys) { Lock l; *canvasFlips = g_canvasFlips; *pingKeys = g_pingKeys; }
 static bool SocialKeyImpl(unsigned vk, bool down) {
     const Cfg& c = GetCfg(); Lock l; ULONGLONG now = GetTickCount64();
     if (guide::RadioKeyActs(c, vk)) return VoiceRadioKey(down, g_open || g_wheel || GamePaused());
@@ -238,10 +241,10 @@ static bool SocialKeyImpl(unsigned vk, bool down) {
     if (vk == c.keyEmote) { g_wheel = true; g_wx = g_wy = 0; return true; }
     if (vk == c.keyChat && !c.noChatUi) { g_open = true; g_input.clear(); return true; }
     if (vk == c.keyDraw) { if (g_shift) ClearMine(); else PenDown(now); return true; }
-    if (vk == c.keyCanvas) { g_canvas = !g_canvas; g_ox = g_oy = 0; if (!g_canvas) PenUp(now); return true; }
+    if (vk == c.keyCanvas) { ++g_canvasFlips; g_canvas = !g_canvas; g_ox = g_oy = 0; if (!g_canvas) PenUp(now); return true; }
     if (vk == c.keyColor && c.keyColor != guide::Wheel && (g_canvas || g_pen)) { g_penColor = uint8_t((g_penColor + 1) % kInks); return true; }
     if (vk == VK_BACK && g_canvas) { UndoMine(); return true; }
-    if (vk == c.keyPing || vk == c.keyPingAlt) { g_pingReq = true; g_pingAsked = false; g_pingAt = now; return true; }
+    if (vk == c.keyPing || vk == c.keyPingAlt) { ++g_pingKeys; g_pingReq = true; g_pingAsked = false; g_pingAt = now; return true; }
     return false;
 }
 bool SocialWheel(int delta) {      // the mouse wheel: the ink colour while drawing (key_color=wheel); true when it was used (the game does not scroll)
@@ -350,23 +353,27 @@ void SocialFrame(float W, float H, const float* cam, const float* ang) {
         if (!ToScreen(cam, ang[0], ang[1], head, W, H, &sx, &sy)) continue;
         float col[3]; PlayerColor(rp.id, col); float dist = sqrtf((rp.pos[0] - cam[0]) * (rp.pos[0] - cam[0]) + (rp.pos[1] - cam[1]) * (rp.pos[1] - cam[1]) + (rp.pos[2] - cam[2]) * (rp.pos[2] - cam[2]));
         float kk = k * std::min(1.0f, std::max(0.7f, 10.0f / std::max(dist, 1.0f))); float bottom = sy - UiLineHeight(kk) - 14 * kk;
+        UiPlayerAnchor(cam,ang,rp.pos,0,NearFadeAlpha(rp.id,cam,ang,rp.pos,W/H));
         auto bi = g_bubbles.find(rp.id);
         if (rp.typing) { Bubbled(sx, bottom, {}, true, col, kk, now); ++g_dotsDrawn; }
         else if (bi != g_bubbles.end()) { Bubbled(sx, bottom, Wrap(bi->second.text, std::min(W - 40 * kk, 280 * kk), 4, .9f * kk), false, col, kk, now); ++g_bubblesDrawn; }
+        UiPlayerAnchorEnd();
     }
     for (const auto& rp : rem) {      // a player who is talking: three bars moving beside the top of the head, in their colour
         if (!rp.speaking || rp.ageMs > 2000) continue;
         float col[3]; PlayerColor(rp.id, col);
         float bx, by, bw, bh, bk; if (OverlayTagBars(rp.id, &bx, &by, &bw, &bh, &bk)) {      // a name tag is drawn: the bars beside its ping, inside its box (ui/tag_layout.h)
+            UiPlayerAnchor(cam,ang,rp.pos);      // (hidden with the tag when a wall is in front of the player's head)
             for (int b = 0; b < 3; ++b) { float ph = float(now % 500) / 500.0f * 6.2831853f + b * 2.1f, hgt = wtag::BarHeight(0.5f + 0.5f * sinf(ph), bk, bh); UiRect(bx + b * wtag::kBarStep * bk, by + bh - hgt, wtag::kBarW * bk, hgt, Rgba(col[0], col[1], col[2], 0.95f)); }
             if (rp.radioTx && cfg.RadioOn()) UiText(bx, by + bh + 8 * bk, "RADIO", Rgba(1,.7f,.3f), bk*.7f);
-            ++g_speakDrawn; continue;
+            UiPlayerAnchorEnd(); ++g_speakDrawn; continue;
         }
         float head[3] = {rp.pos[0], rp.pos[1], rp.pos[2] + 0.30f}, sx, sy; if (!ToScreen(cam, ang[0], ang[1], head, W, H, &sx, &sy)) continue; float dist = sqrtf((rp.pos[0] - cam[0]) * (rp.pos[0] - cam[0]) + (rp.pos[1] - cam[1]) * (rp.pos[1] - cam[1]) + (rp.pos[2] - cam[2]) * (rp.pos[2] - cam[2]));
         float kk = k * std::min(1.0f, std::max(0.6f, 10.0f / std::max(dist, 1.0f)));
+        UiPlayerAnchor(cam,ang,rp.pos,0,NearFadeAlpha(rp.id,cam,ang,rp.pos,W/H));
         for (int b = 0; b < 3; ++b) { float ph = float(now % 500) / 500.0f * 6.2831853f + b * 2.1f, hgt = (7 + 9 * (0.5f + 0.5f * sinf(ph))) * kk; UiRect(sx + (30 + b * 7) * kk, sy - 6 * kk - hgt, 4.5f * kk, hgt, Rgba(col[0], col[1], col[2], 0.95f)); }
         if (rp.radioTx && cfg.RadioOn()) UiText(sx + 30 * kk, sy + 4 * kk, "RADIO", Rgba(1,.7f,.3f), kk*.7f);
-        ++g_speakDrawn;
+        UiPlayerAnchorEnd(); ++g_speakDrawn;
     }
     if (cfg.voiceMode != 0) {      // my own microphone: what the key does, and a bar that follows the level while it is open
         bool talk = VoiceSpeaking(); int lvl = VoiceMicLevel(); char b[80];
@@ -382,7 +389,9 @@ void SocialFrame(float W, float H, const float* cam, const float* ang) {
         auto it = g_remoteEmotes.find(rp.id); if (it == g_remoteEmotes.end() || !it->second.id || !EmoteAlive(it->second.id,now-it->second.start) || rp.ageMs > 2000) continue;
         float head[3] = {rp.pos[0], rp.pos[1], rp.pos[2] + 0.8f}, sx, sy; if (!ToScreen(cam, ang[0], ang[1], head, W, H, &sx, &sy)) continue;
         float col[3]; PlayerColor(rp.id, col); char b[40]; snprintf(b, sizeof b, "~ %s ~", SocialEmoteName(it->second.id)); float tw = UiTextWidth(b, 1.0f * k);
+        UiPlayerAnchor(cam,ang,rp.pos,0,NearFadeAlpha(rp.id,cam,ang,rp.pos,W/H));
         float up = float(now - it->second.start) / 1000.0f * 14 * k; UiText(sx - tw / 2, sy - 26 * k - up, b, Rgba(col[0], col[1], col[2], 1), 1.0f * k);
+        UiPlayerAnchorEnd();
     }
     // pings: a marker over the point with the sender's name and the distance; off screen, an arrow at the edge of the screen pointing the way
     if (!cfg.noPingMarks) for (const auto& m : g_marks) {

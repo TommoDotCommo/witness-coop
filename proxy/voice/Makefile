@@ -8,7 +8,7 @@ $(BUILD)/voice-test: $(SRC) voice.h
 $(BUILD)/mutant-%: $(SRC) voice.h
 	mkdir -p $(BUILD)
 	g++ -std=c++17 -O2 -Wno-unused-parameter -DWV_MUT_$* -o $@ $(SRC)
-FOOT_MUTANTS = FS_NO_STEPS FS_NO_DISTANCE FS_NO_PAN FS_NO_DECAY
+FOOT_MUTANTS = FS_NO_STEPS FS_NO_DISTANCE FS_NO_PAN FS_NO_DECAY FS_OLD_LEVEL
 $(BUILD)/footsteps-test: voice.cpp footsteps_test.cpp footsteps.h voice.h
 	mkdir -p $(BUILD)
 	g++ -std=c++17 -O2 -Wall -Wextra -o $@ voice.cpp footsteps_test.cpp
@@ -20,6 +20,9 @@ test: $(BUILD)/voice-test $(addprefix $(BUILD)/mutant-,$(MUTANTS)) $(BUILD)/foot
 	@for m in $(MUTANTS); do if $(BUILD)/mutant-$$m >/dev/null; then echo "MUTANT $$m SURVIVED (the test cannot fail for it)"; exit 1; else echo "mutant $$m killed"; fi; done
 	$(BUILD)/footsteps-test
 	@for m in $(FOOT_MUTANTS); do if $(BUILD)/footmutant-$$m >/dev/null; then echo "FOOTSTEP MUTANT $$m SURVIVED (the test cannot fail for it)"; exit 1; else echo "footstep mutant $$m killed"; fi; done
+levels:      # a measurement, not a test: the footstep level table
+	mkdir -p $(BUILD)
+	g++ -std=c++17 -O2 -o $(BUILD)/levels voice.cpp footsteps_levels.cpp && $(BUILD)/levels
 clean:
 	rm -rf $(BUILD)
-.PHONY: test clean
+.PHONY: test clean levels

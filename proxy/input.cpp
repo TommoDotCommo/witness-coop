@@ -10,6 +10,7 @@
 #include "povui.h"
 #include "social.h"
 #include "pad.h"
+#include "ui/key_repeat.h"
 
 bool HookImport(const char* dll, const char* fn, void* hook, void** orig);   // hooks.cpp
 void Log(const char* msg);
@@ -38,6 +39,12 @@ static bool MenuKey(unsigned vk, bool down, bool repeat = false) {
     return took;
 }
 
+
+// The mod's press keys act on the press only: their autorepeat (WM_KEYDOWN with bit 30, about 30 a second while held) is taken and does nothing
+// (proxy/ui/key_repeat.h has the list and its game-free test). The chat box, the developer menu and the hold-Tab panel still get the repeats of the keys they use.
+bool InputRepeatIgnored(unsigned vk, long long lParam) {
+    return wkeys::RepeatIgnored(GetCfg(), vk, (lParam & (1LL << 30)) != 0, {SocialCapturing(), DevMenuOpen(), PovRosterOpen()});
+}
 
 static void Init() { if (!g_init) { InitializeCriticalSection(&g_lock); g_init = true; } }
 static void Push(const Ev& e) { Init(); EnterCriticalSection(&g_lock); if (g_n < 512) g_q[g_n++] = e; LeaveCriticalSection(&g_lock); }
@@ -154,7 +161,7 @@ static BOOL WINAPI HookPeekMessageA(LPMSG m, HWND w, UINT lo, UINT hi, UINT rm) 
     if (!(DevMenuEnabled() || VideoEnabled())) return r;
     bool take = false;
     switch (m->message) {
-    case WM_KEYDOWN: case WM_SYSKEYDOWN: take = MenuKey((unsigned)m->wParam, true, (m->lParam & (LPARAM(1) << 30)) != 0) || SocialKey((unsigned)m->wParam, true); break;
+    case WM_KEYDOWN: case WM_SYSKEYDOWN: take = InputRepeatIgnored((unsigned)m->wParam, (long long)m->lParam) || MenuKey((unsigned)m->wParam, true, (m->lParam & (LPARAM(1) << 30)) != 0) || SocialKey((unsigned)m->wParam, true); break;
     case WM_KEYUP: case WM_SYSKEYUP: take = MenuKey((unsigned)m->wParam, false); take = SocialKey((unsigned)m->wParam, false) || take; break;
     case WM_CHAR: take = DevMenuOpen() || PovRosterOpen() || SocialChar((unsigned)m->wParam) || SocialCapturing(); break;
     case WM_LBUTTONDOWN: take = DevMenuMouseButton(0, true) || PovPanelClick() || SocialCapturing(); break;
