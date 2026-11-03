@@ -17,7 +17,7 @@ static std::wstring DllDir() {
 
 const Cfg& GetCfg() {
     static Cfg c = [] {
-        Cfg r; FILE* f = _wfopen((DllDir() + L"witness_coop.cfg").c_str(), L"r"); if (!f) return r;
+        Cfg r; FILE* f = _wfopen((DllDir() + L"witness_coop.cfg").c_str(), L"r"); if (!f) { r.movedKeys = guide::MovedNotes(r); return r; }
         char line[400];
         while (fgets(line, sizeof line, f)) {
             if (SetBindingLine(&r,line)) continue;
@@ -55,6 +55,8 @@ const Cfg& GetCfg() {
             else if (sscanf(line, "model_speed=%f", &fv) == 1) r.modelStride = fv;
             else if (sscanf(line, "no_model_depth=%d", &v) == 1) r.noModelDepth = v != 0;
             else if (sscanf(line, "no_pause_hide=%d", &v) == 1) r.noPauseHide = v != 0;
+            else if (sscanf(line, "old_v_watch=%d", &v) == 1) r.oldVWatch = v != 0;
+            else if (sscanf(line, "no_player_panel=%d", &v) == 1) r.noPlayerPanel = v != 0;
             else if (sscanf(line, "no_chat_ui=%d", &v) == 1) r.noChatUi = v != 0;
             else if (sscanf(line, "no_emote_anim=%d", &v) == 1) r.noEmoteAnim = v != 0;
             else if (sscanf(line, "no_seat_tiebreak=%d", &v) == 1) r.noSeatTiebreak = v != 0;
@@ -139,7 +141,7 @@ const Cfg& GetCfg() {
                 else { wchar_t w[300]; MultiByteToWideChar(CP_UTF8, 0, s, -1, w, 300); r.saveDir = w; }
             }
         }
-        fclose(f); guide::MigrateF1(r); return r;
+        fclose(f); guide::MigrateAll(r, &r.keyConflicts); r.movedKeys = guide::MovedNotes(r); return r;
     }();
     return c;
 }

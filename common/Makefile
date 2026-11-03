@@ -1,10 +1,10 @@
 CXX ?= g++
 CXXFLAGS = -std=c++17 -O2 -Wall -Wextra
-MUTANTS = NO_MIGRATE TOGGLE ALLOW_COLLISION MISSING_KEY MARKER_BOUND
-build/guide-test: guide_test.cpp guide.h bindings.def ../proxy/config.h
+MUTANTS = NO_MIGRATE TOGGLE ALLOW_COLLISION MISSING_KEY MARKER_BOUND KEEP_OLD OVERWRITE_CUSTOM SHARED_FREE NO_RESOLVE WRITE_ALWAYS
+build/guide-test: guide_test.cpp guide.h movedkeys.h bindings.def ../proxy/config.h ../proxy/bindings.h
 	mkdir -p build
 	$(CXX) $(CXXFLAGS) -o $@ $<
-build/mutant-%: guide_test.cpp guide.h bindings.def ../proxy/config.h
+build/mutant-%: guide_test.cpp guide.h movedkeys.h bindings.def ../proxy/config.h ../proxy/bindings.h
 	mkdir -p build
 	$(CXX) $(CXXFLAGS) -DGUIDE_MUT_$* -o $@ $<
 build/buildid-test: buildid_test.cpp buildid.h sha256.h buildid_fixture.h

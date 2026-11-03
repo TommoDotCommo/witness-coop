@@ -22,7 +22,7 @@ inline bool SetBindingLine(Cfg* cfg, std::string line) {
     for(const auto& b:guide::bindings) {
         std::string prefix=std::string(b.config)+"=";
         if(line.rfind(prefix,0)) continue;
-        unsigned key=guide::ParseKey(line.substr(prefix.size()));
+        unsigned key=guide::MigrateDefault(b.config,guide::ParseKey(line.substr(prefix.size())));
 #ifdef WR_MUT_BINDING
         (void)key; (void)cfg;
 #else
