@@ -3,8 +3,12 @@
 # uninstall can put the original back and never removes a file it did not install.
 $script:WitnessExeSha = '8d672d444df6a6df7130f25a517bdab1af92731fe2138dc5b324d519561d55a5'      # witness64_d3d11.exe, Steam build 11370412
 $script:WitnessAnselSha = '3b0677ae1e01fc17645c903c8322497785768145abbe3758364299fdaa8aff15'    # the game's own AnselSDK64.dll
-# Installed in this order; AnselSDK64_real.dll is the game's own Ansel DLL (the proxy loads it by name).
-$script:WitnessManaged = @('AnselSDK64_real.dll', 'AnselSDK64.dll', 'witness_launcher.exe', 'witness_models\adventurer.glb', 'witness_models\adventurer.glb.txt')
+# Installed in this order. The proxy is dsound.dll (the game imports it but does not ship it); the game's own files are not changed.
+$script:WitnessManaged = @('dsound.dll', 'witness_launcher.exe', 'witness_models\adventurer.glb', 'witness_models\adventurer.glb.txt')
+# A dsound.dll that was in the game folder before (another mod, an ASI loader) is kept under this name; the proxy loads it after itself.
+$script:WitnessChain = 'dsound.chain.dll'
+# The layout up to v0.1.0-alpha: the proxy in AnselSDK64.dll, the game's own Ansel DLL renamed AnselSDK64_real.dll. Setup migrates it.
+$script:WitnessLegacy = @('AnselSDK64.dll', 'AnselSDK64_real.dll')
 
 function Get-CoopHash($file) {
     if (-not (Test-Path -LiteralPath $file)) { return $null }
@@ -156,8 +160,89 @@ function Get-CoopActions($states, $owned) {
 # ---- The Witness: what the package expects of each managed file, and the whole picture of a game folder ----
 
 function Get-WitnessExpectedHash($package, $relative) {
-    if ($relative -eq 'AnselSDK64_real.dll') { return $script:WitnessAnselSha }
     return Get-CoopHash (Join-Path $package $relative)
+}
+function Test-CoopFileContains([string]$file, [string]$text) {
+    if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { return $false }
+    return [Text.Encoding]::GetEncoding(28591).GetString([IO.File]::ReadAllBytes($file)).Contains($text)      # Latin-1: one character per byte
+}
+# A dsound.dll of this mod (any version) carries this text; anything else of that name belongs to someone else and is chained.
+function Test-WitnessProxy($file) { return (Test-CoopFileContains $file 'witness-coop:proxy:dsound') }
+# The AnselSDK64.dll proxy of v0.1.0-alpha and earlier says this in its log text.
+function Test-WitnessOldProxy($file) { return (Test-CoopFileContains $file 'real Ansel DLL') }
+function Test-WitnessOriginalHash($hash) { return ($hash -and $hash -eq $script:WitnessAnselSha) }      # verify-original
+
+# The old layout in a game folder: is it there, can it be undone safely, and where is the game's own Ansel DLL (verified by hash)?
+function Get-WitnessLegacy($game) {
+    $a = Join-Path $game 'AnselSDK64.dll'; $r = Join-Path $game 'AnselSDK64_real.dll'
+    $result = [pscustomobject]@{ present=$false; blocked=$null; source=$null }
+    try {
+        foreach ($p in $a, $r, "$a.coop-original", "$a.coop-receipt.json", "$a.coop-stage", "$r.coop-receipt.json", "$r.coop-original", "$r.coop-stage") { Assert-CoopRegularPath $p }
+        $ha = Get-CoopHash $a; $hr = Get-CoopHash $r; $hb = Get-CoopHash "$a.coop-original"; $hs = Get-CoopHash "$a.coop-stage"
+        $result.present = [bool]($hr -or $hb -or $hs -or (Test-Path -LiteralPath "$a.coop-receipt.json") -or (Test-Path -LiteralPath "$r.coop-receipt.json") -or ($ha -and $ha -ne $script:WitnessAnselSha))
+        if (-not $result.present) { return $result }
+        $help = 'Nothing was changed. In Steam: right-click The Witness > Properties > Installed Files > Verify integrity of game files, then run Setup again.'
+        foreach ($c in @(@($r, $hr), @("$a.coop-original", $hb), @("$a.coop-stage", $hs))) {
+            if ($c[1] -and -not (Test-WitnessOriginalHash $c[1])) {
+                $result.blocked = "$(Split-Path -Leaf $c[0]) is not the game's own Ansel DLL (SHA-256 starting $($c[1].Substring(0, 12)), expected $($script:WitnessAnselSha.Substring(0, 12))). Setup will not put it back as AnselSDK64.dll. $help"
+                return $result
+            }
+        }
+        if ($ha -and -not (Test-WitnessOriginalHash $ha)) {
+            $receipt = $null; try { $receipt = Read-CoopReceipt $a } catch { }
+            if (-not ((Test-WitnessOldProxy $a) -or ($receipt -and $receipt.installed -eq $ha))) {
+                $result.blocked = "AnselSDK64.dll is neither the game's own file nor this mod's old proxy (SHA-256 starting $($ha.Substring(0, 12))). $help"
+                return $result
+            }
+        }
+        foreach ($c in @(@($a, $ha), @($r, $hr), @("$a.coop-original", $hb), @("$a.coop-stage", $hs))) {
+            if (Test-WitnessOriginalHash $c[1]) { $result.source = $c[0]; break }
+        }
+        if (-not $result.source) { $result.blocked = "The game's own AnselSDK64.dll was not found (expected SHA-256 starting $($script:WitnessAnselSha.Substring(0, 12))), so the old co-op layout cannot be undone. $help" }
+    } catch { $result.present = $true; $result.blocked = "The old co-op files (AnselSDK64.dll, AnselSDK64_real.dll) could not be inspected: $($_.Exception.Message)" }
+    return $result
+}
+# Old layout -> the game's own AnselSDK64.dll back under its name (staged and verified), then the old proxy, the renamed copy and their
+# receipts go. Every step can be repeated: an interrupted migration finishes on the next run. Returns $true when there was something to do.
+function Invoke-WitnessMigration($game) {
+    $l = Get-WitnessLegacy $game
+    if (-not $l.present) { return $false }
+    if ($l.blocked) { throw $l.blocked }
+    $a = Join-Path $game 'AnselSDK64.dll'; $r = Join-Path $game 'AnselSDK64_real.dll'
+    if (-not (Test-WitnessOriginalHash (Get-CoopHash $a))) {
+        $bytes = [IO.File]::ReadAllBytes($l.source)
+        $sha = [Security.Cryptography.SHA256]::Create()
+        try { $hash = ([BitConverter]::ToString($sha.ComputeHash($bytes))).Replace('-', '').ToLowerInvariant() } finally { $sha.Dispose() }
+        if (-not (Test-WitnessOriginalHash $hash)) { throw "$(Split-Path -Leaf $l.source) changed while Setup read it; nothing was replaced." }
+        if ($l.source -ne "$a.coop-stage") {
+            [IO.File]::WriteAllBytes("$a.coop-stage", $bytes)
+            if (-not (Test-WitnessOriginalHash (Get-CoopHash "$a.coop-stage"))) { throw 'Staged AnselSDK64.dll verification failed' }
+        }
+        Move-Item -LiteralPath "$a.coop-stage" -Destination $a -Force      # remove-old-proxy
+    }
+    if (-not (Test-WitnessOriginalHash (Get-CoopHash $a))) { throw 'AnselSDK64.dll could not be restored; the old files were kept.' }
+    # the game's own file is in place and verified: what the old layout added goes
+    foreach ($p in "$a.coop-receipt.json", "$r.coop-receipt.json", "$a.coop-receipt.json.tmp", "$r.coop-receipt.json.tmp") { if (Test-Path -LiteralPath $p) { Remove-Item -LiteralPath $p } }
+    foreach ($p in $r, "$a.coop-original", "$a.coop-stage") {
+        if ((Test-Path -LiteralPath $p) -and (Test-WitnessOriginalHash (Get-CoopHash $p))) { Remove-Item -LiteralPath $p }
+    }
+    return $true
+}
+# Before the proxy goes in: a dsound.dll that is not this mod's (and not installed by this Setup) is kept as dsound.chain.dll, which the
+# proxy loads after itself. Uninstall removes the chain copy and puts the file back as dsound.dll (its receipt keeps the original).
+function Install-WitnessChain($game) {
+    $target = Join-Path $game 'dsound.dll'; $chain = Join-Path $game $script:WitnessChain
+    Assert-CoopRegularPath $target; Assert-CoopRegularPath $chain
+    if (-not (Test-Path -LiteralPath $target -PathType Leaf)) { return $false }
+    if (Test-Path -LiteralPath "$target.coop-receipt.json") { return $false }      # ours: Setup put it there
+    if (Test-WitnessProxy $target) { return $false }                                  # ours, copied in by hand or by a mod manager
+    $bytes = [IO.File]::ReadAllBytes($target)
+    $existing = Get-CoopHash $chain
+    if ($existing -and -not (Test-Path -LiteralPath "$chain.coop-receipt.json")) {
+        if ($existing -ne (Get-CoopHash $target)) { throw "dsound.chain.dll is already in the game folder and differs from dsound.dll; move one of them away and run Setup again. Nothing was changed." }
+    }
+    Install-CoopFile $chain $bytes
+    return $true
 }
 # 'current' = the supported Steam build, 'conflict' = another build (the mod's addresses would not fit), 'unknown' = no exe
 function Get-WitnessBuildState($game) {
@@ -240,8 +325,7 @@ function Get-WitnessInstallStatus($game, $package) {
             if ($o.receipt) { $owned = $true }
             $states += $o.status
             $detail = switch ($relative) {
-                'AnselSDK64.dll' { 'The co-op proxy, in place of the game''s Ansel DLL; the original is put back on uninstall' }
-                'AnselSDK64_real.dll' { 'The game''s own Ansel DLL under the name the proxy loads' }
+                'dsound.dll' { 'The co-op proxy; it hands every sound call to Windows'' own dsound.dll (the game''s files stay as they are)' }
                 'witness_launcher.exe' { 'The co-op launcher (lobby, settings); start the game from it' }
                 default { 'The player model' }
             }
@@ -257,9 +341,22 @@ function Get-WitnessInstallStatus($game, $package) {
             }
         } catch { $states += 'unknown'; $rows += [pscustomobject]@{ item=$relative; status='unknown'; detail='Could not inspect payload or installed file' } }
     }
+    $chain = Join-Path $game $script:WitnessChain
+    if ((Test-Path -LiteralPath $chain) -or (Test-Path -LiteralPath "$chain.coop-receipt.json")) {
+        $o = Get-CoopObservation $chain $(if (Test-Path -LiteralPath "$chain.coop-receipt.json") { (Read-CoopReceipt $chain).installed } else { Get-CoopHash $chain })
+        if ($o.receipt) { $owned = $true; $states += $o.status }
+        $rows += [pscustomobject]@{ item=$script:WitnessChain; status=$o.status; detail='Another mod''s dsound.dll, kept by Setup and loaded by the proxy after itself; it goes back as dsound.dll on uninstall' }
+    }
+    $legacy = Get-WitnessLegacy $game
+    if ($legacy.present) {
+        if (Test-Path -LiteralPath (Join-Path $game 'AnselSDK64.dll.coop-receipt.json')) { $owned = $true }
+        $states += $(if ($legacy.blocked) { 'conflict' } else { 'outdated' })
+        $rows += [pscustomobject]@{ item='AnselSDK64.dll (old layout)'; status=$(if ($legacy.blocked) { 'conflict' } else { 'outdated' }); detail=$(if ($legacy.blocked) { $legacy.blocked } else { 'An older co-op install replaced the game''s Ansel DLL; Setup puts the game''s own file back (verified) and removes the old proxy' }) }
+    }
     $actions = Get-CoopActions $states $owned
+    if ($legacy.present -and -not $legacy.blocked -and $actions.install) { $actions.install = 'Update' }
     $rows += [pscustomobject]@{ item='witness_coop.cfg'; status=$(if (Test-Path -LiteralPath (Join-Path $game 'witness_coop.cfg')) { 'present' } else { 'written by the launcher' }); detail='Your co-op settings; kept on uninstall' }
-    $rows += [pscustomobject]@{ item='Saves, registry, the game executable'; status='untouched'; detail='Saves stay in %APPDATA%\The Witness; nothing else on the PC is changed' }
+    $rows += [pscustomobject]@{ item='Saves, registry, the game''s own files'; status='untouched'; detail='Saves stay in %APPDATA%\The Witness; the game''s executable and DLLs are never changed' }
     $report = if ($build -ne 'current') { Get-WitnessBuildReport $game } else { $null }
-    return [pscustomobject]@{ schema=1; items=$rows; actions=$actions; build=$build; report=$report }
+    return [pscustomobject]@{ schema=1; items=$rows; actions=$actions; build=$build; report=$report; legacy=[bool]$legacy.present; chain=[bool](Test-Path -LiteralPath $chain) }
 }

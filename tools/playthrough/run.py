@@ -30,7 +30,7 @@ TAUGHT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', '
 try: TAUGHT = json.load(open(TAUGHT_FILE))
 except (OSError, ValueError): TAUGHT = {}
 from group_config import configs
-from group_suite import replace_copy, digest, EXE_HASH, DLL_HASH
+from group_suite import replace_copy, digest, install_proxy, EXE_HASH, DLL_HASH
 
 RES = os.environ.get('WITNESS_RESOURCES', '')
 
@@ -83,10 +83,7 @@ class Bot:
     def prepare(self, cfg_lines, fps, drop, start=''):
         d = self.dir
         assert digest(d / 'witness64_d3d11.exe') == EXE_HASH, 'unsupported game build'
-        if not (d / 'AnselSDK64_real.dll').exists():
-            assert digest(d / 'AnselSDK64.dll') == DLL_HASH, 'unrecognized original DLL'
-            (d / 'AnselSDK64.dll').rename(d / 'AnselSDK64_real.dll')
-        replace_copy(Path(ROOT) / 'proxy/AnselSDK64.dll', d / 'AnselSDK64.dll')
+        install_proxy(d)
         models = d / 'witness_models'; models.mkdir(exist_ok=True)
         for asset in (Path(ROOT) / 'assets/models').iterdir():
             if asset.suffix in ('.glb', '.txt'): replace_copy(asset, models / asset.name)

@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Game-free (T0) tests of the launcher's self-update (launcher/update.h), run through launcher/update_cli.cpp.
 Fake GitHub responses, corrupt and truncated packages, hash mismatch, a rate limit, an apply through the installer's receipts (modified file,
-no receipt, leftovers), an interrupted apply that startup recovery rolls back, a downgrade, the game running, and the settings.
+no receipt, leftovers), an interrupted apply that startup recovery rolls back, a downgrade, the game running, and the settings; a folder in the old
+layout (the proxy in AnselSDK64.dll, the game's file as AnselSDK64_real.dll) migrated to dsound.dll, refused when a hash is not the game's, and
+an interrupted migration rolled back and tried again.
 Every protection has a source mutant (the line is changed, the tests must fail): the list is MUTANTS."""
 import hashlib, io, json, os, subprocess, sys, tempfile, zipfile
 from pathlib import Path
@@ -46,7 +48,10 @@ MUTANTS = {
     'receipt-installed-written': ('lu_write_receipt(target, rc[i].original, newh[i], NULL)', 'lu_write_receipt(target, rc[i].original, rc[i].installed, NULL)'),
     'recover-pending': ('if (lu_journal_status(dir, NULL, 0) == 1) return lu_rollback(dir) == LU_OK ? 1 : -1;', ''),
     'rollback-verifies-backup': ('if (!lu_file_sha256(prev, got) || strcmp(got, want) != 0) {', 'if (0) {'),
-    'ansel-original-untouched': ('{ "witness_models/adventurer.glb.txt", 0, 0 }\n};', '{ "witness_models/adventurer.glb.txt", 0, 0 },\n    { "AnselSDK64_real.dll", 0, 0 }\n};'),
+    'ansel-original-untouched': ('{ "witness_models/adventurer.glb.txt", 0, 0 }\n};', '{ "witness_models/adventurer.glb.txt", 0, 0 },\n    { "AnselSDK64.dll", 0, 0 }\n};'),
+    'legacy-original-verified': ('static inline int lu_is_original(const char *h) { return h && h[0] && !strcmp(h, LU_ANSEL_SHA); }', 'static inline int lu_is_original(const char *h) { return h && h[0]; }'),
+    'legacy-old-proxy-left-behind': ('if (legacy > 0 && !lu_migrate_legacy(dir)) { r = LU_ERR_LEGACY; goto fail_rollback; }      /* MUT:migrate */', ''),
+    'legacy-added-file-rolled-back': ('            remove(target); remove(rpath);\n            continue;', '            continue;'),
 }
 
 
@@ -60,7 +65,7 @@ def sha(b): return hashlib.sha256(b).hexdigest()
 
 
 def files(tag, fill, glb=b'glb-' ):
-    return {'AnselSDK64.dll': pe(fill), 'witness_launcher.exe': pe(fill + 1), 'witness_models/adventurer.glb': glb + tag.encode() * 40, 'witness_models/adventurer.glb.txt': b'model ' + tag.encode()}
+    return {'dsound.dll': pe(fill), 'witness_launcher.exe': pe(fill + 1), 'witness_models/adventurer.glb': glb + tag.encode() * 40, 'witness_models/adventurer.glb.txt': b'model ' + tag.encode()}
 
 
 def make_zip(tag, fill, deflate=True, skip=(), machine=0x8664, extra=None, nomz=False):
@@ -68,29 +73,49 @@ def make_zip(tag, fill, deflate=True, skip=(), machine=0x8664, extra=None, nomz=
     with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED if deflate else zipfile.ZIP_STORED) as z:
         for name, data in files(tag, fill).items():
             if name in skip: continue
-            if name == 'AnselSDK64.dll' and machine != 0x8664: data = pe(fill, machine)
-            if name == 'AnselSDK64.dll' and nomz: data = b'XX' + data[2:]
+            if name == 'dsound.dll' and machine != 0x8664: data = pe(fill, machine)
+            if name == 'dsound.dll' and nomz: data = b'XX' + data[2:]
             z.writestr(f'{PREFIX}-{tag}/{name}', data)
         z.writestr(f'{PREFIX}-{tag}/README.txt', b'readme')
         if extra: z.writestr(extra, b'evil')
     return buf.getvalue()
 
 
-ORIG_ANSEL = b'the games own ansel dll' * 20
+ORIG_ANSEL = b'the games own ansel dll' * 20        # the test build of the CLI takes its hash as the game's own (LU_ANSEL_SHA)
+OTHER_DSOUND = b'another mods dsound.dll' * 20       # was in the game folder before Setup: kept as dsound.dll.coop-original and dsound.chain.dll
+OLD_PROXY = pe(0x31) + b' real Ansel DLL %s'           # the v0.1.0-alpha proxy in AnselSDK64.dll
+
+
+def receipt(path, original, installed):
+    Path(str(path) + '.coop-receipt.json').write_text(json.dumps({'schema': 1, 'original': original, 'installed': installed, 'pending': None}, separators=(',', ':')))
 
 
 def make_game(root, tag='v0.1.0', fill=0x11, with_receipts=True):
-    """A game folder as Setup leaves it: managed files, receipts, the original Ansel kept twice."""
+    """A game folder as Setup leaves it: the game's own AnselSDK64.dll untouched, managed files with receipts; Setup found another mod's
+    dsound.dll there, so it is kept as dsound.chain.dll and as the proxy's original."""
     root.mkdir(parents=True, exist_ok=True)
     (root / 'witness_models').mkdir(exist_ok=True)
-    (root / 'AnselSDK64_real.dll').write_bytes(ORIG_ANSEL)
-    (root / 'AnselSDK64.dll.coop-original').write_bytes(ORIG_ANSEL)
+    (root / 'AnselSDK64.dll').write_bytes(ORIG_ANSEL)
+    (root / 'dsound.chain.dll').write_bytes(OTHER_DSOUND)
+    if with_receipts:
+        (root / 'dsound.dll.coop-original').write_bytes(OTHER_DSOUND); receipt(root / 'dsound.chain.dll', None, sha(OTHER_DSOUND))
     for name, data in files(tag, fill).items():
         (root / name).write_bytes(data)
-        if with_receipts:
-            orig = sha(ORIG_ANSEL) if name == 'AnselSDK64.dll' else None
-            (root / (name + '.coop-receipt.json')).write_text(json.dumps({'schema': 1, 'original': orig, 'installed': sha(data), 'pending': None}, separators=(',', ':')))
-    (root / 'witness_models/adventurer.glb.coop-original')  # (no original for the others)
+        if with_receipts: receipt(root / name, sha(OTHER_DSOUND) if name == 'dsound.dll' else None, sha(data))
+    return root
+
+
+def make_legacy(root, tag='v0.1.0', fill=0x11):
+    """A game folder as the alpha's Setup left it: the proxy in AnselSDK64.dll (the game's file kept as AnselSDK64_real.dll and as its
+    .coop-original), no dsound.dll, the launcher and the model with receipts."""
+    root.mkdir(parents=True, exist_ok=True)
+    (root / 'witness_models').mkdir(exist_ok=True)
+    (root / 'AnselSDK64.dll').write_bytes(OLD_PROXY); receipt(root / 'AnselSDK64.dll', sha(ORIG_ANSEL), sha(OLD_PROXY))
+    (root / 'AnselSDK64.dll.coop-original').write_bytes(ORIG_ANSEL)
+    (root / 'AnselSDK64_real.dll').write_bytes(ORIG_ANSEL); receipt(root / 'AnselSDK64_real.dll', None, sha(ORIG_ANSEL))
+    for name, data in files(tag, fill).items():
+        if name == 'dsound.dll': continue
+        (root / name).write_bytes(data); receipt(root / name, None, sha(data))
     return root
 
 
@@ -123,7 +148,7 @@ class Runner:
         (d / 'update.h').write_text(src_text); (d / 'update_cli.cpp').write_text((ROOT / 'launcher/update_cli.cpp').read_text())
         (self.work / 'dist/install-policy.h').write_text((ROOT / 'dist/install-policy.h').read_text())
         self.exe = self.work / 'cli'
-        r = subprocess.run(['g++', '-std=c++17', '-O1', '-w', '-o', str(self.exe), str(d / 'update_cli.cpp')], capture_output=True, text=True)
+        r = subprocess.run(['g++', '-std=c++17', '-O1', '-w', '-DLU_ANSEL_SHA="%s"' % sha(ORIG_ANSEL), '-o', str(self.exe), str(d / 'update_cli.cpp')], capture_output=True, text=True)
         if r.returncode: raise SystemExit('compile failed:\n' + r.stderr[:2000])
 
     def run(self, *args):
@@ -237,11 +262,11 @@ def suite(R, tmp):
     after = tree(g)
     new = files('v0.2.0', 0x22)
     check('every managed file is the new one', all(after[n] == sha(d) for n, d in new.items()))
-    rc = json.loads((g / 'AnselSDK64.dll.coop-receipt.json').read_text())
-    check('the receipt follows the installer: installed is the new hash, pending is null, original is kept', rc == {'schema': 1, 'original': sha(ORIG_ANSEL), 'installed': sha(new['AnselSDK64.dll']), 'pending': None})
+    rc = json.loads((g / 'dsound.dll.coop-receipt.json').read_text())
+    check('the receipt follows the installer: installed is the new hash, pending is null, original is kept', rc == {'schema': 1, 'original': sha(OTHER_DSOUND), 'installed': sha(new['dsound.dll']), 'pending': None})
     rc2 = json.loads((g / 'witness_models/adventurer.glb.coop-receipt.json').read_text())
     check('a file without an original keeps original null', rc2['original'] is None and rc2['installed'] == sha(new['witness_models/adventurer.glb']))
-    check("the game's own Ansel DLL (the kept original and the copy the proxy loads) is untouched", after['AnselSDK64_real.dll'] == before['AnselSDK64_real.dll'] and after['AnselSDK64.dll.coop-original'] == before['AnselSDK64.dll.coop-original'])
+    check("the game's own AnselSDK64.dll, the chain file and the proxy's kept original are untouched", all(after[k] == before[k] for k in ('AnselSDK64.dll', 'dsound.chain.dll', 'dsound.dll.coop-original', 'dsound.chain.dll.coop-receipt.json')))
     leftovers = [n for n in after if n.endswith(('.coop-stage', '.coop-prev', '.coop-receipt.json.tmp', '.coop-receipt.json.coop-prev')) or n == 'witness_update.state']
     check('no stage, backup, temp or journal file is left (the installer would call them recovery artifacts)', not leftovers)
     check('the running launcher image is kept as .coop-old until the next start, then removed', after.get('witness_launcher.exe.coop-old') == before['witness_launcher.exe'] and R.run('recover', g)['recovered'] == '0' and not (g / 'witness_launcher.exe.coop-old').exists())
@@ -265,15 +290,15 @@ def suite(R, tmp):
     refused('a proxy that is not an executable (no MZ) is refused', g, make_zip('v0.2.0', 0x22, nomz=True), r_code('PE'))
     refused('a truncated package is refused', g, z2[: len(z2) // 2], r_code('ARCHIVE'))
     refused('a stored (uncompressed) package works the same as a deflated one only if valid: empty input refused', g, b'', r_code('ARCHIVE'))
-    g2 = make_game(tmp / 'g-mod'); (g2 / 'AnselSDK64.dll').write_bytes(pe(0x77))
+    g2 = make_game(tmp / 'g-mod'); (g2 / 'dsound.dll').write_bytes(pe(0x77))
     refused('a proxy changed by hand (not what the receipt says) is not replaced', g2, z2, r_code('RECEIPT'))
     g3 = make_game(tmp / 'g-norc', with_receipts=False)
     refused('files without receipts (not installed by Setup) are not replaced', g3, z2, r_code('RECEIPT'))
     g4 = make_game(tmp / 'g-stage'); (g4 / 'witness_launcher.exe.coop-stage').write_bytes(b'x')
     refused("a leftover of an interrupted setup (.coop-stage) is refused like the installer does", g4, z2, r_code('RECEIPT'))
-    g5 = make_game(tmp / 'g-badrc'); (g5 / 'AnselSDK64.dll.coop-receipt.json').write_text('{"schema":2}')
+    g5 = make_game(tmp / 'g-badrc'); (g5 / 'dsound.dll.coop-receipt.json').write_text('{"schema":2}')
     refused('a receipt of another schema is refused', g5, z2, r_code('RECEIPT'))
-    g6 = make_game(tmp / 'g-orig'); (g6 / 'AnselSDK64.dll.coop-original').write_bytes(b'tampered')
+    g6 = make_game(tmp / 'g-orig'); (g6 / 'dsound.dll.coop-original').write_bytes(b'tampered')
     refused('a kept original that no longer matches its receipt is refused', g6, z2, r_code('RECEIPT'))
     g7 = make_game(tmp / 'g-journal'); (g7 / 'witness_update.state').write_text('[update]\nstatus=pending\n')
     refused('an unsettled earlier update blocks a new one', g7, z2, r_code('RECEIPT'))
@@ -290,8 +315,29 @@ def suite(R, tmp):
         rec = R.run('recover', g)['recovered']; a = tree(g)
         check(f'startup recovery of a crash after {step} files restores the previous state exactly', rec == '1' and a == b)
         check('after recovery the update can be tried again', apply(g, z2) == OK)
-    g = make_game(tmp / 'g-nobk'); apply(g, z2, fail=2, crash=1); (g / 'AnselSDK64.dll.coop-prev').write_bytes(b'corrupt backup')
-    check('a damaged backup is not copied over the file by a rollback (the rollback reports failure)', R.run('recover', g)['recovered'] == '-1' and tree(g)['AnselSDK64.dll'] == sha(new['AnselSDK64.dll']))
+    g = make_game(tmp / 'g-nobk'); apply(g, z2, fail=2, crash=1); (g / 'dsound.dll.coop-prev').write_bytes(b'corrupt backup')
+    check('a damaged backup is not copied over the file by a rollback (the rollback reports failure)', R.run('recover', g)['recovered'] == '-1' and tree(g)['dsound.dll'] == sha(new['dsound.dll']))
+    # ---- the old layout (up to v0.1.0-alpha), migrated by the update when the game is closed
+    def migrated(game):
+        t = tree(game)
+        return (t.get('dsound.dll') == sha(new['dsound.dll']) and t.get('AnselSDK64.dll') == sha(ORIG_ANSEL) and
+                not any(n.startswith(('AnselSDK64_real', 'AnselSDK64.dll.')) for n in t) and
+                json.loads((game / 'dsound.dll.coop-receipt.json').read_text()) == {'schema': 1, 'original': None, 'installed': sha(new['dsound.dll']), 'pending': None} and
+                all(t[n] == sha(d) for n, d in new.items()) and 'witness_update.state' not in t and not any(n.endswith(('.coop-stage', '.coop-prev')) for n in t))
+    g = make_legacy(tmp / 'g-legacy')
+    check('an old-layout folder is updated to the new layout: dsound.dll added, the game\'s own AnselSDK64.dll back, the old proxy and receipts gone', apply(g, z2) == OK and migrated(g))
+    g = make_legacy(tmp / 'g-legacy-cut'); (g / 'AnselSDK64.dll').write_bytes(ORIG_ANSEL)
+    check('a migration interrupted after the restore (the game\'s file back, leftovers there) finishes', apply(g, z2) == OK and migrated(g))
+    g = make_legacy(tmp / 'g-legacy-run')
+    refused('the old layout is not touched while the game runs', g, z2, r_code('RUNNING'), running=1)
+    g = make_legacy(tmp / 'g-legacy-tamper'); (g / 'AnselSDK64_real.dll').write_bytes(b'not the game\'s file')
+    refused('an AnselSDK64_real.dll that is not the game\'s own blocks the update, nothing changed', g, z2, r_code('LEGACY'))
+    g = make_legacy(tmp / 'g-legacy-foreign'); (g / 'AnselSDK64.dll').write_bytes(pe(0x55)); (g / 'AnselSDK64.dll.coop-receipt.json').unlink()
+    refused('an AnselSDK64.dll that is not this mod\'s old proxy blocks the update, nothing changed', g, z2, r_code('LEGACY'))
+    g = make_legacy(tmp / 'g-legacy-crash'); b = tree(g)
+    r = apply(g, z2, fail=1, crash=1); rec = R.run('recover', g)['recovered']; a = tree(g)
+    check('a migration whose process dies after adding dsound.dll is rolled back at the next start (dsound.dll gone, the old layout as it was)', r == r_code('IO') and rec == '1' and a == b)
+    check('after that recovery the migration can be tried again', apply(g, z2) == OK and migrated(g))
 
 
 CODES = {}

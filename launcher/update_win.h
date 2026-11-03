@@ -146,6 +146,7 @@ private:
         case LU_ERR_SIDECAR: snap_.state = kError; snap_.message = "Update refused: the release has no usable .sha256 file. Nothing was changed."; break;
         case LU_ERR_RUNNING: snap_.state = kAvailable; snap_.message = "Close The Witness first, then press Update again."; break;
         case LU_ERR_RECEIPT: snap_.state = kError; snap_.message = "This copy was not installed by Setup (or a file was changed): download the new Setup from the release page instead. Nothing was changed."; break;
+        case LU_ERR_LEGACY: snap_.state = kError; snap_.message = "An older co-op install is in the game folder and its AnselSDK64 files are not the game's own: run the new Setup, which explains what to do. Nothing was changed."; break;
         case LU_ERR_DOWNGRADE: case LU_ERR_DEV: snap_.state = kError; snap_.message = "Update refused: not a newer release for this build. Nothing was changed."; break;
         default: snap_.state = kError; snap_.message = "Update failed (code " + std::to_string(r) + "); the previous version was put back."; break;
         }

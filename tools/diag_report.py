@@ -4,7 +4,7 @@
 
     tools/diag_report.py a.zip b.zip                      summary of each, then what the pair shows
     tools/diag_report.py a.zip b.zip --timeline merged.txt [--align]
-    tools/diag_report.py a.zip --map proxy/AnselSDK64.map [--dll proxy/AnselSDK64.dll]
+    tools/diag_report.py a.zip --map proxy/dsound.map [--dll proxy/dsound.dll]
     tools/diag_report.py some/logs --raw                  a live logs folder: the hash chains are checked here
     tools/diag_report.py bundle.zip --json                the same summary as JSON
 
@@ -175,7 +175,7 @@ MARK = re.compile(r"MARK (\d+)(?: pressed here| \(from player (\d+)\))")
 CRASH_AT = re.compile(r"crash: (\w[\w-]*) exception (0x[0-9a-f]+) at ([^\s+]+)\+0x([0-9a-f]+)")
 
 
-PROXY_MODULE = "anselsdk64.dll"
+PROXY_MODULES = ("dsound.dll", "anselsdk64.dll")      # the proxy, and its name up to v0.1.0-alpha
 SYMBOLS = {"map": None, "stamp": None}      # --map / --dll
 
 
@@ -201,7 +201,7 @@ def crash_info(src, key, crash_lines):
             info["dump"]["module_timestamp"] = m["timestamp"] if m else None
         except (minidump.MinidumpError, struct.error) as e:
             info["dump_error"] = str(e)
-    if info["module"] and info["module"].lower() == PROXY_MODULE and SYMBOLS["map"] and info["offset"] is not None:
+    if info["module"] and info["module"].lower() in PROXY_MODULES and SYMBOLS["map"] and info["offset"] is not None:
         sm = SYMBOLS["map"]
         info["map"] = sm.describe(info["offset"])
         stamp = info["dump"].get("module_timestamp") if info["dump"] else None
@@ -277,7 +277,7 @@ def print_summary(r):
     for pr in r["problems"]:
         p("  !! %s" % pr)
     sysx = r["system"].get("system.txt", "")
-    for key in ("mod version:", "windows:", "cpu:", "memory:", "graphics:", "witness64_d3d11.exe:", "AnselSDK64.dll:"):
+    for key in ("mod version:", "windows:", "cpu:", "memory:", "graphics:", "witness64_d3d11.exe:", "dsound.dll:", "dsound.chain.dll:", "AnselSDK64.dll:"):
         for line in sysx.splitlines():
             if line.startswith(key):
                 p("  " + line)
@@ -304,8 +304,8 @@ def print_summary(r):
             p("    CRASH %s %s at %s+0x%x" % (c["kind"] or "", c["code"] or "?", c["module"] or "?", c["offset"] or 0))
             if c["map"]:
                 p("      -> %s" % c["map"])
-            elif c["module"] and c["module"].lower() == PROXY_MODULE:
-                p("      (give --map proxy/AnselSDK64.map of the same build to name the function)")
+            elif c["module"] and c["module"].lower() in PROXY_MODULES:
+                p("      (give --map proxy/dsound.map of the same build to name the function)")
             if c["dump"]:
                 d = c["dump"]
                 p("      minidump: %d bytes, %s %s at %s, thread %d, %d modules" % (d["size"], d["code"], d["name"], d["where"], d["thread"], d["modules"]))
@@ -384,8 +384,8 @@ def main():
     ap.add_argument("--timeline", metavar="FILE", help="write every log line of every input, in time order")
     ap.add_argument("--align", action="store_true", help="in the timeline, shift each source so a shared mark lines up")
     ap.add_argument("--json", action="store_true")
-    ap.add_argument("--map", help="proxy/AnselSDK64.map of the build the crash came from: names the function a proxy crash is in")
-    ap.add_argument("--dll", help="that build's AnselSDK64.dll: its link time stamp is checked against the dump's, so another build's map is not trusted blindly")
+    ap.add_argument("--map", help="proxy/dsound.map of the build the crash came from: names the function a proxy crash is in")
+    ap.add_argument("--dll", help="that build's dsound.dll: its link time stamp is checked against the dump's, so another build's map is not trusted blindly")
     a = ap.parse_args()
     if a.map:
         SYMBOLS["map"] = map_symbols.SymbolMap(open(a.map, errors="replace").read())

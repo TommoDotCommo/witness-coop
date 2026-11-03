@@ -1,0 +1,27 @@
+// The proxy's version resource (Explorer > Properties > Details, Setup, diagnostics). MOD_VERSION comes from build/version.h.
+#include <winver.h>
+#include "version.h"
+1 VERSIONINFO
+FILEVERSION 0,0,0,0
+PRODUCTVERSION 0,0,0,0
+FILEOS VOS_NT_WINDOWS32
+FILETYPE VFT_DLL
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "040904B0"
+    BEGIN
+      VALUE "CompanyName", "witness-coop"
+      VALUE "FileDescription", "The Witness Co-op (proxy for dsound.dll; forwards to the system copy)"
+      VALUE "FileVersion", MOD_VERSION
+      VALUE "InternalName", "witness-coop-proxy"
+      VALUE "OriginalFilename", "dsound.dll"
+      VALUE "ProductName", "The Witness Co-op"
+      VALUE "ProductVersion", MOD_VERSION
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x409, 1200
+  END
+END

@@ -271,7 +271,7 @@ function Can-WriteGame($dir) {
             $stream = [IO.File]::Open($probe, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write)
             $stream.Dispose(); [IO.File]::Delete($probe)
         }
-        foreach ($relative in $script:WitnessManaged) {
+        foreach ($relative in $script:WitnessManaged + $script:WitnessChain + $script:WitnessLegacy) {
             $file = Join-Path $dir $relative
             if (Test-Path $file) {
                 $stream = [IO.File]::Open($file, [IO.FileMode]::Open, [IO.FileAccess]::Write, [IO.FileShare]::ReadWrite)

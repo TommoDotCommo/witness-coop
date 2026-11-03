@@ -89,10 +89,20 @@ passes the work area of its monitor in `WITNESS_MONITOR`, and the mod places the
 Players do not build anything: [Releases](https://github.com/TommoDotCommo/witness-coop/releases) has **one file**,
 `Witness-Coop-Setup.exe`, that carries everything (and, for manual installs and Linux, a zip with the same files).
 Setup finds The Witness in the Steam libraries (or takes a folder), checks that the exe is the supported build (SHA-256 above;
-any other build is refused with a plain explanation and nothing is changed), renames the game's `AnselSDK64.dll` to
-`AnselSDK64_real.dll`, puts the proxy in its place, and adds `witness_launcher.exe` and `witness_models\`. Every file it writes
-gets a `.coop-receipt.json` beside it, so Uninstall restores the game's own files and never removes a file it did not install;
-`witness_coop.cfg`, the log and the saves stay.
+any other build is refused with a plain explanation and nothing is changed), and adds the proxy `dsound.dll`, `witness_launcher.exe` and
+`witness_models\`. **No file of the game is renamed or changed**: the game imports DirectSound (`dsound.dll`) but does not ship it, so Windows loads the
+mod's copy from the game folder, and the mod hands every DirectSound call to Windows' own `dsound.dll` (loaded by full path from the system folder).
+Every file Setup writes gets a `.coop-receipt.json` beside it, so Uninstall removes exactly what it installed and never a file it did not;
+`witness_coop.cfg`, the log and the saves stay. A Steam update or *Verify integrity of game files* leaves `dsound.dll` alone (Steam does not know it).
+
+- **Another mod named `dsound.dll`** (an ASI loader, an audio wrapper) found in the game folder is kept as `dsound.chain.dll`; the co-op proxy loads it right
+  after itself, so its start-up work still runs, and logs `chain: loaded dsound.chain.dll`. The game's DirectSound calls still go to Windows' own
+  `dsound.dll`, not to the chained file: a full DirectSound replacement chained this way gets no calls (rule chosen for safety: a chained proxy that loads
+  `dsound.dll` by name would otherwise call back into the co-op proxy). Uninstall puts that file back as `dsound.dll`.
+- **Coming from v0.1.0-alpha** (the proxy in `AnselSDK64.dll`, the game's own file renamed `AnselSDK64_real.dll`): Setup, `install-linux.sh` and the launcher's
+  updater put the game's own `AnselSDK64.dll` back first (only after checking its SHA-256 `3b0677ae...`; a staged copy, one replacing rename; an interrupted
+  run finishes on the next one), then remove the old proxy and its receipts. A file whose hash is not the game's stops the migration with a plain message and
+  nothing is changed: *Verify integrity of game files* in Steam fixes it.
 
 The one-file Setup checks its embedded payload against a SHA-256 compiled into it, unpacks it into a fresh
 `%LOCALAPPDATA%\witness-coop\setup\<version>\` (created exclusively: an existing folder is never reused, a link anywhere on the way is
@@ -117,14 +127,15 @@ in the game and the log (*"Player 2 is on v0.1.0, you are on v0.2.0: update both
 launcher's log). When a newer release exists the bottom bar shows *Update available: vX (first line of the notes)* with **Update** and **Later**; the Play page has the full notes, a *Check for
 updates* button, and the two settings (also in `witness_launcher_update.cfg` next to the launcher: `update_check=0` turns the automatic check off, `update_prereleases=auto|1|0`;
 *auto* offers pre-releases only to an installed pre-release). **Update** downloads `witness-coop-<tag>.zip` and its `.sha256`, checks the size and SHA-256, opens the archive in memory
-(CRC of every file, no path may leave its folder, the executables must be 64-bit), and then replaces `AnselSDK64.dll`, `witness_launcher.exe` and `witness_models\*` through **the
+(CRC of every file, no path may leave its folder, the executables must be 64-bit), and then replaces `dsound.dll`, `witness_launcher.exe` and `witness_models\*` through **the
 installer's own receipt rules** (`dist/install-policy.h`): a file is replaced only if its `.coop-receipt.json` says the installer put exactly that file there, with the receipt journal
 (`pending`, replace, `installed`) the installer writes. A copy that was not installed by Setup, a file changed by hand, a leftover `.coop-stage` or an unsettled earlier update are refused
 whole, with a plain message and nothing changed. All files are staged and backed up first and put back together if anything fails; if the launcher is killed half-way the next start rolls
 back (`witness_update.state`). The proxy DLL is replaced only while the game is not running; the running launcher is renamed to `witness_launcher.exe.coop-old` and replaced (reopen it after the update).
-The game's own Ansel DLL (`AnselSDK64_real.dll`, `AnselSDK64.dll.coop-original`) is never touched. A development build (a version like `v0.1.0-3-gabc1234`, or a dirty tree) neither
+No file of the game is ever replaced; a folder still in the v0.1.0-alpha layout is migrated as Setup does (the updater adds `dsound.dll`, then puts the game's own
+`AnselSDK64.dll` back, verified, only while the game is closed; a hash that is not the game's is refused and nothing changes). A development build (a version like `v0.1.0-3-gabc1234`, or a dirty tree) neither
 checks nor updates. A downgrade (a release that is not newer) is refused. Tests: `make -C launcher test` (includes `tools/test_launcher_update.py`: fake GitHub responses, corrupt and
-truncated archives, hash mismatch, interrupted apply, downgrade, 36 source mutants), `python3 tools/test_launcher_update_win.py --mutants` (the Windows code against a local fake release server),
+truncated archives, hash mismatch, interrupted apply, downgrade, the old-layout migration, 39 source mutants), `python3 tools/test_launcher_update_win.py --mutants` (the Windows code against a local fake release server),
 `python3 tools/qa_lobby_version.py` (real launchers, three versions), `python3 tools/test_update_installer.py <game build folder> --mutant` (a folder installed by the real PowerShell installer is updated by the Windows updater; the new package's installer must then call every file current and uninstall must restore the original). The maintenance rules for publishing a release the updater accepts are in [docs/UPDATER.md](docs/UPDATER.md).
 
 ### Play over the internet (Steam, no port forwarding)
@@ -144,14 +155,15 @@ games use 47001 and 47002, so over the internet every player would need reachabl
 
 Close the game; open its folder (Steam: Properties > Installed Files > Browse, the folder with `witness64_d3d11.exe`).
 
-1. Rename the game's `AnselSDK64.dll` to `AnselSDK64_real.dll` (SHA-256 `3b0677ae1e01fc17645c903c8322497785768145abbe3758364299fdaa8aff15`; keep it).
-2. From the zip copy `AnselSDK64.dll` (the proxy: it loads `AnselSDK64_real.dll` by name), `witness_launcher.exe` and the folder `witness_models\`
-   into the game folder.
-3. Start `witness_launcher.exe` there.
+1. Copy `dsound.dll` (the proxy), `witness_launcher.exe` and the folder `witness_models\` from the zip into the game folder. Nothing is renamed.
+   (If the folder already has a `dsound.dll` of another mod, rename that one to `dsound.chain.dll` first: the proxy loads it after itself.)
+2. Start `witness_launcher.exe` there.
 
-Uninstall by hand: delete the proxy `AnselSDK64.dll`, rename `AnselSDK64_real.dll` back to `AnselSDK64.dll`, delete `witness_launcher.exe` and
-`witness_models\` (`witness_coop.cfg` and `witness_proxy.log` may stay). Steam's *Verify integrity of game files* restores the game's own file if it was lost.
-A later Setup can adopt a hand install: it backs up what it replaces.
+Coming from v0.1.0-alpha by hand: delete the old proxy `AnselSDK64.dll` and rename `AnselSDK64_real.dll` back to `AnselSDK64.dll` (or let Steam's
+*Verify integrity of game files* restore it), then step 1.
+
+Uninstall by hand: delete `dsound.dll`, `witness_launcher.exe` and `witness_models\` (`witness_coop.cfg` and `witness_proxy.log` may stay; rename a
+`dsound.chain.dll` back to `dsound.dll`). A later Setup can adopt a hand install: it backs up what it replaces.
 
 ### Steam Deck and Linux (Proton): untested
 
@@ -160,14 +172,21 @@ Not run on a real Steam Deck or Linux PC yet (tracked in Known issues). What is 
 - `install-linux.sh` in the zip is the manual install as a POSIX script with backups and the same receipts as the Windows Setup (either can uninstall
   the other's install): `sh install-linux.sh install|uninstall|status [game folder]`. It finds the game in the usual Steam folders
   (`~/.local/share/Steam`, `~/.steam/steam`, the Flatpak Steam, other libraries from `libraryfolders.vdf`), refuses any other build in plain words, refuses
-  symbolic links in the way, and changes nothing but the game folder. `tools/test_install_linux.sh` tests it on fixture folders (in WSL) with mutants.
-- The game loads `AnselSDK64.dll` from its own folder. Wine has no built-in `AnselSDK64`, so a native one beside the exe should load without any
-  `WINEDLLOVERRIDES` entry. Expected, untested.
+  symbolic links in the way, migrates a v0.1.0-alpha install and keeps another mod's `dsound.dll` as `dsound.chain.dll`, like Setup.
+- **The DLL override is written for you.** Wine has its own built-in `dsound`, which it prefers to one in the game folder, so Proton must be told to load the
+  mod's: `install-linux.sh install` writes `"dsound"="native,builtin"` into `[Software\\Wine\\AppDefaults\\witness64_d3d11.exe\\DllOverrides]` of the
+  game's own prefix, `<library>/steamapps/compatdata/210970/pfx/user.reg` (only for the game's exe; a backup `user.reg.witness-coop-backup` beside it; the
+  earlier value is kept in `witness-coop-proton.receipt` in the game folder, and `uninstall` puts exactly that back). Run it with the game closed (Proton rewrites
+  `user.reg` when the game exits). The prefix exists only **after the game has run once under Proton**: with no prefix the script says so and prints the
+  fallback, the Steam launch option `WINEDLLOVERRIDES="dsound=n,b" %command%` (The Witness > Properties > Launch options). `status` reports whether the
+  override is in place. `tools/test_install_linux.sh` tests all of it on fixture folders and fixture prefixes (in WSL) with mutants (an override for the wrong
+  exe, an uninstall that leaves it). Untested on a real prefix.
 - The launcher is a Windows program and must run in the game's Proton prefix: add `witness_launcher.exe` as a **non-Steam game**, Start In = the game folder,
   Compatibility = the same Proton version as The Witness, Launch Options = `STEAM_COMPAT_DATA_PATH="<library>/steamapps/compatdata/210970" %command%`. Its lobby then
   starts the game inside that prefix. (Decision: the launcher is the entry point for co-op, as the desktop shortcut is on Windows. Starting the game from Steam as
   usual loads the mod alone.)
-- Unknown: overlay and model drawing under DXVK, voice (microphone) under Proton, window placement on the Deck's screen. Reports welcome.
+- Unknown: whether Proton's `dsound` loaded by full path from `system32` (what the proxy forwards to) behaves as on Windows, overlay and model drawing
+  under DXVK, voice (microphone) under Proton, window placement on the Deck's screen. Reports welcome.
 
 ### FAQ: not the supported build
 
@@ -179,11 +198,14 @@ what it needs and what to do:
 - **Steam:** right-click The Witness > Properties > Betas > choose *None*, then Properties > Installed Files > *Verify integrity of game files*. Run Setup again.
 - **Other stores (GOG, Epic, ...):** not supported yet.
 - **Steam already shows the newest version:** the game was updated after the mod. Nothing is broken: the mod notices the unknown exe when the game starts, patches nothing,
-  forwards to the game's own Ansel DLL, and shows one message. Co-op returns with a mod update.
+  passes every sound call to Windows' own `dsound.dll`, and shows one message. Co-op returns with a mod update.
 
 How the runtime check works: `common/buildid.h` reads the exe's PE header and hashes its code section **in memory** (no file I/O inside `DllMain`); anything
-but the known build leaves `proxy/ansel_proxy.cpp` with no hook and no thread of ours touching the game. `tools/test_build_gate.sh` tests the real `DllMain`
-with a host program that is not the known build (and a mutant that ignores the check must fail); `make -C common test` tests the check on synthetic exes, truncated
+but the known build leaves `proxy/dsound_proxy.cpp` with no hook and no thread of ours touching the game. `tools/test_build_gate.sh` tests the real `DllMain`
+with a host program that is not the known build (and a mutant that ignores the check must fail), the forwarding to the system `dsound.dll` by name and by the
+ordinal the game imports (a bare-name load must fail), a missing system copy (every call fails cleanly), the chain load (a mutant that ignores the chain file must fail), the
+alpha's `AnselSDK64.dll` proxy mapped beside it (this copy stays passive; a mutant that does not look must fail) and the export table; `tools/qa_dropin.sh` (one game slot)
+checks the chain load and the passive copy in the real game, each with its mutant; `make -C common test` tests the check on synthetic exes, truncated
 files and the real exe; `tools/unknown_build_slot.sh` (one game slot) starts a slot copy whose exe has one code byte changed and requires: the game keeps running, exactly one message box, nothing hooked or started (and a proxy that ignores the check must hook it); `tools/buildid_of.py <exe> --check` verifies the constants against a game exe when the target build changes.
 
 ### Making a release
@@ -194,9 +216,10 @@ files and the real exe; `tools/unknown_build_slot.sh` (one game slot) starts a s
 bytes as the zip under its own compiled-in checksum. **Signing:** set `SIGN_CMD` (and optionally `SIGN_VERIFY_CMD`) and every `.exe` and `.dll` is signed before it is hashed and
 embedded, the one-file setup last, then verified; without it the build is unsigned and says so. See [docs/SIGNING.md](docs/SIGNING.md) (certificate, `SIGN_CMD` examples,
 Microsoft's false-positive submission). `tools/qa_installer.sh <folder of the supported build>` runs everything game-free: the release build, the PowerShell installer suite on disposable
-fixtures (install, update, repair, refusals in plain words, uninstall), the one-file setup (hash, planted links, exclusive folder, zip location, a real run), `install-linux.sh`, and the
-mutants (an unknown exe installing, an unchecked payload hash, a followed link, a reused folder, a missing zip message, an Ansel DLL overwritten without a backup, an uninstall removing an
-unowned file) that must fail. `tools/test_release_signing.sh` tests the signing hook with a stand-in signer. Publishing is `gh release create v0.x.y --prerelease <the Setup.exe, the zip and their .sha256>`
+fixtures (install, update, repair, refusals in plain words, uninstall, the v0.1.0-alpha layout migrated, interrupted and resumed, another mod's `dsound.dll`
+chained), the one-file setup (hash, planted links, exclusive folder, zip location, a real run), `install-linux.sh` (with fixture Proton prefixes), and the mutants (an unknown exe
+installing, an unchecked payload hash, a followed link, a reused folder, a missing zip message, a file overwritten without a backup, an uninstall removing an unowned file, the
+game's Ansel DLL put back unverified, the old proxy left behind, the chain file ignored, the Proton override written for the wrong exe or left behind on uninstall) that must fail. `tools/test_release_signing.sh` tests the signing hook with a stand-in signer. Publishing is `gh release create v0.x.y --prerelease <the Setup.exe, the zip and their .sha256>`
 (the notes go in `docs/RELEASE-NOTES-v0.x.y.md`). The launcher's updater only accepts a release with the exact asset names and tag shape in [docs/UPDATER.md](docs/UPDATER.md).
 
 ## Try it (two copies on one PC)
@@ -215,7 +238,7 @@ The proxy goes into two disposable copies of the install, never the real one:
 ```
 cp -a "<Steam library>/steamapps/common/The Witness" local/witness-1
 cp -a "<Steam library>/steamapps/common/The Witness" local/witness-2     # (then set WITNESS_DIR1/2, configure an external resource provider)
-tools/install.sh       # builds the DLL, checks both exe hashes, renames AnselSDK64.dll to AnselSDK64_real.dll, installs the proxy
+tools/install.sh       # builds the DLL, checks both exe hashes, installs the proxy as dsound.dll (a copy in the old layout gets the game's AnselSDK64.dll back)
 tools/restart.sh       # starts both with -skip_config_dialog -windowed -new_game, side by side
 tools/restart.sh B     # restart only B with a fresh world, keeping A and its progress running (also accepts A)
 ```
@@ -298,7 +321,7 @@ Each log line is numbered and hash-chained, so a missing or edited line shows (a
 `IsBadReadPtr` does all the time, produce no marker and no dump). On a crash it writes the crash lines (faulting module and offset, registers, the
 code addresses found on the stack) to the log, `<session>.crash`, the flight recording and `<session>.dmp`, a small minidump that also holds the
 mod's data. It cannot see `__fastfail` or a killed process: such a session simply has no "session end: clean exit" line. Developers read a
-submitted zip with `python3 tools/diag_report.py a.zip b.zip [--map proxy/AnselSDK64.map --dll proxy/AnselSDK64.dll]`: it checks the manifest and the
+submitted zip with `python3 tools/diag_report.py a.zip b.zip [--map proxy/dsound.map --dll proxy/dsound.dll]`: it checks the manifest and the
 hash chains, lists the sessions, crashes (a proxy crash is mapped to the object file and function through the linker map `make -C proxy`
 writes; keep the map and DLL of every release), desyncs and markers, summarises the flight recordings, and with two zips lines up the
 shared marker (`--timeline merged.txt --align`). Game-free tests: `python3 -B tools/test_diag.py` (anonymisation with mutants: a computer name, a
@@ -308,9 +331,12 @@ dump of a child process, with mutants). Test-only settings in `witness_coop.cfg`
 
 ## How it works
 
-The exe loads `AnselSDK64.dll` from its own folder. `proxy/` builds a replacement whose nine exports are stubs that load the
-renamed original (`AnselSDK64_real.dll`) by full path on first use and jump to the real function (export forwarders in a `.def`
-file made the loader fail with "AnselSDK64_real.dll not found"). `DllMain` only starts threads.
+The exe imports `DSOUND.dll` (DirectSoundEnumerateA and DirectSoundCreate8, by ordinal) and the game folder does not ship it, so Windows loads
+`dsound.dll` from the game folder first. `proxy/` builds that file: its twelve exports carry the system `dsound.dll`'s names and ordinals and are stubs that
+load the system copy by full path (`GetSystemDirectory`, never the bare name, which is the proxy itself) on first use and jump to the real function; with no
+system copy every call returns a failure instead of crashing. (Until v0.1.0-alpha the proxy replaced the game's `AnselSDK64.dll`, which no mod manager can
+install and which Steam restores on every update.) `winmm.dll`, the other candidate, is ruled out: the mod's voice uses `waveIn` from it. `DllMain` only starts
+threads; the chain file and the system copy are loaded from them.
 
 | Part | File | What it does |
 |---|---|---|
@@ -543,8 +569,11 @@ read-only; `wkeys.py`, `wshot.py`, `wplace.py`, `wfocus.py` and `launch.py` driv
 
 ## Known issues
 
-- **Steam Deck / Linux (Proton) is untested.** The install script, the DLL loading without an override and the launcher as a non-Steam game are expected to work and have not
-  been run on a real Deck or Linux PC. The script itself is tested on fixture folders. Overlay under DXVK, voice under Proton and window placement are unknown.
+- **Steam Deck / Linux (Proton) is untested.** The install script, the DLL override it writes into the game's prefix and the launcher as a non-Steam game are expected to
+  work and have not been run on a real Deck or Linux PC. The script itself is tested on fixture folders and fixture prefixes. Overlay under DXVK, voice under Proton and
+  window placement are unknown.
+- **Another mod named `dsound.dll` is chained for its start-up only.** Its exports get no calls (the game's DirectSound goes to Windows' copy), so a full
+  DirectSound replacement does not work together with the co-op mod.
 - **Only Steam build 11370412 is supported.** A Steam update, a beta branch or another store's copy turns co-op off with one message (see the FAQ above). Supporting a new
   build means re-deriving the offsets and re-running the checks.
 - **The first releases may be unsigned.** Windows SmartScreen and some antivirus programs warn about unsigned programs and about PowerShell started by one. `docs/SIGNING.md`

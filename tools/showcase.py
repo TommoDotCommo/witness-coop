@@ -13,10 +13,7 @@ SPOT = os.environ.get('SHOWCASE_SPOT', 'c335')       # the panel the players are
 def prepare(c, config):
     d = c.directory
     assert gs.digest(d / 'witness64_d3d11.exe') == gs.EXE_HASH, 'unsupported game build'
-    if not (d / 'AnselSDK64_real.dll').exists():
-        assert gs.digest(d / 'AnselSDK64.dll') == gs.DLL_HASH, 'unrecognized original DLL'
-        (d / 'AnselSDK64.dll').rename(d / 'AnselSDK64_real.dll')
-    gs.replace_copy(Path(ROOT) / 'proxy/AnselSDK64.dll', d / 'AnselSDK64.dll')
+    gs.install_proxy(d)
     if (Path(ROOT) / 'launcher/build/witness_launcher.exe').exists(): gs.replace_copy(Path(ROOT) / 'launcher/build/witness_launcher.exe', d / 'witness_launcher.exe')
     models = d / 'witness_models'; models.mkdir(exist_ok=True)
     for f in models.iterdir(): f.unlink()

@@ -114,15 +114,15 @@ def scenario(label, cfg_a, cfg_b, bundle):
     check('B left a crash marker', len(files(DIR2, '.crash')) == 1, files(DIR2, '.crash'))
     check('B left a minidump', any(os.path.getsize(os.path.join(DIR2, LOGS, f)) > 10000 for f in files(DIR2, '.dmp')), files(DIR2, '.dmp'))
     m = re.search(r'crash: unhandled exception (0x[0-9a-f]+) at (\S+)\+0x([0-9a-f]+)', sl)
-    check('the session log names the exception, module and offset', m and m.group(2) == 'AnselSDK64.dll', sl[-400:])
+    check('the session log names the exception, module and offset', m and m.group(2) == 'dsound.dll', sl[-400:])
     check('the crashed session has no clean exit line', 'session end: clean exit' not in sl)
     if m and files(DIR2, '.dmp'):
         try:
             dmp = minidump.Minidump(open(os.path.join(DIR2, LOGS, files(DIR2, '.dmp')[0]), 'rb').read())
-            check('the dump agrees with the log (exception code, module and offset)', dmp.exception['code'] == int(m.group(1), 16) and dmp.locate(dmp.exception['address']) == 'AnselSDK64.dll+0x' + m.group(3), dmp.locate(dmp.exception['address']))
-            mp = os.path.join(ROOT, 'proxy', 'AnselSDK64.map')
+            check('the dump agrees with the log (exception code, module and offset)', dmp.exception['code'] == int(m.group(1), 16) and dmp.locate(dmp.exception['address']) == 'dsound.dll+0x' + m.group(3), dmp.locate(dmp.exception['address']))
+            mp = os.path.join(ROOT, 'proxy', 'dsound.map')
             if os.path.exists(mp):
-                desc = map_symbols.SymbolMap(open(mp, errors='replace').read()).describe(int(m.group(3), 16)); print('  map: AnselSDK64.dll+0x%s -> %s' % (m.group(3), desc))
+                desc = map_symbols.SymbolMap(open(mp, errors='replace').read()).describe(int(m.group(3), 16)); print('  map: dsound.dll+0x%s -> %s' % (m.group(3), desc))
                 check('the map puts the crash in proxy/diag.cpp', 'diag.o' in desc, desc)
         except Exception as e: check('the dump is readable', False, e)
     # --- Send diagnostics from both launchers
@@ -131,14 +131,14 @@ def scenario(label, cfg_a, cfg_b, bundle):
         for which, d in (('A', DIR1), ('B', DIR2)): zips[which] = launcher_bundle(which, d, os.path.join(EVID, 'bundle' + which))
         check('both launchers made a zip', all(zips.values()), zips)
         if all(zips.values()):
-            rep = subprocess.run([sys.executable, os.path.join(TOOLS, 'diag_report.py'), zips['A'], zips['B'], '--map', os.path.join(ROOT, 'proxy', 'AnselSDK64.map'), '--dll', os.path.join(ROOT, 'proxy', 'AnselSDK64.dll'), '--timeline', os.path.join(EVID, 'timeline.txt'), '--align'], capture_output=True, text=True)
+            rep = subprocess.run([sys.executable, os.path.join(TOOLS, 'diag_report.py'), zips['A'], zips['B'], '--map', os.path.join(ROOT, 'proxy', 'dsound.map'), '--dll', os.path.join(ROOT, 'proxy', 'dsound.dll'), '--timeline', os.path.join(EVID, 'timeline.txt'), '--align'], capture_output=True, text=True)
             open(os.path.join(EVID, 'report.txt'), 'w').write(rep.stdout); print(rep.stdout)
-            ra, rb = [json.loads(subprocess.run([sys.executable, os.path.join(TOOLS, 'diag_report.py'), zips[w], '--json', '--map', os.path.join(ROOT, 'proxy', 'AnselSDK64.map')], capture_output=True, text=True).stdout)[0] for w in 'AB']
+            ra, rb = [json.loads(subprocess.run([sys.executable, os.path.join(TOOLS, 'diag_report.py'), zips[w], '--json', '--map', os.path.join(ROOT, 'proxy', 'dsound.map')], capture_output=True, text=True).stdout)[0] for w in 'AB']
             ga = [s for s in ra['sessions'] if s['program'] == 'game'][0]; gb = [s for s in rb['sessions'] if s['program'] == 'game'][0]
             check('the report shows the marker in A\'s zip', any('pressed here' in t for _u, t in ga['marks']), ga['marks'])
             check('the report shows the marker in B\'s zip', any('from player 1' in t for _u, t in gb['marks']), gb['marks'])
             c = gb.get('crash') or {}
-            check('the report shows the crash in B\'s zip with module and offset, mapped', gb['crashed'] and c.get('module') == 'AnselSDK64.dll' and c.get('offset') and c.get('map') and 'diag.o' in c['map'] and c.get('dump'), c)
+            check('the report shows the crash in B\'s zip with module and offset, mapped', gb['crashed'] and c.get('module') == 'dsound.dll' and c.get('offset') and c.get('map') and 'diag.o' in c['map'] and c.get('dump'), c)
             check('A\'s zip has no crash', not ga['crashed'] and 'crash' not in ga)
             check('the report pairs the marker across the two zips', 'mark 1 pressed on' in rep.stdout, rep.stdout[-300:])
             check('both zips have a launcher log', any(s['program'] == 'launcher' for s in ra['sessions']) and any(s['program'] == 'launcher' for s in rb['sessions']))

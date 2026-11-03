@@ -17,13 +17,13 @@ the reason is in the launcher's log as `update: check failed, code N`). Nothing 
 | The release is not a draft. Pre-releases are offered only to an installed pre-release (a tag with `-beta.1` and the like) or when the player sets `update_prereleases=1`. | Players on a plain `v0.2.0` are not moved onto betas. **Tag the beta releases with a pre-release part (`v0.3.0-beta.1`) and mark them as pre-release on GitHub**, so beta testers get them and others do not. |
 | The release has an asset named exactly `witness-coop-<tag>.zip` (the tag as in `tag_name`, with its `v`) of at most 64 MB. | `release.sh` produces this name from the version you give it: give it the same string as the tag. |
 | The release has an asset `witness-coop-<tag>.zip.sha256` of at most 4 KB, in `sha256sum` form: `<64 hex>  witness-coop-<tag>.zip`. | The updater verifies the download against it and refuses a release without it. (This protects against a damaged or truncated download, not against a replaced release: that is what code signing is for.) |
-| The archive holds, under `witness-coop-<tag>/`, `AnselSDK64.dll`, `witness_launcher.exe` (both 64-bit Windows executables), `witness_models/adventurer.glb` and `witness_models/adventurer.glb.txt`. No entry may have an absolute path, `..`, a backslash or a drive letter. | These are the files Setup manages (`dist/install-state.ps1`: `$script:WitnessManaged`). If a release adds a managed file, add it to `lu_targets` in `launcher/update.h` and to the tests in the same commit. |
+| The archive holds, under `witness-coop-<tag>/`, `dsound.dll`, `witness_launcher.exe` (both 64-bit Windows executables), `witness_models/adventurer.glb` and `witness_models/adventurer.glb.txt`. No entry may have an absolute path, `..`, a backslash or a drive letter. | These are the files Setup manages (`dist/install-state.ps1`: `$script:WitnessManaged`). If a release adds a managed file, add it to `lu_targets` in `launcher/update.h` and to the tests in the same commit. |
 | The tag is newer than the installed version. | An equal or older release is never installed (no downgrade). |
 
 ## What the updater does to a player's folder
 
 It goes through the receipt rules of the installer, so a copy the installer does not own is left alone: see README, *Updating*. In short: only files whose `.coop-receipt.json` matches are
-replaced, all or none; the game's own Ansel DLL is never touched; the proxy only while the game is not running; the old launcher stays as `witness_launcher.exe.coop-old` until the next start.
+replaced, all or none; no file of the game is replaced (a folder in the v0.1.0-alpha layout is migrated: `dsound.dll` added, the game's own `AnselSDK64.dll` put back after its SHA-256 is checked); the proxy only while the game is not running; the old launcher stays as `witness_launcher.exe.coop-old` until the next start.
 `witness_update.state` (a journal) exists only while an update is in progress; if it is found at start the update is rolled back.
 
 ## Testing a release candidate without publishing it

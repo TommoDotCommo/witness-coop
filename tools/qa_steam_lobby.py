@@ -10,7 +10,7 @@ from witness import TOOLS, ROOT, DIR1, PYW, RUN, win
 def run(proxy_dll=None):
     subprocess.run(['make', '-C', os.path.join(ROOT, 'launcher'), 'launcher'], check=True, capture_output=True)
     subprocess.run([os.path.join(TOOLS, 'install.sh'), 'A'], check=True, capture_output=True)
-    if proxy_dll: subprocess.run(['cp', proxy_dll, os.path.join(DIR1, 'AnselSDK64.dll')], check=True)      # (a mutant; install.sh made the slot's copy private)
+    if proxy_dll: subprocess.run(['cp', proxy_dll, os.path.join(DIR1, 'dsound.dll')], check=True)      # (a mutant; install.sh made the slot's copy private)
     subprocess.run(['cp', os.path.join(ROOT, 'launcher', 'build', 'witness_launcher.exe'), os.path.join(DIR1, 'witness_launcher.exe')], check=True)
     res = os.environ.get('WITNESS_RESOURCES', '')
     slot = (os.environ.get('WITNESS_SLOTS', '0').split(',') + ['0'])[0]
@@ -36,7 +36,7 @@ def run(proxy_dll=None):
 if __name__ == '__main__':
     print('=== steam: clean build', flush=True); ok = run()
     if '--no-mutants' not in sys.argv:      # the Present loop with the Steam overlay not broken: the game started from the Steam lobby must be seen to crash
-        subprocess.run(['make', '-C', os.path.join(ROOT, 'proxy'), 'build/AnselSDK64_PRESENT_LOOP.dll'], check=True, capture_output=True)
-        print('=== steam: MUTANT the Present loop with the Steam overlay is not broken', flush=True); out = run(os.path.join(ROOT, 'proxy', 'build', 'AnselSDK64_PRESENT_LOOP.dll'))
+        subprocess.run(['make', '-C', os.path.join(ROOT, 'proxy'), 'build/dsound_PRESENT_LOOP.dll'], check=True, capture_output=True)
+        print('=== steam: MUTANT the Present loop with the Steam overlay is not broken', flush=True); out = run(os.path.join(ROOT, 'proxy', 'build', 'dsound_PRESENT_LOOP.dll'))
         caught = not out; print('mutant: %s' % ('caught' if caught else 'SURVIVED (the check cannot fail for it)'), flush=True); ok = ok and caught
     sys.exit(0 if ok else 1)

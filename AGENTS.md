@@ -11,8 +11,8 @@ prepare a reviewable diff before asking to publish. Never force-push.
 ## Repository map
 
 - `README.md`: what works, how to run the dev setup, architecture, QA results.
-- `proxy/`: C++ source of the 64-bit `AnselSDK64.dll` proxy that the game loads from its own folder.
-  `ansel_proxy.cpp` (export stubs, `DllMain`, log, startup of the other parts), `overlay.cpp` (Direct3D 11
+- `proxy/`: C++ source of the 64-bit `dsound.dll` proxy that the game loads from its own folder (it forwards to the system `dsound.dll`).
+  `dsound_proxy.cpp` (export stubs, chain load, `DllMain`, log, startup of the other parts), `overlay.cpp` (Direct3D 11
   `Present` hook and puppet drawing), `coop.cpp` (UDP pose exchange and the reliable event layer), `state.cpp`
   (detector for solved panels and opened doors, and the applier), `game.cpp` (calls into the game's own
   functions and the `witness_cmd.txt` channel), `input.cpp` (in-process keys, mouse and clicks, so no window needs the focus),

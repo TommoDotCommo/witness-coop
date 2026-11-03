@@ -41,16 +41,19 @@ Install by hand (no Setup)
 --------------------------
 1. Close the game. In Steam: The Witness > Properties > Installed Files > Browse. That is the game folder
    (it holds witness64_d3d11.exe).
-2. In the game folder rename AnselSDK64.dll to AnselSDK64_real.dll. (It is the game's own file.
-   SHA-256 3b0677ae1e01fc17645c903c8322497785768145abbe3758364299fdaa8aff15. Keep it.)
-3. Copy these from this zip into the game folder:
-     AnselSDK64.dll         (the co-op mod; the game loads it from its folder, it loads the real one)
+2. Copy these from this zip into the game folder. Nothing of the game is renamed or changed.
+     dsound.dll             (the co-op mod; the game loads it from its folder, it passes the sound
+                             calls on to Windows' own dsound.dll)
      witness_launcher.exe   (the lobby and settings window)
      witness_models\        (the whole folder: the player model)
-4. Start witness_launcher.exe from the game folder.
-Uninstall by hand: delete AnselSDK64.dll (the mod), rename AnselSDK64_real.dll back to AnselSDK64.dll,
-delete witness_launcher.exe and the witness_models folder. witness_coop.cfg and witness_proxy.log may
-stay. If the game's own file is lost, Steam's Verify integrity of game files brings it back.
+   If the game folder already has a dsound.dll (another mod), rename that one to dsound.chain.dll
+   first: the co-op mod loads it after itself.
+3. Start witness_launcher.exe from the game folder.
+Coming from v0.1.0-alpha: delete the old AnselSDK64.dll (the old co-op mod) and rename
+AnselSDK64_real.dll back to AnselSDK64.dll (or let Steam's Verify integrity of game files restore it).
+Setup does this for you, after checking the file is the game's own.
+Uninstall by hand: delete dsound.dll, witness_launcher.exe and the witness_models folder (rename a
+dsound.chain.dll back to dsound.dll). witness_coop.cfg and witness_proxy.log may stay.
 Setup can later take over a hand install: it backs up what it replaces and can uninstall it.
 
 
@@ -63,8 +66,13 @@ Not tried on a real Steam Deck yet. What should work, from how Proton and Wine l
     sh install-linux.sh uninstall
     sh install-linux.sh status
   Open a terminal (Konsole) in the unpacked zip. It refuses any other build of the game in plain words.
-- Wine has no built-in AnselSDK64, so the mod's AnselSDK64.dll beside the game's exe should load
-  without any WINEDLLOVERRIDES setting. Expected, untested.
+- Proton has its own built-in dsound and prefers it, so it must be told to load the mod's.
+  install-linux.sh does that for you: it writes "dsound"="native,builtin" for witness64_d3d11.exe into
+  the game's Proton prefix (<Steam library>/steamapps/compatdata/210970/pfx/user.reg, with a backup;
+  uninstall puts back exactly what was there). Run it with the game closed. The prefix only exists
+  after The Witness has run once under Proton: if it is missing, start the game once and run the
+  script again, or set this launch option in Steam (The Witness > Properties > Launch options):
+    WINEDLLOVERRIDES="dsound=n,b" %command%
 - The launcher is a Windows program and has to run in the game's own Proton prefix. In Steam
   (Desktop mode): Games > Add a Non-Steam Game > Browse to witness_launcher.exe in the game folder.
   Open its Properties: Start In = the game folder; Compatibility = force the same Proton version as
@@ -147,19 +155,22 @@ Known limits of this alpha
 
 Uninstall
 ---------
-Open Witness-Coop-Setup.exe and choose Uninstall (on Linux: sh install-linux.sh uninstall). It puts the game's own AnselSDK64.dll back,
-removes the launcher and the player model, and keeps witness_coop.cfg (your co-op settings),
+Open Witness-Coop-Setup.exe and choose Uninstall (on Linux: sh install-linux.sh uninstall). It removes dsound.dll (and puts back a
+dsound.dll of another mod it found there), the launcher and the player model, undoes the Proton override, and keeps witness_coop.cfg (your co-op settings),
 witness_proxy.log and your saves. Only files this setup installed are touched (each has a
 .coop-receipt.json beside it); files it does not own are kept.
 
 What the installer changes
 --------------------------
 Only the game folder (the single-file Setup also unpacks itself for a moment into %LOCALAPPDATA%\witness-coop\setup\ and deletes that again):
-- AnselSDK64.dll becomes the co-op mod (the game loads this DLL from its folder); the game's own
-  AnselSDK64.dll is kept as AnselSDK64_real.dll, and as AnselSDK64.dll.coop-original for uninstall.
+- dsound.dll is added: the co-op mod (the game loads this DLL from its folder; Steam does not know it,
+  so a game update leaves it alone). A dsound.dll of another mod is kept as dsound.chain.dll.
+- An install of v0.1.0-alpha is undone first: the game's own AnselSDK64.dll goes back (its SHA-256 is
+  checked), the old co-op AnselSDK64.dll and AnselSDK64_real.dll are removed.
 - witness_launcher.exe (the lobby and settings window) and witness_models\ (the adventurer).
 - witness_coop.cfg is written by the launcher when you play; witness_proxy.log is the mod's log.
-No registry, no Steam files, no saves. The game executable is never changed.
+No registry, no Steam files, no saves. No file of the game is changed. (On Linux, install-linux.sh also
+writes the one DLL override above into the game's Proton prefix.)
 
 Reporting a problem
 -------------------
