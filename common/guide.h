@@ -1,6 +1,7 @@
 #pragma once
 // Portable guide model: both renderers use these bindings, text and word wrapping.
 #include "../proxy/config.h"
+#include "padlayer.h"
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -188,8 +189,23 @@ public:
     bool Open() const { return held.load(); }
 };
 using Columns = std::array<std::vector<std::string>, 3>;
-inline Columns Content(const Cfg& c) {
-    Columns out;
+// The pad layer's lines (padlayer.h, the one table the launcher's Controls page lists too), with the push-to-talk stick click the player chose.
+inline std::vector<std::string> PadLines(const Cfg& c) {
+    std::vector<std::string> out{"CONTROLLER - co-op buttons on View (Back)"};
+    for (const auto& l : padlayer::kLines) {
+        std::string b = l.buttons;
+        if (std::string(l.id) == "voice") { if (!c.padVoice) continue; b = c.padVoice == 1 ? "Hold left stick click" : "Hold right stick click"; out.push_back(b + "  Push to talk"); continue; }
+        out.push_back(b + "  " + l.text);
+    }
+    out.push_back(std::string("Voice: ") + (c.voiceMode == 3 ? (c.padVoice ? "push to talk on keys and on the stick click" : "open mic after pad input, push to talk after keys") : c.voiceMode == 1 ? "open mic" : c.voiceMode == 2 ? "push to talk" : "off") + ". Drawing stays on the keyboard.");
+    return out;
+}
+// `pad`: the last input was a pad (K7): the controller's lines come first.
+inline Columns Content(const Cfg& c, bool pad = false) {
+    Columns out; (void)pad;
+#ifndef GUIDE_MUT_NO_PAD
+    if (pad) for (auto& l : PadLines(c)) out[0].push_back(l);
+#endif
     out[0].push_back("MOD KEYS - your current bindings");
     for (const auto& b : bindings) {
 #ifdef GUIDE_MUT_MISSING_KEY
@@ -212,6 +228,9 @@ inline Columns Content(const Cfg& c) {
     out[0].push_back("Game uses your settings. Defaults: WASD move, mouse look / draw, click puzzles, Esc back.");
     out[0].push_back("Lists: arrows, Enter, Esc. Launcher: Tab / Shift+Tab and Enter.");
     out[0].push_back("Dev map: wheel zoom, right-drag pan; click a dot. Buttons teleport or act on a puzzle.");
+#ifndef GUIDE_MUT_NO_PAD
+    if (!pad) for (auto& l : PadLines(c)) out[0].push_back(l);
+#endif
     out[1] = {
         "PLAY TOGETHER",
         "Explore independently. See animated teammates, names, typing dots, pings and emotes.",

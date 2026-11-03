@@ -14,5 +14,8 @@ bool Send(uint64_t to, const uint8_t* d, size_t n);
 int Receive(uint8_t* buf, size_t cap, uint64_t* from);      // one message (0: none), never more than cap bytes (larger ones are dropped)
 int State(uint64_t peer);                                    // ESteamNetworkingConnectionState of the session with that player (steamabi kConn*)
 const char* StateName(int s);
+// K6: Steam's floating keyboard over the chat line (a rectangle in the window's pixels). It needs Steam running in Big Picture or on a Steam Deck;
+// false when Steam cannot show it (the game started without Steam, an old Steam client, the desktop): the caller shows its own keyboard.
+bool FloatingKeyboard(int x, int y, int w, int h);
 void Stat(const uint64_t* peers, const unsigned* ids, size_t n);      // `steamstat` readout to the log (tests and players' logs)
 }  // namespace wsteam

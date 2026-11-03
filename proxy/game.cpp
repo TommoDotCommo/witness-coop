@@ -1,3 +1,4 @@
+#include "pad.h"
 #include "radio/radio_game.h"
 // Game-function bridge. Commands arrive from other threads and run on the render thread, between frames.
 // witness_cmd.txt (one per line):  door <hexid> [amount] | cable <hexid>
@@ -144,6 +145,7 @@ static DWORD WINAPI CmdThread(LPVOID) {
             else if (sscanf(line, "cable %x", &id) == 1) GameEnqueueCablePower(id);
             else if (sscanf(line, "solve %x", &id) == 1 || sscanf(line, "dispatch %x", &id) == 1) { Cmd c = {line[0] == 's' ? 5 : 4, id, 0, 0, 0, false, 0, 0, 0}; EnterCriticalSection(&g_lock); if (g_n < 64) g_q[g_n++] = c; LeaveCriticalSection(&g_lock); }
             else if (!strncmp(line, "chat ", 5) || !strncmp(line, "typing ", 7) || !strncmp(line, "typetext ", 9) || !strncmp(line, "ping", 4) || !strncmp(line, "socialstat", 10) || !strncmp(line, "emote ", 6) || !strncmp(line, "wheel ", 6) || !strncmp(line, "canvas ", 7) || !strncmp(line, "reticle ", 8) || !strncmp(line, "drawstat", 8) || !strncmp(line, "drawclear", 9)) SocialCommand(line);
+            else if (!strncmp(line, "pad ", 4) || !strncmp(line, "padstat", 7)) PadCommand(line);
             else if (!strncmp(line, "radiodump ", 10)) RadioRequestDump((unsigned)strtoul(line+10,nullptr,10));
             else if (!strncmp(line, "voiceplayer ", 12)) { unsigned id; int volume; if (sscanf(line+12, "%u %d", &id, &volume)==2 && id>0 && id<=255 && volume>=0 && volume<=100) VoicePlayerVolume(id, volume/100.0f); }
             else if (!strncmp(line, "voicestat", 9)) VoiceStat();

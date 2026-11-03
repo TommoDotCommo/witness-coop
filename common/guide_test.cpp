@@ -112,6 +112,15 @@ int main() {
     check(col0Text.find("Tab  Hold: player list") != std::string::npos, "guide lists the player list key");
     check(col0Text.find("MMB  Ping") != std::string::npos && col0Text.find("XBUTTON1  Hold: push to talk") != std::string::npos, "guide lists the mouse keys");
     check(col0Text.find("Watch / clear") == std::string::npos, "V no longer watches");
+    // H5/K7: the controller's co-op layer comes from padlayer.h's one table; after pad input it is listed first (mutant GUIDE_MUT_NO_PAD)
+    for (const auto& l : padlayer::kLines) if (std::string(l.id) != "voice")
+        check(col0Text.find(std::string(l.buttons) + "  " + l.text) != std::string::npos, "the guide lists every line of the pad layer");
+    {   auto padCols = guide::Content(Cfg(), true);
+        check(!padCols[0].empty() && padCols[0][0].rfind("CONTROLLER", 0) == 0, "after pad input the guide starts with the controller's lines");
+        check(defaultCols[0][0].rfind("MOD KEYS", 0) == 0, "after keys the guide starts with the keys");
+        Cfg rs; rs.padVoice = 2; std::string t; auto rsCols = guide::Content(rs, true); for (const auto& line : rsCols[0]) t += line + "\n";
+        check(t.find("Hold right stick click  Push to talk") != std::string::npos, "a stick click chosen for push to talk is listed");
+    }
 
     // the diagnostics marker is F2 unless a binding took it, never one of the bindings, and the guide names it
     check(guide::MarkerKey(Cfg()) == 0x71, "the marker is F2 by default");

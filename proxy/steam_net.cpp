@@ -69,6 +69,20 @@ int Receive(uint8_t* buf, size_t cap, uint64_t* from) {
     return 0;
 }
 
+bool FloatingKeyboard(int x, int y, int w, int h) {
+    void* utils = g_utils;
+    if (!utils) {      // (the game may run over UDP: the Steam API is the game's own, asked without waiting)
+        HMODULE api = GetModuleHandleW(L"steam_api64.dll"); if (!api) return false;
+        auto getClient = (void* (*)())GetProcAddress(api, "SteamClient"); auto getPipe = (int (*)())GetProcAddress(api, "SteamAPI_GetHSteamPipe");
+        if (!getClient || !getPipe) return false;
+        int pipe = getPipe(); void* client = pipe ? getClient() : nullptr; if (!client) return false;
+        utils = Call<void*>(client, SC_UTILS, pipe, kUtils); if (!utils) return false;
+    }
+    bool shown = (Call<bool>(utils, UT_BIG_PICTURE) || Call<bool>(utils, UT_ON_DECK)) && Call<bool>(utils, UT_FLOATING_KEYBOARD, 0 /* single line */, x, y, w, h);
+    char m[96]; snprintf(m, sizeof m, "steam: floating keyboard %s", shown ? "shown" : "not available (the mod's own keyboard instead)"); Log(m);
+    return shown;
+}
+
 int State(uint64_t peer) {
     if (!g_messages) return kConnNone;
     Identity id = IdentityOf(peer); return Call<int>(g_messages, NM_INFO, (const Identity*)&id, (void*)nullptr, (void*)nullptr);

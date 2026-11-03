@@ -1,10 +1,10 @@
 CXX ?= g++
 CXXFLAGS = -std=c++17 -O2 -Wall -Wextra
-MUTANTS = NO_MIGRATE TOGGLE ALLOW_COLLISION MISSING_KEY MARKER_BOUND KEEP_OLD OVERWRITE_CUSTOM SHARED_FREE NO_RESOLVE WRITE_ALWAYS TV_KEY_WHILE_OFF TV_IN_GUIDE
-build/guide-test: guide_test.cpp guide.h movedkeys.h bindings.def ../proxy/config.h ../proxy/bindings.h
+MUTANTS = NO_PAD NO_MIGRATE TOGGLE ALLOW_COLLISION MISSING_KEY MARKER_BOUND KEEP_OLD OVERWRITE_CUSTOM SHARED_FREE NO_RESOLVE WRITE_ALWAYS TV_KEY_WHILE_OFF TV_IN_GUIDE
+build/guide-test: guide_test.cpp guide.h padlayer.h movedkeys.h bindings.def ../proxy/config.h ../proxy/bindings.h
 	mkdir -p build
 	$(CXX) $(CXXFLAGS) -o $@ $<
-build/mutant-%: guide_test.cpp guide.h movedkeys.h bindings.def ../proxy/config.h ../proxy/bindings.h
+build/mutant-%: guide_test.cpp guide.h padlayer.h movedkeys.h bindings.def ../proxy/config.h ../proxy/bindings.h
 	mkdir -p build
 	$(CXX) $(CXXFLAGS) -DGUIDE_MUT_$* -o $@ $<
 PAD_MUTANTS = LEAK STUCK_GLYPHS

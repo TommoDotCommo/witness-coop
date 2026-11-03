@@ -22,7 +22,8 @@ enum Slot : int {
     SF_PERSONA_NAME = 0, SF_FRIEND_COUNT = 3, SF_FRIEND_BY_INDEX = 4, SF_FRIEND_STATE = 6, SF_FRIEND_NAME = 7, SF_INVITE_DIALOG = 33, SF_PRESENCE = 43,   // ISteamFriends
     MM_CREATE = 13, MM_JOIN = 14, MM_LEAVE = 15, MM_INVITE = 16, MM_MEMBERS = 17, MM_MEMBER = 18, MM_DATA = 19, MM_SET_DATA = 20,
     MM_MEMBER_LIMIT = 32, MM_JOINABLE = 34, MM_OWNER = 35,                                                  // ISteamMatchmaking
-    UT_APP_ID = 9, UT_COMPLETED = 11, UT_RESULT = 13, UT_OVERLAY = 17,                                       // ISteamUtils
+    UT_APP_ID = 9, UT_COMPLETED = 11, UT_RESULT = 13, UT_OVERLAY = 17, UT_BIG_PICTURE = 26, UT_ON_DECK = 34,
+    UT_FLOATING_KEYBOARD = 35,      // ISteamUtils (SteamUtils010; 35: ShowFloatingGamepadTextInput(mode, x, y, w, h), SDK 1.53+, the same slot as the MDK2 mod's)
     NM_SEND = 0, NM_RECEIVE = 1, NM_ACCEPT = 2, NM_CLOSE = 3, NM_INFO = 5,                                   // ISteamNetworkingMessages
 };
 enum Callback : int { CB_JOIN = 333, CB_PRESENCE_JOIN = 337, CB_ENTER = 504, CB_CHAT_UPDATE = 506, CB_CREATED = 513, CB_SESSION_REQUEST = 1251 };

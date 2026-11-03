@@ -46,6 +46,8 @@ static const uintptr_t kPausedOld = 0x62DAC4;      // the first candidate, WRONG
 #include "social.h"
 #include "povui.h"
 #include "ui/player_panel.h"
+#include "pad.h"
+#include "../common/padlayer.h"
 #include <atomic>
 #include <cctype>
 // The camera the world on screen was drawn from: the player's own, or the third-person view while emoting (thirdperson.h). Everything the
@@ -396,6 +398,13 @@ bool PovPanelClick() {
     wpanel::Layout L = wpanel::Compute(float(g_panelW.load()), float(g_panelH.load()), rows.size(), o);
     PanelDo(wpanel::HitTest(L, rows, o, g_panelCx.load(), g_panelCy.load())); return true;
 }
+void PovPadPanel(bool open) {      // the pad layer (pad.cpp): View held opens the player panel, letting go closes it
+    if (GetCfg().noPlayerPanel) return;
+    if (!open) { if (g_rosterOpen.load()) { g_rosterOpen = false; g_leaveAsk = false; } return; }
+    if (g_rosterOpen.load() || DevMenuOpen() || SocialBusy() || GamePaused()) return;
+    PanelOpen();
+}
+void PovPadWatch(int dir) { if (GetCfg().noPartnerView && !DevMenuEnabled()) return; if (dir < 0) VideoPrev(PlayerIds()); else VideoNext(PlayerIds()); }
 bool PovKey(unsigned vk, bool down) {       // hold Tab: the player panel; [ previous player, ] next player (the screen you watch); V is the ping (social.cpp) and no longer watches
     bool noView = GetCfg().noPartnerView && !DevMenuEnabled();
     if (vk == guide::Roster && !GetCfg().noPlayerPanel) {
@@ -527,7 +536,7 @@ static void DrawNameTags(float W, float H) {
         float sy = L.sessionY + 4 * k + (wpanel::kButtonH * k - UiLineHeight(tx)) / 2;
         if (o.confirmLeave) { UiText(P.x + 14 * k, sy, wpanel::LeaveText(CoopMyId() == 1).c_str(), uitheme::Danger, tx); button(L.yes, "Leave", hot.act == wpanel::Act::LeaveYes, false); button(L.no, "Stay", hot.act == wpanel::Act::LeaveNo, false); }
         else { UiText(P.x + 14 * k, sy, "Session", uitheme::Muted, tx); button(L.copyInvite, "Copy invite", hot.act == wpanel::Act::CopyInvite, false); button(L.leave, "Leave", hot.act == wpanel::Act::Leave, false); }
-        UiText(P.x + 14 * k, L.hintY, wpanel::kHint, uitheme::Muted, 0.7f * k);
+        UiText(P.x + 14 * k, L.hintY, padlayer::Hint(PadGlyphs(), wpanel::kHint, wpanel::kPadHint), uitheme::Muted, 0.7f * k);
         UiTri(cx, cy, 9 * k, 3.6f, uitheme::Text);      // the mouse cursor
     }
     EnterCriticalSection(&g_tagLock); g_tags = std::move(now); LeaveCriticalSection(&g_tagLock);
@@ -683,6 +692,7 @@ static HRESULT HookPresentBody(IDXGISwapChain* sc, UINT sync, UINT flags) {
     ThirdPersonPresentBegin();
     { const float* dc = (const float*)((uintptr_t)GetModuleHandleA(nullptr) + kCamPos); DiagFrame(Readable(dc, 12) ? dc : nullptr, (unsigned)f); }
     GameRunQueued();
+    PadFrame();
     StateApplyRemote();
     if (f == 1) Log("overlay: Present hook called (first frame)");
     if (!g_ready && !g_failed) { g_ready = InitResources(sc); g_failed = !g_ready; }

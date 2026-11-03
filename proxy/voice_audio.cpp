@@ -1,6 +1,7 @@
 // Voice chat on Windows: the microphone (WinMM) is encoded and sent to the other players, their voices are mixed (voice/voice.h) and played; the game's own volume is set on its
 // audio session. See voice/voice.h for what the listener hears. Settings: voice_mode, key_voice, voice_volume, mic_volume, voice_range, voice_radio_range, voice_radio, game_volume.
 #define WIN32_LEAN_AND_MEAN
+#include "pad.h"
 #include "thirdperson.h"
 #include <windows.h>
 #include <mmsystem.h>
@@ -77,7 +78,7 @@ void Transmit(const int16_t* pcm, bool want, wvoice::Adpcm* enc) {
         p.seq = ++g_seq; on = false;
     }
     lastChannel = p.channel; lastTo = p.to; InterlockedExchange(&g_txChannel, p.channel);
-    p.flags = (want && !on ? wvoice::kStart : 0) | (cfg.voiceMode == 2 ? wvoice::kPtt : 0) | (!want ? wvoice::kEnd : 0);
+    p.flags = (want && !on ? wvoice::kStart : 0) | (VoiceModeNow() == 2 ? wvoice::kPtt : 0) | (!want ? wvoice::kEnd : 0);
     wvoice::Encode(pcm, enc, p.payload); ++g_seq; on = want; InterlockedExchange(&g_transmitting, want ? 1 : 0);
     if (cfg.noVoiceSend) return;
     auto bytes = wvoice::MakePacket(p);
@@ -89,7 +90,7 @@ DWORD WINAPI CaptureThread(LPVOID) {
     const Cfg& cfg = GetCfg(); wvoice::Adpcm enc; wvoice::Vad vad; uint64_t sample = 0;
     std::vector<float> tones; { size_t at = 0; const std::string& t = cfg.voiceTestTone; while (at < t.size()) { size_t e = t.find(',', at); if (e == std::string::npos) e = t.size(); tones.push_back((float)atof(t.substr(at, e - at).c_str())); at = e + 1; } }
     timeBeginPeriod(1);
-    auto wanted = [&](const int16_t* pcm) { if (cfg.voiceMode == 0) return false; if (GamePaused() || SocialCapturing()) return false; if (cfg.radioEnabled && g_radioHeld) return true; if (cfg.voiceMode == 2) return g_ptt != 0; return tones.empty() ? vad.Feed(pcm) : true; };
+    auto wanted = [&](const int16_t* pcm) { int mode = VoiceModeNow(); if (mode == 0) return false; if (GamePaused() || SocialCapturing()) return false; if (cfg.radioEnabled && g_radioHeld) return true; if (mode == 2) return g_ptt != 0; return tones.empty() ? vad.Feed(pcm) : true; };
     if (!tones.empty()) {      // no microphone: the test voice, paced by the clock
         ULONGLONG next = GetTickCount64();
         for (;;) { int16_t pcm[wvoice::kFrame]; wvoice::Tone(tones.data(), (int)tones.size(), 0.9f * cfg.micVolume / 100.0f, &sample, pcm); Transmit(pcm, wanted(pcm), &enc); next += 20; ULONGLONG now = GetTickCount64(); if (next > now) Sleep((DWORD)(next - now)); else next = now; }
@@ -206,7 +207,7 @@ int VoiceMicLevel() { return (int)g_micLevel; }
 void VoiceStat() {
     char m[300]; const Cfg& c = GetCfg();
     unsigned steps = 0, stepsDropped = 0; { Lock l; steps = g_foley.played; stepsDropped = g_foley.dropped; }
-    snprintf(m, sizeof m, "voicestat: mode %d ptt %ld transmitting %ld sent %ld captured %ld received %ld played %ld game_volume %.2f hud_speakers %u hud_mic %d channel %s to %u footsteps %u footsteps_dropped %u", c.voiceMode, g_ptt, g_transmitting, g_sent, g_captured, g_received, g_played, g_gameVolumeRead, SocialSpeakDrawn(), SocialMicHudDrawn() ? 1 : 0, wvoice::ChannelName(g_channel), g_to, steps, stepsDropped); Log(m);
+    snprintf(m, sizeof m, "voicestat: mode %d ptt %ld transmitting %ld sent %ld captured %ld received %ld played %ld game_volume %.2f hud_speakers %u hud_mic %d channel %s to %u footsteps %u footsteps_dropped %u effective %d", c.voiceMode, g_ptt, g_transmitting, g_sent, g_captured, g_received, g_played, g_gameVolumeRead, SocialSpeakDrawn(), SocialMicHudDrawn() ? 1 : 0, wvoice::ChannelName(g_channel), g_to, steps, stepsDropped, VoiceModeNow()); Log(m);
     if (!g_lkInit) return; Lock l;
     for (const auto& s : g_mixer.Stats()) { snprintf(m, sizeof m, "voicestat: speaker %u talking %d prox %.3f radio %.3f pan %.3f rms %.4f tone %.4f %.4f %.4f packets %u concealed %u dropped %u channel %u", s.id, s.talking ? 1 : 0, s.prox, s.radio, s.pan, s.rms, s.tone[0], s.tone[1], s.tone[2], s.packets, s.concealed, s.dropped, (unsigned)s.channel); Log(m); }
 }
