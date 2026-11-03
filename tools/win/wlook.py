@@ -58,7 +58,7 @@ for pr, hs in by_parent.items():
             if c2 in ('Static',) and t2 and not (r2.right <= r1.left or r2.left >= r1.right or r2.bottom <= r1.top or r2.top >= r1.bottom): bad.append((t2, r1.left, r1.right, r2.left, r2.right))
 check('no dropdown box covers a text on any page', not bad, bad[:3])
 # every label and hint fits its box (a text cut off at the edge, or run out of the window, is a defect): measured with the control's own font; a text that is allowed to wrap (tall boxes) is not looked at
-g = ctypes.WinDLL('gdi32'); u.GetDC.restype = wt.HDC; u.GetDC.argtypes = [wt.HWND]; g.SelectObject.argtypes = [wt.HDC, ctypes.c_void_p]; g.SelectObject.restype = ctypes.c_void_p; u.DrawTextW.argtypes = [wt.HDC, wt.LPCWSTR, ctypes.c_int, ctypes.POINTER(wt.RECT), wt.UINT]
+g = ctypes.WinDLL('gdi32'); u.GetDC.restype = wt.HDC; u.GetDC.argtypes = [wt.HWND]; u.ReleaseDC.argtypes = [wt.HWND, wt.HDC]; g.SelectObject.argtypes = [wt.HDC, ctypes.c_void_p]; g.SelectObject.restype = ctypes.c_void_p; u.DrawTextW.argtypes = [wt.HDC, wt.LPCWSTR, ctypes.c_int, ctypes.POINTER(wt.RECT), wt.UINT]
 cut = []
 for h in kids:
     if cls(h) != 'Static': continue

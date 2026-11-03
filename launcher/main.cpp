@@ -693,7 +693,7 @@ void BuildLobbyPanel(HWND pg) {
     auto head = [&](const wchar_t* t, int id) { HWND k = mk(L"STATIC", t, SS_LEFT, id); th::MarkMuted(k); return k; };
     mk(L"STATIC", L"", SS_LEFT, ID_LB_STATUS); { HWND ub = mk(L"BUTTON", L"Update the launcher", BS_PUSHBUTTON, ID_LB_UPDATE); ShowWindow(ub, SW_HIDE); } mk(L"BUTTON", L"Leave", BS_PUSHBUTTON, ID_LB_LEAVE);
     head(L"PLAYERS", ID_LB_H_PLAYERS); mk(L"LISTBOX", L"", LBS_OWNERDRAWFIXED | LBS_NOTIFY | WS_VSCROLL | LBS_HASSTRINGS | LBS_NOINTEGRALHEIGHT, ID_LB_MEMBERS); SendMessageW(LB(ID_LB_MEMBERS), LB_SETITEMHEIGHT, 0, 32);
-    mk(L"BUTTON", L"Mute me", BS_AUTOCHECKBOX, ID_LB_MUTE); mk(L"BUTTON", L"Deafen", BS_AUTOCHECKBOX, ID_LB_DEAF); mk(L"STATIC", L"", SS_OWNERDRAW, ID_LB_LEVEL); head(L"Voice chat mode and keys: Settings, Voice and sound.", ID_LB_H_VOICE);
+    mk(L"BUTTON", L"Mute me", BS_AUTOCHECKBOX, ID_LB_MUTE); mk(L"BUTTON", L"Deafen", BS_AUTOCHECKBOX, ID_LB_DEAF); mk(L"STATIC", L"", SS_OWNERDRAW, ID_LB_LEVEL); head(L"Voice mode and keys: Settings.", ID_LB_H_VOICE);
     mk(L"BUTTON", L"Ready", BS_AUTOCHECKBOX, ID_LB_READY); mk(L"BUTTON", L"Start game", BS_DEFPUSHBUTTON, ID_LB_START);
     head(L"CHAT", ID_LB_H_CHAT); mk(L"EDIT", L"", WS_BORDER | ES_MULTILINE | ES_READONLY | WS_VSCROLL | ES_AUTOVSCROLL, ID_LB_LOG);
     HWND ce = mk(L"EDIT", L"", WS_BORDER | ES_AUTOHSCROLL, ID_LB_CHAT); SetWindowSubclass(ce, ChatEditProc, 3, 0); mk(L"BUTTON", L"Send", BS_PUSHBUTTON, ID_LB_SEND);

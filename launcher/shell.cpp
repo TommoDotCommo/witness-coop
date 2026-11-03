@@ -91,7 +91,7 @@ static std::vector<Row> Build() {
     for (auto p : {std::make_pair("vid:shading", "Shading quality"), std::make_pair("vid:reflection", "Reflection quality"), std::make_pair("vid:texture", "Texture quality"),
                    std::make_pair("vid:textureDetail", "Texture detail"), std::make_pair("vid:geometry", "Geometry detail")}) v.push_back(Choice_(p.first, p.second, kDisplay, q));
     v.push_back(Toggle("vid:highdpi", "High DPI", kDisplay));
-    v.push_back(Toggle("cfg:run_unfocused", "Keep running when the window is not active", kDisplay, "0", "two windows on one PC: stays smooth"));
+    v.push_back(Toggle("cfg:run_unfocused", "Keep running in the background", kDisplay, "0", "when the window is not active (two windows on one PC)"));
     // Network
     { Row r = R("cfg:lobby_port", "Lobby port", kNetwork, kPort); r.def = "47100"; v.push_back(r); }
     { Row r = R("cfg:listen", "Game port", kNetwork, kPort); r.def = "47001"; v.push_back(r); }
