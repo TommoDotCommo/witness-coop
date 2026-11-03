@@ -200,7 +200,7 @@ static void Puzzle(Canvas& c, float x, float y, float w, float h) {
     Shape(c, x, y, x + w, y + h, RGB(0, 0, 0), .45f, std::min(w, h) * .08f, [&](float px, float py) { return RoundRectDist(px, py, x + 3, y + 7, w, h, r); });      // its shadow
     Shape(c, x, y, x + w, y + h, body, 1, 0, [&](float px, float py) { return RoundRectDist(px, py, x, y, w, h, r); });
     Shape(c, x, y + h * .45f, x + w, y + h, body2, .55f, 0, [&](float px, float py) { return std::max(RoundRectDist(px, py, x, y, w, h, r), (y + h * .45f) - py); });      // the lower part a little deeper
-    const int cols = 4, rows = 3; float m = std::min(w, h) * .17f, cell = std::min((w - 2 * m) / cols, (h - 2 * m) / rows), gx = x + (w - cols * cell) / 2, gy = y + (h - rows * cell) / 2, half = cell * .085f;
+    const int cols = 4, rows = 3; float m = std::min(w, h) * .15f, cell = std::min((w - 2 * m) / cols, (h - 2 * m) / rows), gx = x + (w - cols * cell) / 2, gy = y + (h - rows * cell) / 2, half = cell * .12f;
     auto nx = [&](float i) { return gx + i * cell; }; auto ny = [&](float j) { return gy + j * cell; };
     for (int j = 0; j <= rows; ++j) { float p[] = {nx(0), ny(j), nx(cols), ny(j)}; Line(c, p, 2, half, grid, 1); }
     for (int i = 0; i <= cols; ++i) { float p[] = {nx(i), ny(0), nx(i), ny(rows)}; Line(c, p, 2, half, grid, 1); }
@@ -244,7 +244,7 @@ static HBITMAP g_banner; static int g_bannerW, g_bannerH; static unsigned g_bann
 static void Compose(HDC ref, int W, int H, const wchar_t* subtitle) {
     uint32_t* bits = nullptr; HBITMAP bmp = NewDib(ref, W, H, &bits); if (!bmp || !bits) return; Canvas c{W, H, bits};
     if (!g_art.empty()) {      // the save's picture, then a calm shade: darker to the left where the title sits, fading into the window at the bottom
-        Cover(c, g_art.data(), g_artW, g_artH, .42f); Blur(c, int(std::max(float(W) / g_artW, float(H) / g_artH) * .45f));
+        Cover(c, g_art.data(), g_artW, g_artH, .42f); Blur(c, int(std::max(float(W) / g_artW, float(H) / g_artH) * .8f));
         Shade(c, kBg, [&](int x, int y) { float t = std::max(0.f, 1 - x / (W * .6f)), b = y > H * .5f ? (y - H * .5f) / (H * .5f) : 0; return std::max(.12f + .70f * powf(t, 1.3f), powf(b, 1.6f)); });
     } else {      // no picture: an evening sky over the drawn panel
         Shade(c, kBg, [](int, int) { return 1.f; });
