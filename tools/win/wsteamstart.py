@@ -77,6 +77,15 @@ try:
         except OSError: pass
         time.sleep(0.3)
     check('A4. the launcher shows its Play tab (its state file)', re.search(r'ui tab 0 label Play', st), next((l for l in st.splitlines() if l.startswith('ui ')), ''))
+    time.sleep(1.5); st = open(statf, errors='ignore').read(); sa = next((l for l in st.splitlines() if l.startswith('steamatstart ')), '')
+    check('A5. the launcher Steam started runs the Steam API as The Witness itself (needs the Steam client running)', sa == 'steamatstart ok', sa)
+    import winreg
+    def steam_running():      # what the Steam client itself records (read only): The Witness is running
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r'Software\Valve\Steam\Apps\210970') as k: return winreg.QueryValueEx(k, 'Running')[0]
+        except OSError as e: return 'unreadable (%s)' % e
+    time.sleep(3); r = steam_running()
+    check('A6. Steam itself says The Witness is running while only the launcher is open (HKCU Steam Apps\\210970 Running)', r == 1, r)
     # B) the launcher's own game
     print('B) Play solo in that launcher: the game it starts stays', flush=True)
     fresh_log(); mark = 0

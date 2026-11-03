@@ -15,6 +15,6 @@
 
 ## Play in Steam opens the launcher
 
-Pressing Play in Steam now opens the co-op launcher, also in Steam Deck Game Mode: no non-Steam shortcut. The game the launcher starts stays part of
-the same Steam launch. To start the game directly from Steam, untick *Show the launcher at start* (Settings, Launcher); hold Shift while the game starts to
+Pressing Play in Steam now opens the co-op launcher, also in Steam Deck Game Mode: no non-Steam shortcut. Steam shows The Witness as running the whole
+time (launcher, game, back to the lobby), and a Steam invite you accept while the launcher is open reaches it. To start the game directly from Steam, untick *Show the launcher at start* (Settings, Launcher); hold Shift while the game starts to
 get the launcher back.

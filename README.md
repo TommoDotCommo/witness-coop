@@ -212,7 +212,8 @@ Not run on a real Steam Deck or Linux PC yet (tracked in Known issues). What is 
   (`SteamAppId`); the mod sees a game Steam started with no launcher session and starts `witness_launcher.exe` beside it in the same Proton prefix instead,
   then closes the game before it opens a window (`common/handover.h`; the proxy log says `handover: ... -> launcher`). The launcher inherits Steam's
   environment and every game it starts carries `WITNESS_COOP_LAUNCHER=1`, which never hands over again, so the whole session (launcher, game, back to the
-  lobby) is one Steam launch. A Steam invite (`+connect_lobby`) goes to the launcher the same way. *Show the launcher at start* off (`show_launcher=0`)
+  lobby) is one Steam launch: a launcher Steam started runs the game's Steam API itself, because Steam on Windows does not follow the process tree (without
+  it Steam records The Witness as stopped once the first game process ends; `tools/qa.sh steamstart --mutant` reads Steam's own record). A Steam invite (`+connect_lobby`) goes to the launcher the same way. *Show the launcher at start* off (`show_launcher=0`)
   makes Play start the game directly; hold Shift while it starts to get the launcher back. On a Deck (`SteamDeck=1`) the launcher fills the screen (1280x800)
   and is driven with the Deck's controls (stick or D-pad, A, B, LB/RB, Start, X/Y as the footer says). Typing (a name, an invite) needs the Steam keyboard
   (Steam + X) for now.

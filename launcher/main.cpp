@@ -58,6 +58,7 @@ bool g_noActivate;                        // --no-activate (tests): the game's w
 bool g_loading, g_dirty, g_padLast;       // values being put into the controls (no saving) / a change made while the lobby's game runs (saved when it ends) / the last input came from a pad
 int g_capture = -1; std::wstring g_captureOld;      // the key field waiting for a key press
 ls::Choice g_choice = ls::kHost; ls::PadNav g_padNav;
+std::string g_steamAtStart = "-";      // the Steam API when Steam started the launcher: "-" not tried, "ok", or why not
 
 std::wstring CfgPath() { return g_dir + L"\\witness_coop.cfg"; }
 std::wstring SaveFolder(const wl::CfgFile& c) {      // where the game keeps its saves, as the mod redirects them (save_dir=instance|<path>)
@@ -816,7 +817,7 @@ void WriteStat() {      // tests: what the lobby is, as text lines, rewritten ev
     snprintf(b, sizeof b, "game pid %lu running %d launches %u\n", (unsigned long)g_gamePid, g_game ? 1 : 0, g_launches); o += b;
     { wchar_t sb[400] = {}, hb[400] = {}; GetWindowTextW(g_status, sb, 400); GetWindowTextW(g_hints, hb, 400); HWND f = GetFocus(); Field* ff = f ? ByHwnd(f) : nullptr; RECT cr; GetClientRect(g_main, &cr); std::string fk = ff ? ff->key : (f ? std::to_string(GetDlgCtrlID(f)) : std::string("-"));
       snprintf(b, sizeof b, "ui tab %d label %s lobbyview %d section %d choice %s padlast %d capture %d focus %s client %ld %ld\n", CurTab(), ls::TabLabel(CurTab(), g_sess.Active()), IsWindowVisible(g_lobbyPanel) ? 1 : 0, g_section, ls::ChoiceKey(g_choice), g_padLast ? 1 : 0, g_capture, fk.c_str(), cr.right, cr.bottom); o += b;
-      o += "uistatus " + U(sb) + "\n" + "hints " + U(hb) + "\n"; }
+      o += "uistatus " + U(sb) + "\n" + "hints " + U(hb) + "\n" + "steamatstart " + g_steamAtStart + "\n"; }
     std::wstring tmp = g_statFile + L".tmp"; if (WriteFile8(tmp, o)) MoveFileExW(tmp.c_str(), g_statFile.c_str(), MOVEFILE_REPLACE_EXISTING);
 }
 
@@ -1157,7 +1158,13 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, LPWSTR cmdline, int show) {
     BuildPlay(g_pages[ls::kPlay]); BuildSaves(g_pages[ls::kSaves]); BuildSettings(g_pages[ls::kSettings]); BuildAbout(g_pages[ls::kAbout]);
     g_status = Make(g_main, L"STATIC", L"", SS_LEFT | SS_ENDELLIPSIS, 0, 0, 10, 10, ID_STATUS); Make(g_main, L"BUTTON", L"", BS_PUSHBUTTON, 0, 0, 10, 10, ID_FOOT_ACTION); ShowId(ID_FOOT_ACTION, false);
     g_hints = Make(g_main, L"STATIC", L"", SS_LEFT | SS_ENDELLIPSIS, 0, 0, 10, 10, ID_HINTS); th::MarkMuted(g_hints);
-    g_sess.SetModVersion(MOD_VERSION); g_upd.Init(g_dir, MOD_VERSION, [](const std::string& l) { Dlog(l.c_str()); });
+    g_sess.SetModVersion(MOD_VERSION);
+#ifndef WL_MUT_NO_STEAM_AT_START
+    { wchar_t e[16]; if (!g_autoJoin && GetEnvironmentVariableW(L"SteamAppId", e, 16)) {      // Steam started this session (Play in Steam handed over, K1): the launcher runs the game's Steam API itself, so Steam
+        std::string err; g_steamAtStart = g_sess.SteamInit(g_dir, &err) ? "ok" : err;      // sees The Witness running while the player is in the launcher, and an invite accepted in Steam reaches it
+        Dlog(("steam: started from Steam; the launcher's Steam API: " + g_steamAtStart).c_str()); } }
+#endif
+    g_upd.Init(g_dir, MOD_VERSION, [](const std::string& l) { Dlog(l.c_str()); });
     LoadAll(); g_upd.StartAuto(); SetTimer(g_main, 1, 100, nullptr); SetTimer(g_main, 2, 16, nullptr);
     if (deck) { SetWindowLongPtrW(g_main, GWL_STYLE, WS_POPUP | WS_CLIPCHILDREN); MONITORINFO mi = {sizeof mi}; GetMonitorInfoW(MonitorFromWindow(g_main, MONITOR_DEFAULTTOPRIMARY), &mi); SetWindowPos(g_main, nullptr, mi.rcMonitor.left, mi.rcMonitor.top, mi.rcMonitor.right - mi.rcMonitor.left, mi.rcMonitor.bottom - mi.rcMonitor.top, SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED); fill = false; }
     if (fill && g_noActivate) { MONITORINFO mi = {sizeof mi}; GetMonitorInfoW(MonitorFromWindow(g_main, MONITOR_DEFAULTTOPRIMARY), &mi); SetWindowPos(g_main, nullptr, mi.rcWork.left, mi.rcWork.top, mi.rcWork.right - mi.rcWork.left, mi.rcWork.bottom - mi.rcWork.top, SWP_NOZORDER | SWP_NOACTIVATE); }

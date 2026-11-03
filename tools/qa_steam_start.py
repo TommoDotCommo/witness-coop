@@ -1,16 +1,23 @@
 #!/usr/bin/env python3
 """T1 check of Play in Steam handing over to the launcher (common/handover.h; tools/win/wsteamstart.py does the work) with one game copy. It sets Steam's
-environment variables itself, so it does not need the Steam client for the decision; what the Steam client does with the process tree (playtime, the
-overlay) is not proven here. The decision's mutants are game-free (make -C launcher shell-test).
-usage: qa_steam_start.py   (called by tools/qa.sh steamstart; uses the first game copy of the allocation)"""
+environment variables itself; with the Steam client running it also checks that Steam records The Witness as running while only the launcher is open
+(the launcher starts the game's Steam API itself; Steam on Windows does not follow the process tree: the --mutant launcher without that is seen as stopped).
+The overlay is not checked. The decision's own mutants are game-free (make -C launcher shell-test).
+usage: qa_steam_start.py [--mutant]   (called by tools/qa.sh steamstart; uses the first game copy of the allocation)"""
 import os, subprocess, sys, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from witness import TOOLS, ROOT, DIR1, PYW, RUN, win
 
 def main():
-    subprocess.run(['make', '-C', os.path.join(ROOT, 'launcher'), 'launcher'], check=True, capture_output=True)
+    subprocess.run(['make', '-C', os.path.join(ROOT, 'launcher'), 'launcher', 'build/witness_launcher_NO_STEAM_AT_START.exe'], check=True, capture_output=True)
+    ok = run('witness_launcher.exe')
+    if '--mutant' in sys.argv:      # the launcher does not start the Steam API itself: Steam must be seen to stop counting The Witness as running (A5, A6 fail)
+        print('=== steamstart: MUTANT the launcher does not run the Steam API when Steam started it', flush=True); caught = not run('witness_launcher_NO_STEAM_AT_START.exe'); print('mutant: %s' % ('caught' if caught else 'NOT CAUGHT'), flush=True); ok = ok and caught
+    print('ALL OK' if ok else 'FAILED'); return 0 if ok else 1
+
+def run(launcher):
     subprocess.run([os.path.join(TOOLS, 'install.sh'), 'A'], check=True, capture_output=True)
-    subprocess.run(['cp', os.path.join(ROOT, 'launcher', 'build', 'witness_launcher.exe'), os.path.join(DIR1, 'witness_launcher.exe')], check=True)
+    subprocess.run(['cp', os.path.join(ROOT, 'launcher', 'build', launcher), os.path.join(DIR1, 'witness_launcher.exe')], check=True)
     res = os.environ.get('WITNESS_RESOURCES', '')
     slot = (os.environ.get('WITNESS_SLOTS', '0').split(',') + ['0'])[0]
     rect = (subprocess.run([res, 'rect', slot], capture_output=True, text=True).stdout.strip() if res else '') or '0 0 1280 760'
@@ -30,6 +37,6 @@ def main():
             time.sleep(0.5)
         if proc.poll() is None: proc.kill()
     text = open(out, errors='ignore').read(); print(text, end='')
-    return 0 if 'ALL OK' in text else 1
+    return 'ALL OK' in text
 
 if __name__ == '__main__': sys.exit(main())
