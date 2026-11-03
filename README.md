@@ -51,7 +51,9 @@ with progress (restart catch-up, a first-time late join and a same-process save 
 ## Quick guide (hold F1)
 
 Hold **F1** in the game or launcher to show a three-column guide; release it to return.
-The in-game guide and menus use a proportional Segoe UI font from a padded 2x atlas,
+The in-game guide and menus use a proportional font from a padded 2x atlas: the game's own menu face, Karmina Bold, read at start from the
+player's `data-pc.zip` into memory (`common/gamefont.h`: the member's bytes XOR 0xFF, a private GDI font, nothing written; `make -C common gamefont-test`),
+or Segoe UI when that fails or `ui_font=segoe` is set (the `fontstat` command logs which and why),
 measured wrapping, warm surfaces and amber selection borders. Chat wraps to its panel,
 and long input scrolls to keep the cursor visible. `make -C proxy/ui test` checks text
 metrics, wrapping, fitting and guide bounds with three mutants, and the dev map's detail pane

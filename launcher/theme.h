@@ -2,10 +2,12 @@
 // The launcher's look, after the game's: a dark panel, the pale puzzle line, the cyan of a line that has power, the warm white of a solved panel. Native controls stay native (the tests drive them
 // with window messages) and are painted over: checkboxes are puzzle start circles that light up, buttons are flat with a thin line, tabs are a row of words with a line under the chosen one.
 #include <windows.h>
+#include <string>
 
 namespace th {
 extern COLORREF kBg, kSurface, kSurface2, kLine, kAccent, kWarm, kText, kMuted, kDanger;
-void Init();
+void Init(const std::wstring& gameDir = L"");                           // headings, tabs and buttons in the game's own face (Karmina Bold, read in memory from the player's data-pc.zip), else Segoe UI
+const std::string& FontState();                                        // which face the headings use and why (the stat file's "font" line)
 HFONT Body(); HFONT Small(); HFONT Bold(); HFONT Title();
 HBRUSH BgBrush(); HBRUSH SurfaceBrush();
 void Style(HWND h);                                                    // paint this control in the theme (by its class); call after it is created and has its text
