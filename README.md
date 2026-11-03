@@ -267,6 +267,42 @@ Not run on a real Steam Deck or Linux PC yet (tracked in Known issues). What is 
 - Unknown: whether Proton's `dsound` loaded by full path from `system32` (what the proxy forwards to) behaves as on Windows, overlay and model drawing
   under DXVK, voice (microphone) under Proton, window placement on the Deck's screen. Reports welcome.
 
+### Steam Deck and controllers
+
+**Pick the layout "The Witness Co-op (pad layer)"** (Controller settings > Browse Configs > Community, or `dist/steam-input/witness-coop_deck.vdf`
+in the repository). Why it is needed: The Witness ships a Steam controller config (`controller.vdf`) that maps only keyboard and mouse (WASD, Shift, Esc, the
+mouse buttons), and Steam's store page lists "Partial Controller Support". With that default config Steam Input turns the Deck's (or an Xbox or PlayStation
+pad's) buttons into keys and mouse movement, so the game and the mod never see a gamepad and the co-op pad layer below cannot be reached. The layout
+presents an **Xbox gamepad for every physical button**, as Steam's own Gamepad template does (it is that template with the back buttons filled in), so the
+game's pad play and the co-op layer both work. This was read from the shipped files and Steam's templates, not yet seen on a real Deck; with a pad you
+could also switch Steam Input off for the game (Properties > Controller > Disable Steam Input), which presents the pad as it is.
+
+Deck back buttons in the layout (all else is the Gamepad template; L5 and R5 are left unbound for your own use):
+
+| Button | Does |
+|---|---|
+| L4 | View: tap to ping, hold for the player list (see below) |
+| R4 | Push to talk (sends the keyboard key B, the mod's default push-to-talk key) |
+
+R4 is a key, not a pad button, because both stick clicks are used by the game and the mod has no pad push to talk unless you choose one (Settings,
+Voice and sound, "Push to talk on the pad"). One side effect: while R4 is held the mod sees a key press, so the hints show keys until the next pad input.
+
+The co-op layer on the pad (the table is `common/padlayer.h`; the quick guide and the launcher's Controls page print the same lines):
+
+| Buttons | Does |
+|---|---|
+| Tap View | Ping what you aim at: a marker for everyone |
+| Hold View | Player list (right stick + RT: mute, volume, watch) |
+| View + D-pad up | Emote wheel: right stick picks, let go of View plays |
+| View + D-pad down | Chat: Steam's keyboard, or one on screen (Menu sends) |
+| View + D-pad left / right | Watch the previous / next player |
+| View + RB | Quick chat: Ready, Wait for me, Over here, Thanks... |
+| View + Y | This quick guide (while held) |
+| Stick click (Controls) | Push to talk if you choose one (voice is open mic on a pad otherwise) |
+
+While View is held, a wheel is open or the on-screen keyboard is up, the game gets no pad input. Voice *Automatic* is open mic after pad input and
+push to talk after keyboard input.
+
 ### FAQ: not the supported build
 
 *Setup says my copy of The Witness is not the supported build, or the game says "Co-op is off" when it starts.*
