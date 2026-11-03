@@ -10,7 +10,7 @@ Built with the [Co-op Anything](https://github.com/cranebeaker/coop-anything) pl
 No game files are in this repo. You need your own copy of The Witness, Steam build 11370412
 (`witness64_d3d11.exe` SHA-256 `8d672d444df6a6df7130f25a517bdab1af92731fe2138dc5b324d519561d55a5`).
 
-[![Historical group showcase with name tags and pings](docs/showcase/lineup_a.jpg)](docs/SHOWCASE.md)
+[![Players in the garden with name tags, pings and a voice bar](docs/showcase/lineup_a.jpg)](docs/SHOWCASE.md)
 
 **[See the showcase](docs/SHOWCASE.md)** for pictures of every feature.
 
@@ -502,7 +502,7 @@ Lighting: `model_sun=` (default 0.55), `model_ambient=` (0.30), `model_shadow=` 
 
 Protocol v6 adds a fixed 12-byte versioned appearance record to presence (36 bytes total). Pose, event, ACK, ping, social, presence and line packet magics changed so older peers are ignored. Group pose/event/ACK use distinct version-7 tags; all clients must update together. The stable-world gate and reliable event semantics are unchanged. The removed model-name field does not return. See [appearance design and verification](docs/APPEARANCE.md).
 
-`tools/showcase.sh [N]` captures N adventurers in a group; the [showcase page](docs/SHOWCASE.md) labels older pictures separately.
+`tools/showcase.sh [N]` captures N adventurers in a group; the [showcase page](docs/SHOWCASE.md) shows the pictures of the current build.
 
 Both peers must use the updated DLL. Protocol v2 added panel power-on and v3 adds cable lighting (event kind 4: a cable is lit when `+0xC4` and `+0xC8` are 1.0; applied through the game's own `exe+0x175EE0`, the call its target dispatcher at `exe+0xC24F0` makes for a cable target); each version uses new packet magics, so older peers are ignored.
 Protocol v4 introduced cable power-off (event kind 5, the game's own `exe+0x175E50`, which sets the requested level `+0xC8` to 0 and lets the glow fade). A cable that was lit and goes dark is announced; a snapshot also lists default-lit cables that were switched off, so a fresh peer learns them; a peer's snapshot never relights a cable this player switched off (this player answers with the off state); and when both players switch the same cable at the same moment the lower player id wins, so both worlds end the same.

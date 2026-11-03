@@ -10,6 +10,8 @@ from witness import ROOT, TOOLS, win, real_saves
 
 SPOT = os.environ.get('SHOWCASE_SPOT', 'c335')       # the panel the players are teleported to: the stone pillar in the garden
 
+NAMES = ['Fox', 'Owl', 'Heron', 'Wren', 'Lynx', 'Otter', 'Moth', 'Crane']      # short names that fit the launcher's player list; no real names
+
 def prepare(c, config):
     d = c.directory
     assert gs.digest(d / 'witness64_d3d11.exe') == gs.EXE_HASH, 'unsupported game build'
@@ -19,7 +21,7 @@ def prepare(c, config):
     for f in models.iterdir(): f.unlink()
     for name in ('adventurer.glb', 'adventurer.glb.txt'):
         gs.replace_copy(Path(ROOT) / 'assets/models' / name, models / name)
-    config += 'name=Adventurer %d\nforce_active=1\ncap_fps=30\ndev_menu=1\nvoice_mute_output=1\n' % c.id
+    config += 'name=%s\nforce_active=1\ncap_fps=30\ndev_menu=1\nvoice_mute_output=1\n' % (NAMES[(c.id - 1) % len(NAMES)],)
     config += 'voice_mode=open\nvoice_test_tone=300,900,1700\n' if c.id % 2 == 0 else 'voice_mode=ptt\n'      # the even players are talking (a test voice: no microphone is needed)
     config += os.environ.get('SHOWCASE_CFG_EXTRA', '').replace('\\n', '\n') + '\n'      # e.g. the race: SHOWCASE_CFG_EXTRA='game_mode=race\\nrace_goal=count:3\\nrace_countdown_ms=60000' tools/showcase.sh 2 race
     cfg = d / 'witness_coop.cfg'; cfg.unlink(missing_ok=True); cfg.write_text(config)
@@ -32,6 +34,7 @@ def prepare(c, config):
 
 def draw_plan():
     """The maze's solution as a node list for wdraw (from the panel manifest and the rule solver), 'id:node,node,...' or '' when there is no manifest."""
+    if os.environ.get('SHOWCASE_NO_PLAN'): return ''      # the drawing bot failed on this build; the panel scene then uses the solve command
     try:
         import sweep, solver
         manifest = {q['id']: q for q in sweep.load(sweep.MANIFEST, [])}; q = manifest[0x293]; path = solver.solve(q)

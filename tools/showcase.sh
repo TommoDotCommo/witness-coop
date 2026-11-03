@@ -1,6 +1,6 @@
 #!/bin/bash
 # Showcase: N real games (default 8) in one full-mesh group, each player an adventurer, driven through every feature while the game's own
-# screenshot command takes the pictures. usage: tools/showcase.sh [N] [scenes]   (scenes: all, or a comma list of: lineup walk pov devmenu pause social emote draw voice panel map launcher)
+# screenshot command takes the pictures. usage: tools/showcase.sh [N] [scenes]   (scenes: all, or a comma list of: lineup walk pov devmenu pause social emote draw voice panel map launcher look emoteself pad; race and lobby by name)
 # Pictures and showcase.json go to $SHOWCASE_OUT (default: showcase/ in this checkout; not in git: tools/showcase_publish.sh turns them into the small JPEGs of docs/showcase/ that are).
 # RAM: a game costs about 1.3 GB of free memory here (measured: 5 games took free RAM from 15.6 to 9.3 GB; their working sets show 2 GB because the hard-linked game files are shared), so the
 # check asks for 1.4 GB each plus the resource provider's reserve (SHOWCASE_RESERVE_GB, default 3). SHOWCASE_RESERVE_GB=1 on a PC nobody is using; the resource provider refuses new slots below 3 GB at lease time only.

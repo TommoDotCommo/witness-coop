@@ -111,9 +111,12 @@ def devmenu_scene(vi):
 def panel_scene(vi):
     """Shared panels and lines: one player draws the maze solution with real mouse input while another stands in front of it and watches the line appear."""
     V = games[vi]; drawer = games[1 if vi == 0 else 0]
-    plan = PLAN
+    plan = PLAN; time.sleep(20.0)      # (changes in the first seconds after the world is stable are start-up noise to the mod and not shared)
     V.send(['menusel 293', 'menudo teleport'], 4.0); snap(V, 'panel_0_before', 'The cable-driving maze, unsolved, seen by player %d.' % (vi + 1))
-    if not plan: print('  no drawing plan (no panel manifest): skipping the drawing'); return
+    (vx, vy, vz), (th, ph) = V.cam()      # the camera player steps aside (the drawer walks to the same spot in front of the panel) and watches at an angle
+    V.send(['tp %.3f %.3f %.3f %.4f %.4f' % (vx + math.sin(th) * 2.2, vy - math.cos(th) * 2.2, vz - 1.69, th + 0.6, 0.0)], 2.5)
+    if not plan:
+        drawer.send(['solve 293'], 4.0); snap(V, 'panel_2_solved', 'Player %d solves the panel (the solve test command, not a drawn line): it is solved in this game too and the cable is lit.' % (drawer.idx + 1)); return
     pid_, nodes = plan.split(':', 1); import subprocess
     pr = subprocess.Popen([sys.executable, '-I', os.path.join(HERE, 'wdraw.py'), str(drawer.pid), drawer.dir, pid_, nodes], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
     t = time.time(); k = 0
@@ -132,11 +135,11 @@ def social_scene(vi):
     """Chat, typing dots and pings: the others speak, one is typing, pings are placed in front of and behind the camera player."""
     V = games[vi]; lineup(vi, None, None); others = [g for k, g in enumerate(games) if k != vi]
     for k, g in enumerate(others): g.send(['chat ' + MESSAGES[k % len(MESSAGES)]])
-    if len(others) > 2: others[1].send(['typing on'])
+    if len(others) > 1: others[1].send(['typing on'])
     for k, (dist, side) in enumerate(((14, 0.45), (22, -0.4), (18, 3.2))): x, y, z = ground_point(V, dist, side); others[(k + 2) % len(others)].send(['pingat %.3f %.3f %.3f' % (x, y, z)])
     x, y, z = ground_point(V, 10, 0.0); V.send(['pingat %.3f %.3f %.3f' % (x, y, z)])
     time.sleep(1.2); snap(V, 'social', 'Chat lines over the players who spoke (and in the log at the bottom left), three dots over the player who is typing, and pings: a pole with the name and the distance, an arrow at the edge of the screen for the one behind the camera.')
-    if len(others) > 2: others[1].send(['typing off'])
+    if len(others) > 1: others[1].send(['typing off'])
     V.send(['chat Looking good from here'], 0.4)
 
 def emote_scene(vi):
@@ -144,7 +147,7 @@ def emote_scene(vi):
     V = games[vi]; lineup(vi, None, None); others = [g for k, g in enumerate(games) if k != vi]
     for k, g in enumerate(others): g.send(['emote %d' % (k % 8 + 1)])
     time.sleep(0.9); snap(V, 'emotes', 'Emotes at the same moment: a hop, a bow, a spin, a nod, a wave, a shake, a shrug, a dance, each with its name over the head. A model plays its own clip when it has one, otherwise a procedural motion.')
-    time.sleep(2.5); V.send(['wheel open'], 0.4); V.send(['mouse 40 -40'], 0.5); snap(V, 'emote_wheel', 'The emote wheel (hold G): eight slots, the one the mouse points to lit. The camera does not turn while it is open.'); V.send(['wheel close'], 0.4)
+    time.sleep(2.5); V.send(['wheel open'], 0.4); V.send(['mouse 40 -40'], 0.5); snap(V, 'emote_wheel', 'The emote wheel (hold H): eight slots, the one the mouse points to lit. The camera does not turn while it is open.'); V.send(['wheel close'], 0.4)
 
 def draw_polyline(g, pts, inks=0):
     g.send(['canvas on', 'reticle %.4f %.4f' % pts[0]], 0.2)
@@ -161,30 +164,53 @@ def draw_scene(vi):
     star = [(0.5 + r * math.cos(a), 0.62 + r * 1.7 * math.sin(a)) for a, r in ((k * 4 * math.pi / 5 + math.pi / 2, 0.07) for k in range(6))]
     draw_polyline(V, circle, 2); draw_polyline(V, wave, 5)
     if others: draw_polyline(others[0], [(x * 0.8 + 0.1, y - 0.15) for x, y in star], 1)
-    time.sleep(0.8); snap(V, 'drawing', 'Free drawing: ink goes onto the surface under the pen in the player\'s own colour (B changes it), and everyone sees it as it is drawn. X draws under the cross-hair, Z turns the mouse into a pen.')
+    time.sleep(0.8); snap(V, 'drawing', 'Free drawing: ink goes onto the surface under the pen in the player\'s own colour (the mouse wheel changes it while drawing), and everyone sees it as it is drawn. X draws under the cross-hair, Z turns the mouse into a pen.')
     V.send(['key SHIFT down'], 0.12); V.key('X', 0.12, 0.2); V.send(['key SHIFT up'], 0.5)      # Shift+X: clear mine
     for g in others[:1]: g.send(['drawclear'])
 
 def voice_scene(vi):
     """Voice: the even players talk (a test voice instead of a microphone); their speaking marks show beside their heads, and the microphone line at the bottom left."""
     V = games[vi]; lineup(vi, None, None); time.sleep(1.5)
-    snap(V, 'voice', 'Voice chat: moving bars beside the head of every player who is talking, the microphone line at the bottom left (hold N to talk). Near players are heard in the world, far ones over the radio.')
-    for ch, name, what in (('radio', 'voice_radio', 'Radio: everybody hears you at any distance, with the walkie-talkie sound.'), ('global', 'voice_global', 'Open line: everybody hears you as you sound, as loud far away as next to you.'), ('direct:2', 'voice_direct', 'One on one: only that player hears you (over the radio); the label names them.')):
-        V.send(['voicechannel ' + ch], 1.5); snap(V, name, 'Voice channel (H steps through them; the label is in the microphone line at the bottom left). ' + what)
+    snap(V, 'voice', 'Voice chat: moving bars beside the head of every player who is talking, the microphone line at the bottom left (hold B to talk). Near players are heard in the world, far ones over the radio.')
+    for ch, name, what in (('global', 'voice_global', 'Open line: everybody hears you as you sound, as loud far away as next to you.'), ('direct:2', 'voice_direct', 'One on one: only that player hears you (the voice is not sent to anybody else); the label names them.')):
+        V.send(['voicechannel ' + ch], 1.5); snap(V, name, 'Voice channel (Y steps through them; the label is in the microphone line at the bottom left). ' + what)
     V.send(['voicechannel proximity'], 0.5)
 
 def look_scene(vi):
-    """The co-op text for a look review (which face the overlay draws with): the player strip with a notice and chat lines, the hold-Tab panel, a chat line
-    being typed, the emote and quick chat wheels, the quick guide, and the glyph atlas. The face is in the log (fontstat)."""
+    """The co-op text in the game's own face: the player strip with a notice and chat lines, the hold-Tab panel, a chat line being typed, the emote wheel, the quick guide."""
     V = games[vi]; lineup(vi, None, None); others = [g for k, g in enumerate(games) if k != vi]
+    V.send(['key TAB down'], 0.9); snap(V, 'ui_panel', 'The player panel (hold Tab): colour, name, ping, speaking light and distance per player, with Watch, Mute and volume buttons, then voice volume, name tags, partner picture and Leave.'); V.send(['key TAB up'], 0.5)
     for k, g in enumerate(others): g.send(['chat ' + MESSAGES[k % len(MESSAGES)]])
-    V.send(['fontstat', 'atlasdump look_atlas', 'notice Fox joined'], 1.0); snap(V, 'look_hud', 'Player strip (top left), a notice (top centre) and the chat log (bottom left).')
-    V.send(['key TAB down'], 0.9); snap(V, 'look_panel', 'The hold-Tab player panel.'); V.send(['key TAB up'], 0.5)
-    V.key('T', 0.1, 0.4); V.send(['typetext Meet me at the gate?'], 0.5); snap(V, 'look_chat', 'Typing a chat line.'); V.key('ENTER', 0.1, 0.6)
-    V.send(['wheel open'], 0.4); V.send(['mouse 40 -40'], 0.5); snap(V, 'look_emote', 'The emote wheel (hold H).'); V.send(['wheel close'], 0.4)
-    V.send(['pad 220 0 0 0 0 0 0'], 0.3); V.send(['pad 20 0 0 0 30000 0 0'], 0.5); snap(V, 'look_quick', 'The quick chat wheel (pad: View + RB).'); V.send(['pad 0 0 0 0 0 0 0'], 0.5); V.send(['pad off'], 0.5)
-    V.send(['key F1 down'], 0.9); snap(V, 'look_guide', 'The quick guide (hold F1).'); V.send(['key F1 up'], 0.5)
-    V.send(['uistat'], 0.5)
+    V.send(['notice Fox joined'], 1.0); snap(V, 'ui_hud', 'The co-op text in the font of the game: a notice, chat lines over the players who spoke and in the log at the bottom left, name tags with pings, the microphone line.')
+    V.key('T', 0.1, 0.4); V.send(['typetext Meet me at the gate?'], 0.5); snap(V, 'ui_chat', 'Typing a chat line (T).'); V.key('ENTER', 0.1, 0.6)
+    V.send(['key F1 down'], 0.9); snap(V, 'ui_guide', 'The quick guide (hold F1): the keys as they are bound now.'); V.send(['key F1 up'], 0.5)
+
+def emote_self_scene(vi):
+    """The player's own emote seen from behind: the view moves back and up while the emote plays."""
+    V = games[vi]; stage(vi); time.sleep(1.0)
+    V.send(['emote 7'], 0.0)
+    for k in range(3): time.sleep(0.5); snap(V, 'emote_self_%d' % k, 'Playing an emote yourself: the view moves behind and above the adventurer.')
+    time.sleep(3.0)
+
+def pad_scene(vi):
+    """The pad layer: the player panel while View is held (pad glyphs), the emote wheel on View + D-pad up with the right stick, the quick chat wheel."""
+    V = games[vi]; lineup(vi, None, None)
+    V.send(['pad 20 0 0 0 0 0 0'], 1.2); snap(V, 'pad_panel', 'Pad: holding View opens the player panel; the hints show pad buttons.')
+    V.send(['pad 21 0 0 0 0 0 0'], 0.4); V.send(['pad 21 0 0 20000 20000 0 0'], 0.8); snap(V, 'pad_emote', 'Pad: View + D-pad up opens the emote wheel; the right stick picks a slot.')
+    V.send(['pad 0 0 0 0 0 0 0'], 0.6)
+    V.send(['pad 220 0 0 0 0 0 0'], 0.3); V.send(['pad 20 0 0 0 30000 0 0'], 0.5); snap(V, 'pad_quick', 'Pad: the quick chat wheel (View + RB): Ready, Wait for me, Over here, ...'); V.send(['pad 0 0 0 0 0 0 0'], 0.5); V.send(['pad off'], 0.5)
+
+def hide_paths(h):
+    """Privacy: every child window whose text is a game folder of this PC (the About page's Game folder box) shows a generic path in the picture instead."""
+    import ctypes, ctypes.wintypes as wt
+    u = ctypes.WinDLL('user32', use_last_error=True); E = ctypes.WINFUNCTYPE(wt.BOOL, wt.HWND, wt.LPARAM); u.SendMessageW.argtypes = [wt.HWND, wt.UINT, wt.WPARAM, wt.LPARAM]
+    dirs = {g.dir.rstrip('\\').lower() for g in games}; fake = ctypes.create_unicode_buffer('C:\\Games\\The Witness')
+    @E
+    def cb(c, l):
+        b = ctypes.create_unicode_buffer(520); u.GetWindowTextW(c, b, 520)
+        if b.value.rstrip('\\').lower() in dirs: u.SendMessageW(c, 0x000C, 0, ctypes.addressof(fake))
+        return True
+    u.EnumChildWindows(h, cb, 0)
 
 def window_picture(h, name, caption):
     """A picture of one window, asked of the window itself (PrintWindow): nothing in front of it can end up in the picture."""
@@ -193,7 +219,7 @@ def window_picture(h, name, caption):
     u.GetWindowRect.argtypes = [wt.HWND, ctypes.POINTER(wt.RECT)]; u.PrintWindow.argtypes = [wt.HWND, wt.HDC, wt.UINT]; u.GetWindowDC.restype = wt.HDC; u.GetWindowDC.argtypes = [wt.HWND]; u.ReleaseDC.argtypes = [wt.HWND, wt.HDC]
     g32.CreateCompatibleDC.restype = ctypes.c_void_p; g32.CreateCompatibleBitmap.restype = ctypes.c_void_p; g32.SelectObject.argtypes = [ctypes.c_void_p, ctypes.c_void_p]; g32.GetDIBits.argtypes = [ctypes.c_void_p, ctypes.c_void_p, wt.UINT, wt.UINT, ctypes.c_void_p, ctypes.c_void_p, wt.UINT]
     g32.CreateCompatibleBitmap.argtypes = [wt.HDC, ctypes.c_int, ctypes.c_int]; g32.CreateCompatibleDC.argtypes = [wt.HDC]; g32.DeleteObject.argtypes = [ctypes.c_void_p]; g32.DeleteDC.argtypes = [ctypes.c_void_p]
-    u.RedrawWindow.argtypes = [wt.HWND, ctypes.c_void_p, ctypes.c_void_p, wt.UINT]; u.RedrawWindow(h, None, None, 0x1 | 0x80 | 0x100); time.sleep(0.3)      # every control painted before the picture (a button that was enabled a moment ago was missing once)
+    hide_paths(h); u.RedrawWindow.argtypes = [wt.HWND, ctypes.c_void_p, ctypes.c_void_p, wt.UINT]; u.RedrawWindow(h, None, None, 0x1 | 0x80 | 0x100); time.sleep(0.3)      # every control painted before the picture (a button that was enabled a moment ago was missing once)
     r = wt.RECT(); u.GetWindowRect(h, ctypes.byref(r)); w, hh = r.right - r.left, r.bottom - r.top
     dc = u.GetWindowDC(h); mdc = g32.CreateCompatibleDC(dc); bmp = g32.CreateCompatibleBitmap(dc, w, hh); g32.SelectObject(mdc, bmp); u.PrintWindow(h, mdc, 2)
     class BIH(ctypes.Structure): _fields_ = [('size', wt.DWORD), ('w', ctypes.c_long), ('h', ctypes.c_long), ('planes', wt.WORD), ('bits', wt.WORD), ('comp', wt.DWORD), ('img', wt.DWORD), ('x', ctypes.c_long), ('y', ctypes.c_long), ('u', wt.DWORD), ('i', wt.DWORD)]
@@ -213,13 +239,12 @@ def hero_scene(vi):
     B.send(['key W down'], 1.0); snap(V, 'hero_walk', 'The same character walking toward the camera (its walk clip, at the speed the clip was made for).'); B.send(['key W up'], 1.0)
 
 def ghost_scene(vi):
-    """See-through players: one stands between the camera and the first panel and becomes a ghost, then steps aside and is solid again."""
-    V = games[vi]; B = games[1 if vi == 0 else 0]
-    B.send(['menusel 64', 'menudo teleport'], 5.0); V.send(['menusel 64', 'menudo teleport'], 5.0); (vx, vy, vz), (th, ph) = V.cam()      # both go to the panel first (a plain tp is refused beyond 28 m)
-    B.send(['tp %.3f %.3f %.3f %.4f 0' % (vx + math.cos(th) * 1.7, vy + math.sin(th) * 1.7, vz - 1.69, th)], 3.5)
-    snap(V, 'ghost_in_way', 'See-through players: player %d stands between the camera and the puzzle panel and is drawn as a ghost, so the puzzle can be read through them.' % (B.idx + 1))
-    B.send(['tp %.3f %.3f %.3f %.4f 0' % (vx + math.cos(th) * 2.2 + math.sin(th) * 1.4, vy + math.sin(th) * 2.2 - math.cos(th) * 1.4, vz - 1.69, th)], 3.5)
-    snap(V, 'ghost_aside', 'The same player a step to the side, out of the line to the panel: solid again.')
+    """See-through players: another player walks into the camera player's body (overlap) and fades to a ghost; a step to the side and it is solid again. (A player in front of a puzzle stays opaque now.)"""
+    V = games[vi]; B = games[1 if vi == 0 else 0]; (bx, by, ground), th, h_o, others = stage(vi)
+    for g in others:
+        if g is not B: g.send(['tp %.3f %.3f %.3f %.4f 0' % (bx - math.cos(th) * 30, by - math.sin(th) * 30, ground, h_o)])      # everybody else out of the picture
+    B.send(['tp %.3f %.3f %.3f %.4f 0' % (bx + math.cos(th) * 3.0, by + math.sin(th) * 3.0, ground, h_o)], 3.0); snap(V, 'ghost_solid', 'Another player three metres in front of the camera: drawn solid.')
+    B.send(['tp %.3f %.3f %.3f %.4f 0' % (bx + math.cos(th) * 0.35, by + math.sin(th) * 0.35, ground, h_o)], 3.5); snap(V, 'ghost_overlap', 'The same player standing in the camera player\'s body: it fades to a ghost so the view is not blocked.')
 
 def lobby_scene():
     """The lobby of the launcher with two members: A hosts (its player talks with a test voice), B joins with the invite, they chat."""
@@ -251,7 +276,7 @@ def lobby_scene():
             if l.startswith('invite ') and len(l) > 10: inv = l[7:].strip()
         time.sleep(0.3)
     cmd(guest, 'join ' + inv); time.sleep(3.0)
-    cmd(host, 'chat Everybody here? The panel in the garden is a good start.', 'mode coop'); cmd(guest, 'chat Here. Hold N and say something, I can hear the test voice.', 'ready 1'); cmd(host, 'voicestart'); cmd(guest, 'voicestart'); time.sleep(4.0)
+    cmd(host, 'chat Everybody here? The panel in the garden is a good start.', 'mode coop'); cmd(guest, 'chat Here. Hold B and say something, I can hear the test voice.', 'ready 1'); cmd(host, 'voicestart'); cmd(guest, 'voicestart'); time.sleep(4.0)
     u = ctypes.WinDLL('user32', use_last_error=True); WinEnum = ctypes.WINFUNCTYPE(wt.BOOL, wt.HWND, wt.LPARAM)
     found = []
     @WinEnum
@@ -310,13 +335,17 @@ def launcher_scene(vi):
         u.EnumWindows(cb, 0); return found[0] if found else None
     grab_window = window_picture
     si = subprocess.STARTUPINFO(); si.dwFlags |= subprocess.STARTF_USESHOWWINDOW; si.wShowWindow = 4
-    pages = [(0, 0, 'launcher_play', 'The launcher (witness_launcher.exe): Play. Your name, Host a game / Join a friend / Play solo, and one button that says what it does; hosting or joining turns the tab into the lobby.'),
-             (2, 4, 'launcher_video', 'Settings, Display: the game\'s own Launcher.variables (full screen, resolution or a custom size, frame limit, anti-aliasing, the quality settings), saved as they change.'),
-             (2, 2, 'launcher_sound', 'Settings, Voice and sound: voice chat mode, push-to-talk key (press a key), voice and microphone volume, hearing and radio ranges, the game\'s volume; sliders with units.'),
-             (2, 3, 'launcher_options', 'Settings, Controls: every co-op key by press-a-key, and the options that live inside a save (mouse speed, invert, ...), changed in the save chosen in Save to change.'),
-             (1, 0, 'launcher_saves', 'Saves: each save with the players who were in the game and how far it got (panels, lasers, time played), and New game with chosen parts of the map done.')]
+    pages = [(0, 0, 'launcher_play', 'The launcher (witness_launcher.exe): Play. Your name, three tiles (Host a game, Join a friend, Play solo) and one button that says what it does; hosting or joining turns the tab into the lobby.'),
+             (1, 0, 'launcher_saves', 'Saves: each save with the players who were in the game and how far it got, and the New game slot.'),
+             (2, 1, 'launcher_players', 'Settings, Players and interface: your colour, name tags, text chat, pings.'),
+             (2, 2, 'launcher_sound', 'Settings, Voice and sound: voice chat mode, push-to-talk key (press a key), volumes, hearing range.'),
+             (2, 3, 'launcher_keys', 'Settings, Controls: every co-op key by press-a-key, gamepad on or off.'),
+             (2, 4, 'launcher_display', 'Settings, Display: the game\'s own Launcher.variables (screen mode, resolution, frame limit, quality).'),
+             (2, 5, 'launcher_network', 'Settings, Network: port and how friends find each other.'),
+             (2, 6, 'launcher_launcher', 'Settings, Launcher: show at start, updates, and the experimental options (off by default).'),
+             (3, 0, 'launcher_about', 'About: version, updates, the quick guide, Send diagnostics, links, the game folder (a generic path is shown here instead of this PC\'s) and credits.')]
     for page, section, name, caption in pages:
-        p = subprocess.Popen([exe, '--dir', games[vi].dir, '--page', str(page), '--section', str(section), '--no-activate'], startupinfo=si); h = None; t0 = time.time()
+        p = subprocess.Popen([exe, '--dir', games[vi].dir, '--page', str(page), '--section', str(section), '--no-activate'] + (['--size', '1280', '900'] if name == 'launcher_keys' else []), startupinfo=si); h = None; t0 = time.time()
         while time.time() - t0 < 10 and not h: h = find(p.pid, 'WitnessLauncher'); time.sleep(0.2)
         time.sleep(0.8)
         if h:
@@ -340,9 +369,9 @@ def launcher_scene(vi):
 SCENES = [('lineup', lambda: (lineup(0, 'lineup_a', 'Eight players in one group, each drawn as an adventurer (seen by player 1: players 2 to %d).' % N),
                               lineup(1, 'lineup_b', 'The same group seen by player 2: this time player 1 is in the picture.') if N > 2 else None)),
           ('walk', lambda: walkers(0, 'walk', 'The others walking toward the camera: the walk clip of each model, at the speed the other game measured.')),
-          ('hero', lambda: hero_scene(1)), ('ghost', lambda: ghost_scene(1)), ('lobby', lambda: lobby_scene()), ('race', lambda: race_scene()), ('pov', lambda: pov_scene(0)), ('devmenu', lambda: devmenu_scene(0)), ('pause', lambda: pause_pair(0)), ('social', lambda: social_scene(0)), ('emote', lambda: emote_scene(0)), ('draw', lambda: draw_scene(0)), ('voice', lambda: voice_scene(0)), ('panel', lambda: panel_scene(0)), ('map', lambda: map_scene(0)), ('launcher', lambda: launcher_scene(0)), ('look', lambda: look_scene(0))]
+          ('hero', lambda: hero_scene(1)), ('ghost', lambda: ghost_scene(1)), ('lobby', lambda: lobby_scene()), ('race', lambda: race_scene()), ('pov', lambda: pov_scene(0)), ('devmenu', lambda: devmenu_scene(0)), ('pause', lambda: pause_pair(0)), ('social', lambda: social_scene(0)), ('emote', lambda: emote_scene(0)), ('draw', lambda: draw_scene(0)), ('voice', lambda: voice_scene(0)), ('panel', lambda: panel_scene(0)), ('map', lambda: map_scene(0)), ('launcher', lambda: launcher_scene(0)), ('look', lambda: look_scene(0)), ('emoteself', lambda: emote_self_scene(0)), ('pad', lambda: pad_scene(0))]
 t0 = time.time(); print('showcase: %d games, scenes %s, spot panel 0x%s' % (N, ','.join(want), SPOT), flush=True)
 teleport_all(SPOT)
 for name, fn in SCENES:
-    if name in want or ('all' in want and name not in ('race', 'look')): print('scene', name, flush=True); fn()      # (the race needs its own run: SHOWCASE_CFG_EXTRA=game_mode=race tools/showcase.sh 2 race)
+    if name in want or ('all' in want and name != 'race'): print('scene', name, flush=True); fn()      # (the race needs its own run: SHOWCASE_CFG_EXTRA=game_mode=race tools/showcase.sh 2 race)
 json.dump(manifest, open(os.path.join(out, 'showcase.json'), 'w'), indent=1); print('done in %.0f s, %d pictures' % (time.time() - t0, len(manifest)))
