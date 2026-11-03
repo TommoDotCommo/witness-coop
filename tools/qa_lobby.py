@@ -11,7 +11,7 @@ LDIR = os.path.join(ROOT, 'launcher', 'build')
 WITNESS_RESOURCES = os.environ['WITNESS_RESOURCES']
 
 def base_cfg(name, port, tone):
-    return ('id=1\nlisten=%d\npeer=%d\nsave_dir=instance\nshare_zip=1\nforce_active=1\ncap_fps=30\ndev_menu=1\nvoice_mute_output=1\nname=%s\nrace_countdown_ms=9000\n%s' % (port, port + 1, name, tone))
+    return ('id=1\nlisten=%d\npeer=%d\nsave_dir=instance\nshare_zip=1\nforce_active=1\ncap_fps=30\ndev_menu=1\nvoice_mute_output=1\nname=%s\nrace_countdown_ms=9000\nlobby_visibility=invite\nupnp=0\nfind_tailscale=0\n%s' % (port, port + 1, name, tone))
 
 def run(launcher_exe='witness_launcher.exe'):
     subprocess.run(['make', '-C', os.path.join(ROOT, 'launcher'), 'launcher', 'launcher-mutants'], check=True, capture_output=True)
