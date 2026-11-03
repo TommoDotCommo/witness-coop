@@ -1,7 +1,9 @@
-// Proxy for AnselSDK64.dll. The original is renamed AnselSDK64_real.dll; every export is a stub that
-// loads it by full path on first call and jumps to the real function. (Export forwarders did not work:
-// the loader reported AnselSDK64_real.dll "not found" although it sits next to the exe.)
-// Nothing in DllMain blocks or does I/O (the loader lock): logging runs on a thread.
+// The co-op proxy, built as dsound.dll: the game imports DSOUND (by ordinal) but does not ship it, so Windows loads this file from the
+// game folder and the game's own files stay untouched. Every export is a stub that loads the system's dsound.dll by full path
+// (GetSystemDirectory, never by bare name: that name is this file) on first call and jumps to the real function.
+// A dsound.dll that was in the game folder before the mod (another mod, an ASI loader) is kept as dsound.chain.dll and loaded
+// after this one for its own start-up work; the exports still go to the system copy (see README, "Other mods named dsound.dll").
+// Nothing in DllMain blocks or does I/O (the loader lock): logging and the chain load run on a thread.
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include "../common/steam_ids.h"
@@ -14,12 +16,16 @@
 #include "diag.h"
 
 static const char* kNames[] = {
-    "getConfiguration", "getConfigurationSize", "getSessionConfigurationSize", "getVersion", "setConfiguration",
-    "setStopSessionCallback", "setUpdateCameraFunc", "stopSession", "updateCamera",
+    "DirectSoundCreate", "DirectSoundEnumerateA", "DirectSoundEnumerateW", "DllCanUnloadNow", "DllGetClassObject",
+    "DirectSoundCaptureCreate", "DirectSoundCaptureEnumerateA", "DirectSoundCaptureEnumerateW", "GetDeviceID",
+    "DirectSoundFullDuplexCreate", "DirectSoundCreate8", "DirectSoundCaptureCreate8",
 };
+static const int kCount = sizeof kNames / sizeof kNames[0];
 static HMODULE g_self, g_real;
 HMODULE g_selfModule() { return g_self; }
-static FARPROC g_fn[9];
+static FARPROC g_fn[12];
+// Release tools and Setup recognise a dsound.dll of this mod by this text (any version); another file of that name is chained.
+extern "C" __attribute__((used)) const char kCoopProxyMarker[] = "witness-coop:proxy:dsound";
 
 void Log(const char* msg) {
     DiagLine(msg);      // this run's own session log (and the rotation of witness_proxy.log on the first line)
@@ -37,25 +43,43 @@ void Log(const char* msg) {
     CloseHandle(f);
 }
 
+// The folder the real dsound.dll is loaded from: the system folder. Test builds (tools/test_build_gate.sh) use a folder beside
+// the proxy instead, so a fake "system" DLL can prove the forwarding.
+static void SystemDsoundPath(wchar_t* path, size_t n) {
+#ifdef COOP_TEST_SYSTEM_SUBDIR
+    GetModuleFileNameW(g_self, path, (DWORD)n);
+    wchar_t* slash = wcsrchr(path, L'\\'); if (slash) slash[1] = 0;
+    wcscat_s(path, n, COOP_TEST_SYSTEM_SUBDIR);
+#else
+    UINT len = GetSystemDirectoryW(path, (UINT)n);
+    if (!len || len >= n) path[0] = 0;
+#endif
+    wcscat_s(path, n, L"\\dsound.dll");
+}
+// If the system copy is missing (a broken Windows) the game gets "failed" from every call instead of a jump to address 0.
+static long __stdcall NoDsound() { return (long)0x80004005; }     // E_FAIL
+
 extern "C" uintptr_t ResolveThunk(int i) {
     if (!g_fn[i]) {
         if (!g_real) {
             wchar_t path[MAX_PATH];
-            GetModuleFileNameW(g_self, path, MAX_PATH);
-            wchar_t* slash = wcsrchr(path, L'\\');
-            if (slash) *(slash + 1) = 0;
-            wcscat_s(path, L"AnselSDK64_real.dll");
+            SystemDsoundPath(path, MAX_PATH);
+#ifdef COOP_MUT_BARE_NAME
+            g_real = LoadLibraryW(L"dsound.dll");      // mutant: loads by bare name, which is this file itself
+#else
             g_real = LoadLibraryW(path);
+#endif
             char m[120];
-            snprintf(m, sizeof m, "real Ansel DLL %s", g_real ? "loaded" : "FAILED to load");
+            snprintf(m, sizeof m, "system dsound.dll %s", g_real ? "loaded" : "FAILED to load: the game gets no DirectSound");
             Log(m);
         }
-        g_fn[i] = g_real ? GetProcAddress(g_real, kNames[i]) : nullptr;
+        FARPROC f = (g_real && g_real != g_self) ? GetProcAddress(g_real, kNames[i]) : nullptr;
+        g_fn[i] = f ? f : (FARPROC)NoDsound;
     }
     return (uintptr_t)g_fn[i];
 }
 
-// Keep the argument registers while resolving, then tail-jump to the real function.
+// Keep the argument registers while resolving, then tail-jump to the real function (stack arguments stay where they are).
 #define THUNK(idx, name) \
     extern "C" __attribute__((naked)) void name() { \
         __asm__ volatile( \
@@ -63,30 +87,42 @@ extern "C" uintptr_t ResolveThunk(int i) {
             "mov $" #idx ", %ecx\n call ResolveThunk\n" \
             "add $40, %rsp\n pop %r9\n pop %r8\n pop %rdx\n pop %rcx\n jmp *%rax\n"); \
     }
-THUNK(0, getConfiguration)
-THUNK(1, getConfigurationSize)
-THUNK(2, getSessionConfigurationSize)
-THUNK(3, getVersion)
-THUNK(4, setConfiguration)
-THUNK(5, setStopSessionCallback)
-THUNK(6, setUpdateCameraFunc)
-THUNK(7, stopSession)
+THUNK(0, DirectSoundCreate)
+THUNK(1, DirectSoundEnumerateA)
+THUNK(2, DirectSoundEnumerateW)
+THUNK(3, DllCanUnloadNow)
+THUNK(4, DllGetClassObject)
+THUNK(5, DirectSoundCaptureCreate)
+THUNK(6, DirectSoundCaptureEnumerateA)
+THUNK(7, DirectSoundCaptureEnumerateW)
+THUNK(8, GetDeviceID)
+THUNK(9, DirectSoundFullDuplexCreate)
+THUNK(10, DirectSoundCreate8)
+THUNK(11, DirectSoundCaptureCreate8)
 
-// updateCamera(const Camera&) is called by the game with its camera. Keep a copy of the argument
-// block for the overlay and logging, then pass the call through unchanged.
-static volatile LONG g_camCalls;
-static unsigned char g_camBytes[160];
-typedef uintptr_t (*Fn4)(void*, void*, void*, void*);
-extern "C" uintptr_t updateCamera(void* a, void* b, void* c, void* d) {
-    if (a && !IsBadReadPtr(a, sizeof g_camBytes)) memcpy(g_camBytes, a, sizeof g_camBytes);
-    InterlockedIncrement(&g_camCalls);
-    Fn4 fn = (Fn4)ResolveThunk(8);
-    return fn ? fn(a, b, c, d) : 0;
+// ---- chain load: a dsound.dll that was there before the mod is kept by Setup as dsound.chain.dll and loaded here, after this
+// DLL, for whatever it does when it loads (an ASI loader loads its plugins). Its exports are not used: the game's DirectSound
+// calls go to the system copy. Loaded once, from the start-up thread, whatever the game build (it is someone else's mod).
+static void ChainLoad() {
+#ifdef COOP_MUT_NO_CHAIN
+    return;                    // mutant: the chain file is ignored
+#endif
+    wchar_t path[MAX_PATH];
+    GetModuleFileNameW(g_self, path, MAX_PATH);
+    wchar_t* slash = wcsrchr(path, L'\\'); if (slash) slash[1] = 0;
+    wcscat_s(path, L"dsound.chain.dll");
+    WIN32_FILE_ATTRIBUTE_DATA fa;
+    if (!GetFileAttributesExW(path, GetFileExInfoStandard, &fa)) { Log("chain: no dsound.chain.dll"); return; }
+    HMODULE m = LoadLibraryW(path);
+    char line[200];
+    if (m) snprintf(line, sizeof line, "chain: loaded dsound.chain.dll (%lu bytes)", (unsigned long)fa.nFileSizeLow);
+    else snprintf(line, sizeof line, "chain: dsound.chain.dll (%lu bytes) FAILED to load (error %lu)", (unsigned long)fa.nFileSizeLow, GetLastError());
+    Log(line);
 }
 
 // ---- which build of the game is this? Decided in DllMain from the exe already in memory (no I/O under the loader lock).
 // Any build but the one the mod's addresses fit is left strictly alone: no hook, no thread of ours that touches the game,
-// every export still forwards to the game's own Ansel DLL, and the player is told once that co-op is off.
+// every export still forwards to the system dsound.dll, and the player is told once that co-op is off.
 #ifdef COOP_TEST_SPEC      // test builds only (tools/test_build_gate.sh): the build to treat as the known one
 static buildid::Spec KnownSpec() { return buildid::Spec{ COOP_TEST_SPEC }; }
 #else
@@ -106,7 +142,7 @@ static void CheckBuild() {
 static void UnsupportedBuild() {
     char what[200], line[400];
     buildid::Describe(g_build, what, sizeof what);
-    snprintf(line, sizeof line, "BUILD: not %s (%s). Co-op is OFF; nothing of the game is patched, the Ansel calls pass through.", WITNESS_BUILD_NAME, what);
+    snprintf(line, sizeof line, "BUILD: not %s (%s). Co-op is OFF; nothing of the game is patched, the sound calls pass through.", WITNESS_BUILD_NAME, what);
     Log(line);
     char off[8];
     if (GetEnvironmentVariableA("WITNESS_COOP_NO_DIALOG", off, sizeof off)) { Log("BUILD: message box suppressed (WITNESS_COOP_NO_DIALOG)"); return; }
@@ -122,7 +158,7 @@ void CoopStart();
 void GameStart();
 void StateStart();
 // A crash is logged before the game dies: the faulting address and the return addresses above it, each as module+offset, so a fault in a
-// driver call can be traced to the call in this DLL that made it (map an AnselSDK64.dll offset with objdump or nm on the build).
+// driver call can be traced to the call in this DLL that made it (map a dsound.dll offset with objdump or nm on the build).
 // A stack overflow leaves almost no stack for the handler: its trace is written with static buffers and a file opened beforehand
 // (witness_crash_stack.txt): each return address as module+offset, so a recursion between two hooks (the mod's and another's) shows.
 static HANDLE g_overflowFile = INVALID_HANDLE_VALUE; static void* g_overflowFrames[96]; static char g_overflowLine[160]; static char g_overflowName[MAX_PATH];
@@ -186,6 +222,7 @@ static bool HandOffSteamJoin() {
     return true;
 }
 static DWORD WINAPI Init(LPVOID) {
+    ChainLoad();
     if (!g_buildKnown) { UnsupportedBuild(); return 0; }
     char msg[300], exe[MAX_PATH];
     DiagStart();
@@ -200,18 +237,6 @@ static DWORD WINAPI Init(LPVOID) {
     CoopStart();
     GameStart();
     StateStart();
-    LONG last = -1; int logged = 0;
-    for (int tick = 0; tick < 400 && logged < 4; tick++) {
-        Sleep(1000);
-        LONG c = g_camCalls;
-        if (c == 0 || (c == last)) { last = c; continue; }
-        if (logged == 0 || tick % 5 == 0) {
-            char l[900]; int n = snprintf(l, sizeof l, "updateCamera calls=%ld floats:", (long)c);
-            for (int i = 0; i < 40; i++) { float f; memcpy(&f, g_camBytes + i*4, 4); n += snprintf(l + n, sizeof l - n, " %.6g", f); }
-            Log(l); logged++;
-        }
-        last = c;
-    }
     return 0;
 }
 

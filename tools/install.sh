@@ -1,5 +1,6 @@
 #!/bin/bash
-# Build the proxy and put it into the test copies (optional A/B selects one). The originals stay as AnselSDK64_real.dll.
+# Build the proxy and put it into the test copies (optional A/B selects one) as dsound.dll; the game's own files stay as they are.
+# A copy in the old layout (the proxy in AnselSDK64.dll, the game's file renamed AnselSDK64_real.dll) gets the game's file back first.
 # Never point this at your real install: it is for disposable copies (see README, "Test copies").
 set -e; . "$(dirname "$0")/config.sh"
 make -C "$ROOT/proxy" >/dev/null
@@ -12,11 +13,13 @@ esac
 for d in "${dirs[@]}"; do
   [ -f "$d/witness64_d3d11.exe" ] || { echo "no game copy at $d (see README, Test copies)"; exit 1; }
   [ "$(sha256sum "$d/witness64_d3d11.exe" | cut -d' ' -f1)" = "$EXE_SHA256" ] || { echo "$d: not Steam build 11370412, refusing"; exit 1; }
-  if [ ! -f "$d/AnselSDK64_real.dll" ]; then
-    [ "$(sha256sum "$d/AnselSDK64.dll" | cut -d' ' -f1)" = "$ANSEL_SHA256" ] || { echo "$d: AnselSDK64.dll is not the original, refusing"; exit 1; }
-    mv "$d/AnselSDK64.dll" "$d/AnselSDK64_real.dll"
+  if [ -f "$d/AnselSDK64_real.dll" ]; then
+    [ "$(sha256sum "$d/AnselSDK64_real.dll" | cut -d' ' -f1)" = "$ANSEL_SHA256" ] || { echo "$d: AnselSDK64_real.dll is not the game's own Ansel DLL, refusing"; exit 1; }
+    rm -f "$d/AnselSDK64.dll" "$d/AnselSDK64.dll.coop-receipt.json" "$d/AnselSDK64.dll.coop-original" "$d/AnselSDK64_real.dll.coop-receipt.json"
+    mv "$d/AnselSDK64_real.dll" "$d/AnselSDK64.dll"
   fi
-  cp "$ROOT/proxy/AnselSDK64.dll" "$d/AnselSDK64.dll"
+  [ "$(sha256sum "$d/AnselSDK64.dll" | cut -d' ' -f1)" = "$ANSEL_SHA256" ] || { echo "$d: AnselSDK64.dll is not the game's own, refusing"; exit 1; }
+  rm -f "$d/dsound.dll"; cp "$ROOT/proxy/dsound.dll" "$d/dsound.dll"      # replaced, never written through a hard link
   mkdir -p "$d/witness_models" && rm -f "$d/witness_models/"* && cp -f "$ROOT"/assets/models/*.glb "$ROOT"/assets/models/*.txt "$d/witness_models/"
   echo "installed into $d"
 done

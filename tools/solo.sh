@@ -29,7 +29,7 @@ if [ -n "$via" ]; then
   LOCALAPPDATA="$(win "$lad")" WITNESS_SETUP_MESSAGE_FILE="$(win "$msg")" "$via" --extract-only || { echo "solo: the setup did not unpack"; exit 1; }
   unpacked="$(sed -n 's/^extracted: //p' "$msg" | tr -d '\r')"
   powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$unpacked\\witness-coop.ps1" -GameDir "$(win "$d")" -Yes | tr -d '\r' | tail -4 || exit 1
-  [ -f "$d/AnselSDK64_real.dll" ] && [ -f "$d/AnselSDK64.dll.coop-receipt.json" ] || { echo "solo: the setup did not install into $d"; exit 1; }
+  [ -f "$d/dsound.dll" ] && [ -f "$d/dsound.dll.coop-receipt.json" ] && [ ! -e "$d/AnselSDK64_real.dll" ] || { echo "solo: the setup did not install into $d"; exit 1; }
 else
   "$TOOLS/install.sh" A >/dev/null || exit 1
 fi

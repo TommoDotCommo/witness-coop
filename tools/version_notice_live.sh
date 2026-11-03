@@ -20,7 +20,7 @@ fi
 d="$WITNESS_DIR1"; gp="$WITNESS_PORT1"; pp="$WITNESS_PORT2"
 make -s -C "$ROOT/proxy" || exit 1
 "$TOOLS/install.sh" A >/dev/null || exit 1
-if [ $mutant = 1 ]; then make -s -C "$ROOT/proxy" AnselSDK64_mut_silent.dll || exit 1; rm -f "$d/AnselSDK64.dll"; cp "$ROOT/proxy/AnselSDK64_mut_silent.dll" "$d/AnselSDK64.dll"; fi
+if [ $mutant = 1 ]; then make -s -C "$ROOT/proxy" dsound_mut_silent.dll || exit 1; rm -f "$d/dsound.dll"; cp "$ROOT/proxy/dsound_mut_silent.dll" "$d/dsound.dll"; fi
 mine=$(sed -n 's/^#define MOD_VERSION "\(.*\)"/\1/p' "$ROOT/proxy/build/version.h")
 printf 'id=1\nlisten=%s\npeer=2,127.0.0.1,%s\npeer_version=2,v0.0.9\nsave_dir=instance\nshare_zip=1\nforce_active=1\ncap_fps=%s\nname=Alpha\n' "$gp" "$pp" "${WITNESS_FPS:-30}" > "$d/witness_coop.cfg"
 rm -f "$d/witness_proxy.log"

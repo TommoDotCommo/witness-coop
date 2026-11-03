@@ -31,6 +31,17 @@ def replace_copy(src,dst):
     shutil.copy2(src,dst)
 
 
+def install_proxy(d):
+    """The mod is dsound.dll beside the game's own, untouched AnselSDK64.dll. A copy in the old layout (the proxy in
+    AnselSDK64.dll, the game's file renamed AnselSDK64_real.dll) gets the game's file back first."""
+    d=Path(d)
+    if (d/'AnselSDK64_real.dll').exists():
+        assert digest(d/'AnselSDK64_real.dll')==DLL_HASH,'AnselSDK64_real.dll is not the game\'s own Ansel DLL'
+        (d/'AnselSDK64.dll').unlink(missing_ok=True);(d/'AnselSDK64_real.dll').rename(d/'AnselSDK64.dll')
+    assert digest(d/'AnselSDK64.dll')==DLL_HASH,'unrecognized AnselSDK64.dll (not the game\'s own)'
+    replace_copy(Path(ROOT)/'proxy/dsound.dll',d/'dsound.dll')
+
+
 def digest(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
@@ -88,10 +99,7 @@ def wait(predicate,description,timeout=180):
 def prepare(c, config):
     d=c.directory
     assert digest(d/'witness64_d3d11.exe')==EXE_HASH,'unsupported game build'
-    if not (d/'AnselSDK64_real.dll').exists():
-        assert digest(d/'AnselSDK64.dll')==DLL_HASH,'unrecognized original DLL'
-        (d/'AnselSDK64.dll').rename(d/'AnselSDK64_real.dll')
-    replace_copy(Path(ROOT)/'proxy/AnselSDK64.dll',d/'AnselSDK64.dll')
+    install_proxy(d)
     models=d/'witness_models';models.mkdir(exist_ok=True)
     for asset in (Path(ROOT)/'assets/models').iterdir():
         if asset.suffix in ('.glb','.txt'):replace_copy(asset,models/asset.name)
