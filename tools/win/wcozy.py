@@ -76,7 +76,7 @@ def capture(label, width, height):
     print('PASS %dx%d %s, minimum font %.2f px' % (width, height, label, font), flush=True)
 try:
     if len(sys.argv) > 6 and sys.argv[6] == 'input':
-        key('F5'); key('ESC'); guide_open(False)
+        send(['key TAB down']); key('ESC'); send(['key TAB up']); guide_open(False)
         print('PASS roster Escape consumed', flush=True)
         sys.exit(0)
     if len(sys.argv) > 6 and sys.argv[6] == 'layout':      # the selected panel's detail pane at this size: how many controls or information lines are cut off
@@ -107,7 +107,7 @@ try:
         send(['menu toggle'])
         send(['key F1 down']); guide_open(True); capture('guide', width, height)
         send(['key F1 up']); guide_open(False)
-        key('F5'); capture('roster', width, height); key('ESC'); guide_open(False)
+        send(['key TAB down']); capture('roster', width, height); key('ESC'); send(['key TAB up']); guide_open(False)
         send(['chat ' + 'Wide WWWW and narrow iii preserve measured wrapping. ' * 2,
               'typing on', 'typetext ' + 'MMMMiiii ' * 15])
         capture('chat', width, height); send(['typing off'])

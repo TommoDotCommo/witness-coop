@@ -118,7 +118,8 @@ static UINT WINAPI HookGetRawInputData(HRAWINPUT h, UINT cmd, LPVOID data, PUINT
         else if (e.down) { ri.data.keyboard.VKey = 0; ri.data.keyboard.MakeCode = 0; ri.data.keyboard.Flags = RI_KEY_BREAK; }
     }
     else if (PovRosterOpen()) {      // ... to the player panel (hold Tab)
-        if (!e.key) { PovPanelMove(e.dx, e.dy); ri.data.mouse.lLastX = ri.data.mouse.lLastY = 0; ri.data.mouse.usButtonFlags = 0; }
+        if (!e.key) { { static ULONG_PTR lastTok = ~(ULONG_PTR)0; if (v != lastTok) { lastTok = v; PovPanelMove(e.dx, e.dy); } }      // (the game reads one event more than once: count its motion once)
+            ri.data.mouse.lLastX = ri.data.mouse.lLastY = 0; ri.data.mouse.usButtonFlags = 0; }
         else if (e.down) { ri.data.keyboard.VKey = 0; ri.data.keyboard.MakeCode = 0; ri.data.keyboard.Flags = RI_KEY_BREAK; }
     }
     else if (SocialMouseCaptured()) {      // ... and to the emote wheel / chat box

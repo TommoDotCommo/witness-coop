@@ -191,6 +191,7 @@ inline Columns Content(const Cfg& c) {
     out[1] = {
         "PLAY TOGETHER",
         "Explore independently. See animated teammates, names, typing dots, pings and emotes.",
+        "Shared keys (the same in every co-op mod): V or middle mouse pings, B or the mouse side button talks, hold H for emotes, hold Tab for the player panel (watch, mute, volume, leave), [ and ] watch the previous / next player.",
         "Co-op shares solved panels, traced puzzle lines, opened doors, panel power and cable lighting. Late arrivals recover shared progress.",
         "Players fade during close body overlap. Watch a partner's view to compare clues. Draw on surfaces or use the precise screen canvas.",
         "Voice: proximity is spatial nearby, radio farther away. Channels: proximity, radio, open line (global), or one on one. The mic indicator names yours.",

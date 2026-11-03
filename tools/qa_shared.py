@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """T2 scenario for the shared co-op keys and the hold-Tab player panel (tools/win/wshared.py). A starts with the OLD default keys in its cfg, B with a custom chat key on V.
 Mutants: V still watches (old_v_watch=1: the ping never goes out), Tab does not open the panel (no_player_panel=1), a cfg that is not migrated is covered by the T0 guide test.
-usage: qa_shared.py (called by tools/qa.sh shared)"""
+usage: qa_shared.py [clean] (called by tools/qa.sh shared; `clean`: without the mutants)"""
 import os, subprocess, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from witness import TOOLS, DIR1, DIR2, PYW, pid, win
@@ -23,7 +23,8 @@ def run(cfg_a='', cfg_b=''):
 def main():
     results = []
     print('=== shared: clean build', flush=True); ok = run(); results.append(('clean', ok)); print('clean: %s' % ('PASS' if ok else 'FAIL'), flush=True)
-    for name, ca in (('old_v_watch (V watches, so the ping never goes out)', 'old_v_watch=1'), ('no_player_panel (Tab does not open the panel)', 'no_player_panel=1')):
+    mutants = (('old_v_watch (V watches, so the ping never goes out)', 'old_v_watch=1'), ('no_player_panel (Tab does not open the panel)', 'no_player_panel=1'))
+    for name, ca in (() if sys.argv[1:] == ['clean'] else mutants):
         print('=== shared: MUTANT %s' % name, flush=True); caught = not run(ca); results.append((name, caught)); print('mutant: %s' % ('caught' if caught else 'NOT CAUGHT'), flush=True)
     bad = [n for n, ok in results if not ok]
     print('ALL OK' if not bad else 'FAILED: %s' % bad); return 1 if bad else 0

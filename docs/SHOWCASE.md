@@ -44,7 +44,7 @@ panel shows through the head. A step to the side and they are drawn normally aga
 
 ![Proximity: the label says so](showcase/voice.jpg)
 
-Who hears you, and how, is the channel, shown in the microphone line at the bottom left. **H** steps through them. Proximity (the default) is heard in the world, louder when close, and
+Who hears you, and how, is the channel, shown in the microphone line at the bottom left. **Y** steps through them. Proximity (the default) is heard in the world, louder when close, and
 turns into a walkie-talkie far away. The bars beside a name are the players who are talking (here the even players: a test voice instead of a microphone).
 
 | Radio | Open line | One on one |
@@ -78,8 +78,7 @@ Players hold the forward key. Current builds play the adventurer walk or run cli
 
 ![The player list](showcase/pov_roster.jpg)
 
-F5 opens the player list (names in their colours, pings; Up / Down, Enter to watch, Backspace to clear). **V** watches the player under the cross-hair; with nobody there it watches the only other
-player, or opens this list when there are several; `]` and `[` cycle. A reminder is at the bottom right of the screen.
+Holding Tab opens the player panel (one row per player: colour, name, host mark, ping, speaking light, distance or state; mouse buttons Watch, Mute and voice volume per row, voice volume, name tags and partner picture below, Copy invite and Leave at the bottom; arrows, Enter, M, Backspace and Esc work too). Releasing Tab closes it. `]` and `[` cycle through the players you watch. **V** is the ping now. A reminder is at the bottom right of the screen.
 
 ![Watching another player's screen](showcase/pov_watch.jpg)
 
@@ -128,7 +127,7 @@ what the other game sends.
 
 Seven players speak at once: each line floats over its player and is in the log at the bottom left. The player with the three green dots over the head is typing. The poles
 with a name and a distance are pings (the sender's colour); the arrow at the bottom is a ping behind the camera. The bars beside some names are the players who are talking
-(here the even players, a test voice instead of a microphone), and the line at the bottom left is this player's own microphone (`hold N to talk`).
+(here the even players, a test voice instead of a microphone), and the line at the bottom left is this player's own microphone (`hold B to talk`).
 
 ## Emotes
 
@@ -138,7 +137,7 @@ Spin, bow, no, yes, cheer, dance, wave, each with its name over the head: a mode
 
 ![The emote wheel](showcase/emote_wheel.jpg)
 
-Hold G and move the mouse toward a slot (the up-right one, Dance, is lit); release plays it. The camera does not turn while the wheel is open.
+Hold H and move the mouse toward a slot (the up-right one, Dance, is lit); release plays it. The camera does not turn while the wheel is open.
 
 
 ## Drawing

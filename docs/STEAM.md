@@ -109,7 +109,7 @@ About 30 minutes. Both: Steam running and online, The Witness installed from Ste
    launcher to open in the host's lobby. Note what happened.
 5. Friend: click **Leave**, close the launcher, then in Steam's friends list choose **Join Game** on the host. Note what happened.
 6. Friend, launcher open: paste the lobby number into the Invite field, click **Join**. Expect both names in the list, then chat both ways, and
-   talk (push to talk, `N` by default): each hears the other.
+   talk (push to talk, `B` by default): each hears the other.
 7. Friend: tick **I am ready**. Host: Co-op, New game, **Start the game**. Both games start after the countdown.
 8. Play for 15 minutes in the same area: see each other, solve panels both ways (each solve appears for the other), open a door, talk by voice,
    ping and chat (hold F1 for the keys).

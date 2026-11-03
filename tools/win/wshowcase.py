@@ -92,10 +92,10 @@ def pause_pair(vi):
 
 
 def pov_scene(vi):
-    """The camera player watches another player's own screen (V on the player you look at, ] and [ to cycle, F5 for the list)."""
+    """The camera player watches another player's own screen (Watch in the hold-Tab player panel, ] and [ to cycle)."""
     V = games[vi]; target = games[1 if vi == 0 else 0]
     lineup(vi, None, None)      # everybody back in rows on the lawn, so the watched player's own screen shows the garden and not the inside of somebody's model
-    V.key('F5', 0.12, 1.5); snap(V, 'pov_roster', 'F5 opens the player list: pick whose screen to watch.'); V.key('F5', 0.12, 1.0)
+    V.send(['key TAB down'], 1.5); snap(V, 'pov_roster', 'Holding Tab opens the player panel: pick whose screen to watch.'); V.send(['key TAB up'], 1.0)
     V.send(['pov %d' % (target.idx + 1), 'partner large'], 6.0); snap(V, 'pov_watch', "Watching player %d's own screen as a backup view (pictures stream only to whoever asks for them)." % (target.idx + 1))
     V.send(['pov off', 'partner off'], 1.0)
 
@@ -148,7 +148,7 @@ def emote_scene(vi):
 
 def draw_polyline(g, pts, inks=0):
     g.send(['canvas on', 'reticle %.4f %.4f' % pts[0]], 0.2)
-    for _ in range(inks): g.key('B', 0.1, 0.1)
+    for _ in range(inks): g.send(['inkwheel 120'], 0.1)
     g.send(['key X down'], 0.25)
     for p in pts[1:]: g.send(['reticle %.4f %.4f' % p], 0.16)
     g.send(['key X up', 'canvas off'], 0.3)
