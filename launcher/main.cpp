@@ -26,6 +26,8 @@
 #include "theme.h"
 #include "lobby.h"
 #include "lobby_win.h"
+#include "joinglue.h"
+#include "netfind.h"
 #include "../common/steam_ids.h"
 #include "../proxy/progress/progress.h"
 #include "../common/diag_log.h"
@@ -75,7 +77,7 @@ std::wstring SaveFolder(const wl::CfgFile& c) {      // where the game keeps its
 }
 wl::CfgFile LoadCfg() { return wl::CfgFile::Parse(ReadFile8(CfgPath())); }
 diag::Session g_log; bool g_logOpen;      // this run's own log (common/diag_log.h), in the same folder as the game's
-void Dlog(const char* text) { if (g_logOpen) g_log.Line(text); }
+void Dlog(const char* text) { static CRITICAL_SECTION cs; static LONG made; if (InterlockedCompareExchange(&made, 1, 0) == 0) InitializeCriticalSection(&cs); EnterCriticalSection(&cs); if (g_logOpen) g_log.Line(text); LeaveCriticalSection(&cs); }      // (netfind.c's workers log too)
 int g_footAction;                          // the command the footer's next-step button sends (F4), 0: hidden
 void Status(const std::wstring& s, const wchar_t* action = nullptr, int cmd = 0) {
     SetWindowTextW(g_status, s.c_str()); Dlog(("status: " + U(s)).c_str());
@@ -435,7 +437,8 @@ LRESULT CALLBACK PageProc(HWND h, UINT m, WPARAM w, LPARAM l) {
 }
 wup::Updater g_upd; bool g_updFromLobby;
 enum { ID_LB_HOST = 600, ID_LB_JOIN, ID_LB_INVITE, ID_LB_COPY, ID_LB_LEAVE, ID_LB_READY, ID_LB_START, ID_LB_MEMBERS, ID_LB_LOG, ID_LB_CHAT, ID_LB_SEND, ID_LB_MODE, ID_LB_GOAL, ID_LB_NEWGAME, ID_LB_PARTS, ID_LB_STATUS, ID_LB_PORT, ID_LB_ADVERTISE, ID_LB_MUTE, ID_LB_DEAF, ID_LB_RESULT, ID_LB_LEVEL, ID_LB_PARTSINFO, ID_LB_WHO, ID_LB_STEAM_HOST, ID_LB_STEAM_INVITE, ID_LB_STEAM_FRIENDS, ID_LB_STEAM_SEND, ID_LB_UPDATE,
-       ID_LB_INVITE_SHOW, ID_LB_H_PLAYERS, ID_LB_H_CHAT, ID_LB_H_INVITE, ID_LB_H_PLAY, ID_LB_H_GAME, ID_LB_H_GOAL, ID_LB_H_GOALHINT, ID_LB_H_VOICE, ID_LB_H_STEAMHINT };
+       ID_LB_INVITE_SHOW, ID_LB_H_PLAYERS, ID_LB_H_CHAT, ID_LB_H_INVITE, ID_LB_H_PLAY, ID_LB_H_GAME, ID_LB_H_GOAL, ID_LB_H_GOALHINT, ID_LB_H_VOICE, ID_LB_H_STEAMHINT,
+       ID_LB_FJ0, ID_LB_FJ1, ID_LB_FJ2, ID_LB_FJ3, ID_LB_FJ4, ID_JOIN_WHAT, ID_JOIN_SOURCES, ID_JOIN_LIST, ID_JOIN_CLIP, ID_JOIN_CLIP_YES, ID_JOIN_LIST_HEAD };
 HWND LB(int id) { return C(id); }
 void BuildLobbyPanel(HWND pg);
 void UpdateTabs();
@@ -470,10 +473,24 @@ void PushSettings() { if (g_sess.Active() && g_sess.IsHost()) g_sess.SetSettings
 void PartsInfo() { SetWindowTextW(LB(ID_LB_PARTSINFO), g_lobbySpec.empty() ? L"nothing done yet" : W(g_lobbySpec).c_str()); }
 void RefreshLobbyUi();
 void LobbyPartsChosen(const std::string& spec) { g_lobbySpec = spec; PartsInfo(); PushSettings(); }
+nf_settings NetSettings();
+// ---- C: hosting. "Friends can join by" (netfind.c's checks), the invite (joinglue.h MakeInvite)
+void HostChecksOpen(unsigned lobbyPort, unsigned gamePort, bool steam) {
+    char exe[MAX_PATH] = {}; GetModuleFileNameA(nullptr, exe, MAX_PATH); std::wstring g = g_dir + L"\\witness64_d3d11.exe"; std::string game = U(g);
+    nf_settings s = NetSettings(); nf_host_open(lobbyPort, gamePort, steam ? 1 : 0, g_sess.InviteOnly() ? 1 : 0, &s, exe, game.c_str());
+}
+bool HostInvite(std::string* code, std::string* msg) {
+    jg::InviteIn in; in.name = CfgGet("name", "Player"); in.secret = g_sess.Secret(); in.inviteOnly = g_sess.InviteOnly(); lh_addr lan[8]; int nlan = 0, ok = 0;
+    if (g_sess.SteamMode()) { in.steamLobby = g_sess.SteamLobbyId(); in.port = NetSettings().port ? NetSettings().port : LJ_DEFAULT_PORT; if (!in.steamLobby) return false; }
+    else { nf_host_routes(lan, 8, &nlan, &in.tailscaleIp, &in.internetIp, &ok); in.lan = lan; in.nlan = nlan; in.internetOk = ok != 0; in.port = g_sess.LobbyPort(); }
+    return jg::MakeInvite(in, code, msg);
+}
 void HostLobby() {
     wl::CfgFile c = LoadCfg(); std::string err; unsigned port = (unsigned)atoi(c.Get("lobby_port", "47100").c_str()); if (port < 1 || port > 65535) { Status(L"The lobby port is a number from 1 to 65535 (Settings, Network)."); return; }
     uint16_t gp = (uint16_t)atoi(c.Get("listen", "47001").c_str()); std::string name = c.Get("name", "Player");
+    g_sess.SetInviteOnly(c.Get("lobby_visibility", "open") == "invite");
     if (!g_sess.Host(name, gp, (uint16_t)port, c.Get("lobby_advertise"), &err)) { Status(W(err), L"Try again", ID_PRIMARY); return; }
+    HostChecksOpen(port, gp, false);
     SetWindowTextW(LB(ID_LB_INVITE_SHOW), W(g_sess.Invite()).c_str()); g_chatLog.clear(); SetWindowTextW(LB(ID_LB_LOG), L""); PushSettings(); StartVoice(); RefreshLobbyUi();
 }
 std::vector<std::pair<uint64_t, std::string>> g_friends;
@@ -486,6 +503,7 @@ void FillFriends() {      // the friends who are online, for an invite through S
 void HostSteamLobby() {
     wl::CfgFile c = LoadCfg(); std::string err; uint16_t gp = (uint16_t)atoi(c.Get("listen", "47001").c_str());
     if (!g_sess.HostSteam(c.Get("name", "Player"), gp, g_dir, &err)) { Status(W(err), L"Host direct instead", ID_LB_HOST); return; }
+    HostChecksOpen((unsigned)atoi(c.Get("lobby_port", "47100").c_str()), gp, true);
     SetWindowTextW(LB(ID_LB_INVITE_SHOW), L""); g_chatLog.clear(); SetWindowTextW(LB(ID_LB_LOG), L""); PushSettings(); FillFriends(); LobbyStatus(W(g_sess.SteamStatus())); RefreshLobbyUi();
 }
 void JoinSteamLobby(uint64_t id) {
@@ -495,14 +513,52 @@ void JoinSteamLobby(uint64_t id) {
     if (!g_sess.JoinSteam(id, c.Get("name", "Player"), gp, g_dir, &err)) { LobbyStatus(W(err)); return; }
     SetWindowTextW(LB(ID_LB_INVITE_SHOW), W(steamids::Text(id)).c_str()); g_chatLog.clear(); SetWindowTextW(LB(ID_LB_LOG), L""); LobbyStatus(W(g_sess.SteamStatus())); RefreshLobbyUi();
 }
-void JoinLobby() {      // the invite field: a Steam lobby number, or address:port/CODE (direct)
-    std::string text = EditText(LB(ID_LB_INVITE)); uint64_t lobby = 0;
-    if (steamids::ParseLobby(text, &lobby)) { JoinSteamLobby(lobby); return; }
-    wl::CfgFile c = LoadCfg(); std::string err; uint16_t gp = (uint16_t)atoi(c.Get("listen", "47001").c_str());
-    if (!g_sess.Join(text, c.Get("name", "Player"), gp, &err)) { Status(W(err + "  (or paste the host's Steam lobby number)")); return; }
-    SetWindowTextW(LB(ID_LB_INVITE_SHOW), W(text).c_str()); g_chatLog.clear(); SetWindowTextW(LB(ID_LB_LOG), L""); LobbyStatus(L"Joining..."); RefreshLobbyUi();
+// ---- B: finding each other. The Join list (netfind.c scans while it is shown), the one paste box (joinglue.h PlanPaste), an invite's routes at once (C4), recents (B4)
+nf_settings NetSettings() {
+    static nf_settings cached; static ULONGLONG at; if (at && GetTickCount64() - at < 1000) return cached; at = GetTickCount64();
+    wl::CfgFile c = LoadCfg(); cached.find_lan = c.Get("find_lan", "1") != "0"; cached.find_tailscale = c.Get("find_tailscale", "1") != "0"; cached.upnp = c.Get("upnp", "1") != "0";
+    cached.internet_in_invite = c.Get("internet_in_invite", "1") != "0"; cached.port = (unsigned)atoi(c.Get("lobby_port", "47100").c_str()); return cached;
 }
-void LeaveLobby() { g_voice.Stop(); g_sess.Stop(); g_shown = wlobby::State(); SendMessageW(LB(ID_LB_MEMBERS), LB_RESETCONTENT, 0, 0); SendMessageW(LB(ID_LB_READY), BM_SETCHECK, BST_UNCHECKED, 0); RefreshLobbyUi(); LobbyStatus(L"You left the lobby."); }
+struct PendingJoin { bool active = false; jg::Plan plan; } g_pend;
+int g_joinRoute = CD_R_ADDRESS; bool g_recentDone = false; std::string g_joinSaid;
+std::vector<nf_row> g_rows; std::string g_rowsKey;
+void FocusFirst(HWND page);
+void BeginJoin() { g_chatLog.clear(); SetWindowTextW(LB(ID_LB_LOG), L""); g_recentDone = false; LobbyStatus(L"Joining..."); RefreshLobbyUi(); UpdateTabs(); FocusFirst(g_lobbyPanel); }
+bool JoinAddress(uint32_t ip, unsigned port, const std::string& code, int recentRoute) {      // a Direct lobby at ip:port; code: the invite's (empty: a lobby open to my networks)
+    wl::CfgFile c = LoadCfg(); std::string err; uint16_t gp = (uint16_t)atoi(c.Get("listen", "47001").c_str());
+    if (g_game) { LobbyStatus(L"Close the game first, then join."); return false; }
+    if (!g_sess.JoinAt(ip, (uint16_t)port, code, c.Get("name", "Player"), gp, &err)) { Status(W(err), L"Try again", ID_PRIMARY); return false; }
+    g_joinRoute = recentRoute; Dlog(("join: " + wlobby::IpText(ip) + ":" + std::to_string(port) + (code.empty() ? " (no code)" : " (with the invite's code)")).c_str());
+    SetWindowTextW(LB(ID_LB_INVITE_SHOW), W(wlobby::IpText(ip) + ":" + std::to_string(port)).c_str()); BeginJoin(); return true;
+}
+void JoinRow(int i) {
+    if (i < 0 || i >= (int)g_rows.size()) return; const nf_row& r = g_rows[i];
+    if (r.mismatch) { char b[300]; lj_failure(LJ_F_VERSION, r.name, r.version, b, sizeof b); Status(W(b), L"Update", ID_UP_CHECK); return; }
+    if (r.full) { char b[300]; lj_failure(LJ_F_FULL, r.name, (std::to_string(r.players) + " of " + std::to_string(r.limit)).c_str(), b, sizeof b); Status(W(b)); return; }
+    JoinAddress(r.ip, r.port, "", lj_recent_route(r.route, CD_R_ADDRESS));
+}
+void JoinLobby() {      // the paste box (B7): an invite code or link, a witness-coop:// link, a Steam lobby number, an address (old address:port/CODE invites too), a host or Tailscale name
+    std::string text = EditText(LB(ID_LB_INVITE)); jg::Plan p = jg::PlanPaste(text, NetSettings().port ? NetSettings().port : LJ_DEFAULT_PORT); g_joinSaid = p.said;
+    switch (p.action) {
+    case jg::kNothing: { int sel = (int)SendMessageW(LB(ID_JOIN_LIST), LB_GETCURSEL, 0, 0); if (sel >= 0) { JoinRow(sel); return; } char b[200]; lj_failure(LJ_F_NOTHING, "", "", b, sizeof b); Status(W(b)); SetFocus(LB(ID_LB_INVITE)); return; }
+    case jg::kSteam: JoinSteamLobby(p.lobby); return;
+    case jg::kDirect: JoinAddress(p.ip, p.port, p.token, CD_R_ADDRESS); return;
+    case jg::kResolve: {
+        uint32_t ip = lw::Session::Resolve(p.host);
+        if (!ip) { char b[300]; lj_failure(LJ_F_RESOLVE, p.host.c_str(), "no address for that name", b, sizeof b); Status(W(b), L"Try again", ID_PRIMARY); return; }
+        JoinAddress(ip, p.port, "", CD_R_ADDRESS); return; }
+    case jg::kProbeInvite:      // C4: every route at once; LobbyTick joins the first answer (a better route within 300 ms instead)
+        g_pend.active = true; g_pend.plan = p; nf_invite_probe_start(&p.invite); Status(L"Trying every way to reach the host (" + W(p.said) + L") ..."); return;
+    default: Status(W(p.said)); SetFocus(LB(ID_LB_INVITE)); return;
+    }
+}
+void PendingJoinTick() {
+    if (!g_pend.active) return; uint32_t ip = 0; unsigned port = 0; int route = 0; int r = nf_invite_probe_result(&ip, &port, &route); if (r < 0) return; g_pend.active = false;
+    if (r == 1) { JoinAddress(ip, port, g_pend.plan.token, lj_recent_route(route, CD_R_ADDRESS)); return; }
+    if (g_pend.plan.invite.flags & CI_FLAG_STEAM) { JoinSteamLobby(g_pend.plan.invite.steam_lobby); return; }
+    char routes[120], b[400]; lj_routes_text(&g_pend.plan.invite, routes, sizeof routes); lj_failure(LJ_F_NO_ANSWER, "the host", routes, b, sizeof b); Status(W(b), L"Try again", ID_PRIMARY);
+}
+void LeaveLobby() { nf_host_close(); g_voice.Stop(); g_sess.Stop(); g_shown = wlobby::State(); SendMessageW(LB(ID_LB_MEMBERS), LB_RESETCONTENT, 0, 0); SendMessageW(LB(ID_LB_READY), BM_SETCHECK, BST_UNCHECKED, 0); RefreshLobbyUi(); LobbyStatus(L"You left the lobby."); }
 void AppendChat(const std::wstring& line) { g_chatLog += line + L"\r\n"; HWND l = LB(ID_LB_LOG); SetWindowTextW(l, g_chatLog.c_str()); SendMessageW(l, EM_SETSEL, g_chatLog.size(), g_chatLog.size()); SendMessageW(l, EM_SCROLLCARET, 0, 0); }
 std::string WaitingFor() { std::string w; for (const auto& m : g_shown.members) if (!m.host && !m.ready) w += (w.empty() ? "" : ", ") + m.name; return w; }
 void StartLabel() {      // D3: the host's button says whom it waits for
@@ -560,8 +616,73 @@ void ApplyRemoteSettings(const wlobby::State& st) {      // a guest sees what th
     if (g_sess.IsHost()) return; SendMessageW(LB(ID_LB_MODE), CB_SETCURSEL, st.settings.mode == wlobby::kRace ? 1 : 0, 0); SetWindowTextW(LB(ID_LB_GOAL), W(st.settings.raceGoal).c_str());
     SendMessageW(LB(ID_LB_NEWGAME), BM_SETCHECK, st.settings.newGame ? BST_CHECKED : BST_UNCHECKED, 0); g_lobbySpec = st.settings.progress; PartsInfo();
 }
+int CurTab(); void LayoutAll();
+// the Join list on screen (B6: it fills as soon as Join is chosen, refreshes every 5 s while shown; netfind.c sends nothing while it is hidden)
+bool JoinListShown() { return g_choice == ls::kJoin && !g_sess.Active() && CurTab() == ls::kPlay && IsWindowVisible(g_main) && !IsIconic(g_main); }
+void JoinUiTick() {
+    static ULONGLONG at; bool shown = JoinListShown(); nf_settings set = NetSettings(); nf_join_show(shown ? 1 : 0, &set, MOD_VERSION);
+    PendingJoinTick();
+    if (g_sess.Active() && !g_sess.IsHost() && !g_sess.SteamMode() && g_sess.Joined() && !g_recentDone && !g_shown.members.empty()) {      // B4: remembered after each successful join
+        g_recentDone = true; nf_recent_add(MemberName(1).c_str(), g_sess.HostIp(), g_sess.HostPort(), g_joinRoute); Dlog(("join: remembered " + MemberName(1) + " as a recent host").c_str());
+    }
+    if (!shown || GetTickCount64() - at < 400) return; at = GetTickCount64();
+    nf_row rows[64]; int n = nf_join_rows(rows, 64); std::string key;
+    for (int i = 0; i < n; ++i) key += std::string(rows[i].name) + "|" + rows[i].line + "|" + std::to_string(rows[i].ip) + ":" + std::to_string(rows[i].port) + "\n";
+    HWND lst = LB(ID_JOIN_LIST);
+    if (key != g_rowsKey) {
+        int sel = (int)SendMessageW(lst, LB_GETCURSEL, 0, 0); std::string selName = sel >= 0 && sel < (int)g_rows.size() ? g_rows[sel].name : std::string(); uint32_t selIp = sel >= 0 && sel < (int)g_rows.size() ? g_rows[sel].ip : 0;
+        g_rows.assign(rows, rows + n); g_rowsKey = key; SendMessageW(lst, WM_SETREDRAW, FALSE, 0); SendMessageW(lst, LB_RESETCONTENT, 0, 0);
+        int keep = -1; for (int i = 0; i < n; ++i) { SendMessageW(lst, LB_ADDSTRING, 0, (LPARAM)W(rows[i].name).c_str()); if (rows[i].name == selName && rows[i].ip == selIp) keep = i; }
+        if (keep >= 0) SendMessageW(lst, LB_SETCURSEL, keep, 0); SendMessageW(lst, WM_SETREDRAW, TRUE, 0); InvalidateRect(lst, nullptr, TRUE);
+    }
+    char src[300]; nf_join_sources(src, sizeof src); { static std::string last; if (last != src) { last = src; SetWindowTextW(C(ID_JOIN_SOURCES), W(src).c_str()); } }
+    int sel = (int)SendMessageW(lst, LB_GETCURSEL, 0, 0); bool typed = !EditText(LB(ID_LB_INVITE)).empty();
+    std::wstring label = W(ls::PrimaryLabel(ls::kJoin, !typed && sel >= 0 && sel < (int)g_rows.size() ? g_rows[sel].name : ""));
+    { static std::wstring last; if (label != last) { last = label; SetWindowTextW(C(ID_PRIMARY), label.c_str()); } }
+}
+void DrawJoinRow(DRAWITEMSTRUCT* d) {      // B5: name, state, players of limit, route, ping; another version greyed with its version (never hidden)
+    HDC dc = d->hDC; RECT r = d->rcItem; HBRUSH bg = CreateSolidBrush((d->itemState & ODS_SELECTED) ? th::kSurface2 : th::kSurface); FillRect(dc, &r, bg); DeleteObject(bg);
+    if (d->itemID == (UINT)-1 || d->itemID >= g_rows.size()) return; const nf_row& row = g_rows[d->itemID]; bool grey = row.mismatch || row.full; SetBkMode(dc, TRANSPARENT);
+    th::DrawDot(dc, r.left + 16, (r.top + r.bottom) / 2, 6, grey ? th::kMuted : row.state == CD_IN_LOBBY ? th::kWarm : th::kAccent, !grey);
+    SelectObject(dc, th::Bold()); SetTextColor(dc, grey ? th::kMuted : th::kText); RECT nr = r; nr.left += 34; nr.right = r.left + 34 + (r.right - r.left) * 30 / 100; DrawTextW(dc, W(row.name).c_str(), -1, &nr, DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+    SelectObject(dc, th::Small()); SetTextColor(dc, grey ? th::kMuted : th::kLine); RECT lr = r; lr.left = nr.right + 12; lr.right -= 12; DrawTextW(dc, W(row.line).c_str(), -1, &lr, DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+}
+// "Friends can join by" (C1) and the invite box, while hosting
+void HostUiTick() {
+    static ULONGLONG at; static bool laidSteam; if (GetTickCount64() - at < 400) return; at = GetTickCount64();
+    bool host = g_sess.Active() && g_sess.IsHost(), steamHost = host && g_sess.SteamMode(); if (steamHost != laidSteam) { laidSteam = steamHost; LayoutAll(); }
+    static const wchar_t* marks[] = {L"...", L"OK", L"!", L"off"};
+    nf_host_row rows[NF_ROWS]; if (host) nf_host_rows(rows);
+    for (int i = 0; i < NF_ROWS; ++i) {
+        std::wstring t = host ? W(std::string(rows[i].title) + ": ") + marks[rows[i].state & 3] + L"  " + W(rows[i].result) + (rows[i].fix[0] ? L"\n" + W(rows[i].fix) : L"") : std::wstring(i == 0 ? L"Shown while you host." : L"");
+        wchar_t cur[600] = {}; GetWindowTextW(LB(ID_LB_FJ0 + i), cur, 600); if (t != cur) SetWindowTextW(LB(ID_LB_FJ0 + i), t.c_str());
+    }
+    if (host) { std::string code; if (HostInvite(&code, nullptr)) { std::wstring wc = W(code); wchar_t cur[200] = {}; GetWindowTextW(LB(ID_LB_INVITE_SHOW), cur, 200); if (wc != cur) SetWindowTextW(LB(ID_LB_INVITE_SHOW), wc.c_str()); } }
+}
+void CopyInvite(HWND h) {      // C3: "<name> is hosting The Witness. Join: https://<join page>/#WIT-..." (before the checks found a way in: the old address:port/CODE invite)
+    std::string code, msg; std::wstring inv = HostInvite(&code, &msg) ? W(msg) : W(g_sess.Invite());
+    if (!inv.empty() && OpenClipboard(h)) { EmptyClipboard(); HGLOBAL g = GlobalAlloc(GMEM_MOVEABLE, (inv.size() + 1) * 2); if (g) { memcpy(GlobalLock(g), inv.c_str(), (inv.size() + 1) * 2); GlobalUnlock(g); if (!SetClipboardData(CF_UNICODETEXT, g)) GlobalFree(g); } CloseClipboard(); LobbyStatus(L"The invite is on the clipboard: send it to your friends."); }
+}
+// B8: when the launcher gets the focus, an invite for The Witness on the clipboard is offered. The text is read for this check only: never stored, logged or sent.
+ci_invite g_clipInvite; uint32_t g_clipDone; bool g_clipHave;
+void ClipboardCheck() {
+    if (g_sess.Active() || !IsClipboardFormatAvailable(CF_UNICODETEXT) || !OpenClipboard(g_main)) return;
+    std::string text; if (HANDLE hd = GetClipboardData(CF_UNICODETEXT)) { if (const wchar_t* p = (const wchar_t*)GlobalLock(hd)) { size_t n = wcsnlen(p, CI_SCAN_MAX); text = U(std::wstring(p, n)); GlobalUnlock(hd); } }
+    CloseClipboard(); ci_invite v; char name[CI_NAME_MAX + 1] = {};
+    bool found = ci_find_invite(text.data(), text.size(), LJ_GAME, &v, name) != 0; std::fill(text.begin(), text.end(), '\0'); text.clear();
+    if (!found || (g_clipHave && v.secret == g_clipInvite.secret) || v.secret == g_clipDone) return;
+    char prompt[120]; ci_clipboard_prompt(name, prompt, sizeof prompt); g_clipInvite = v; g_clipHave = true;
+    SetWindowTextW(C(ID_JOIN_CLIP), W(prompt).c_str()); ShowId(ID_JOIN_CLIP, true); ShowId(ID_JOIN_CLIP_YES, true);
+}
+void SelectTab(int t); void ChooseTile(ls::Choice c);
+void ClipboardJoin() {
+    if (!g_clipHave) return; char code[CI_CODE_MAX]; g_clipDone = g_clipInvite.secret; g_clipHave = false; ShowId(ID_JOIN_CLIP, false); ShowId(ID_JOIN_CLIP_YES, false);
+    if (!ci_encode(&g_clipInvite, LJ_GAME, code, sizeof code)) return;
+    SelectTab(ls::kPlay); ChooseTile(ls::kJoin); SetWindowTextW(LB(ID_LB_INVITE), W(code).c_str()); JoinLobby();
+}
 void LobbyTick() {
     if (g_game && WaitForSingleObject(g_game, 0) == WAIT_OBJECT_0) GameEnded();
+    JoinUiTick(); HostUiTick();
     g_sess.Idle(); if (uint64_t req = g_sess.SteamJoinRequest()) JoinSteamLobby(req);      // an invite accepted (or Join Game) in Steam while the launcher runs
     if (g_sess.Active()) {
         bool joined = g_sess.Joined();
@@ -689,7 +810,7 @@ void LayoutSection(HWND p, int s, int W, int H) {
 void ShowChoiceDetails() {
     bool host = g_choice == ls::kHost, join = g_choice == ls::kJoin, solo = g_choice == ls::kSolo;
     for (int id : {ID_HOST_STEAM, ID_HOST_DIRECT}) ShowId(id, host);
-    for (int id : {(int)ID_JOIN_LABEL, (int)ID_LB_INVITE}) ShowId(id, join);
+    for (int id : {(int)ID_JOIN_LABEL, (int)ID_LB_INVITE, (int)ID_JOIN_WHAT, (int)ID_JOIN_SOURCES, (int)ID_JOIN_LIST, (int)ID_JOIN_LIST_HEAD}) ShowId(id, join);
     for (int id : {ID_SOLO_NOTE, ID_SOLO_NEW}) ShowId(id, solo);
     SendMessageW(C(ID_TILE_HOST), BM_SETCHECK, host ? BST_CHECKED : BST_UNCHECKED, 0); SendMessageW(C(ID_TILE_JOIN), BM_SETCHECK, join ? BST_CHECKED : BST_UNCHECKED, 0); SendMessageW(C(ID_TILE_SOLO), BM_SETCHECK, solo ? BST_CHECKED : BST_UNCHECKED, 0);
     SetWindowTextW(C(ID_PRIMARY), W(ls::PrimaryLabel(g_choice, "")).c_str());
@@ -699,7 +820,7 @@ void LoadPlayUi(const wl::CfgFile& c) {
     SendMessageW(C(ID_HOST_STEAM), BM_SETCHECK, direct ? BST_UNCHECKED : BST_CHECKED, 0); SendMessageW(C(ID_HOST_DIRECT), BM_SETCHECK, direct ? BST_CHECKED : BST_UNCHECKED, 0); ShowChoiceDetails();
 }
 void ChooseTile(ls::Choice c) {
-    g_choice = c; ShowChoiceDetails();
+    g_choice = c; ShowChoiceDetails(); LayoutAll();
     wl::CfgFile cfg = LoadCfg(); if (cfg.Get("launcher_choice") != ls::ChoiceKey(c)) { cfg.Set("launcher_choice", ls::ChoiceKey(c)); if (!g_game) WriteFile8(CfgPath(), cfg.Text()); }      // A2: the last choice is remembered
 }
 void BuildPlay(HWND pg) {
@@ -709,11 +830,15 @@ void BuildPlay(HWND pg) {
     Make(t, L"STATIC", L"Your name", SS_LEFT, 0, 0, 10, 10, ID_FOLDER_LABEL + 100); Make(t, L"EDIT", L"", WS_BORDER | ES_AUTOHSCROLL, 0, 0, 10, 10, ID_NAME);
     Make(t, L"BUTTON", L"Host a game", BS_AUTORADIOBUTTON | WS_GROUP, 0, 0, 10, 10, ID_TILE_HOST); Make(t, L"BUTTON", L"Join a friend", BS_AUTORADIOBUTTON, 0, 0, 10, 10, ID_TILE_JOIN); Make(t, L"BUTTON", L"Play solo", BS_AUTORADIOBUTTON, 0, 0, 10, 10, ID_TILE_SOLO);
     th::MarkMuted(Make(t, L"STATIC", L"Open a lobby; friends join you there, you choose what to play and start.", SS_LEFT, 0, 0, 10, 10, ID_TILE_HOST_TXT));
-    th::MarkMuted(Make(t, L"STATIC", L"Accept a Steam invite, or paste the invite or the Steam lobby number a friend sent.", SS_LEFT, 0, 0, 10, 10, ID_TILE_JOIN_TXT));
+    th::MarkMuted(Make(t, L"STATIC", L"Games on your network and Tailscale are listed; or paste the invite a friend sent, or accept a Steam invite.", SS_LEFT, 0, 0, 10, 10, ID_TILE_JOIN_TXT));
     th::MarkMuted(Make(t, L"STATIC", L"The game with co-op ready, on your latest save.", SS_LEFT, 0, 0, 10, 10, ID_TILE_SOLO_TXT));
     th::MarkTile(C(ID_TILE_HOST), C(ID_TILE_HOST_TXT)); th::MarkTile(C(ID_TILE_JOIN), C(ID_TILE_JOIN_TXT)); th::MarkTile(C(ID_TILE_SOLO), C(ID_TILE_SOLO_TXT));      // the three choices as tiles (the descriptions are drawn in them)
     Make(t, L"BUTTON", L"Through Steam (friends; no port forwarding)", BS_AUTORADIOBUTTON | WS_GROUP, 0, 0, 10, 10, ID_HOST_STEAM); Make(t, L"BUTTON", L"Direct (same network, VPN or a forwarded port)", BS_AUTORADIOBUTTON, 0, 0, 10, 10, ID_HOST_DIRECT);
-    Make(t, L"STATIC", L"Invite or Steam lobby number", SS_LEFT, 0, 0, 10, 10, ID_JOIN_LABEL); Make(t, L"EDIT", L"", WS_BORDER | ES_AUTOHSCROLL, 0, 0, 10, 10, ID_LB_INVITE);
+    Make(t, L"STATIC", L"Paste an invite or address", SS_LEFT, 0, 0, 10, 10, ID_JOIN_LABEL); Make(t, L"EDIT", L"", WS_BORDER | ES_AUTOHSCROLL, 0, 0, 10, 10, ID_LB_INVITE);
+    th::MarkMuted(Make(t, L"STATIC", L"", SS_LEFT | SS_ENDELLIPSIS, 0, 0, 10, 10, ID_JOIN_WHAT));
+    th::MarkMuted(Make(t, L"STATIC", L"GAMES FOUND", SS_LEFT, 0, 0, 10, 10, ID_JOIN_LIST_HEAD)); th::MarkMuted(Make(t, L"STATIC", L"", SS_LEFT | SS_ENDELLIPSIS, 0, 0, 10, 10, ID_JOIN_SOURCES));
+    { HWND jl = Make(t, L"LISTBOX", L"", LBS_OWNERDRAWFIXED | LBS_NOTIFY | WS_VSCROLL | LBS_HASSTRINGS | LBS_NOINTEGRALHEIGHT | WS_BORDER, 0, 0, 10, 10, ID_JOIN_LIST); SendMessageW(jl, LB_SETITEMHEIGHT, 0, 34); }
+    th::MarkMuted(Make(t, L"STATIC", L"", SS_LEFT | SS_ENDELLIPSIS, 0, 0, 10, 10, ID_JOIN_CLIP)); Make(t, L"BUTTON", L"Join", BS_PUSHBUTTON, 0, 0, 10, 10, ID_JOIN_CLIP_YES); ShowId(ID_JOIN_CLIP, false); ShowId(ID_JOIN_CLIP_YES, false);
     th::MarkMuted(Make(t, L"STATIC", L"Continue your latest save, or start a new game with chosen parts of the map done (also on the Saves tab).", SS_LEFT, 0, 0, 10, 10, ID_SOLO_NOTE)); Make(t, L"BUTTON", L"New game...", BS_PUSHBUTTON, 0, 0, 10, 10, ID_SOLO_NEW);
     Make(t, L"BUTTON", L"Open lobby", BS_DEFPUSHBUTTON, 0, 0, 10, 10, ID_PRIMARY);
     BuildLobbyPanel(g_lobbyPanel);
@@ -723,13 +848,15 @@ void LayoutPlay(int W, int H) {
     int m = 24, y = 12;
     PlaceId(ID_UP_BANNER, m, y + 6, W - 2 * m - 390, 22); PlaceId(ID_UP_BANNER_APPLY, W - m - 380, y, 120, 32); PlaceId(ID_UP_WHATSNEW, W - m - 250, y, 130, 32); PlaceId(ID_UP_BANNER_LATER, W - m - 110, y, 110, 32);
     y += 48; PlaceId(ID_FOLDER_LABEL + 100, m, y + 6, 120, 22); PlaceId(ID_NAME, m + 130, y + 2, 320, 30);
+    PlaceId(ID_JOIN_CLIP, m + 470, y + 6, std::max(100, W - 2 * m - 470 - 110), 22); PlaceId(ID_JOIN_CLIP_YES, W - m - 100, y, 100, 32);
     y += 56; int tw = (W - 2 * m - 2 * 20) / 3;
     int ids[3] = {ID_TILE_HOST, ID_TILE_JOIN, ID_TILE_SOLO}, txt[3] = {ID_TILE_HOST_TXT, ID_TILE_JOIN_TXT, ID_TILE_SOLO_TXT};
     for (int i = 0; i < 3; ++i) { PlaceId(ids[i], m + i * (tw + 20), y, tw, 96); PlaceId(txt[i], m + i * (tw + 20) + 26, y + 38, tw - 26, 44); }      // (the description controls stay hidden: the tile draws their text)
     y += 112; PlaceId(ID_HOST_STEAM, m, y, std::min(W - 2 * m, 520), 30); PlaceId(ID_HOST_DIRECT, m, y + 34, std::min(W - 2 * m, 520), 30);
-    PlaceId(ID_JOIN_LABEL, m, y + 6, 240, 22); PlaceId(ID_LB_INVITE, m + 250, y + 2, std::min(W - 2 * m - 250, 520), 30);
+    PlaceId(ID_JOIN_LABEL, m, y + 6, 240, 22); PlaceId(ID_LB_INVITE, m + 250, y + 2, std::min(W - 2 * m - 250, 620), 30); PlaceId(ID_JOIN_WHAT, m + 250, y + 36, std::min(W - 2 * m - 250, 620), 20);
+    int jy = y + 64, jh = std::max(90, H - jy - 30 - 64); PlaceId(ID_JOIN_LIST_HEAD, m, jy, 130, 20); PlaceId(ID_JOIN_SOURCES, m + 140, jy, W - 2 * m - 140, 20); PlaceId(ID_JOIN_LIST, m, jy + 24, W - 2 * m, jh - 24);
     PlaceId(ID_SOLO_NOTE, m, y + 4, std::min(W - 2 * m - 200, 760), 44); PlaceId(ID_SOLO_NEW, m, y + 50, 160, 34);
-    y += 104; PlaceId(ID_PRIMARY, m, y, 300, 48);
+    y += 104; PlaceId(ID_PRIMARY, m, g_choice == ls::kJoin ? jy + jh + 8 : y, 300, 48);
 }
 void LayoutLobby(int W, int H) {
     int m = 16, top = 10;
@@ -740,9 +867,12 @@ void LayoutLobby(int W, int H) {
     int vy = H - 120; PlaceId(ID_LB_MUTE, c1, vy, c1w / 2, 26); PlaceId(ID_LB_DEAF, c1 + c1w / 2, vy, c1w / 2, 26); PlaceId(ID_LB_LEVEL, c1, vy + 32, c1w, 8); PlaceId(ID_LB_H_VOICE, c1, vy + 44, c1w, 20);
     PlaceId(ID_LB_READY, c1, H - 48, c1w, 34); PlaceId(ID_LB_START, c1, H - 52, c1w, 42);
     PlaceId(ID_LB_H_CHAT, c2, y0, c2w, 20); PlaceId(ID_LB_LOG, c2, y0 + 24, c2w, H - y0 - 24 - 60); PlaceId(ID_LB_CHAT, c2, H - 50, c2w - 96, 32); PlaceId(ID_LB_SEND, c2 + c2w - 88, H - 52, 88, 36);
-    int y = y0; PlaceId(ID_LB_H_INVITE, c3, y, c3w, 20); y += 24;
-    PlaceId(ID_LB_INVITE_SHOW, c3, y, c3w, 30); y += 38; PlaceId(ID_LB_COPY, c3, y, (c3w - 8) / 2, 34); PlaceId(ID_LB_STEAM_INVITE, c3 + (c3w + 8) / 2, y, (c3w - 8) / 2, 34); y += 42;
-    PlaceId(ID_LB_STEAM_FRIENDS, c3, y + 2, c3w - 130, 300); PlaceId(ID_LB_STEAM_SEND, c3 + c3w - 122, y, 122, 34); y += 40; PlaceId(ID_LB_H_STEAMHINT, c3, y, c3w, 20); y += 34;
+    int y = y0; PlaceId(ID_LB_H_INVITE, c3, y, c3w, 20); y += 22;
+    for (int i = 0; i < NF_ROWS; ++i) { PlaceId(ID_LB_FJ0 + i, c3, y, c3w, 36); y += 38; }      // C1: Steam, Same network, Tailscale, Internet, Windows Firewall: the result, then its fix
+    PlaceId(ID_LB_INVITE_SHOW, c3, y, c3w, 28); y += 32; PlaceId(ID_LB_COPY, c3, y, (c3w - 8) / 2, 32); PlaceId(ID_LB_STEAM_INVITE, c3 + (c3w + 8) / 2, y, (c3w - 8) / 2, 32); y += 38;
+    bool steamHost = g_sess.Active() && g_sess.IsHost() && g_sess.SteamMode(); ShowId(ID_LB_STEAM_FRIENDS, steamHost); ShowId(ID_LB_STEAM_SEND, steamHost); ShowId(ID_LB_H_STEAMHINT, false);
+    if (steamHost) { PlaceId(ID_LB_STEAM_FRIENDS, c3, y + 2, c3w - 130, 300); PlaceId(ID_LB_STEAM_SEND, c3 + c3w - 122, y, 122, 32); y += 38; }
+    y += 6;
     PlaceId(ID_LB_H_PLAY, c3, y, c3w, 20); y += 26; PlaceId(ID_LB_H_GAME, c3, y + 6, 90, 22); PlaceId(ID_LB_MODE, c3 + 96, y + 2, c3w - 96, 200); y += 38;
     PlaceId(ID_LB_H_GOAL, c3, y + 6, 90, 22); PlaceId(ID_LB_GOAL, c3 + 96, y + 2, c3w - 96, 30); y += 34; PlaceId(ID_LB_H_GOALHINT, c3 + 96, y, c3w - 96, 20); y += 26;
     PlaceId(ID_LB_NEWGAME, c3, y, c3w, 28); y += 34; PlaceId(ID_LB_PARTS, c3, y, c3w, 34); y += 40; PlaceId(ID_LB_PARTSINFO, c3, y, c3w, 20); y += 26; PlaceId(ID_LB_RESULT, c3, y, c3w, std::max(20, H - y - 8));
@@ -756,7 +886,8 @@ void BuildLobbyPanel(HWND pg) {
     mk(L"BUTTON", L"Ready", BS_AUTOCHECKBOX, ID_LB_READY); mk(L"BUTTON", L"Start game", BS_DEFPUSHBUTTON, ID_LB_START);
     head(L"CHAT", ID_LB_H_CHAT); mk(L"EDIT", L"", WS_BORDER | ES_MULTILINE | ES_READONLY | WS_VSCROLL | ES_AUTOVSCROLL, ID_LB_LOG);
     HWND ce = mk(L"EDIT", L"", WS_BORDER | ES_AUTOHSCROLL, ID_LB_CHAT); SetWindowSubclass(ce, ChatEditProc, 3, 0); mk(L"BUTTON", L"Send", BS_PUSHBUTTON, ID_LB_SEND);
-    head(L"INVITE", ID_LB_H_INVITE); mk(L"EDIT", L"", WS_BORDER | ES_AUTOHSCROLL | ES_READONLY, ID_LB_INVITE_SHOW);
+    head(L"FRIENDS CAN JOIN BY", ID_LB_H_INVITE); for (int i = 0; i < NF_ROWS; ++i) mk(L"STATIC", L"", SS_LEFT | SS_NOPREFIX, ID_LB_FJ0 + i);
+    mk(L"EDIT", L"", WS_BORDER | ES_AUTOHSCROLL | ES_READONLY, ID_LB_INVITE_SHOW);
     mk(L"BUTTON", L"Copy invite", BS_PUSHBUTTON, ID_LB_COPY); mk(L"BUTTON", L"Steam overlay", BS_PUSHBUTTON, ID_LB_STEAM_INVITE);
     { HWND fc = mk(L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_VSCROLL, ID_LB_STEAM_FRIENDS); SendMessageW(fc, CB_ADDSTRING, 0, (LPARAM)L"(Steam lobby only)"); SendMessageW(fc, CB_SETCURSEL, 0, 0); }
     mk(L"BUTTON", L"Invite friend", BS_PUSHBUTTON, ID_LB_STEAM_SEND); head(L"Friends join by the invite, or through Steam.", ID_LB_H_STEAMHINT);
@@ -833,6 +964,7 @@ void PollCommands() {      // tests: one command per line in launcher_cmd.txt, t
         std::string cmd = line.substr(0, line.find(' ')), arg = line.find(' ') == std::string::npos ? "" : line.substr(line.find(' ') + 1);
         if (cmd == "host") { if (!arg.empty()) if (Field* f = ByKey("cfg:lobby_port")) { SetVal(*f, arg); std::wstring m; ApplyAll(&m); } HostLobby(); }
         else if (cmd == "join") { SetWindowTextW(LB(ID_LB_INVITE), W(arg).c_str()); JoinLobby(); }
+        else if (cmd == "joinrow") { for (size_t i = 0; i < g_rows.size(); ++i) if (arg == g_rows[i].name) { SetWindowTextW(LB(ID_LB_INVITE), L""); SendMessageW(LB(ID_JOIN_LIST), LB_SETCURSEL, i, 0); SendMessageW(g_main, WM_COMMAND, ID_PRIMARY, 0); break; } }
         else if (cmd == "steamhost") HostSteamLobby();
         else if (cmd == "steamjoin") { uint64_t id = 0; if (steamids::ParseLobby(arg, &id)) JoinSteamLobby(id); else LobbyStatus(L"Not a Steam lobby number."); }
         else if (cmd == "leave") LeaveLobby();
@@ -860,6 +992,7 @@ void PollCommands() {      // tests: one command per line in launcher_cmd.txt, t
         else if (cmd == "capture") { std::string k = arg.substr(0, arg.find(' ')); unsigned vk = (unsigned)strtoul(arg.substr(arg.find(' ') + 1).c_str(), nullptr, 0); if (Field* f = ByKey(k)) { StartCapture(*f); EndCapture(vk); } }
         else if (cmd == "size") { int w = 0, h = 0; if (sscanf(arg.c_str(), "%d %d", &w, &h) == 2) { ShowWindow(g_main, SW_RESTORE); RECT r = {0, 0, w, h}; AdjustWindowRect(&r, WS_OVERLAPPEDWINDOW, FALSE); SetWindowPos(g_main, nullptr, 0, 0, r.right - r.left, r.bottom - r.top, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE); } }
         else if (cmd == "quit") PostMessageW(g_main, WM_CLOSE, 0, 0);
+        else if (cmd == "paste") { SetWindowTextW(LB(ID_LB_INVITE), W(arg).c_str()); }
     }
 }
 void WriteStat() {      // tests: what the lobby is, as text lines, rewritten every 250 ms
@@ -870,6 +1003,12 @@ void WriteStat() {      // tests: what the lobby is, as text lines, rewritten ev
     { wchar_t sb[400] = {}; GetWindowTextW(LB(ID_LB_STATUS), sb, 400); o += "lobbystatus " + U(sb) + "\n"; }
     o += std::string("guide ") + (g_guideHold.Open() ? "1\n" : "0\n");
     snprintf(b, sizeof b, "invite %s\n", g_sess.Invite().c_str()); o += b;
+    { std::string code, msg; bool ok = g_sess.Active() && g_sess.IsHost() && HostInvite(&code, &msg); o += "invite_code " + (ok ? code : std::string("-")) + "\n" + "invite_text " + (ok ? msg : std::string("-")) + "\n";
+      char hd[2048]; hd[0] = 0; if (g_sess.Active() && g_sess.IsHost()) nf_host_dump(hd, sizeof hd); o += hd;
+      snprintf(b, sizeof b, "probes answered %u invite_only %d\n", g_sess.ProbesAnswered(), g_sess.InviteOnly() ? 1 : 0); o += b;
+      int st[LJ_SRCS], fd[LJ_SRCS]; nf_join_source_states(st, fd); snprintf(b, sizeof b, "joinlist shown %d scans %d rows %zu lan %d/%d tailscale %d/%d recent %d/%d steam %d recents %d route %d\n", JoinListShown() ? 1 : 0, nf_join_scans(), g_rows.size(), st[0], fd[0], st[1], fd[1], st[2], fd[2], st[3], nf_recents_count(), g_joinRoute); o += b;
+      for (const auto& r : g_rows) { snprintf(b, sizeof b, "joinrow name %s ip %s port %u route %d mismatch %d full %d players %d limit %d state %d line %s\n", r.name, wlobby::IpText(r.ip).c_str(), r.port, r.route, r.mismatch, r.full, r.players, r.limit, r.state, r.line); o += b; }
+      { char src[300]; nf_join_sources(src, sizeof src); o += std::string("joinsources ") + src + "\n"; wchar_t jw[300] = {}; GetWindowTextW(C(ID_JOIN_WHAT), jw, 300); o += "joinwhat " + U(jw) + "\n"; } }
     { uint64_t lid = g_sess.SteamLobbyId(); std::string mod = lid ? g_sess.SteamReadData(lsteam::kModKey) : "", proto = lid ? g_sess.SteamReadData(lsteam::kProtocolKey) : "", code = lid ? g_sess.SteamReadData(lsteam::kTokenKey) : "";
       snprintf(b, sizeof b, "steam mode %d lobby %llu members %u limit %u mod %s protocol %s code_set %d failed %d status %s\n", g_sess.SteamMode() ? 1 : 0, (unsigned long long)lid, g_sess.SteamMemberCount(), lid ? g_sess.SteamMemberLimit() : 0u, mod.c_str(), proto.c_str(), code.empty() ? 0 : 1, g_sess.SteamFailed() ? 1 : 0, g_sess.SteamStatus().c_str()); o += b; }
     for (const auto& m : st.members) { snprintf(b, sizeof b, "member %u name %s host %d ready %d ingame %d speaking %d playing %d port %u ip %s\n", m.id, m.name.c_str(), m.host, m.ready, m.inGame, m.speaking, m.playing, m.gamePort, wlobby::IpText(m.ip).c_str()); o += b; snprintf(b, sizeof b, "member_version %u %s\n", m.id, m.version.c_str()); o += b; }
@@ -1113,19 +1252,19 @@ void DrawSectionItem(DRAWITEMSTRUCT* d) {
 }
 LRESULT CALLBACK MainProc(HWND h, UINT m, WPARAM w, LPARAM l) {
     switch (m) {
-    case WM_ACTIVATEAPP: if (!w) { g_guideHold.Reset(); ShowGuide(false); } break;
+    case WM_ACTIVATEAPP: if (!w) { g_guideHold.Reset(); ShowGuide(false); } else ClipboardCheck(); break;
     case WM_ERASEBKGND: { RECT rc; GetClientRect(h, &rc); FillRect((HDC)w, &rc, th::BgBrush()); return 1; }
     case WM_PAINT: { PAINTSTRUCT ps; HDC dc = BeginPaint(h, &ps); RECT rc; GetClientRect(h, &rc); th::PaintHeader(dc, rc, th::BannerHeight(rc.bottom), L"Co-op for The Witness   |   hold F1: quick guide"); EndPaint(h, &ps); return 0; }
     case WM_SIZE: LayoutAll(); return 0;
     case WM_GETMINMAXINFO: { MINMAXINFO* mm = (MINMAXINFO*)l; mm->ptMinTrackSize.x = 1024; mm->ptMinTrackSize.y = 640; return 0; }
     case WM_CTLCOLORSTATIC: case WM_CTLCOLOREDIT: case WM_CTLCOLORLISTBOX: case WM_CTLCOLORBTN: return th::CtlColor(m, (HDC)w, (HWND)l);
-    case WM_DRAWITEM: { DRAWITEMSTRUCT* d = (DRAWITEMSTRUCT*)l; if (d->CtlID == ID_LB_MEMBERS) DrawMember(d); else if (d->CtlID == ID_LB_LEVEL) DrawLevel(d); else if (d->CtlID == ID_SECTIONS) DrawSectionItem(d); return TRUE; }
+    case WM_DRAWITEM: { DRAWITEMSTRUCT* d = (DRAWITEMSTRUCT*)l; if (d->CtlID == ID_LB_MEMBERS) DrawMember(d); else if (d->CtlID == ID_JOIN_LIST) DrawJoinRow(d); else if (d->CtlID == ID_LB_LEVEL) DrawLevel(d); else if (d->CtlID == ID_SECTIONS) DrawSectionItem(d); return TRUE; }
     case WM_HSCROLL: { Field* f = ByHwnd((HWND)l); if (f && f->kind == kSlider) { SliderText(*f); if (LOWORD(w) == TB_ENDTRACK) OnFieldChanged(*f); } return 0; }
     case WM_TIMER:
         if (w == 1) { PollCommands(); LobbyTick(); WriteStat(); DiagPoll(); UpdateUi(); UpdateTabs(); if (g_updFromLobby && g_upd.Available()) { g_updFromLobby = false; g_upd.StartApply(); } }
         else if (w == 2) PadPoll();
         return 0;
-    case WM_CLOSE: g_voice.Stop(); g_sess.Stop(); DestroyWindow(h); return 0;
+    case WM_CLOSE: nf_host_close(); g_voice.Stop(); g_sess.Stop(); DestroyWindow(h); return 0;      // (nf_host_close: the router mappings go before the launcher does)
     case WM_COMMAND: {
         int id = LOWORD(w), code = HIWORD(w);
         if (id >= ID_FIELD) { Field* f = ById(id); if (!f) return 0;
@@ -1141,7 +1280,7 @@ LRESULT CALLBACK MainProc(HWND h, UINT m, WPARAM w, LPARAM l) {
         else if (id == ID_HOST_STEAM || id == ID_HOST_DIRECT) { if (code == BN_CLICKED) { wl::CfgFile c = LoadCfg(); c.Set("launcher_host", id == ID_HOST_STEAM ? "steam" : "direct"); if (!g_game) WriteFile8(CfgPath(), c.Text()); } }
         else if (id == ID_PRIMARY) {
             if (g_choice == ls::kHost) { if (SendMessageW(C(ID_HOST_DIRECT), BM_GETCHECK, 0, 0) == BST_CHECKED) HostLobby(); else HostSteamLobby(); }
-            else if (g_choice == ls::kJoin) { if (EditText(LB(ID_LB_INVITE)).empty()) { Status(L"Paste the invite or the Steam lobby number your friend sent, then Join."); SetFocus(LB(ID_LB_INVITE)); } else JoinLobby(); }
+            else if (g_choice == ls::kJoin) JoinLobby();      // the paste box when it holds something, else the chosen row of the Join list
             else LaunchGame(false);
             UpdateTabs(); if (g_sess.Active()) FocusFirst(g_lobbyPanel);
         }
@@ -1160,8 +1299,12 @@ LRESULT CALLBACK MainProc(HWND h, UINT m, WPARAM w, LPARAM l) {
         else if (id == ID_LB_STEAM_INVITE) { if (!g_sess.SteamInviteDialog()) LobbyStatus(W(g_sess.SteamStatus())); }
         else if (id == ID_LB_STEAM_SEND) { int i = (int)SendMessageW(LB(ID_LB_STEAM_FRIENDS), CB_GETCURSEL, 0, 0); if (i >= 0 && i < (int)g_friends.size()) { g_sess.SteamInviteFriend(g_friends[i].first); LobbyStatus(W(g_sess.SteamStatus())); } else FillFriends(); }
         else if (id == ID_LB_JOIN) JoinLobby();
+        else if (id == ID_LB_INVITE && code == EN_CHANGE) { std::string t = EditText(LB(ID_LB_INVITE)); SetWindowTextW(C(ID_JOIN_WHAT), t.empty() ? L"" : W(jg::PlanPaste(t, NetSettings().port).said).c_str()); }      // B7: says what it recognised before Join
+        else if (id == ID_JOIN_LIST && code == LBN_SELCHANGE) { if (SendMessageW(LB(ID_JOIN_LIST), LB_GETCURSEL, 0, 0) >= 0) SetWindowTextW(LB(ID_LB_INVITE), L""); }
+        else if (id == ID_JOIN_LIST && code == LBN_DBLCLK) JoinRow((int)SendMessageW(LB(ID_JOIN_LIST), LB_GETCURSEL, 0, 0));
+        else if (id == ID_JOIN_CLIP_YES) ClipboardJoin();
         else if (id == ID_LB_LEAVE) { LeaveLobby(); UpdateTabs(); FocusFirst(g_tiles); }
-        else if (id == ID_LB_COPY) { std::wstring inv = W(g_sess.Invite()); if (!inv.empty() && OpenClipboard(h)) { EmptyClipboard(); HGLOBAL g = GlobalAlloc(GMEM_MOVEABLE, (inv.size() + 1) * 2); if (g) { memcpy(GlobalLock(g), inv.c_str(), (inv.size() + 1) * 2); GlobalUnlock(g); SetClipboardData(CF_UNICODETEXT, g); } CloseClipboard(); LobbyStatus(L"The invite is on the clipboard."); } }
+        else if (id == ID_LB_COPY) CopyInvite(h);
         else if (id == ID_LB_READY && code == BN_CLICKED) g_sess.SetReady(SendMessageW(LB(ID_LB_READY), BM_GETCHECK, 0, 0) == BST_CHECKED);
         else if (id == ID_LB_START) { PushSettings(); if (!g_sess.Start()) LobbyStatus(L"Everybody has to be ready first: " + W(WaitingFor()) + L"."); }
         else if (id == ID_LB_SEND) SendChatLine();
@@ -1235,7 +1378,8 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, LPWSTR cmdline, int show) {
     if (deck) { SetWindowLongPtrW(g_main, GWL_STYLE, WS_POPUP | WS_CLIPCHILDREN); MONITORINFO mi = {sizeof mi}; GetMonitorInfoW(MonitorFromWindow(g_main, MONITOR_DEFAULTTOPRIMARY), &mi); SetWindowPos(g_main, nullptr, mi.rcMonitor.left, mi.rcMonitor.top, mi.rcMonitor.right - mi.rcMonitor.left, mi.rcMonitor.bottom - mi.rcMonitor.top, SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED); fill = false; }
     if (fill && g_noActivate) { MONITORINFO mi = {sizeof mi}; GetMonitorInfoW(MonitorFromWindow(g_main, MONITOR_DEFAULTTOPRIMARY), &mi); SetWindowPos(g_main, nullptr, mi.rcWork.left, mi.rcWork.top, mi.rcWork.right - mi.rcWork.left, mi.rcWork.bottom - mi.rcWork.top, SWP_NOZORDER | SWP_NOACTIVATE); }
     LayoutAll(); ShowWindow(g_main, g_noActivate ? SW_SHOWNOACTIVATE : (fill ? SW_SHOWMAXIMIZED : SW_SHOW)); LayoutAll();
-    if (!g_inviteLink.empty()) { g_choice = ls::kJoin; ShowChoiceDetails(); SetWindowTextW(LB(ID_LB_INVITE), W(g_inviteLink).c_str()); LobbyStatus(L"An invite came from a link. Check it, then press Join."); startPage = ls::kPlay; }      // a witness-coop:// link: into the join box, never joined without a click (the choice is not remembered)
+    nf_log = [](const char* l) { Dlog(l); }; nf_recents_load((g_data + L"\\recents.tsv").c_str());      // B4: recent hosts, in the mod's user data folder
+    if (!g_inviteLink.empty()) { g_inviteLink = jg::PasteFromLink(g_inviteLink); g_choice = ls::kJoin; ShowChoiceDetails(); LayoutAll(); SetWindowTextW(LB(ID_LB_INVITE), W(g_inviteLink).c_str()); LobbyStatus(L"An invite came from a link. Check it, then press Join."); startPage = ls::kPlay; }      // a witness-coop:// link: into the join box, never joined without a click (the choice is not remembered)
     if (g_autoJoin) { JoinSteamLobby(g_autoJoin); startPage = 0; } if (startPage < 0 || startPage >= g_npages) startPage = 0;
     ShowSection(startSection); SelectTab(startPage); UpdateTabs(); if (openNew) OpenNewGame();
     if (!dumpTo.empty()) { std::string t = std::to_string(ID_STATUS) + " status\n"; for (auto& f : g_fields) if (f.h) t += std::to_string(f.id) + " " + f.key + "\n"; t += std::to_string(ID_APPLY) + " apply\n" + std::to_string(ID_LAUNCH) + " launch\n" + std::to_string(ID_DIAG) + " diag\n" + std::to_string(ID_SAVEPICK) + " savepick\n" + std::to_string(ID_PRIMARY) + " primary\n" + std::to_string(ID_TILE_SOLO) + " tile:solo\n";

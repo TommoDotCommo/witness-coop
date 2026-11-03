@@ -48,7 +48,7 @@ int main() {
     // the standard's rows sit in their sections
     auto in = [](const char* k, ls::Section s) { const ls::Row* r = ls::FindRow(k); return r && r->section == s; };
     Check(in("cfg:voice_mode", ls::kVoice) && in("cfg:key_voice", ls::kVoice) && in("cfg:voice_range", ls::kVoice) && in("cfg:key_chat", ls::kControls) && in("vid:resolution", ls::kDisplay) && in("cfg:cap_fps", ls::kDisplay)
-          && in("cfg:lobby_port", ls::kNetwork) && in("cfg:show_launcher", ls::kLauncher) && in("upd:auto", ls::kLauncher) && in("cfg:name", ls::kPlayers), "rows are in the standard's sections");
+          && in("cfg:lobby_port", ls::kNetwork) && in("cfg:find_lan", ls::kNetwork) && in("cfg:find_tailscale", ls::kNetwork) && in("cfg:upnp", ls::kNetwork) && in("cfg:internet_in_invite", ls::kNetwork) && in("cfg:lobby_visibility", ls::kRules) && in("cfg:show_launcher", ls::kLauncher) && in("upd:auto", ls::kLauncher) && in("cfg:name", ls::kPlayers), "rows are in the standard's sections");
     {   // t85 (K4, K5, H5): the pad layer's lines come from padlayer.h's one table onto the Controls page; voice is Automatic by default; a stick click can be push to talk
         const ls::Row* n = ls::FindRow("note:pad"); std::string missing;
         for (const auto& l : padlayer::kLines) if (std::string(l.id) != "voice" && (!n || n->label.find(std::string(l.buttons) + ": " + l.text) == std::string::npos)) missing += std::string(" ") + l.buttons;

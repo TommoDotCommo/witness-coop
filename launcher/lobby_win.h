@@ -12,6 +12,7 @@
 #include "lobby.h"
 #include "lobby_steam.h"
 
+struct cd_rate;      // common/coop_discover.h: the probe answers' rate limit
 namespace lw {
 class Mutex { CRITICAL_SECTION cs_; public: Mutex() { InitializeCriticalSection(&cs_); } ~Mutex() { DeleteCriticalSection(&cs_); } void lock() { EnterCriticalSection(&cs_); } void unlock() { LeaveCriticalSection(&cs_); } };
 struct Guard { Mutex& m; explicit Guard(Mutex& mm) : m(mm) { m.lock(); } ~Guard() { m.unlock(); } };
@@ -24,6 +25,14 @@ public:
     Session(); ~Session();
     bool Host(const std::string& name, uint16_t gamePort, uint16_t lobbyPort, const std::string& advertise, std::string* err);       // advertise: the address friends reach this PC at (empty: this PC's address on the local network)
     bool Join(const std::string& invite, const std::string& name, uint16_t gamePort, std::string* err);                              // invite: address:port/CODE
+    bool JoinAt(uint32_t ip, uint16_t port, const std::string& code, const std::string& name, uint16_t gamePort, std::string* err);   // a host found in the Join list or by an invite: its address, the invite's code (empty for a lobby open to my networks)
+    void SetInviteOnly(bool b) { inviteOnly_ = b; }                     // B9, before Host: invite only, or open to my networks (listed in friends' Join lists, joinable without a code)
+    bool InviteOnly() const { return inviteOnly_; }
+    uint32_t Secret() const { return secret_; }                         // the invite's lobby secret (the code a Direct lobby checks is jg::TokenOf of it)
+    uint16_t LobbyPort() const { return lobbyPort_; }
+    uint16_t HostPort() const { return hostPort_; }
+    static uint32_t Resolve(const std::string& host);                  // a host or Tailscale name (or a dotted address): its IPv4 address, 0 when unknown                     // a Direct client: the host's lobby port it joined
+    unsigned ProbesAnswered() const { return probes_; }
     // Steam (lobby_steam.h): a friends-only Steam lobby, relayed; the launcher's lobby logic is the same, its members are addressed by SteamID
     bool SteamInit(const std::wstring& gameDir, std::string* err);
     bool HostSteam(const std::string& name, uint16_t gamePort, const std::wstring& gameDir, std::string* err);
@@ -52,6 +61,7 @@ private:
     std::unique_ptr<lsteam::SteamLobby> steam_; bool steamMode_ = false; std::string steamName_, steamCode_; uint16_t steamGamePort_ = 0; uint64_t pausedSince_ = 0, pausedTotal_ = 0;
     Mutex mu_; std::unique_ptr<wlobby::Lobby> lobby_; SOCKET sock_ = INVALID_SOCKET; HANDLE th_ = nullptr; static DWORD WINAPI Run(LPVOID p) { ((Session*)p)->Loop(); return 0; } std::atomic<bool> active_{false}, stop_{false}; bool host_ = false; std::string invite_; uint32_t hostIp_ = 0;
     std::function<void(const wvoice::Packet&)> sink_; std::string modVersion_ = "dev";
+    bool inviteOnly_ = false; uint32_t secret_ = 0; uint16_t lobbyPort_ = 0, hostPort_ = 0; std::atomic<unsigned> probes_{0}; ::cd_rate* rate_ = nullptr;      // the host: probe answers (CPQ1 / CPQ2 "WIT ", joinglue.h)
 };
 
 class Voice {
