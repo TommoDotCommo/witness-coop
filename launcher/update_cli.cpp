@@ -20,6 +20,7 @@ int main(int argc, char** argv) {
         std::string t = slurp(argv[2]); lu_schedule s; lu_load_schedule(t.c_str(), argv[3], &s); printf("auto=%d pre=%d last=%llu retry=%llu can=%d\n", s.auto_enabled, s.include_prereleases, (unsigned long long)s.last_check, (unsigned long long)s.retry_after, lu_can_check(&s, (uint64_t)atoll(argv[4]), atoi(argv[5]))); return 0; }
     if (c == "apply" && argc == 10) {      // apply <dir> <zip> <prefix> <current> <tag> <running> <fail_step> <crash>
         std::string z = slurp(argv[3]); auto r = lu_apply_package(argv[2], (const unsigned char*)z.data(), z.size(), argv[4], argv[5], argv[6], atoi(argv[7]), atoi(argv[8]), atoi(argv[9])); printf("result=%d\n", (int)r); return 0; }
+    if (c == "owner" && argc == 3) { printf("owner=%d\n", lu_owner(argv[2])); return 0; }
     if (c == "recover" && argc == 3) { printf("recovered=%d\n", lu_recover_interrupted(argv[2])); return 0; }
     return 2;
 }

@@ -52,6 +52,11 @@ bool WriteSaveOption(std::vector<uint8_t>* campaign, const std::string& name, fl
 struct SaveInfo { std::wstring path; std::string stem; unsigned long long bytes = 0, when = 0; bool hasPng = false, hasMeta = false; wprog::SaveMeta meta; };
 std::vector<SaveInfo> ListSaves(const std::wstring& dir);     // newest first; the sidecar is read when there is one
 
+// ---- invite links (the witness-coop:// handler Setup registers starts the launcher with the link as one argument)
+// The invite text inside a link ("witness-coop://<invite>", percent-escapes decoded, a closing slash dropped), or "" when the argument is not such a link
+// (nothing else is ever taken from the command line into the join box) or holds a control character.
+std::string InviteFromLink(const std::string& arg);
+
 // ---- the launch
 std::string ProgressSpec(const std::vector<std::string>& areas, int lasers, const std::vector<std::string>& presets);   // "area:X;area:Y;lasers:N;preset:Z"
 std::string LaunchArgs(const CfgFile& cfg, bool newGame);       // the game's command line: -skip_config_dialog (the launcher has written the game's video settings), -no_sound when launcher_no_sound=1, -new_game for a new world

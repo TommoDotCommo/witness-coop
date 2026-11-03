@@ -28,6 +28,12 @@ int main() {
         Fixture patched = ok; patched.file[0x200 + 9] ^= 4; check("build: same header, other code is a problem", !GameBuildProblem(patched.file, ok.spec).empty());
         check("build: a file that does not exist is a problem", !GameBuildProblemOfFile(L"does-not-exist.exe").empty());
     }
+    // invite links: the handler's argument becomes the text of the join box, nothing else does
+    check("link: scheme and slashes are dropped, the invite stays", InviteFromLink("witness-coop://192.168.1.5:47000/ABCD") == "192.168.1.5:47000/ABCD");
+    check("link: percent escapes are decoded and a closing slash dropped", InviteFromLink("WITNESS-COOP://10.0.0.2%3A47000%2FXY12/") == "10.0.0.2:47000/XY12");
+    check("link: a Steam lobby number", InviteFromLink("\"witness-coop:109775241234567890\"") == "109775241234567890");
+    check("link: text that is not a witness-coop link is refused", InviteFromLink("https://example.invalid/x").empty() && InviteFromLink("calc.exe").empty() && InviteFromLink("").empty());
+    check("link: a control character is refused", InviteFromLink("witness-coop://a%0Ab").empty());
     // cfg
     CfgFile c = CfgFile::Parse("# my settings\nid=1\nname=Tom\npeer=2,10.0.0.5,47002\n\npeer=3,10.0.0.6,47003\nweird line\nmodel=fox\n");
     check("cfg: values are read", c.Get("name") == "Tom" && c.Get("id") == "1" && c.Get("nothing", "dflt") == "dflt" && c.Has("model") && !c.Has("mode"));

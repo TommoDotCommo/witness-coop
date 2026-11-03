@@ -134,6 +134,26 @@ std::string ProgressSpec(const std::vector<std::string>& areas, int lasers, cons
     std::string s; auto add = [&](const std::string& t) { if (!s.empty()) s += ";"; s += t; };
     for (const auto& a : areas) add("area:" + a); if (lasers > 0) add("lasers:" + std::to_string(lasers)); for (const auto& p : presets) add("preset:" + p); return s;
 }
+std::string InviteFromLink(const std::string& arg) {
+    static const char kScheme[] = "witness-coop:";
+    size_t n = sizeof(kScheme) - 1, start = 0;
+    while (start < arg.size() && (arg[start] == ' ' || arg[start] == '"')) ++start;
+    if (arg.size() < start + n) return "";
+    for (size_t i = 0; i < n; ++i) if (tolower((unsigned char)arg[start + i]) != kScheme[i]) return "";
+#ifdef WL_MUT_ANY_TEXT
+    return arg.substr(start);      // mutant: anything is taken, scheme and all
+#endif
+    std::string rest = arg.substr(start + n), out;
+    while (!rest.empty() && rest[0] == '/') rest.erase(0, 1);
+    for (size_t i = 0; i < rest.size(); ++i) {
+        unsigned char c = (unsigned char)rest[i];
+        if (c == '%' && i + 2 < rest.size() + 0 && isxdigit((unsigned char)rest[i + 1]) && isxdigit((unsigned char)rest[i + 2])) { c = (unsigned char)strtol(rest.substr(i + 1, 2).c_str(), nullptr, 16); i += 2; }
+        if (c < 0x20 || c == 0x7f) return "";
+        out += (char)c;
+    }
+    while (!out.empty() && (out.back() == '/' || out.back() == ' ' || out.back() == '"')) out.pop_back();
+    return out;
+}
 std::string LaunchArgs(const CfgFile& cfg, bool newGame) {
     std::string a = "-skip_config_dialog";
     if (cfg.Get("launcher_no_sound") == "1") a += " -no_sound";

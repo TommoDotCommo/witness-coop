@@ -14,6 +14,9 @@
 #include <stdint.h>
 #include <ctype.h>
 #include "../dist/install-policy.h"
+#ifndef _WIN32
+#include <sys/stat.h>
+#endif
 
 #ifdef _WIN32
 #include <windows.h>
@@ -57,7 +60,8 @@ enum lu_result {
     LU_ERR_RUNNING,     /* the game is running from this folder: the proxy DLL is replaced only while it is not */
     LU_ERR_DOWNGRADE,   /* the package is not newer than the installed version */
     LU_ERR_DEV,         /* the installed version is not a release version (a development build): never replaced */
-    LU_ERR_LEGACY       /* the old layout (AnselSDK64_real.dll) is there but cannot be undone safely (a hash that is not the game's): Setup explains */
+    LU_ERR_LEGACY,      /* the old layout (AnselSDK64_real.dll) is there but cannot be undone safely (a hash that is not the game's): Setup explains */
+    LU_ERR_MANAGER      /* the files are a mod manager's (hard links, no Setup receipt): the manager updates them */
 };
 
 struct lu_schedule {
@@ -960,6 +964,23 @@ static inline int lu_copy_verified(const char *src, const char *dst, char out_ha
     return ok;
 }
 
+/* How many names the file has (a mod manager such as Vortex deploys by hard link: 2 or more); 1 when unsure. */
+static inline int lu_link_count(const char *path)
+{
+#ifdef _WIN32
+    BY_HANDLE_FILE_INFORMATION info;
+    HANDLE h = CreateFileA(path, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    int n = 1;
+    if (h == INVALID_HANDLE_VALUE) return 1;
+    if (GetFileInformationByHandle(h, &info)) n = (int)info.nNumberOfLinks;
+    CloseHandle(h);
+    return n;
+#else
+    struct stat st;
+    return stat(path, &st) == 0 ? (int)st.st_nlink : 1;
+#endif
+}
+
 static inline int lu_exists(const char *path)
 {
     FILE *f = fopen(path, "rb");
@@ -1058,6 +1079,28 @@ static const struct lu_target lu_targets[LU_NTARGETS] = {
 static inline void lu_path(char *out, size_t cap, const char *dir, const char *name, const char *suffix)
 {
     snprintf(out, cap, "%s/%s%s", dir, name, suffix);
+}
+
+/* Who put the files there (co-op mod standard J6): Setup (a receipt beside a managed file), a mod manager (no receipt and a managed file with more than
+ * one hard link: Vortex), or nobody Setup knows (no receipt: copied by hand or not installed). */
+#define LU_OWNER_NONE 0
+#define LU_OWNER_SETUP 1
+#define LU_OWNER_MANAGER 2
+static inline int lu_owner(const char *dir)
+{
+    char path[640];
+    int i;
+    for (i = 0; i < LU_NTARGETS; i++) {
+        lu_path(path, sizeof(path), dir, lu_targets[i].name, ".coop-receipt.json");
+        if (lu_exists(path)) return LU_OWNER_SETUP;
+    }
+    lu_path(path, sizeof(path), dir, "AnselSDK64.dll", ".coop-receipt.json");      /* (the alpha's layout, installed by Setup) */
+    if (lu_exists(path)) return LU_OWNER_SETUP;
+    for (i = 0; i < LU_NTARGETS; i++) {
+        lu_path(path, sizeof(path), dir, lu_targets[i].name, "");
+        if (lu_exists(path) && lu_link_count(path) > 1) return LU_OWNER_MANAGER;
+    }
+    return LU_OWNER_NONE;
 }
 
 /* The state of one managed file against the package's hash: the installer's own decision (dist/install-policy.h), plus its refusal of leftovers. */
@@ -1263,6 +1306,7 @@ static inline enum lu_result lu_apply_package(const char *dir, const unsigned ch
     if (ver == 0) return LU_ERR_DOWNGRADE;
     if (game_running) return LU_ERR_RUNNING;
     if (lu_journal_status(dir, NULL, 0)) return LU_ERR_RECEIPT;      /* an earlier update has not been settled: recovery first */
+    if (lu_owner(dir) == LU_OWNER_MANAGER) return LU_ERR_MANAGER;      /* MUT:manager: a mod manager's files are its own */
 
     r = lu_zip_check_paths(zip, zip_len);
     if (r != LU_OK) goto done;

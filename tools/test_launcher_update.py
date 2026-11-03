@@ -42,6 +42,8 @@ MUTANTS = {
     'apply-game-running': ('if (game_running) return LU_ERR_RUNNING;', ''),
     'apply-receipt-state': ('else if (st != CI_CURRENT) { r = LU_ERR_RECEIPT; goto done; }', 'else if (st == CI_MISSING) { r = LU_ERR_RECEIPT; goto done; }'),
     'apply-leftover-refused': ('if (lu_exists(aux)) return CI_CONFLICT;\n    lu_path(aux, sizeof(aux), dir, t->name, ".coop-receipt.json.tmp");', 'lu_path(aux, sizeof(aux), dir, t->name, ".coop-receipt.json.tmp");'),
+    'apply-manager-owned': ('if (lu_owner(dir) == LU_OWNER_MANAGER) return LU_ERR_MANAGER;', ''),
+    'owner-setup-receipt': ('if (lu_exists(path)) return LU_OWNER_SETUP;\n    }', 'if (0) return LU_OWNER_SETUP;\n    }'),
     'apply-journal-block': ('if (lu_journal_status(dir, NULL, 0)) return LU_ERR_RECEIPT;', ''),
     'apply-rollback-on-fail': ('fail_rollback:\n    if (lu_rollback(dir) != LU_OK) r = LU_ERR_ROLLBACK;', 'fail_rollback:\n    r = r;'),
     'receipt-original-kept': ('lu_write_receipt(target, rc[i].original, newh[i], NULL)', 'lu_write_receipt(target, NULL, newh[i], NULL)'),
@@ -300,6 +302,15 @@ def suite(R, tmp):
     refused('a receipt of another schema is refused', g5, z2, r_code('RECEIPT'))
     g6 = make_game(tmp / 'g-orig'); (g6 / 'dsound.dll.coop-original').write_bytes(b'tampered')
     refused('a kept original that no longer matches its receipt is refused', g6, z2, r_code('RECEIPT'))
+    # a mod manager's files (hard links, no receipt) are its own: the updater says so and changes nothing; a Setup install is not mistaken for one
+    gm = make_game(tmp / 'g-manager', with_receipts=False); bm = tree(gm)
+    for name in ('dsound.dll', 'witness_launcher.exe'):
+        os.link(gm / name, tmp / ('link-' + name))
+    check('the owner of hard-linked files without receipts is a mod manager', R.run('owner', gm)['owner'] == '2')
+    refused('a mod manager\'s hard-linked files are not replaced by the updater', gm, z2, r_code('MANAGER'))
+    check('a Setup install with receipts is owned by Setup even if its files have a second name', (os.link(make_game(tmp / 'g-setup-linked')/ 'dsound.dll', tmp / 'link-setup') or True) and R.run('owner', tmp / 'g-setup-linked')['owner'] == '1')
+    gh = make_game(tmp / 'g-hand', with_receipts=False)
+    check('files copied by hand (no receipts, one name each) belong to nobody the updater knows: the old rule applies', R.run('owner', gh)['owner'] == '0')
     g7 = make_game(tmp / 'g-journal'); (g7 / 'witness_update.state').write_text('[update]\nstatus=pending\n')
     refused('an unsettled earlier update blocks a new one', g7, z2, r_code('RECEIPT'))
     # an update that fails half way is put back
