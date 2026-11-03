@@ -5,6 +5,8 @@
 #include <vector>
 #include "tv/tv.h"
 // Snapshot TV is independent of the legacy partner inset. Both settings default off.
+// experimental_tv=0 (the default): every function below is inert (nothing runs, draws or is sent; incoming TV packets are dropped).
+bool TvExperimental();
 bool TvEnabled(); bool TvConsent();
 void TvEnable(bool on); void TvAllow(bool on);
 void TvTick(const float camera[3], bool captureAllowed); // render thread, select nearest live player within 12 m

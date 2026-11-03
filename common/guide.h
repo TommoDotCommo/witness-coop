@@ -22,6 +22,7 @@ constexpr unsigned Help = 0x70, Boost = 0x72, Nearby = 0x73, Roster = 0x09 /* ho
     DevMenu = 0x77, Video = 0x78, TvView = 0x79, TvConsent = 0x7A,
     PrevView = 0xDB, NextView = 0xDD;
 struct Fixed { unsigned key; const char* text; };
+inline bool IsTvBinding(const Binding& b) { return std::string(b.config).compare(0, 7, "key_tv_") == 0; }      // the experimental TV features (experimental_tv)
 inline const Fixed fixed[] = {
     {Help, "Hold: quick guide (game and launcher)"},
     {Boost, "Toggle puzzle mouse speed boost"},
@@ -33,6 +34,21 @@ inline const Fixed fixed[] = {
     {DevMenu, "Developer menu (if enabled); Tab: page"},
     {Nearby, "Nearby puzzles (developer mode)"},
 };
+// What a key does for the TV features: nothing at all while experimental_tv is off (the key then belongs to the game).
+enum class TvKeyAction { None, View, Consent, Deploy, Seat };
+inline TvKeyAction TvKey(const Cfg& c, unsigned vk) {
+#ifdef GUIDE_MUT_TV_KEY_WHILE_OFF
+    if (false)
+#else
+    if (!c.experimentalTv)
+#endif
+        return TvKeyAction::None;
+    if (vk == TvView) return TvKeyAction::View;
+    if (vk == TvConsent) return TvKeyAction::Consent;
+    if (vk == c.keyTvDeploy) return TvKeyAction::Deploy;
+    if (vk == c.keyTvSeat) return TvKeyAction::Seat;
+    return TvKeyAction::None;
+}
 // The diagnostics marker: F2, unless a binding already uses it (the F1 migration may have put one there), then F12, else none.
 inline unsigned MarkerKey(const Cfg& c) {
 #ifdef GUIDE_MUT_MARKER_BOUND
@@ -179,10 +195,18 @@ inline Columns Content(const Cfg& c) {
 #ifdef GUIDE_MUT_MISSING_KEY
         if (b.member == &Cfg::keyChat) continue;
 #endif
+#ifndef GUIDE_MUT_TV_IN_GUIDE
+        if (IsTvBinding(b) && !c.experimentalTv) continue;      // experimental TV features are not in the guide while they are off
+#endif
         out[0].push_back(KeyName(c.*b.member) + "  " + b.text);
     }
     out[0].push_back("FIXED KEYS");
-    for (const auto& b : fixed) out[0].push_back(KeyName(b.key) + "  " + b.text);
+    for (const auto& b : fixed) {
+#ifndef GUIDE_MUT_TV_IN_GUIDE
+        if ((b.key == TvView || b.key == TvConsent) && !c.experimentalTv) continue;
+#endif
+        out[0].push_back(KeyName(b.key) + "  " + b.text);
+    }
     out[0].push_back(KeyName(MarkerKey(c)) + "  Mark a problem: saves the last minute for a bug report (every player's game marks it)");
     out[0].push_back("GAME / MENU CONTROLS");
     out[0].push_back("Game uses your settings. Defaults: WASD move, mouse look / draw, click puzzles, Esc back.");

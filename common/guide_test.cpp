@@ -17,8 +17,10 @@ int main() {
         check(c.*b.member == 0x71, "legacy F1 action moves to F2");
         check(guide::Validate(c).empty(), "moved binding is collision free");
         auto cols = guide::Content(c);
-        check(std::count(cols[0].begin(), cols[0].end(), guide::KeyName(c.*b.member) + "  " + b.text) == 1,
-              "guide lists actual configured action exactly once");
+        check(std::count(cols[0].begin(), cols[0].end(), guide::KeyName(c.*b.member) + "  " + b.text) == (guide::IsTvBinding(b) ? 0 : 1),
+              "guide lists actual configured action exactly once (the experimental TV keys not while experimental_tv is off)");
+        c.experimentalTv = true; cols = guide::Content(c);
+        check(std::count(cols[0].begin(), cols[0].end(), guide::KeyName(c.*b.member) + "  " + b.text) == 1, "with experimental_tv on every action is listed exactly once");
         c = Cfg();
     }
     c.keyChat = guide::Help; c.keyPing = 0x71;
@@ -34,6 +36,20 @@ int main() {
     for (const auto& f : guide::fixed) check(fixed.insert(f.key).second, "fixed bindings unique");
     for (unsigned k = 0x70; k <= 0x7B; ++k) check(guide::ParseKey(guide::KeyName(k)) == k, "function keys round trip");
     for (auto s : {"F0", "F13", "F1oops", "F01", "", "Space"}) check(!guide::ParseKey(s), "malformed binding rejected");
+    {   // experimental_tv: off (the default) the TV keys are free, out of the guide, and bound all the same
+        Cfg off; check(!off.experimentalTv, "experimental_tv is off by default");
+        for (unsigned vk : {guide::TvView, guide::TvConsent, (unsigned)off.keyTvDeploy, (unsigned)off.keyTvSeat}) check(guide::TvKey(off, vk) == guide::TvKeyAction::None, "a TV key does nothing while experimental_tv is off");
+        Cfg on; on.experimentalTv = true;
+        check(guide::TvKey(on, guide::TvView) == guide::TvKeyAction::View && guide::TvKey(on, guide::TvConsent) == guide::TvKeyAction::Consent
+              && guide::TvKey(on, on.keyTvDeploy) == guide::TvKeyAction::Deploy && guide::TvKey(on, on.keyTvSeat) == guide::TvKeyAction::Seat && guide::TvKey(on, 'Q') == guide::TvKeyAction::None, "with experimental_tv on the TV keys act as before");
+        check(guide::Validate(off).empty() && off.keyTvDeploy == 'J' && off.keyTvSeat == 'K', "the TV keys stay bound while off");
+        auto text = [](const guide::Columns& cols) { std::string t; for (const auto& col : cols) for (const auto& l : col) t += l + "\n"; return t; };
+        std::string go = text(guide::Content(off)), gn = text(guide::Content(on));
+        for (const char* w : {"sky TV", "audience stool", "back TV", "TV camera"}) {
+            check(go.find(w) == std::string::npos, "the quick guide leaves out the TV features while off");
+            check(gn.find(w) != std::string::npos, "the quick guide lists the TV features while on");
+        }
+    }
     guide::Hold h;
     check(!h.Open() && !h.Key('T', true), "only F1 opens guide");
     check(h.Key(guide::Help, true) && h.Open(), "F1 down opens guide");
@@ -91,8 +107,8 @@ int main() {
     check(col0Text.find("H  Hold: emote wheel") != std::string::npos, "guide lists emote binding");
     check(col0Text.find("R  Hold: radio channel") != std::string::npos, "guide lists radio binding");
     check(col0Text.find("F1  Hold: quick guide") != std::string::npos, "guide lists F1 quick guide");
-    check(col0Text.find("F10  Toggle back TV viewer") != std::string::npos, "guide lists TV view key");
-    check(col0Text.find("F11  Toggle back TV camera broadcast consent") != std::string::npos, "guide lists TV consent key");
+    check(col0Text.find("F10  Toggle back TV viewer") == std::string::npos, "guide leaves out the TV view key (experimental_tv off by default)");
+    check(col0Text.find("F11  Toggle back TV camera broadcast consent") == std::string::npos, "guide leaves out the TV consent key (experimental_tv off by default)");
     check(col0Text.find("Tab  Hold: player list") != std::string::npos, "guide lists the player list key");
     check(col0Text.find("MMB  Ping") != std::string::npos && col0Text.find("XBUTTON1  Hold: push to talk") != std::string::npos, "guide lists the mouse keys");
     check(col0Text.find("Watch / clear") == std::string::npos, "V no longer watches");

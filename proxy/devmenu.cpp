@@ -528,10 +528,11 @@ void PanelBoostToggle();      // input.cpp
 void PanelBoostMsg(bool on, float gain) { Msg("panel mouse boost %s (x%.1f, F3 toggles)", on ? "ON" : "off", gain); }
 bool DevMenuKey(unsigned vk, bool down) {
     if(down && (vk=='W' || vk=='A' || vk=='S' || vk=='D' || vk==VK_SPACE || vk==VK_ESCAPE)) TvSeatExit();
-    if(down && vk==GetCfg().keyTvSeat && !DevMenuOpen() && !GamePaused() && !SocialCapturing()) { TvSeatRequest(); return true; }
-    Init(); if (down && vk == guide::TvView) { TvEnable(!TvEnabled()); return true; }
-    if (down && vk == guide::TvConsent) { TvAllow(!TvConsent()); return true; }
-    if (down && vk == GetCfg().keyTvDeploy) { TvDeployAction(OverlayTvAim()); return true; }
+    auto tvKey = guide::TvKey(GetCfg(), vk);      // None while experimental_tv is off: the key is not taken
+    if(down && tvKey==guide::TvKeyAction::Seat && !DevMenuOpen() && !GamePaused() && !SocialCapturing()) { TvSeatRequest(); return true; }
+    Init(); if (down && tvKey==guide::TvKeyAction::View) { TvEnable(!TvEnabled()); return true; }
+    if (down && tvKey==guide::TvKeyAction::Consent) { TvAllow(!TvConsent()); return true; }
+    if (down && tvKey==guide::TvKeyAction::Deploy) { TvDeployAction(OverlayTvAim()); return true; }
     if (PovKey(vk, down)) return true;
     if (vk == guide::Boost && down) { PanelBoostToggle(); return true; }
     if (vk == guide::Video && down && VideoEnabled()) { VideoToggleView(); return true; }
@@ -580,9 +581,11 @@ void DevMenuDraw(float W, float H) {
     if (Button(tx + mapW + nearW + 2 * tabGap, ty, savesW, th, "Saves", g_page == 2, sc)) { g_page = 2; SaveListRefresh(); }
     { const char* hint = "F8 / Esc close    F4 nearby    Tab page"; float hs = sc * 0.75f; UiText(x0 + w - UiTextWidth(hint, hs) - 20 * sc, y0 + 45 * sc, hint, uitheme::Muted, hs); }
     float tvY = f.tvY, tvW = std::min(250.f * sc, (w - 60 * sc) / 3);
+    if (TvExperimental()) {
     if (Button(x0 + 20 * sc, tvY, tvW, th, TvEnabled() ? "Back TV: ON [F10]" : "Back TV: off [F10]", TvEnabled(), sc)) TvEnable(!TvEnabled());
     if (Button(x0 + 30 * sc + tvW, tvY, tvW, th, TvConsent() ? "Share my POV: ON [F11]" : "Share my POV: off [F11]", TvConsent(), sc)) TvAllow(!TvConsent());
     if (Button(x0 + 40 * sc + 2 * tvW, tvY, tvW, th, TvDeploymentTarget() ? "Retract sky TV [J]" : "Deploy aimed sky TV [J]", TvDeploymentTarget() != 0, sc)) TvDeployAction(OverlayTvAim());
+    }
     float cy0 = f.cy0, ch = f.ch, lw = f.lw, gap = f.gap;
     if (!g_built) { UiText(x0 + 20 * sc, cy0 + 20 * sc, "The world is not loaded yet.", uitheme::Danger, sc); }
     else {

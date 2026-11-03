@@ -49,6 +49,11 @@ int main() {
     auto in = [](const char* k, ls::Section s) { const ls::Row* r = ls::FindRow(k); return r && r->section == s; };
     Check(in("cfg:voice_mode", ls::kVoice) && in("cfg:key_voice", ls::kVoice) && in("cfg:voice_range", ls::kVoice) && in("cfg:key_chat", ls::kControls) && in("vid:resolution", ls::kDisplay) && in("cfg:cap_fps", ls::kDisplay)
           && in("cfg:lobby_port", ls::kNetwork) && in("cfg:show_launcher", ls::kLauncher) && in("upd:auto", ls::kLauncher) && in("cfg:name", ls::kPlayers), "rows are in the standard's sections");
+    {   // t90: the TV features are one experimental option, off by default, in the Launcher section; its keys keep their rows
+        const ls::Row* e = ls::FindRow("cfg:experimental_tv");
+        Check(e && e->section == ls::kLauncher && e->kind == ls::kToggle && e->def == "0" && e->label == "Experimental: TV features", "Experimental: TV features is a Launcher toggle, off by default");
+        Check(ls::FindRow("cfg:key_tv_deploy") && ls::FindRow("cfg:key_tv_seat"), "the TV keys stay bound (rows kept) while the option is off");
+    }
     for (int s = 0; s < ls::kSectionCount; ++s) Check(!ls::RowsOf((ls::Section)s).empty(), "section has rows", ls::SectionName(s));
     // E3: sliders with units for volumes, ranges, FOV, brightness and the frame limit; no typed numbers except the port
     std::string notSlider; for (const char* k : {"cfg:voice_volume", "cfg:mic_volume", "cfg:game_volume", "cfg:voice_range", "cfg:voice_radio_range", "cfg:cap_fps", "opt:user_fov_vertical", "opt:user_brightness", "opt:mouse_speed_3d"}) {

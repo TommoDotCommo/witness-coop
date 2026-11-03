@@ -20,7 +20,7 @@ struct AudienceStream : wtv::StreamResources<ID3D11Texture2D,ID3D11ShaderResourc
 };
 struct AudienceStats { unsigned draws=0,vertices=0,visiblePixels=0; bool drawnLive=false; };
 struct State {
-    bool enabled=GetCfg().povTv, capture=false; wtv::Sender sender; wtv::Receiver receiver;
+    bool enabled=GetCfg().experimentalTv && GetCfg().povTv, capture=false; wtv::Sender sender; wtv::Receiver receiver;
     uint64_t requestAt=0; unsigned displayTarget=0; uint64_t disabledAt=0; unsigned sequence=0,sent=0,uploaded=0,draws=0,vertices=0; bool drawnLive=false;
     float sway=0,power=0; unsigned maxCaptureUs=0,visiblePixels=0,uploadHash=0,uploadedSequence=0;
     std::vector<std::pair<unsigned,unsigned>> hashes;
@@ -28,19 +28,21 @@ struct State {
     unsigned nextTicket=1; uint64_t deploymentBroadcastAt=0;
     bool restore=false,wantProbe=false;
     wtv::GroundProber prober; unsigned probeTarget=0; float probeEye[3]={},probeYaw=0,probeHome[5]={}; unsigned lastMeasured=0; bool probing=false;
-    State(){ sender.allow(GetCfg().povTvConsent); receiver.ticket=GetTickCount()|1u; nextTicket=receiver.ticket+1; }
+    State(){ sender.allow(GetCfg().experimentalTv && GetCfg().povTvConsent); receiver.ticket=GetTickCount()|1u; nextTicket=receiver.ticket+1; }
 };
 State& state(){ static State s; return s; }
 void send(wtv::Control c){ auto b=wtv::control(c); CoopSendRawTo(c.to,b.data(),b.size()); }
 void sendDeployment(const wtv::Deployment& d){ if(!d.sequence) return; auto b=wtv::deploymentPacket(d); CoopSendRaw(b.data(),b.size()); }
 ID3D11Texture2D* texture; ID3D11ShaderResourceView* srv;
 }
-bool TvEnabled(){ Guard g; return state().enabled; }
-bool TvConsent(){ Guard g; return state().sender.consent; }
-void TvEnable(bool on){ Guard g; auto& s=state(); s.enabled=on; s.disabledAt=GetTickCount64(); if(!on) { if(s.receiver.target) send({CoopMyId(),s.receiver.target,s.receiver.ticket,0}); s.receiver.select(0); } }
-void TvAllow(bool on){ Guard g; auto& s=state(); if(!on) for(auto p:s.sender.subs) send({CoopMyId(),p.second.viewer,p.second.ticket,2}); s.sender.allow(on); }
-unsigned TvTarget(){ Guard g; auto& s=state(); return s.enabled?s.receiver.target:(GetTickCount64()-s.disabledAt<350?s.displayTarget:0); }
+bool TvExperimental(){ return GetCfg().experimentalTv; }
+bool TvEnabled(){ if(!TvExperimental()) return false; Guard g; return state().enabled; }
+bool TvConsent(){ if(!TvExperimental()) return false; Guard g; return state().sender.consent; }
+void TvEnable(bool on){ if(!TvExperimental()) return; Guard g; auto& s=state(); s.enabled=on; s.disabledAt=GetTickCount64(); if(!on) { if(s.receiver.target) send({CoopMyId(),s.receiver.target,s.receiver.ticket,0}); s.receiver.select(0); } }
+void TvAllow(bool on){ if(!TvExperimental()) return; Guard g; auto& s=state(); if(!on) for(auto p:s.sender.subs) send({CoopMyId(),p.second.viewer,p.second.ticket,2}); s.sender.allow(on); }
+unsigned TvTarget(){ if(!TvExperimental()) return 0; Guard g; auto& s=state(); return s.enabled?s.receiver.target:(GetTickCount64()-s.disabledAt<350?s.displayTarget:0); }
 bool TvDeployAction(unsigned target){
+    if(!TvExperimental()) return false;
     Guard g; auto& s=state(); uint64_t now=GetTickCount64(); s.deployments.me=CoopMyId();
     if(s.probing){ s.prober.cancel(); s.probing=false; s.probeTarget=0; s.restore=true; return true; }      // a second press while measuring cancels
     if(s.deployments.local().active){ bool ok=s.deployments.retract(now); if(ok) sendDeployment(s.deployments.local()); return ok; }
@@ -70,11 +72,12 @@ bool TvSeatedPose(const float eye[3]) {
     }
     return false;
 }
-void TvSeatRequest(){ seatRequest=true; }
-void TvSeatExit(){ seatExit=true; }
+void TvSeatRequest(){ if(TvExperimental()) seatRequest=true; }
+void TvSeatExit(){ if(TvExperimental()) seatExit=true; }
 bool TvSeated(){ return seated; }
 bool TvSeatAvailable(){ return seatAvailable; }
 void TvTick(const float camera[3],bool captureAllowed){
+    if(!TvExperimental()) return;      // off: no request, no deployment, no seat, nothing sent
     auto remotes=CoopGetRemotes(); std::vector<unsigned> alive; unsigned nearest=0; float distance=12*12;
     for(const auto& r:remotes) if(r.valid && r.ageMs<2000){
         alive.push_back(r.id); float d=0; for(int i=0;i<3;++i) d+=(r.pos[i]-camera[i])*(r.pos[i]-camera[i]);
@@ -165,7 +168,7 @@ void TvTick(const float camera[3],bool captureAllowed){
         if(!stream.requestAt || now-stream.requestAt>=500){ if(target!=CoopMyId()) send({CoopMyId(),target,stream.receiver.ticket,1}); stream.requestAt=now; }
     }
 }
-bool TvWanted(){ Guard g; auto& s=state(); s.sender.expire(GetTickCount64()); return s.capture && s.sender.consent && (!s.sender.subs.empty() || s.audience.count(CoopMyId())); }
+bool TvWanted(){ if(!TvExperimental()) return false; Guard g; auto& s=state(); s.sender.expire(GetTickCount64()); return s.capture && s.sender.consent && (!s.sender.subs.empty() || s.audience.count(CoopMyId())); }
 void TvCapture(const uint8_t* rgba,unsigned w,unsigned h){
     Guard g; auto& s=state(); if(!s.capture || !s.sender.due(GetTickCount64(),s.audience.count(CoopMyId())!=0) || !w || !h) return;
     LARGE_INTEGER start,end,freq; QueryPerformanceCounter(&start); QueryPerformanceFrequency(&freq);
@@ -187,6 +190,7 @@ void TvCapture(const uint8_t* rgba,unsigned w,unsigned h){
     ++s.sent; QueryPerformanceCounter(&end); s.maxCaptureUs=std::max(s.maxCaptureUs,unsigned((end.QuadPart-start.QuadPart)*1000000/freq.QuadPart));
 }
 void TvOnPacket(const uint8_t* p,size_t n){
+    if(!TvExperimental()) return;      // a player with TV features on is simply not answered
     Guard g; auto& s=state(); uint64_t now=GetTickCount64(); s.deployments.me=CoopMyId();
     if(n>=4 && !memcmp(p,"WTD2",4)){ s.deployments.packet(p,n,now); return; }
     wtv::Control c;

@@ -157,6 +157,7 @@ Cfg GuideSettings(bool migrate) {
         if (f) keys.*b.member = GetVal(*f).empty() ? b.initial : guide::MigrateDefault(b.config, guide::ParseKey(GetVal(*f)));      // (a key still on its old default shows the new default)
     }
     if (migrate) guide::MigrateF1(keys);
+    if (auto* f = ByKey("cfg:experimental_tv")) keys.experimentalTv = GetVal(*f) == "1";      // (the guide lists the TV keys only while the option is on)
     return keys;
 }
 void MigrateGuideKeys() {

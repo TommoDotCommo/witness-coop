@@ -5,6 +5,7 @@
 // Settings from witness_coop.cfg (next to the DLL), read once on first use, so it is safe to call from a hook that runs
 // before any thread of ours has started.
 struct Cfg {
+    bool experimentalTv = false;              // experimental_tv=1: the TV features (back TV, sky TV, audience seats, TV camera consent) run; 0: none of them runs, draws, is sent or listens, and their keys are free
     bool povTv = false, povTvConsent = false; // pov_tv=1: show the nearest back TV; pov_tv_consent=1: allow sending snapshots
     witness::Appearance appearance;
     std::wstring saveDir;   // save_dir=instance -> <dll folder>\appdata ; save_dir=<path> ; empty: the game's real save folder
