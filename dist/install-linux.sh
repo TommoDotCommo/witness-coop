@@ -238,7 +238,7 @@ proton_uninstall() {
 game_running() {    # any process with the game's exe as a command-line word (Proton shows the Windows path)
     for f in /proc/[0-9]*/cmdline; do
         pid=${f#/proc/}; pid=${pid%/cmdline}; [ "$pid" = "$$" ] && continue
-        if tr '\0' '\n' < "$f" 2>/dev/null | grep -a -q -E '(^|[\\/])witness64_d3d11\.exe$'; then return 0; fi      # an argument that IS the exe (not text that mentions it)
+        if tr '\0' '\n' 2>/dev/null < "$f" | grep -a -q -E '(^|[\\/])witness64_d3d11\.exe$'; then return 0; fi      # an argument that IS the exe (not text that mentions it)
     done
     return 1
 }
