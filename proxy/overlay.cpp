@@ -46,6 +46,7 @@ static const uintptr_t kPausedOld = 0x62DAC4;      // the first candidate, WRONG
 #include "social.h"
 #include "povui.h"
 #include "ui/player_panel.h"
+#include "ui/tag_layout.h"
 #include "pad.h"
 #include "../common/padlayer.h"
 #include <atomic>
@@ -447,8 +448,15 @@ static void PromptChip(float x, float y, const char* text, float k, UiColor acce
     UiRect(x - pad, y - 5 * k, tw + 2 * pad + 3 * k, th + 10 * k, uitheme::Surface); UiFrame(x - pad, y - 5 * k, tw + 2 * pad + 3 * k, th + 10 * k, uitheme::Border);
     UiRect(x - pad, y - 5 * k, 3 * k, th + 10 * k, accent); UiText(x + 3 * k, y, text, uitheme::Text, k);
 }
+// this frame's tags of talking players: where their voice bars go (render thread only: DrawNameTags fills it, SocialFrame reads it after it)
+struct TagBars { unsigned id; wtag::Box box; float k; }; static TagBars g_tagBars[16]; static int g_tagBarsN;
+bool OverlayTagBars(unsigned id, float* x, float* y, float* w, float* h, float* k) {
+    for (int i = 0; i < g_tagBarsN; ++i) if (g_tagBars[i].id == id) { *x = g_tagBars[i].box.x; *y = g_tagBars[i].box.y; *w = g_tagBars[i].box.w; *h = g_tagBars[i].box.h; *k = g_tagBars[i].k; return true; }
+    return false;
+}
 static void DrawNameTags(float W, float H) {
     if (!g_tagLockInit) { InitializeCriticalSection(&g_tagLock); g_tagLockInit = true; }
+    g_tagBarsN = 0;
     uintptr_t base = (uintptr_t)GetModuleHandleA(nullptr);
     const float* cam = (const float*)(base + kCamPos); const float* ang = (const float*)(base + kCamAng); ViewCamera(cam, ang);
     std::vector<TagInfo> now;
@@ -460,9 +468,11 @@ static void DrawNameTags(float W, float H) {
             t.onScreen = true; float col[3]; PlayerColor(rp.id, col);
             float k = std::max(1.0f, H / 1080.0f) * std::min(1.0f, std::max(0.7f, 10.0f / std::max(t.dist, 1.0f)));
             char b[64]; if (t.ping >= 0) snprintf(b, sizeof b, "%s  %d ms", t.name, t.ping); else snprintf(b, sizeof b, "%s  - ms", t.name);
-            float tw = UiTextWidth(b, k), th = UiLineHeight(k), x = (nx * 0.5f + 0.5f) * W - tw / 2, y = (0.5f - ny * 0.5f) * H - th;
-            UiRect(x - 5 * k, y - 3 * k, tw + 10 * k, th + 6 * k, Rgba(0, 0, 0, 0.55f)); UiRect(x - 5 * k, y + th + 3 * k, tw + 10 * k, 3 * k, Rgba(col[0], col[1], col[2], 1));
-            UiText(x, y, b, Rgba(col[0], col[1], col[2], 1), k);
+            float tw = UiTextWidth(b, k), th = UiLineHeight(k); bool talking = rp.speaking;      // talking: the voice bars go beside the ping, inside the box (ui/tag_layout.h; social.cpp animates them there)
+            wtag::Layout L = wtag::Compute((nx * 0.5f + 0.5f) * W, (0.5f - ny * 0.5f) * H, tw, th, k, talking);
+            UiRect(L.back.x, L.back.y, L.back.w, L.back.h, Rgba(0, 0, 0, 0.55f)); UiRect(L.under.x, L.under.y, L.under.w, L.under.h, Rgba(col[0], col[1], col[2], 1));
+            UiText(L.textX, L.textY, b, Rgba(col[0], col[1], col[2], 1), k);
+            if (talking && g_tagBarsN < 16) g_tagBars[g_tagBarsN++] = {rp.id, L.bars, k};
         }
         now.push_back(t);
     }
