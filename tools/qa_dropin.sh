@@ -42,7 +42,7 @@ start() {   # start <label>: a fresh log, the game, its scan; sets scanned, aliv
   sleep 10
   alive=$(tasklist.exe /FI "PID eq $pid" /NH 2>/dev/null | grep -c witness64)
   loaded=$(grep -c '^proxy loaded: ' "$d/witness_proxy.log" 2>/dev/null); loaded=${loaded:-0}
-  marker=$(tr -d '\r\n' < "$d/witness_chain_loaded.txt" 2>/dev/null)
+  marker=$(tr -d '\r\n' 2>/dev/null < "$d/witness_chain_loaded.txt")
   cp "$d/witness_proxy.log" "$work/proxy-$1.log" 2>/dev/null
   echo "$1: scanned=$scanned alive=$alive proxies_started=$loaded chain_marker_pid=${marker:-none} (game pid $pid)"
 }
