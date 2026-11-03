@@ -2,7 +2,7 @@
 // game folder and the game's own files stay untouched. Every export is a stub that loads the system's dsound.dll by full path
 // (GetSystemDirectory, never by bare name: that name is this file) on first call and jumps to the real function.
 // A dsound.dll that was in the game folder before the mod (another mod, an ASI loader) is kept as dsound.chain.dll and loaded
-// after this one for its own start-up work; the exports still go to the system copy (see README, "Other mods named dsound.dll").
+// after this one for its own start-up work; the exports still go to the system copy (README, Install: "Another mod named dsound.dll").
 // Nothing in DllMain blocks or does I/O (the loader lock): logging and the chain load run on a thread.
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
