@@ -91,6 +91,9 @@ if probe0 > 0:      # the free length along the camera's ray, from the depth the
     along = probe0 / max(.05, sum(f3[i] * off[i] for i in range(3)) / L)
     assert L <= along - 0.45 + 0.05, 'the camera is not clear of the first surface: %.2f m of %.2f free: %r' % (L, along, s)
 print('PASS the camera stands %.2f m in front of the player, %.2f m up, looking back (scale %.2f)' % (math.hypot(off[0], off[1]), off[2], s['scale']), flush=True)
+gv = s['game_view']      # the game's own main view (exe+0x649860), read as the game was about to draw: it must be the third-person camera
+assert dist(gv, view) < 0.05, 'the game did not draw from the third-person camera: its view stood at %r, ours at %r' % (gv, view[:3])
+print('PASS the game draws its world from the third-person camera (its own view struct)', flush=True)
 assert s['qerr'] < 0.01, 'the quaternion convention does not match the game: %r' % s['qerr']
 print('PASS the camera quaternion matches the game\'s own (difference %.5f)' % s['qerr'], flush=True)
 # The game's camera memory holds the third-person camera only while the game draws its world (by design); its logic runs outside that
@@ -138,7 +141,7 @@ send(da, ['button R down', 'button R up'])
 expect('a click brings the view back', lambda s: s['phase'] in ('out', 'off') and s['reason'] == 'clicked')
 expect('back in first person', lambda s: s['phase'] == 'off' and s['frame_view'] == 0, timeout=3)
 # 3) the emote ending brings it back (a one-shot: Wave, 2.6 s)
-send(da, ['emote 1'])
+send(da, ['emote 1'], .35); send(da, ['shot tp_swing'])
 expect('out for a one-shot', lambda s: s['phase'] in ('in', 'hold') and s['frame_view'] == 1)
 s = expect('the emote ends: back in first person', lambda s: s['phase'] == 'off' and s['frame_view'] == 0 and s['reason'] == 'emote_ended', timeout=6)
 for i in range(30):
@@ -150,4 +153,10 @@ starts = tp(da)['starts']; send(da, ['emote 2'], 1.5)
 s = tp(da); assert s['phase'] == 'off' and s['starts'] == starts and s['frame_view'] == 0, s
 send(da, ['tpforce cfg', 'emote 0'])
 print('PASS with the setting off the view stays first person', flush=True)
+# 5) a wall close in front (the panel A was put in front of, about 2.8 m ahead at the first heading): no room, the view stays first person
+send(da, ['tp %.5f %.5f %.5f %.5f 0' % (cx + 1.6 * math.cos(heading), cy + 1.6 * math.sin(heading), cz - 1.69, heading)], 1.5)
+send(da, ['emote 13'], .1)
+s = expect('a wall close in front: the view stays first person', lambda s: s['phase'] == 'off' and s['reason'] == 'blocked' and s['frame_view'] == 0, timeout=3)
+send(da, ['shot tp_blocked', 'emote 0'], .3)
+print('  (probe depths %s)' % s['probe'], flush=True)
 print('ALL OK', flush=True)

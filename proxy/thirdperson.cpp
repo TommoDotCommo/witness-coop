@@ -1,9 +1,12 @@
 // Third-person view while emoting: the game side (see thirdperson.h; the camera itself is core/thirdperson.h, tested game-free).
-// Build 11370412 (measured by disassembly, see the README): the game's main loop calls its world drawing, exe+0x1C8970 (no arguments),
-// from exe+0x696BD and exe+0x69A17. That function builds its view from the camera at exe+0x62D578 (position, then the x y z w
-// quaternion at +0xC), a copy of the camera at exe+0x6304C0 / +0x6304D0 the game rebuilds from the player every frame. While the view
-// is out, both call sites go through a small stub to RenderWorldHook, which puts the third-person camera into both copies, lets the game
-// draw, and puts the player's own camera back. Nothing is patched until the first emote with the setting on.
+// Build 11370412, found by disassembly and an in-process write watchpoint (tpwatch): every frame the main loop calls exe+0x2C9380, which
+// copies the player's camera (exe+0x6304C0 position, +0x6304D0 x y z w quaternion) into the camera the world drawing culls with
+// (exe+0x62D578) and builds the views the GPU draws with (main view at exe+0x649860: position, then its matrices; more at 0x649AB0 ...);
+// then it calls the world drawing exe+0x1C8970, which presents the frame from inside (exe+0x1C95B7). Both functions take no arguments and
+// are called from two places each (exe+0x69653 / 0x699AD and exe+0x696BD / 0x69A17). While the view is out, those calls go through the
+// mod: the views are built a second time from the third-person camera, the world is drawn with it, and afterwards the views are built again
+// from the player's camera, so the game's logic (puzzle aiming, the pose the others receive) keeps the player's own. Nothing is patched
+// until the first emote with the setting on.
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <cmath>
@@ -26,14 +29,15 @@ bool GamePaused();
 
 namespace {
 using namespace witness::tp;
-const uintptr_t kRenderWorld = 0x1C8970, kCallSites[2] = {0x696BD, 0x69A17};
+const uintptr_t kRenderWorld = 0x1C8970, kRenderCalls[2] = {0x696BD, 0x69A17}, kBuildViews = 0x2C9380, kViewCalls[2] = {0x69653, 0x699AD}, kMainView = 0x649860;
 const uintptr_t kCamPos = 0x6304C0, kCamQuat = 0x6304D0, kCamAng = 0x6303EC, kViewPos = 0x62D578, kViewQuat = 0x62D584;
 
 Cam g_cam;
 bool g_patched = false, g_patchFailed = false;
 unsigned g_hookCalls = 0, g_swapped = 0, g_selfDraws = 0, g_selfFrames = 0, g_firstPersonFrames = 0;
 bool g_viewUsed = false, g_frameView = false; float g_viewPos[3], g_viewAng[2];      // set by the hook; g_frameView: this Present's frame was drawn from it
-float g_qErr = -1, g_maxOffset = 0, g_lastOffset = 0;      // g_qErr: how far the game's own quaternion is from QuatFromYawPitch (a convention check, logged)
+float g_qErr = -1, g_maxOffset = 0, g_lastOffset = 0, g_gameView[3] = {0, 0, 0};      // g_gameView: where the game's own main view stood when it drew the last third-person frame
+View g_frameV; bool g_frameVValid = false, g_viewsSwapped = false;      // g_qErr: how far the game's own quaternion is from QuatFromYawPitch (a convention check, logged)
 volatile LONG g_clicks = 0, g_stateReq = 0; volatile LONG g_force = -1;      // g_force: test override of the setting (-1: the cfg's)
 unsigned g_lastSeq = 0; bool g_seqInit = false; ULONGLONG g_lastTick = 0;
 ProbeSet g_probe; bool g_probeOut = false; float g_probeDepth[5] = {0, 0, 0, 0, 0};
@@ -48,58 +52,74 @@ bool PlayerCamera(V3* eye, float* yaw, float* pitch) {
 }
 const char* PhaseName(Phase p) { switch (p) { case Phase::Probe: return "probe"; case Phase::In: return "in"; case Phase::Hold: return "hold"; case Phase::Out: return "out"; default: return "off"; } }
 
-// The game presents its frame from inside the world drawing (exe+0x1C95B7), so the mod's Present runs while the third-person camera is
-// still in place: ThirdPersonPresentBegin puts the player's camera back first. Other threads that read the camera (the pose sent to the
-// others, the voice listener) use ThirdPersonGen / ThirdPersonFixEye, a sequence lock: an odd generation means the swap is in place.
-volatile LONG g_gen = 0; float g_realCp[3], g_realCq[4], g_realVp[3], g_realVq[4];
+// The game presents from inside the world drawing, so the mod's Present runs while the third-person camera is still in place:
+// ThirdPersonPresentBegin puts the player's camera back first. Other threads that read the camera (the pose sent to the others, the voice
+// listener) use ThirdPersonGen / ThirdPersonFixEye, a sequence lock: an odd generation means the third-person camera is in place.
+volatile LONG g_gen = 0; float g_realCp[3], g_realCq[4];
 void RestoreReal() {
     if (!(g_gen & 1)) return;
-    memcpy((void*)(Base() + kCamPos), g_realCp, 12); memcpy((void*)(Base() + kCamQuat), g_realCq, 16); memcpy((void*)(Base() + kViewPos), g_realVp, 12); memcpy((void*)(Base() + kViewQuat), g_realVq, 16);
+    memcpy((void*)(Base() + kCamPos), g_realCp, 12); memcpy((void*)(Base() + kCamQuat), g_realCq, 16);
     InterlockedIncrement(&g_gen);
 }
-void RenderWorldHook() {
-    typedef void (*Fn)(); Fn fn = (Fn)(Base() + kRenderWorld);
-    ++g_hookCalls;
+void PutCamera(const View& v) {      // the third-person camera into the player's camera (odd generation while it is there)
+    float* cp = (float*)(Base() + kCamPos); float* cq = (float*)(Base() + kCamQuat);
+    memcpy(g_realCp, cp, 12); memcpy(g_realCq, cq, 16); InterlockedIncrement(&g_gen);
+    float p[3] = {v.pos.x, v.pos.y, v.pos.z}, q[4]; QuatFromYawPitch(v.yaw, v.pitch, q); memcpy(cp, p, 12); memcpy(cq, q, 16);
+}
+typedef void (*VoidFn)();
+void BuildViewsHook() {
+    VoidFn build = (VoidFn)(Base() + kBuildViews);
+    build();      // the game's own, from the player's camera
+    g_frameVValid = false;
     V3 eye; float yaw, pitch; View v;
-    float* cp = (float*)(Base() + kCamPos); float* cq = (float*)(Base() + kCamQuat); float* vp = (float*)(Base() + kViewPos); float* vq = (float*)(Base() + kViewQuat);
-    if (!g_cam.Active() || !PlayerCamera(&eye, &yaw, &pitch) || !g_cam.ViewFor(eye, yaw, pitch, &v)) { fn(); return; }
-    float q[4]; QuatFromYawPitch(yaw, pitch, q);
+    if (!g_cam.Active() || !PlayerCamera(&eye, &yaw, &pitch) || !g_cam.ViewFor(eye, yaw, pitch, &v)) return;
+    const float* cq = (const float*)(Base() + kCamQuat); float q[4]; QuatFromYawPitch(yaw, pitch, q);
     float e1 = 0, e2 = 0; for (int i = 0; i < 4; ++i) { e1 = fmaxf(e1, fabsf(q[i] - cq[i])); e2 = fmaxf(e2, fabsf(q[i] + cq[i])); }
-    g_qErr = fminf(e1, e2);      // the same rotation as the game's own (q and -q are one rotation)
-    memcpy(g_realCp, cp, 12); memcpy(g_realCq, cq, 16); memcpy(g_realVp, vp, 12); memcpy(g_realVq, vq, 16);
-    QuatFromYawPitch(v.yaw, v.pitch, q);
-    float p[3] = {v.pos.x, v.pos.y, v.pos.z};
-    memcpy(g_viewPos, p, 12); g_viewAng[0] = v.yaw; g_viewAng[1] = v.pitch; g_viewUsed = true; ++g_swapped;
+    g_qErr = fminf(e1, e2);      // QuatFromYawPitch is the game's own rotation (q and -q are one rotation)
+    PutCamera(v); build(); RestoreReal();      // the views and the culling camera now stand at the third-person camera
+    g_frameV = v; g_frameVValid = true; g_viewsSwapped = true;
     g_lastOffset = Len(Sub(v.pos, eye)); if (g_lastOffset > g_maxOffset) g_maxOffset = g_lastOffset;
-    InterlockedIncrement(&g_gen);      // odd: the swap is in place
-    memcpy(cp, p, 12); memcpy(cq, q, 16); memcpy(vp, p, 12); memcpy(vq, q, 16);
-    fn();
+}
+void RenderWorldHook() {
+    VoidFn draw = (VoidFn)(Base() + kRenderWorld);
+    ++g_hookCalls;
+    if (!g_frameVValid) { draw(); return; }
+    const float* mv = (const float*)(Base() + kMainView); memcpy(g_gameView, mv, 12);      // the view the game is about to draw with
+    g_viewPos[0] = g_frameV.pos.x; g_viewPos[1] = g_frameV.pos.y; g_viewPos[2] = g_frameV.pos.z; g_viewAng[0] = g_frameV.yaw; g_viewAng[1] = g_frameV.pitch; g_viewUsed = true; ++g_swapped;
+    PutCamera(g_frameV);      // (parts of the drawing read the player's camera itself)
+    draw();
     RestoreReal();
+    if (g_viewsSwapped) { ((VoidFn)(Base() + kBuildViews))(); g_viewsSwapped = false; }      // the views back to the player's camera
+    g_frameVValid = false;
 }
 
-// Both call sites of the world drawing go through a stub near the exe (a call reaches +-2 GB) to RenderWorldHook. Render thread only:
-// the game's loop is inside Present, so neither call is running. Refuses unless both are the expected `call exe+0x1C8970`.
+// A call site `call exe+target` is made to go through a stub near the exe (a call reaches +-2 GB) to the hook. Render thread only (the
+// game's loop is inside Present, so none of these calls is running). Refuses unless every site is the expected call.
+bool CheckCall(uintptr_t site, uintptr_t target) {
+    const unsigned char* c = (const unsigned char*)(Base() + site); if (!Readable(c, 5) || c[0] != 0xE8) return false;
+    int32_t rel; memcpy(&rel, c + 1, 4); return Base() + site + 5 + (intptr_t)rel == Base() + target;
+}
+bool Redirect(uintptr_t site, void* hook, unsigned char* stub) {
+    stub[0] = 0xFF; stub[1] = 0x25; memset(stub + 2, 0, 4); uint64_t to = (uint64_t)(uintptr_t)hook; memcpy(stub + 6, &to, 8);      // jmp [rip+0] -> hook
+    unsigned char* c = (unsigned char*)(Base() + site); intptr_t d = (intptr_t)stub - (intptr_t)(Base() + site + 5);
+    if (d > INT32_MAX || d < INT32_MIN) return false;
+    int32_t rel = (int32_t)d; DWORD old;
+    if (!VirtualProtect(c + 1, 4, PAGE_EXECUTE_READWRITE, &old)) return false;
+    memcpy(c + 1, &rel, 4); VirtualProtect(c + 1, 4, old, &old); return true;
+}
 bool PatchCalls() {
-    uintptr_t base = Base(), target = base + kRenderWorld;
-    for (uintptr_t site : kCallSites) {
-        const unsigned char* c = (const unsigned char*)(base + site); if (!Readable(c, 5) || c[0] != 0xE8) return false;
-        int32_t rel; memcpy(&rel, c + 1, 4); if (base + site + 5 + (intptr_t)rel != target) return false;
-    }
+    uintptr_t base = Base();
+    for (uintptr_t site : kRenderCalls) if (!CheckCall(site, kRenderWorld)) return false;
+    for (uintptr_t site : kViewCalls) if (!CheckCall(site, kBuildViews)) return false;
     unsigned char* stub = nullptr;
     for (uintptr_t a = (base & ~(uintptr_t)0xFFFF) - 0x10000; a > 0x10000 && base - a < 0x70000000; a -= 0x10000)
         if ((stub = (unsigned char*)VirtualAlloc((void*)a, 4096, MEM_RESERVE | MEM_COMMIT, PAGE_EXECUTE_READWRITE))) break;
     if (!stub) return false;
-    stub[0] = 0xFF; stub[1] = 0x25; memset(stub + 2, 0, 4); uint64_t to = (uint64_t)(uintptr_t)&RenderWorldHook; memcpy(stub + 6, &to, 8);      // jmp [rip+0] -> RenderWorldHook
-    FlushInstructionCache(GetCurrentProcess(), stub, 16);
-    for (uintptr_t site : kCallSites) {
-        unsigned char* c = (unsigned char*)(base + site); intptr_t d = (intptr_t)stub - (intptr_t)(base + site + 5);
-        if (d > INT32_MAX || d < INT32_MIN) return false;
-        int32_t rel = (int32_t)d; DWORD old;
-        if (!VirtualProtect(c + 1, 4, PAGE_EXECUTE_READWRITE, &old)) return false;
-        memcpy(c + 1, &rel, 4); VirtualProtect(c + 1, 4, old, &old);
-    }
-    FlushInstructionCache(GetCurrentProcess(), (void*)(base + kCallSites[0]), 0x400);
-    return true;
+    bool ok = true;
+    for (uintptr_t site : kViewCalls) ok = Redirect(site, (void*)&BuildViewsHook, stub) && ok;
+    for (uintptr_t site : kRenderCalls) ok = Redirect(site, (void*)&RenderWorldHook, stub + 32) && ok;
+    FlushInstructionCache(GetCurrentProcess(), stub, 64); FlushInstructionCache(GetCurrentProcess(), (void*)(base + kViewCalls[0]), 0x400);
+    return ok;
 }
 
 void WriteState() {
@@ -111,17 +131,44 @@ void WriteState() {
     const float* vp = (const float*)(Base() + kViewPos);
     fprintf(f, "{\"enabled\":%d,\"phase\":\"%s\",\"blend\":%.4f,\"reason\":\"%s\",\"scale\":%.4f,\"starts\":%u,\"returns\":%u,\"patched\":%d,\"patch_failed\":%d,"
                "\"hook_calls\":%u,\"swapped\":%u,\"frame_view\":%d,\"view\":[%.4f,%.4f,%.4f,%.4f,%.4f],\"eye\":[%.4f,%.4f,%.4f,%.4f,%.4f],"
-               "\"game_view_pos\":[%.4f,%.4f,%.4f],\"offset\":%.4f,\"max_offset\":%.4f,\"self_draws\":%u,\"self_frames\":%u,\"qerr\":%.6f,\"probe\":[%.3f,%.3f,%.3f,%.3f,%.3f]}",
+               "\"game_view_pos\":[%.4f,%.4f,%.4f],\"offset\":%.4f,\"max_offset\":%.4f,\"self_draws\":%u,\"self_frames\":%u,\"qerr\":%.6f,\"game_view\":[%.4f,%.4f,%.4f],\"probe\":[%.3f,%.3f,%.3f,%.3f,%.3f]}",
         (g_force >= 0 ? g_force != 0 : GetCfg().emoteThirdPerson) ? 1 : 0, PhaseName(g_cam.phase), g_cam.Active() ? witness::Ease(g_cam.s) : 0.0f, WhyName(g_cam.last), g_cam.scale,
         g_cam.starts, g_cam.returns, g_patched ? 1 : 0, g_patchFailed ? 1 : 0, g_hookCalls, g_swapped, g_frameView ? 1 : 0,
         g_viewPos[0], g_viewPos[1], g_viewPos[2], g_viewAng[0], g_viewAng[1], eye.x, eye.y, eye.z, yaw, pitch,
-        Readable(vp, 12) ? vp[0] : 0, Readable(vp, 12) ? vp[1] : 0, Readable(vp, 12) ? vp[2] : 0, g_frameView ? g_lastOffset : 0.0f, g_maxOffset, g_selfDraws, g_selfFrames, g_qErr,
+        Readable(vp, 12) ? vp[0] : 0, Readable(vp, 12) ? vp[1] : 0, Readable(vp, 12) ? vp[2] : 0, g_frameView ? g_lastOffset : 0.0f, g_maxOffset, g_selfDraws, g_selfFrames, g_qErr, g_gameView[0], g_gameView[1], g_gameView[2],
         g_probeDepth[0], g_probeDepth[1], g_probeDepth[2], g_probeDepth[3], g_probeDepth[4]);
     fclose(f); MoveFileExW(tmp, path, MOVEFILE_REPLACE_EXISTING);
 }
 } // namespace
 
-void ThirdPersonPresentBegin() { RestoreReal(); }
+// Diagnostic (finding which code writes a game address each frame): `tpwatch <rva>` arms a hardware write watchpoint (DR0, 4 bytes) on the
+// render thread; a vectored handler counts the instructions that wrote there; `tpwatch dump` logs them (as exe RVAs after the write).
+volatile DWORD g_renderTid = 0; struct WatchHit { uintptr_t rip, c1, c2; unsigned n; }; WatchHit g_hits[16]; volatile LONG g_hitCount = 0, g_watchTotal = 0;
+LONG CALLBACK WatchHandler(EXCEPTION_POINTERS* e) {
+    if (e->ExceptionRecord->ExceptionCode != EXCEPTION_SINGLE_STEP || !(e->ContextRecord->Dr6 & 1)) return EXCEPTION_CONTINUE_SEARCH;
+    uintptr_t rip = (uintptr_t)e->ExceptionRecord->ExceptionAddress - Base(); e->ContextRecord->Dr6 = 0;
+    if (InterlockedIncrement(&g_watchTotal) > 2000) e->ContextRecord->Dr7 = 0;      // enough: disarm
+    uintptr_t sp = (uintptr_t)e->ContextRecord->Rsp, c1 = 0, c2 = 0;      // two stack slots that hold return addresses when the write is in exe+0x2C8D50 (called directly / through exe+0x2C8D00)
+    if (!IsBadReadPtr((void*)(sp + 0xb8), 8)) c1 = *(uintptr_t*)(sp + 0xb8) - Base();
+    if (!IsBadReadPtr((void*)(sp + 0xf8), 8)) c2 = *(uintptr_t*)(sp + 0xf8) - Base();
+    for (LONG i = 0; i < g_hitCount; ++i) if (g_hits[i].rip == rip && g_hits[i].c1 == c1 && g_hits[i].c2 == c2) { ++g_hits[i].n; return EXCEPTION_CONTINUE_EXECUTION; }
+    if (g_hitCount < 16) { g_hits[g_hitCount].rip = rip; g_hits[g_hitCount].c1 = c1; g_hits[g_hitCount].c2 = c2; g_hits[g_hitCount].n = 1; ++g_hitCount; }
+    return EXCEPTION_CONTINUE_EXECUTION;
+}
+void WatchArm(uintptr_t rva) {
+    static PVOID veh; if (!veh) veh = AddVectoredExceptionHandler(1, WatchHandler);
+    HANDLE t = g_renderTid ? OpenThread(THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT | THREAD_SET_CONTEXT, FALSE, g_renderTid) : nullptr; if (!t) { Log("tpwatch: no render thread"); return; }
+    g_hitCount = 0; g_watchTotal = 0;
+    SuspendThread(t); CONTEXT c = {}; c.ContextFlags = CONTEXT_DEBUG_REGISTERS;
+    if (GetThreadContext(t, &c)) { c.Dr0 = Base() + rva; c.Dr7 = rva ? (1 | (1u << 16) | (3u << 18)) : 0; c.Dr6 = 0; SetThreadContext(t, &c); }
+    ResumeThread(t); CloseHandle(t);
+    char m[100]; snprintf(m, sizeof m, "tpwatch: write watch on exe+%#llx %s", (unsigned long long)rva, rva ? "armed" : "off"); Log(m);
+}
+void WatchDump() {
+    char m[160]; snprintf(m, sizeof m, "tpwatch: %ld writes, %ld places", (long)g_watchTotal, (long)g_hitCount); Log(m);
+    for (LONG i = 0; i < g_hitCount; ++i) { snprintf(m, sizeof m, "tpwatch:   after exe+%#llx  x%u  (stack +0xb8 exe+%#llx, +0xf8 exe+%#llx)", (unsigned long long)g_hits[i].rip, g_hits[i].n, (unsigned long long)g_hits[i].c1, (unsigned long long)g_hits[i].c2); Log(m); }
+}
+void ThirdPersonPresentBegin() { g_renderTid = GetCurrentThreadId(); RestoreReal(); }
 unsigned ThirdPersonGen() { return (unsigned)g_gen; }
 void ThirdPersonFixEye(unsigned before, float pos[3]) {
     unsigned now = (unsigned)g_gen; if (before == now && !(now & 1)) return;
@@ -154,7 +201,7 @@ void ThirdPersonFrame(float aspect) {
     else g_cam.Tick(dt, playing, eye, yaw, pitch, clicked, menu, enabled);
     if (g_cam.Active() && !g_patched) {
         g_patched = PatchCalls(); g_patchFailed = !g_patched;
-        Log(g_patched ? "thirdperson: the world drawing now goes through the mod (exe+0x696BD, exe+0x69A17)" : "thirdperson: the world drawing is not the expected call: the view stays first person");
+        Log(g_patched ? "thirdperson: the view building and the world drawing now go through the mod (exe+0x69653, 0x699AD, 0x696BD, 0x69A17)" : "thirdperson: the world drawing is not the expected call: the view stays first person");
         if (!g_patched) { g_cam.phase = Phase::Off; g_cam.s = 0; }
     }
     if (g_cam.phase != g_lastPhase) {
@@ -180,6 +227,8 @@ void ThirdPersonSelfDrawn(bool drawn) { if (drawn) ++g_selfDraws; }
 void ThirdPersonClick() { InterlockedExchange(&g_clicks, 1); }
 bool ThirdPersonCommand(const char* line) {
     if (!strncmp(line, "tpstate", 7)) { InterlockedExchange(&g_stateReq, 1); return true; }
+    if (!strncmp(line, "tpwatch dump", 12)) { WatchDump(); return true; }
+    { unsigned long long rva; if (sscanf(line, "tpwatch %llx", &rva) == 1) { WatchArm((uintptr_t)rva); return true; } }
     if (!strncmp(line, "tpforce on", 10)) { InterlockedExchange(&g_force, 1); return true; }
     if (!strncmp(line, "tpforce off", 11)) { InterlockedExchange(&g_force, 0); return true; }
     if (!strncmp(line, "tpforce cfg", 11)) { InterlockedExchange(&g_force, -1); return true; }
