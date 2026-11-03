@@ -38,18 +38,18 @@ VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 $(BUILD)/version.h: FORCE
 	@mkdir -p $(BUILD); printf '#define MOD_VERSION "%s"\n' '$(VERSION)' > $(BUILD)/version.h.new; cmp -s $(BUILD)/version.h.new $(BUILD)/version.h && rm $(BUILD)/version.h.new || mv $(BUILD)/version.h.new $(BUILD)/version.h
 FORCE:
-LMUTANTS = NO_MONITOR NO_VIDEO_WRITE NO_SAVE_WRITE CFG_DROP LOBBY_NO_CFG LOBBY_NO_RESULT LOBBY_NO_RESTORE LOBBY_NO_VOICE WIDE_COMBOS TAB_REPAINT_ALWAYS LONG_LABELS LOBBY_VERSION_ANY
+LMUTANTS = NO_MONITOR NO_VIDEO_WRITE NO_SAVE_WRITE CFG_DROP LOBBY_NO_CFG LOBBY_NO_RESULT LOBBY_NO_RESTORE LOBBY_NO_VOICE WIDE_COMBOS TAB_REPAINT_ALWAYS LONG_LABELS LOBBY_VERSION_ANY NO_SAVE_ON_CHANGE NO_STEAM_AT_START
 launcher-mutants: $(addsuffix .exe,$(addprefix $(BUILD)/witness_launcher_,$(LMUTANTS)))
-$(BUILD)/witness_launcher_%.exe: ../common/guide.h ../common/bindings.def ../proxy/config.h main.cpp update_win.h update.h ../dist/install-policy.h core.cpp core.h ../proxy/core/appearance.h theme.cpp theme.h lobby.cpp lobby.h lobby_win.cpp lobby_win.h lobby_steam.cpp lobby_steam.h ../common/steam_abi.h ../common/steam_ids.h ../proxy/voice/voice.cpp $(BUILD)/launcher_res.o ../proxy/progress/progress.cpp ../proxy/progress/progress_data.cpp ../proxy/progress/savemeta.cpp $(BUILD)/diag_ps1.h $(BUILD)/version.h ../common/diag_log.h ../common/crash_handler.h
-	$(CXX) -std=c++17 -O2 -I$(BUILD) -D_WIN32_WINNT=0x0601 -mwindows -municode -static -DWL_MUT_$* -o $@ main.cpp core.cpp theme.cpp lobby.cpp lobby_win.cpp lobby_steam.cpp ../proxy/voice/voice.cpp ../proxy/progress/progress.cpp ../proxy/progress/progress_data.cpp ../proxy/progress/savemeta.cpp $(BUILD)/launcher_res.o -lcomctl32 -lshell32 -lole32 -luuid -luxtheme -lws2_32 -lwinmm -lgdi32 -lmsimg32 -lwininet
+$(BUILD)/witness_launcher_%.exe: ../common/guide.h ../common/bindings.def ../proxy/config.h main.cpp shell.cpp shell.h ../common/handover.h update_win.h update.h ../dist/install-policy.h core.cpp core.h ../proxy/core/appearance.h theme.cpp theme.h lobby.cpp lobby.h lobby_win.cpp lobby_win.h lobby_steam.cpp lobby_steam.h ../common/steam_abi.h ../common/steam_ids.h ../proxy/voice/voice.cpp $(BUILD)/launcher_res.o ../proxy/progress/progress.cpp ../proxy/progress/progress_data.cpp ../proxy/progress/savemeta.cpp $(BUILD)/diag_ps1.h $(BUILD)/version.h ../common/diag_log.h ../common/crash_handler.h
+	$(CXX) -std=c++17 -O2 -I$(BUILD) -D_WIN32_WINNT=0x0601 -mwindows -municode -static -DWL_MUT_$* -o $@ main.cpp shell.cpp core.cpp theme.cpp lobby.cpp lobby_win.cpp lobby_steam.cpp ../proxy/voice/voice.cpp ../proxy/progress/progress.cpp ../proxy/progress/progress_data.cpp ../proxy/progress/savemeta.cpp $(BUILD)/launcher_res.o -lcomctl32 -lshell32 -lole32 -luuid -luxtheme -lws2_32 -lwinmm -lgdi32 -lmsimg32 -lwininet
 # the manifest plus a VERSIONINFO (ProductName "The Witness Co-op", the mod version): tools/versioninfo.py writes the version part
 $(BUILD)/launcher_res.o: launcher.rc launcher.manifest ../tools/versioninfo.py $(BUILD)/version.h
 	mkdir -p $(BUILD)
 	python3 -I ../tools/versioninfo.py '$(VERSION)' witness_launcher.exe 'The Witness Co-op launcher' $(BUILD)/launcher_version.rc
 	{ cat launcher.rc; cat $(BUILD)/launcher_version.rc; } > $(BUILD)/launcher_all.rc
 	x86_64-w64-mingw32-windres -I . $(BUILD)/launcher_all.rc -o $@
-$(BUILD)/witness_launcher.exe: ../common/guide.h ../common/bindings.def ../proxy/config.h main.cpp update_win.h update.h ../dist/install-policy.h core.cpp core.h ../proxy/core/appearance.h theme.cpp theme.h lobby.cpp lobby.h lobby_win.cpp lobby_win.h lobby_steam.cpp lobby_steam.h ../common/steam_abi.h ../common/steam_ids.h ../proxy/voice/voice.cpp $(BUILD)/launcher_res.o ../proxy/progress/progress.cpp ../proxy/progress/progress_data.cpp ../proxy/progress/savemeta.cpp $(BUILD)/diag_ps1.h $(BUILD)/version.h ../common/diag_log.h ../common/crash_handler.h
-	$(CXX) -std=c++17 -O2 -Wall -I$(BUILD) -D_WIN32_WINNT=0x0601 -mwindows -municode -static -o $@ main.cpp core.cpp theme.cpp lobby.cpp lobby_win.cpp lobby_steam.cpp ../proxy/voice/voice.cpp ../proxy/progress/progress.cpp ../proxy/progress/progress_data.cpp ../proxy/progress/savemeta.cpp $(BUILD)/launcher_res.o -lcomctl32 -lshell32 -lole32 -luuid -luxtheme -lws2_32 -lwinmm -lgdi32 -lmsimg32 -lwininet
+$(BUILD)/witness_launcher.exe: ../common/guide.h ../common/bindings.def ../proxy/config.h main.cpp shell.cpp shell.h ../common/handover.h update_win.h update.h ../dist/install-policy.h core.cpp core.h ../proxy/core/appearance.h theme.cpp theme.h lobby.cpp lobby.h lobby_win.cpp lobby_win.h lobby_steam.cpp lobby_steam.h ../common/steam_abi.h ../common/steam_ids.h ../proxy/voice/voice.cpp $(BUILD)/launcher_res.o ../proxy/progress/progress.cpp ../proxy/progress/progress_data.cpp ../proxy/progress/savemeta.cpp $(BUILD)/diag_ps1.h $(BUILD)/version.h ../common/diag_log.h ../common/crash_handler.h
+	$(CXX) -std=c++17 -O2 -Wall -I$(BUILD) -D_WIN32_WINNT=0x0601 -mwindows -municode -static -o $@ main.cpp shell.cpp core.cpp theme.cpp lobby.cpp lobby_win.cpp lobby_steam.cpp ../proxy/voice/voice.cpp ../proxy/progress/progress.cpp ../proxy/progress/progress_data.cpp ../proxy/progress/savemeta.cpp $(BUILD)/launcher_res.o -lcomctl32 -lshell32 -lole32 -luuid -luxtheme -lws2_32 -lwinmm -lgdi32 -lmsimg32 -lwininet
 .PHONY: launcher
 
 # the lobby (game-free): the same kind of test and mutants
@@ -79,6 +79,21 @@ crash-test: $(BUILD)/crash-test.exe $(addsuffix .exe,$(addprefix $(BUILD)/crash-
 	cd $(BUILD) && ./crash-test.exe crash-out
 	@for m in $(CRASH_MUTANTS); do rm -rf $(BUILD)/crash-mut-$$m; mkdir -p $(BUILD)/crash-mut-$$m; if (cd $(BUILD) && ./crash-mutant-$$m.exe crash-mut-$$m) >/dev/null 2>&1; then echo "MUTANT crash $$m SURVIVED (the test cannot fail for it)"; exit 1; else echo "crash mutant $$m killed"; fi; done
 .PHONY: crash-test
+
+# the launcher's shape (shell.h: tabs, settings rows, key capture, pad navigation, hints) and the Steam start decision (common/handover.h): game-free, with mutants
+SHSRC = shell.cpp shell_test.cpp core.cpp ../proxy/progress/savemeta.cpp ../proxy/progress/progress.cpp ../proxy/progress/progress_data.cpp
+SHELL_MUTANTS = SHELL_MUT_ALLOW_F1 SHELL_MUT_PAD_LEVEL HANDOVER_MUT_IGNORE_SESSION SHELL_MUT_TYPED_VOLUME SHELL_MUT_PLAYER_NUMBER
+$(BUILD)/shell-test.exe: $(SHSRC) shell.h core.h ../common/handover.h ../common/guide.h ../common/bindings.def ../proxy/config.h
+	mkdir -p $(BUILD)
+	$(CXX) -std=c++17 -O2 -Wall -Wextra -static -o $@ $(SHSRC)
+$(BUILD)/shell-mutant-%.exe: $(SHSRC) shell.h core.h ../common/handover.h ../common/guide.h ../common/bindings.def ../proxy/config.h
+	mkdir -p $(BUILD)
+	$(CXX) -std=c++17 -O2 -Wno-unused-parameter -static -D$* -o $@ $(SHSRC)
+shell-test: $(BUILD)/shell-test.exe $(addsuffix .exe,$(addprefix $(BUILD)/shell-mutant-,$(SHELL_MUTANTS)))
+	$(BUILD)/shell-test.exe
+	@for m in $(SHELL_MUTANTS); do if $(BUILD)/shell-mutant-$$m.exe >/dev/null; then echo "MUTANT $$m SURVIVED (the test cannot fail for it)"; exit 1; else echo "shell mutant $$m killed"; fi; done
+.PHONY: shell-test
+test: shell-test
 
 # the self-update (update.h, ported from the MDK2 launcher): game-free, with source mutants (tools/test_launcher_update.py)
 update-test:

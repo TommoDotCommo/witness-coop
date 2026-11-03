@@ -2,13 +2,13 @@
 
 Players on different networks meet in a **Steam lobby** and their games talk **through Steam**: Steam finds a direct path when there is one and
 relays the traffic through its own servers when there is not, so nobody forwards a port. Direct UDP (an address, a port and a code) stays for a LAN
-and for the test lab: "Host direct (LAN)" in the launcher's Lobby tab. A game never switches from Steam to UDP by itself.
+and for the test lab: *Host a game*, *Direct* on the launcher's Play tab. A game never switches from Steam to UDP by itself.
 
 ## What the player does
 
-1. Start Steam and log in. Open `witness_launcher.exe` (in the game folder), Lobby tab.
-2. The host clicks **Host on Steam**. The launcher creates a friends-only Steam lobby for 16 players and shows its number.
-3. The host invites: **Invite (overlay)** opens Steam's invite dialog when the overlay is available to the launcher; **Invite friend** sends a
+1. Start Steam and log in. Press Play on The Witness in Steam (it opens the launcher) or open `witness_launcher.exe` in the game folder; Play tab.
+2. The host chooses **Host a game**, *Through Steam*, and clicks **Open lobby**. The launcher creates a friends-only Steam lobby for 16 players and shows its number.
+3. The host invites (Invite, in the lobby's right column): **Steam overlay** opens Steam's invite dialog when the overlay is available to the launcher; **Invite friend** sends a
    Steam chat invite to the friend picked in the list (online friends; no overlay needed); or the host reads out the lobby number.
 4. A friend accepts the invite in Steam (chat invite, or **Join Game** on the host in the friends list). If the launcher is open it joins at once.
    If nothing is open, Steam starts The Witness with `+connect_lobby <number>`; the mod sees that, starts the launcher with the same words and closes
@@ -101,9 +101,9 @@ own SteamID is refused and the game plays alone, saying why. Up to 15 peers (16 
 
 About 30 minutes. Both: Steam running and online, The Witness installed from Steam, the same mod release installed with `Witness-Coop-Setup.exe`.
 
-1. Both: open `witness_launcher.exe` from the game folder (not from Steam). Settings page: set your name. Lobby tab.
-2. Host: click **Host on Steam**. Expect "Hosting a Steam lobby (number ...)". Note the number.
-3. Host: click **Invite (overlay)**. Note whether Steam's invite dialog appears (yes / no / where). Then pick the friend in the list next to it and
+1. Both: open the launcher (Play in Steam, or `witness_launcher.exe` from the game folder). Play tab: set your name.
+2. Host: choose **Host a game**, *Through Steam*, click **Open lobby**. Expect "Hosting a Steam lobby (number ...)". Note the number.
+3. Host: click **Steam overlay**. Note whether Steam's invite dialog appears (yes / no / where). Then pick the friend in the list next to it and
    click **Invite friend**. Expect "Invite sent through Steam chat".
 4. Friend, with the launcher **closed**: accept the invite in Steam's chat. Expect Steam to start The Witness, the game to close at once and the
    launcher to open in the host's lobby. Note what happened.

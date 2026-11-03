@@ -11,7 +11,7 @@ hair geometry and outfit pieces remain shared. This keeps cloth clearance, eye
 alignment, skeleton and gait identical for every palette combination. No model
 per combination is shipped. Further geometry options need their own fit coverage.
 
-The launcher's Appearance page saves `appearance_<feature>=0|1|2|3`. Missing values use the original palette; invalid entries are ignored. In game, open chat and enter
+The launcher's Settings, Players and interface (the *Your ... colour* rows), saves `appearance_<feature>=0|1|2|3`. Missing values use the original palette; invalid entries are ignored. In game, open chat and enter
 `/appearance coat 2` (or any feature below); this is a local command, not a chat
 message sent to other players. Changes apply for this session; use the launcher
 for persistent choices. Existing game saves and historical character metadata

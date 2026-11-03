@@ -45,6 +45,7 @@ static LRESULT CALLBACK ButtonProc(HWND h, UINT m, WPARAM w, LPARAM l, UINT_PTR,
         } else {
             bool primary = type == BS_DEFPUSHBUTTON; COLORREF fill = primary ? (dis ? kSurface2 : (down ? kLine : kAccent)) : (down ? kSurface : (hot ? kSurface2 : kSurface)), edge = primary ? fill : (dis ? kSurface2 : (hot ? kAccent : kMuted));
             HBRUSH fb = CreateSolidBrush(fill); HPEN pen = CreatePen(PS_SOLID, 1, edge); HGDIOBJ op = SelectObject(mem, pen), obr = SelectObject(mem, fb); RoundRect(mem, rc.left, rc.top, rc.right, rc.bottom, 6, 6); SelectObject(mem, op); SelectObject(mem, obr); DeleteObject(pen); DeleteObject(fb);
+            if (GetFocus() == h && !dis) { HPEN fp = CreatePen(PS_SOLID, 2, primary ? kLine : kAccent); HGDIOBJ o1 = SelectObject(mem, fp), o2 = SelectObject(mem, GetStockObject(NULL_BRUSH)); RoundRect(mem, rc.left + 1, rc.top + 1, rc.right - 1, rc.bottom - 1, 6, 6); SelectObject(mem, o1); SelectObject(mem, o2); DeleteObject(fp); }      // the focus (keyboard and pad users see where they are)
             SelectObject(mem, g_bold); SetTextColor(mem, primary ? (dis ? kMuted : kBg) : (dis ? kMuted : kText)); DrawTextW(mem, text, -1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
         }
         BitBlt(dc, 0, 0, rc.right, rc.bottom, mem, 0, 0, SRCCOPY); SelectObject(mem, ob); DeleteObject(bmp); DeleteDC(mem); EndPaint(h, &ps); return 0;

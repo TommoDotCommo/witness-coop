@@ -1,5 +1,5 @@
 # T2 check of the launcher window, run with Windows Python: starts witness_launcher.exe on a game folder, sets controls with window messages (what a click and a typed value do),
-# presses Save settings, and prints what the files on disk hold; with `launch` also moves the launcher to a monitor other than the primary one, presses Continue, prints the pid of
+# sends the apply command (what every change does since settings save on change), and prints what the files on disk hold; with `launch` also moves the launcher to a monitor other than the primary one, presses Continue, prints the pid of
 # the game it started and checks that the game's window opens on the launcher's monitor (with one monitor that check is printed as SKIP).
 # usage: wlauncher.py <launcher exe> <game dir> <dump file> <files|launch>      (prints lines: CHECK <ok|FAILED> <name> | <detail>, GAMEPID <n>)
 import ctypes, ctypes.wintypes as wt, os, re, struct, subprocess, sys, time, json
@@ -42,17 +42,23 @@ for l in open(dump):
     i, k = l.split(None, 1); keys[k.strip()] = int(i)
 kids = children(main)
 def ctl(k): return kids[keys[k]]
+SLIDER = {'cfg:cap_fps': (0, 1), 'opt:mouse_speed_3d': (1, 0.5), 'opt:user_fov_vertical': (30, 1)}      # sliders: (minimum, step) as in launcher/shell.cpp
+TBM_GETPOS, TBM_SETPOS = 0x400, 0x405
 def setv(k, v):
     h = ctl(k); cls = ctypes.create_unicode_buffer(40); u.GetClassNameW(h, cls, 40)
-    if cls.value == 'Button': u.SendMessageW(h, BM_SETCHECK, 1 if v else 0, 0)
+    if cls.value == 'msctls_trackbar32': mn, st = SLIDER[k]; u.SendMessageW(h, TBM_SETPOS, 1, int(round((float(v) - mn) / st)))
+    elif cls.value == 'Button' and k.startswith('cfg:key_'): settext(h, str(v))      # a key is a button that shows the key's name
+    elif cls.value == 'Button': u.SendMessageW(h, BM_SETCHECK, 1 if v else 0, 0)
     elif cls.value == 'ComboBox': u.SendMessageW(h, CB_SETCURSEL, int(v), 0)
     else: settext(h, str(v))
 def getv(k):
     h = ctl(k); cls = ctypes.create_unicode_buffer(40); u.GetClassNameW(h, cls, 40)
+    if cls.value == 'msctls_trackbar32': mn, st = SLIDER[k]; x = mn + u.SendMessageW(h, TBM_GETPOS, 0, 0) * st; return int(x) if x == int(x) else x
+    if cls.value == 'Button' and k.startswith('cfg:key_'): return text(h)
     if cls.value == 'Button': return u.SendMessageW(h, BM_GETCHECK, 0, 0)
     if cls.value == 'ComboBox': return u.SendMessageW(h, CB_GETCURSEL, 0, 0)
     return text(h)
-def press(k): u.SendMessageW(main, WM_COMMAND, keys[k], ctl(k))      # BN_CLICKED = 0 in the high word
+def press(k): u.SendMessageW(main, WM_COMMAND, keys[k], kids.get(keys[k], 0))      # BN_CLICKED = 0 in the high word (apply and launch are commands without a button: settings save on change)
 
 cfg_path = os.path.join(gdir, 'witness_coop.cfg'); saves = os.path.join(gdir, 'appdata', 'The Witness')
 def newest_save():
@@ -68,13 +74,13 @@ check(float(getv('opt:mouse_speed_3d')) == struct.unpack('<f', opt(save0, 'mouse
 
 # a wrong value is refused and nothing is written
 vpath = os.path.join(saves, 'Launcher.variables'); vbefore = open(vpath).read() if os.path.exists(vpath) else None
-setv('vid:resolution', 4); setv('vid:customW', 10); press('apply'); time.sleep(0.3)
-check((open(vpath).read() if os.path.exists(vpath) else None) == vbefore, 'a custom width of 10 is refused and Launcher.variables is not touched', text(ctl('status')))
-check(open(cfg_path).read() == cfg0, 'a refused save leaves the cfg as it was')
+listen0 = getv('cfg:listen'); setv('cfg:listen', '99999'); press('apply'); time.sleep(0.3)
+check((open(vpath).read() if os.path.exists(vpath) else None) == vbefore, 'a game port of 99999 is refused and Launcher.variables is not touched', text(ctl('status')))
+check(open(cfg_path).read() == cfg0, 'a refused save leaves the cfg as it was'); setv('cfg:listen', listen0)
 
 # the real edit
-vals = {'vid:renderProfile': 2, 'vid:fullscreen': 0, 'vid:vsync': 1, 'vid:highdpi': 0, 'vid:resolution': 4, 'vid:customW': 1366, 'vid:customH': 768, 'vid:multisampling': 3, 'vid:shading': 0, 'vid:reflection': 1, 'vid:texture': 2, 'vid:textureDetail': 1, 'vid:geometry': 0,
-        'cfg:cap_fps': 45, 'cfg:name': 'Launcher Test', 'cfg:key_chat': 'y', 'cfg:launcher_no_sound': 0,
+vals = {'vid:renderProfile': 2, 'vid:fullscreen': 0, 'vid:vsync': 1, 'vid:highdpi': 0, 'vid:resolution': 4, 'vid:customSize': 2, 'vid:multisampling': 3, 'vid:shading': 0, 'vid:reflection': 1, 'vid:texture': 2, 'vid:textureDetail': 1, 'vid:geometry': 0,
+        'cfg:cap_fps': 45, 'cfg:name': 'Launcher Test', 'cfg:key_chat': 'U', 'cfg:launcher_no_sound': 0,
         'opt:mouse_speed_3d': '12.5', 'opt:user_fov_vertical': '70', 'opt:invert_y_axis': 1}
 for k, v in vals.items(): setv(k, v)
 settext(ctl('cfgmulti:peer'), '7,127.0.0.1,47100\r\n8,10.0.0.2,47101')
@@ -86,7 +92,7 @@ want_video = ':/launcher\nrender_profile 2\nfullscreen false\nvsync true\nhighdp
 got = open(vpath).read() if os.path.exists(vpath) else ''
 check(got == want_video, 'Launcher.variables holds exactly what was chosen, in the game\'s own format', status if got != want_video else '')
 cfg1 = open(cfg_path).read(); d1 = dict(l.split('=', 1) for l in cfg1.splitlines() if '=' in l and not l.startswith('#')); d0 = dict(l.split('=', 1) for l in cfg0.splitlines() if '=' in l and not l.startswith('#'))
-check(d1.get('name') == 'Launcher Test' and d1.get('cap_fps') == '45' and d1.get('key_chat') == 'Y', 'the cfg has the new name, frame limit and key (the key upper-cased)', {k: d1.get(k) for k in ('name', 'cap_fps', 'key_chat')})
+check(d1.get('name') == 'Launcher Test' and d1.get('cap_fps') == '45' and d1.get('key_chat') == 'U', 'the cfg has the new name, frame limit and key', {k: d1.get(k) for k in ('name', 'cap_fps', 'key_chat')})
 check(re.findall(r'^peer=(.*)$', cfg1, re.M) == ['7,127.0.0.1,47100', '8,10.0.0.2,47101'], 'the other players are the lines typed', re.findall(r'^peer=(.*)$', cfg1, re.M))
 lost = [k for k in d0 if k not in d1 and k not in ('peer', 'cap_fps', 'launcher_no_sound')]
 check(not lost, 'every other line of the cfg is still there (id, listen, save_dir, dev_menu, ...)', lost)

@@ -39,7 +39,7 @@ def start():
     try: os.remove(dump)
     except OSError: pass
     si = subprocess.STARTUPINFO(); si.dwFlags |= subprocess.STARTF_USESHOWWINDOW; si.wShowWindow = 4
-    proc = subprocess.Popen([exe, '--dir', gdir, '--dump-controls', dump, '--no-activate', '--page', '8'], startupinfo=si)
+    proc = subprocess.Popen([exe, '--dir', gdir, '--dump-controls', dump, '--no-activate', '--page', '2', '--section', '1'], startupinfo=si)
     deadline = time.time() + 15; main = None
     while time.time() < deadline and not (main and os.path.exists(dump)):
         ws = windows(proc.pid); main = ws[0] if ws else None; time.sleep(0.2)
@@ -49,7 +49,7 @@ def start():
     @EnumProc
     def cb(h, l): kids[u.GetDlgCtrlID(h)] = h; return True
     u.EnumChildWindows(main, cb, 0)
-    return main, {k: kids[ids[k]] for k in KEYS}, kids[ids['apply']]
+    return main, {k: kids[ids[k]] for k in KEYS}, ids['apply']      # (apply is a command without a button: settings save on change)
 
 def selections(controls): return [u.SendMessageW(h, CB_GETCURSEL, 0, 0) for h in controls.values()]
 
@@ -61,7 +61,7 @@ try:
     wanted = [2, 3, 1, 2, 3, 1, 2, 3]
     for h, value in zip(controls.values(), wanted): u.SendMessageW(h, CB_SETCURSEL, value, 0)
     check('all appearance dropdowns accept independent choices', selections(controls) == wanted, selections(controls))
-    u.SendMessageW(main, WM_COMMAND, u.GetDlgCtrlID(apply), apply); time.sleep(0.7)
+    u.SendMessageW(main, WM_COMMAND, apply, 0); time.sleep(0.7)
     cfg = open(cfg_path).read()
     check('Apply writes every appearance choice', all(('appearance_%s=%d' % kv) in cfg for kv in zip(NAMES, wanted)))
     r = subprocess.run([sys.executable, '-I', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'wwinshot.py'),

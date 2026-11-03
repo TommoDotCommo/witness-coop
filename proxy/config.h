@@ -53,6 +53,7 @@ struct Cfg {
     bool runUnfocusedOldByte = false;      // test mutant run_unfocused_old_byte=1: run_unfocused sets the game's 'window is active' byte (it then grabs the real mouse in every window: the way it was first done)
     bool runUnfocused = false;      // run_unfocused=1: the game keeps running at full speed (not the ~10 fps of a background window) when its window is not active; the keyboard and mouse still only reach the window that has the focus
     bool noSeeThrough = false; float ghostAlpha = 0.22f;      // see_through=0: players stay solid when they are in the way of a puzzle; ghost_alpha=: how see-through they become (ghost/ghost.h)
+    bool showLauncher = true;      // show_launcher=0: Play in Steam starts the game itself instead of the co-op launcher (hold Shift while it starts to get the launcher; common/handover.h)
     bool radioEnabled = true; // radio_enabled=0: hide and disable the handheld radio
     bool noRadioView = false, noRadioPose = false; // test mutants: omit the view model / right-arm overlay
     std::string voiceChannel = "proximity";      // voice_channel=proximity|radio|global|direct:<player id>: who hears this player and how (voice/voice.h)

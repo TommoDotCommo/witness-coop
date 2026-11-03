@@ -1,0 +1,116 @@
+# T1 check of Play in Steam (common/handover.h, co-op standard K1), run with Windows Python (tools/qa_steam_start.py runs it). The game is started the way Steam
+# starts it: with Steam's environment (SteamAppId, SteamGameId) and no launcher session. A) it must hand over: witness_launcher.exe beside it starts, the game
+# process ends before it opens a window. B) the launcher's own game (Play solo there) must stay: it carries WITNESS_COOP_LAUNCHER, it inherited Steam's
+# environment through the launcher (one Steam launch), and it is still running 25 s later. C) a game started without Steam's environment (the test tools) stays.
+# Evidence is process state (alive / ended, read with OpenProcess) and the launcher's state file; the proxy log only supplies pids and the decision's inputs.
+# usage: wsteamstart.py <game dir> <run dir> <rect "x y w h">     (writes pidA.txt, pidL.txt, pidB.txt, pidC.txt in <run dir> for registration)
+import ctypes, ctypes.wintypes as wt, os, re, subprocess, sys, time
+gdir, run, rect = sys.argv[1], sys.argv[2], sys.argv[3]
+here = os.path.dirname(os.path.abspath(__file__))
+LOG = os.path.join(gdir, 'witness_proxy.log')
+k32 = ctypes.WinDLL('kernel32', use_last_error=True); k32.OpenProcess.restype = wt.HANDLE
+ok = True
+def check(name, cond, detail=''):
+    global ok; ok = ok and bool(cond); print('  %-104s %s  (%s)' % (name, 'ok' if cond else 'FAILED', str(detail)[:240]), flush=True)
+def alive(pid):
+    h = k32.OpenProcess(0x1000, False, int(pid))      # PROCESS_QUERY_LIMITED_INFORMATION
+    if not h: return False
+    code = wt.DWORD(); k32.GetExitCodeProcess(h, ctypes.byref(code)); k32.CloseHandle(h); return code.value == 259      # STILL_ACTIVE
+LOGS = os.path.join(os.environ.get('LOCALAPPDATA', ''), 'witness-coop', 'logs')      # each run's own log (common/diag_log.h), named by its pid
+def log_text(pid=None):
+    paths = [LOG]
+    if pid:
+        try: paths = [os.path.join(LOGS, f) for f in sorted(os.listdir(LOGS)) if f.endswith('_p%d.log' % pid)][-1:] or [LOG]
+        except OSError: pass
+    try: return open(paths[0], errors='ignore').read()
+    except OSError: return ''
+def fresh_log():      # each game rewrites the log when it starts: the old one goes, so a match is from the new game
+    for _ in range(20):
+        try: os.remove(LOG); return
+        except FileNotFoundError: return
+        except OSError: time.sleep(0.5)
+def wait_re(pattern, secs, after=0, pid=None):
+    end = time.time() + secs
+    while time.time() < end:
+        m = re.search(pattern, log_text(pid)[after:])
+        if m: return m
+        time.sleep(0.3)
+    return None
+class PE(ctypes.Structure): _fields_ = [('dwSize', wt.DWORD), ('cntUsage', wt.DWORD), ('pid', wt.DWORD), ('heap', ctypes.c_void_p), ('mod', wt.DWORD), ('thr', wt.DWORD), ('ppid', wt.DWORD), ('pri', ctypes.c_long), ('flags', wt.DWORD), ('exe', ctypes.c_wchar * 260)]
+k32.CreateToolhelp32Snapshot.restype = ctypes.c_void_p; k32.Process32FirstW.argtypes = [ctypes.c_void_p, ctypes.c_void_p]; k32.Process32NextW.argtypes = [ctypes.c_void_p, ctypes.c_void_p]; k32.CloseHandle.argtypes = [ctypes.c_void_p]
+def game_children(parent):      # the games a process started (the launcher's game is found by its parent, not from the log, so it is always registered)
+    snap = k32.CreateToolhelp32Snapshot(2, 0); pe = PE(); pe.dwSize = ctypes.sizeof(PE); out = []; more = k32.Process32FirstW(snap, ctypes.byref(pe))
+    while more:
+        if pe.ppid == parent and pe.exe.lower() == 'witness64_d3d11.exe': out.append(pe.pid)
+        more = k32.Process32NextW(snap, ctypes.byref(pe))
+    k32.CloseHandle(snap); return out
+def kill(pid):
+    if pid and alive(pid): subprocess.run(['taskkill', '/PID', str(pid), '/F'], capture_output=True)
+def place(pid):
+    x, y, w, h = rect.split(); subprocess.run([sys.executable, '-I', os.path.join(here, 'wplace.py'), str(pid), x, y, w, h], capture_output=True, timeout=60)
+statf, cmdf = os.path.join(run, 'steamstart_stat.txt'), os.path.join(run, 'steamstart_cmd.txt')
+for f in (LOG, statf, cmdf, os.path.join(gdir, 'witness_cmd.txt')):
+    try: os.remove(f)
+    except OSError: pass
+cfg = 'save_dir=instance\nshare_zip=1\nforce_active=1\ncap_fps=30\nvoice_mode=off\nvoice_mute_output=1\nname=Alpha\nlisten=%s\n' % os.environ.get('WITNESS_PORT1', '47001')
+open(os.path.join(gdir, 'witness_coop.cfg'), 'w').write(cfg)
+base = {k: v for k, v in os.environ.items() if k.upper() not in ('STEAMAPPID', 'STEAMGAMEID', 'WITNESS_COOP_LAUNCHER')}
+si = subprocess.STARTUPINFO(); si.dwFlags = 1; si.wShowWindow = 4      # SW_SHOWNOACTIVATE
+exe = os.path.join(gdir, 'witness64_d3d11.exe')
+launcher_pid = game_b = game_c = None
+try:
+    # A) as Steam starts it
+    print('A) the game started with Steam\'s environment and no launcher session', flush=True)
+    env = dict(base, SteamAppId='210970', SteamGameId='210970', WITNESS_LAUNCHER_STAT_FILE=statf, WITNESS_LAUNCHER_CMD_FILE=cmdf)
+    g = subprocess.Popen([exe], cwd=gdir, env=env, startupinfo=si); open(os.path.join(run, 'pidA.txt'), 'w').write(str(g.pid))
+    m = wait_re(r'handover: the launcher runs \(pid (\d+)\)', 60)
+    if m: launcher_pid = int(m[1]); open(os.path.join(run, 'pidL.txt'), 'w').write(str(launcher_pid))
+    dec = wait_re(r'handover: steam (\d) launcher_session (\d).*-> (\S+)', 5, pid=g.pid)
+    check('A1. the decision saw Steam and no launcher session', dec and dec[1] == '1' and dec[2] == '0' and dec[3] == 'launcher', dec and dec[0])
+    end = time.time() + 20
+    while time.time() < end and g.poll() is None: time.sleep(0.2)
+    check('A2. the game Steam started has ended (it closed before its window, handing over)', g.poll() is not None, 'exit %s' % g.poll())
+    check('A3. witness_launcher.exe beside it is running', launcher_pid and alive(launcher_pid), launcher_pid)
+    st = ''; end = time.time() + 20
+    while time.time() < end and 'ui tab' not in st:
+        try: st = open(statf, errors='ignore').read()
+        except OSError: pass
+        time.sleep(0.3)
+    check('A4. the launcher shows its Play tab (its state file)', re.search(r'ui tab 0 label Play', st), next((l for l in st.splitlines() if l.startswith('ui ')), ''))
+    time.sleep(1.5); st = open(statf, errors='ignore').read(); sa = next((l for l in st.splitlines() if l.startswith('steamatstart ')), '')
+    check('A5. the launcher Steam started runs the Steam API as The Witness itself (needs the Steam client running)', sa == 'steamatstart ok', sa)
+    import winreg
+    def steam_running():      # what the Steam client itself records (read only): The Witness is running
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r'Software\Valve\Steam\Apps\210970') as k: return winreg.QueryValueEx(k, 'Running')[0]
+        except OSError as e: return 'unreadable (%s)' % e
+    time.sleep(3); r = steam_running()
+    check('A6. Steam itself says The Witness is running while only the launcher is open (HKCU Steam Apps\\210970 Running)', r == 1, r)
+    # B) the launcher's own game
+    print('B) Play solo in that launcher: the game it starts stays', flush=True)
+    fresh_log(); mark = 0
+    open(cmdf + '.tmp', 'w').write('choice solo\nprimary\n'); os.replace(cmdf + '.tmp', cmdf)
+    end = time.time() + 30
+    while time.time() < end and not game_b:
+        kids = game_children(launcher_pid) if launcher_pid else []
+        if kids: game_b = kids[0]; open(os.path.join(run, 'pidB.txt'), 'w').write(str(game_b)); place(game_b)
+        time.sleep(0.3)
+    dec = wait_re(r'handover: steam (\d) launcher_session (\d).*-> (\S+)', 20, pid=game_b)
+    check('B1. the launcher\'s game carries the launcher session and inherited Steam\'s environment (one Steam launch)', dec and dec[1] == '1' and dec[2] == '1' and dec[3] == 'stay', dec and dec[0])
+    time.sleep(25)
+    check('B2. the launcher\'s game is still running 25 s later (it did not hand over again)', game_b and alive(game_b), game_b)
+    check('B3. the launcher is still running beside it', launcher_pid and alive(launcher_pid))
+    kill(game_b); time.sleep(2)
+    # C) the test tools' way: no Steam environment
+    print('C) the game started without Steam\'s environment stays', flush=True)
+    fresh_log(); mark = 0
+    g = subprocess.Popen([exe], cwd=gdir, env=base, startupinfo=si); game_c = g.pid; open(os.path.join(run, 'pidC.txt'), 'w').write(str(game_c))
+    dec = wait_re(r'handover: steam (\d) launcher_session (\d).*-> (\S+)', 60, pid=game_c)
+    check('C1. without Steam\'s environment the decision is stay', dec and dec[1] == '0' and dec[3] == 'stay', dec and dec[0])
+    time.sleep(10); check('C2. that game is running', alive(game_c))
+finally:
+    try: open(cmdf, 'w').write('quit\n')
+    except OSError: pass
+    time.sleep(2)
+    for p in ([game_b, game_c] + (game_children(launcher_pid) if launcher_pid else []) + [launcher_pid]): kill(p)
+print('ALL OK' if ok else 'FAILED')
