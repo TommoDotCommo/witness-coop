@@ -4,14 +4,34 @@
 #include <uxtheme.h>
 #include <cmath>
 #include <string>
+#include <vector>
+#include "../common/gamefont.h"
 
 namespace th {
 COLORREF kBg = RGB(13, 19, 22), kSurface = RGB(21, 31, 36), kSurface2 = RGB(32, 46, 53), kLine = RGB(207, 233, 241), kAccent = RGB(78, 224, 255), kWarm = RGB(255, 200, 87), kText = RGB(230, 238, 240), kMuted = RGB(126, 147, 155), kDanger = RGB(255, 107, 107);
 static HFONT g_body, g_small, g_bold, g_title; static HBRUSH g_bg, g_surface;
 static HFONT Font(int px, int weight, const wchar_t* face) { return CreateFontW(-px, 0, 0, 0, weight, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, face); }
-void Init() {
+// The game's menu face for the headings: read from the player's own archive into memory (common/gamefont.h) and added as a private font; nothing is written.
+// Body text stays Segoe UI (Karmina is a bold display serif: fine for a label, tiring for a paragraph). Without the game files: Segoe UI throughout, today's look.
+static std::vector<uint8_t> g_faceBytes; static std::string g_fontState = "Segoe UI (no game folder)";
+static std::wstring GameFace(const std::wstring& dir) {
+    if (dir.empty()) return L"";
+    gamefont::Result r = gamefont::FromZipFile((dir + L"\\data-pc.zip").c_str(), "KarminaBold.mod_otf.raw");
+    if (!r.ok()) { g_fontState = "Segoe UI (" + r.error + ")"; return L""; }
+    DWORD n = 0; g_faceBytes.swap(r.bytes);
+    if (!AddFontMemResourceEx(g_faceBytes.data(), (DWORD)g_faceBytes.size(), nullptr, &n) || !n) { g_fontState = "Segoe UI (AddFontMemResourceEx failed)"; return L""; }
+    std::wstring fam(r.family.begin(), r.family.end()); HFONT f = Font(16, FW_BOLD, fam.c_str()); HDC dc = CreateCompatibleDC(nullptr); HGDIOBJ o = SelectObject(dc, f);
+    wchar_t got[64] = {}; GetTextFaceW(dc, 64, got); SelectObject(dc, o); DeleteDC(dc); DeleteObject(f);
+    if (fam != got) { g_fontState = "Segoe UI (GDI chose another face)"; return L""; }
+    g_fontState = r.family + " (game)"; return fam;
+}
+const std::string& FontState() { return g_fontState; }
+void Init(const std::wstring& gameDir) {
     if (g_body) return;
-    g_body = Font(15, FW_NORMAL, L"Segoe UI"); g_small = Font(13, FW_NORMAL, L"Segoe UI"); g_bold = Font(15, FW_SEMIBOLD, L"Segoe UI Semibold"); g_title = Font(30, FW_LIGHT, L"Segoe UI Light");
+    g_body = Font(15, FW_NORMAL, L"Segoe UI"); g_small = Font(13, FW_NORMAL, L"Segoe UI");
+    std::wstring face = GameFace(gameDir);
+    if (!face.empty()) { g_bold = Font(16, FW_BOLD, face.c_str()); g_title = Font(30, FW_BOLD, face.c_str()); }      // (Karmina's capitals are a little smaller than Segoe's at one size: 16 px matches the 15 px Semibold)
+    else { g_bold = Font(15, FW_SEMIBOLD, L"Segoe UI Semibold"); g_title = Font(30, FW_LIGHT, L"Segoe UI Light"); }
     g_bg = CreateSolidBrush(kBg); g_surface = CreateSolidBrush(kSurface);
 }
 HFONT Body() { return g_body; } HFONT Small() { return g_small; } HFONT Bold() { return g_bold; } HFONT Title() { return g_title; }
@@ -104,16 +124,22 @@ void StyleList(HWND list) {
     HWND hdr = ListView_GetHeader(list); if (hdr) SetWindowTheme(hdr, L"DarkMode_ItemsView", nullptr);
 }
 
-// The banner: the name, in light capitals, and a small puzzle panel: a pale line from a start circle to the notch at the end, the first part of it with power.
+// The banner: the name, in spaced capitals, and a small puzzle panel drawn here (no game art): its grid, a pale line along the grid from a start circle to the
+// exit nub, the first part of it with power.
 void PaintHeader(HDC dc, const RECT& client, int height, const wchar_t* subtitle) {
     RECT band = {0, 0, client.right, height}; HBRUSH b = CreateSolidBrush(kBg); FillRect(dc, &band, b); DeleteObject(b);
     SetBkMode(dc, TRANSPARENT); SelectObject(dc, g_title); SetTextColor(dc, kText); const wchar_t* name = L"T H E   W I T N E S S"; RECT tr = {24, 10, client.right - 220, 56}; DrawTextW(dc, name, -1, &tr, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
     SelectObject(dc, g_body); SetTextColor(dc, kAccent); RECT sr = {26, 52, client.right - 220, height - 4}; DrawTextW(dc, subtitle, -1, &sr, DT_LEFT | DT_SINGLELINE);
     int px = client.right - 196, py = 12, pw = 172, ph = height - 28;      // the panel
     HBRUSH pb = CreateSolidBrush(kSurface); HPEN pe = CreatePen(PS_SOLID, 1, kSurface2); HGDIOBJ op = SelectObject(dc, pe), ob = SelectObject(dc, pb); RoundRect(dc, px, py, px + pw, py + ph, 8, 8); SelectObject(dc, op); SelectObject(dc, ob); DeleteObject(pe); DeleteObject(pb);
-    POINT pts[] = {{px + 22, py + ph - 16}, {px + 22, py + 16}, {px + 66, py + 16}, {px + 66, py + ph - 20}, {px + 108, py + ph - 20}, {px + 108, py + 16}, {px + pw - 14, py + 16}};
+    const int gx[] = {px + 22, px + 64, px + 108, px + 150}, gy[] = {py + 16, py + ph - 16};
+    LOGBRUSH gb = {BS_SOLID, kSurface2, 0}; HPEN gridP = ExtCreatePen(PS_GEOMETRIC | PS_SOLID | PS_ENDCAP_ROUND, 5, &gb, 0, nullptr); op = SelectObject(dc, gridP);      // the panel's grid, unlit
+    for (int x : gx) { MoveToEx(dc, x, gy[0], nullptr); LineTo(dc, x, gy[1]); }
+    for (int y : gy) { MoveToEx(dc, gx[0], y, nullptr); LineTo(dc, gx[3], y); }
+    SelectObject(dc, op); DeleteObject(gridP);
+    POINT pts[] = {{gx[0], gy[1]}, {gx[0], gy[0]}, {gx[1], gy[0]}, {gx[1], gy[1]}, {gx[2], gy[1]}, {gx[2], gy[0]}, {px + pw - 10, gy[0]}};
     LOGBRUSH lb = {BS_SOLID, kLine, 0}; HPEN lineP = ExtCreatePen(PS_GEOMETRIC | PS_SOLID | PS_ENDCAP_ROUND | PS_JOIN_ROUND, 5, &lb, 0, nullptr); op = SelectObject(dc, lineP); Polyline(dc, pts, 7); SelectObject(dc, op); DeleteObject(lineP);
     LOGBRUSH lb2 = {BS_SOLID, kAccent, 0}; HPEN litP = ExtCreatePen(PS_GEOMETRIC | PS_SOLID | PS_ENDCAP_ROUND | PS_JOIN_ROUND, 5, &lb2, 0, nullptr); op = SelectObject(dc, litP); Polyline(dc, pts, 4); SelectObject(dc, op); DeleteObject(litP);
-    DrawDot(dc, pts[0].x, pts[0].y, 7, kAccent, true);      // the start circle, lit
+    DrawDot(dc, pts[0].x, pts[0].y, 8, kAccent, true);      // the start circle, lit
 }
 }  // namespace th

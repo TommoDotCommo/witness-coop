@@ -34,6 +34,10 @@
 #include "update_win.h"
 #include "../common/userdata.h"
 #include "diag_ps1.h"
+#define STB_IMAGE_IMPLEMENTATION
+#define STBI_ONLY_PNG
+#define STBI_NO_STDIO
+#include "../proxy/third_party/stb_image.h"
 
 namespace {
 std::wstring W(const std::string& s) { if (s.empty()) return L""; int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, nullptr, 0); std::wstring w(n, 0); MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, &w[0], n); w.resize(n - 1); return w; }
@@ -45,7 +49,7 @@ bool Exists(const std::wstring& p) { return GetFileAttributesW(p.c_str()) != INV
 
 enum { ID_TAB = 100, ID_APPLY, ID_LAUNCH, ID_NEWGAME, ID_BROWSE, ID_GAMEDIR, ID_STATUS, ID_REFRESH, ID_OPENSAVES, ID_BACKUP, ID_TRASH, ID_SAVELIST, ID_SAVEINFO, ID_SAVEPICK, ID_DIAG, ID_UP_VER, ID_UP_STATUS, ID_UP_NOTES, ID_UP_CHECK, ID_UP_APPLY, ID_UP_LATER, ID_UP_AUTO, ID_UP_PRE, ID_UP_BANNER, ID_UP_BANNER_APPLY, ID_UP_BANNER_LATER,
        ID_SAVEPICK2, ID_PRIMARY, ID_NAME, ID_TILE_HOST, ID_TILE_JOIN, ID_TILE_SOLO, ID_TILE_HOST_TXT, ID_TILE_JOIN_TXT, ID_TILE_SOLO_TXT, ID_HOST_STEAM, ID_HOST_DIRECT, ID_JOIN_LABEL, ID_SOLO_NOTE, ID_SOLO_NEW, ID_UP_WHATSNEW, ID_HINTS, ID_FOOT_ACTION,
-       ID_SECTIONS, ID_RESET, ID_GUIDE_BTN, ID_LINK_HOME, ID_LINK_NOTES, ID_CREDITS, ID_FOLDER_LABEL, ID_ABOUT_TITLE, ID_ABOUT_GUIDE_TXT, ID_ABOUT_DIAG_TXT, ID_SECTION_TITLE, ID_PICK_LABEL, ID_PICK_LABEL2, ID_RESET2,
+       ID_SECTIONS, ID_RESET, ID_GUIDE_BTN, ID_LINK_HOME, ID_LINK_NOTES, ID_CREDITS, ID_FOLDER_LABEL, ID_ABOUT_TITLE, ID_ABOUT_GUIDE_TXT, ID_ABOUT_DIAG_TXT, ID_SECTION_TITLE, ID_PICK_LABEL, ID_PICK_LABEL2, ID_RESET2, ID_SAVEPIC,
        ID_NG_OK = 300, ID_NG_LASERS, ID_NG_PRESET, ID_NG_INFO, ID_NG_AREAS = 400, ID_FIELD = 1000 };
 enum Kind { kCheck, kCombo, kEdit, kMulti, kSlider, kKeyBtn, kNoteK };
 struct Field { int id; ls::Section section; std::string label, key; Kind kind; std::vector<std::string> choices; std::string def, hint; const ls::Row* row; HWND h = nullptr, hLabel = nullptr, hHint = nullptr, hValue = nullptr; };
@@ -117,10 +121,12 @@ void FillPeers(Field& f, const wl::CfgFile& c) { std::string t; for (const auto&
 
 // ---- the saves page
 std::vector<wl::SaveInfo> g_saves; HWND g_saveList, g_saveInfo, g_savePick, g_savePick2;
+HWND g_savePic; std::vector<uint8_t> g_picRgba; int g_picW, g_picH, g_savesW, g_savesH; std::wstring g_picPath;
+void LayoutSaves(int W, int H);
 std::wstring Stamp() { SYSTEMTIME st; GetLocalTime(&st); wchar_t b[40]; swprintf(b, 40, L"%04d-%02d-%02d_%02d.%02d.%02d", st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond); return b; }
 std::wstring When(unsigned long long ft) { FILETIME f; f.dwLowDateTime = (DWORD)ft; f.dwHighDateTime = (DWORD)(ft >> 32); FILETIME l; SYSTEMTIME st; FileTimeToLocalFileTime(&f, &l); FileTimeToSystemTime(&l, &st); wchar_t b[40]; swprintf(b, 40, L"%04d-%02d-%02d %02d:%02d", st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute); return b; }
 void RefreshSaves() {
-    wl::CfgFile c = LoadCfg(); g_saves = wl::ListSaves(SaveFolder(c)); ListView_DeleteAllItems(g_saveList); SendMessageW(g_savePick, CB_RESETCONTENT, 0, 0); SendMessageW(g_savePick2, CB_RESETCONTENT, 0, 0);
+    wl::CfgFile c = LoadCfg(); g_saves = wl::ListSaves(SaveFolder(c)); ListView_DeleteAllItems(g_saveList); if (!g_picRgba.empty()) { g_picRgba.clear(); g_picPath.clear(); if (g_savesW) LayoutSaves(g_savesW, g_savesH); } SendMessageW(g_savePick, CB_RESETCONTENT, 0, 0); SendMessageW(g_savePick2, CB_RESETCONTENT, 0, 0);
     for (size_t i = 0; i < g_saves.size(); ++i) {
         const auto& s = g_saves[i]; LVITEMW it = {}; it.mask = LVIF_TEXT; it.iItem = (int)i; std::wstring w = When(s.when); it.pszText = &w[0]; ListView_InsertItem(g_saveList, &it);
         std::wstring who, prog, las, tm; if (s.hasMeta) { for (size_t k = 0; k < s.meta.players.size(); ++k) who += (k ? L", " : L"") + W(s.meta.players[k].name); wchar_t b[80]; swprintf(b, 80, L"%u%%  (%u of %u)", s.meta.total ? s.meta.solved * 100 / s.meta.total : 0, s.meta.solved, s.meta.total); prog = b; swprintf(b, 80, L"%u of %u", s.meta.lasers, s.meta.lasersTotal); las = b; swprintf(b, 80, L"%u h %02u min", s.meta.totalSeconds / 3600, (s.meta.totalSeconds % 3600) / 60); tm = b; } else who = L"(no co-op record)";
@@ -129,8 +135,33 @@ void RefreshSaves() {
     }
     SendMessageW(g_savePick, CB_SETCURSEL, 0, 0); SendMessageW(g_savePick2, CB_SETCURSEL, 0, 0);
 }
+// The save's own picture (the .png the game writes beside each save), beside its details on the Saves page; none: the details take the whole width as before.
+bool LoadSavePic(const std::wstring& png) {
+    g_picRgba.clear(); g_picW = g_picH = 0; g_picPath.clear();
+    FILE* f = _wfopen(png.c_str(), L"rb"); if (!f) return false;
+    std::vector<uint8_t> raw; uint8_t b[65536]; size_t k; while ((k = fread(b, 1, sizeof b, f)) > 0 && raw.size() < (32u << 20)) raw.insert(raw.end(), b, b + k); fclose(f);
+    int w = 0, h = 0, n = 0; uint8_t* px = stbi_load_from_memory(raw.data(), (int)raw.size(), &w, &h, &n, 4); if (!px) return false;
+    if (w > 0 && h > 0 && w <= 8192 && h <= 8192) { g_picRgba.assign(px, px + (size_t)w * h * 4); g_picW = w; g_picH = h; g_picPath = png; }
+    stbi_image_free(px); return !g_picRgba.empty();
+}
+// The picture scaled (halftone) into the box, keeping its shape; the control is placed on the scaled picture.
+void ApplySavePic(int x, int y, int bw, int bh) {
+    if (!g_savePic) return;
+    if (g_picRgba.empty() || bw < 16 || bh < 16) { ShowWindow(g_savePic, SW_HIDE); return; }
+    double k = std::min((double)bw / g_picW, (double)bh / g_picH); int w = std::max(1, (int)(g_picW * k)), h = std::max(1, (int)(g_picH * k));
+    std::vector<uint8_t> bgra(g_picRgba.size()); for (size_t i = 0; i < bgra.size(); i += 4) { bgra[i] = g_picRgba[i + 2]; bgra[i + 1] = g_picRgba[i + 1]; bgra[i + 2] = g_picRgba[i]; bgra[i + 3] = 255; }
+    BITMAPINFO src = {}; src.bmiHeader = {sizeof(BITMAPINFOHEADER), g_picW, -g_picH, 1, 32, BI_RGB, 0, 0, 0, 0, 0};
+    HDC screen = GetDC(nullptr); HDC mem = CreateCompatibleDC(screen); HBITMAP bmp = CreateCompatibleBitmap(screen, w, h); HGDIOBJ o = SelectObject(mem, bmp);
+    SetStretchBltMode(mem, HALFTONE); SetBrushOrgEx(mem, 0, 0, nullptr); StretchDIBits(mem, 0, 0, w, h, 0, 0, g_picW, g_picH, bgra.data(), &src, DIB_RGB_COLORS, SRCCOPY);
+    SelectObject(mem, o); DeleteDC(mem); ReleaseDC(nullptr, screen);
+    HBITMAP old = (HBITMAP)SendMessageW(g_savePic, STM_SETIMAGE, IMAGE_BITMAP, (LPARAM)bmp); if (old && old != bmp) DeleteObject(old);
+    SetWindowPos(g_savePic, nullptr, x + (bw - w) / 2, y, w, h, SWP_NOZORDER | SWP_NOACTIVATE); ShowWindow(g_savePic, SW_SHOW);
+}
 void ShowSaveInfo(int i) {
-    std::wstring t; if (i < 0 || i >= (int)g_saves.size()) { SetWindowTextW(g_saveInfo, L""); return; }
+    std::wstring t; bool hadPic = !g_picRgba.empty();
+    if (i >= 0 && i < (int)g_saves.size() && g_saves[i].hasPng) { std::wstring png = g_saves[i].path.substr(0, g_saves[i].path.rfind(L'.')) + L".png"; if (png != g_picPath) LoadSavePic(png); } else { g_picRgba.clear(); g_picPath.clear(); }
+    if ((hadPic || !g_picRgba.empty()) && g_savesW) LayoutSaves(g_savesW, g_savesH);
+    if (i < 0 || i >= (int)g_saves.size()) { SetWindowTextW(g_saveInfo, L""); return; }
     const auto& s = g_saves[i]; t = L"File: " + W(s.stem) + L".witness_campaign (" + std::to_wstring(s.bytes / 1024) + L" KB)\r\n";
     if (!s.hasMeta) t += L"The game wrote this save without the mod running, so there is no record of who played or how far.\r\n";
     else {
@@ -723,11 +754,15 @@ void BuildSaves(HWND sp) {
     const wchar_t* cols[] = {L"Saved", L"Players", L"Progress", L"Lasers", L"Time played"}; int cw[] = {150, 330, 150, 90, 130};
     for (int i = 0; i < 5; ++i) { LVCOLUMNW c = {}; c.mask = LVCF_TEXT | LVCF_WIDTH; c.pszText = (LPWSTR)cols[i]; c.cx = cw[i]; ListView_InsertColumn(g_saveList, i, &c); }
     g_saveInfo = Make(sp, L"EDIT", L"", WS_BORDER | ES_MULTILINE | ES_READONLY | WS_VSCROLL | ES_AUTOVSCROLL, 0, 0, 10, 10, ID_SAVEINFO);
+    g_savePic = Make(sp, L"STATIC", L"", SS_BITMAP, 0, 0, 10, 10, ID_SAVEPIC); ShowWindow(g_savePic, SW_HIDE);
     Make(sp, L"BUTTON", L"New game...", BS_DEFPUSHBUTTON, 0, 0, 10, 10, ID_NEWGAME); Make(sp, L"BUTTON", L"Back up", BS_PUSHBUTTON, 0, 0, 10, 10, ID_BACKUP); Make(sp, L"BUTTON", L"Move to backup folder", BS_PUSHBUTTON, 0, 0, 10, 10, ID_TRASH);
     Make(sp, L"BUTTON", L"Open folder", BS_PUSHBUTTON, 0, 0, 10, 10, ID_OPENSAVES); Make(sp, L"BUTTON", L"Refresh", BS_PUSHBUTTON, 0, 0, 10, 10, ID_REFRESH);
 }
 void LayoutSaves(int W, int H) {
-    int m = 16; Place(g_saveList, m, m, W - 2 * m, (H - 80) * 45 / 100); int y = m + (H - 80) * 45 / 100 + 10; Place(g_saveInfo, m, y, W - 2 * m, H - y - 60);
+    g_savesW = W; g_savesH = H;
+    int m = 16; Place(g_saveList, m, m, W - 2 * m, (H - 80) * 45 / 100); int y = m + (H - 80) * 45 / 100 + 10;
+    int picW = g_picRgba.empty() ? 0 : std::min(400, (W - 2 * m) * 2 / 5);      // the selected save's picture to the right of its details
+    Place(g_saveInfo, m, y, W - 2 * m - (picW ? picW + 12 : 0), H - y - 60); ApplySavePic(W - m - picW, y, picW, H - y - 60);
     int by = H - 48, x = m; for (auto p : {std::make_pair(ID_NEWGAME, 160), std::make_pair(ID_BACKUP, 120), std::make_pair(ID_TRASH, 220), std::make_pair(ID_OPENSAVES, 140), std::make_pair(ID_REFRESH, 110)}) { PlaceId(p.first, x, by, p.second, 36); x += p.second + 10; }
 }
 void BuildAbout(HWND pg) {
@@ -825,6 +860,8 @@ void WriteStat() {      // tests: what the lobby is, as text lines, rewritten ev
     snprintf(b, sizeof b, "game pid %lu running %d launches %u\n", (unsigned long)g_gamePid, g_game ? 1 : 0, g_launches); o += b;
     { wchar_t sb[400] = {}, hb[400] = {}; GetWindowTextW(g_status, sb, 400); GetWindowTextW(g_hints, hb, 400); HWND f = GetFocus(); Field* ff = f ? ByHwnd(f) : nullptr; RECT cr; GetClientRect(g_main, &cr); std::string fk = ff ? ff->key : (f ? std::to_string(GetDlgCtrlID(f)) : std::string("-"));
       snprintf(b, sizeof b, "ui tab %d label %s lobbyview %d section %d choice %s padlast %d capture %d focus %s client %ld %ld\n", CurTab(), ls::TabLabel(CurTab(), g_sess.Active()), IsWindowVisible(g_lobbyPanel) ? 1 : 0, g_section, ls::ChoiceKey(g_choice), g_padLast ? 1 : 0, g_capture, fk.c_str(), cr.right, cr.bottom); o += b;
+      o += "font " + th::FontState() + "\n";
+      o += "savepic " + std::to_string(g_savePic && IsWindowVisible(g_savePic) ? 1 : 0) + " " + std::to_string(g_picW) + " " + std::to_string(g_picH) + "\n";
       o += "uistatus " + U(sb) + "\n" + "hints " + U(hb) + "\n" + "steamatstart " + g_steamAtStart + "\n" + "joinbox " + EditText(LB(ID_LB_INVITE)) + "\n"; }
     std::wstring tmp = g_statFile + L".tmp"; if (WriteFile8(tmp, o)) MoveFileExW(tmp.c_str(), g_statFile.c_str(), MOVEFILE_REPLACE_EXISTING);
 }
@@ -1151,7 +1188,7 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, LPWSTR cmdline, int show) {
     { std::wstring ld = LogsFolder(); if (!ld.empty() && g_log.Open(ld, L"launcher_p", (unsigned long long)100 * 1024 * 1024)) {
         g_logOpen = true; char l[200]; snprintf(l, sizeof l, "session %s: mod %s", g_log.KeyUtf8().c_str(), MOD_VERSION); Dlog(l); Dlog(("launcher started, game folder " + U(g_dir)).c_str());
         diag::CrashOptions co; co.session = &g_log; co.dataModule = GetModuleHandleW(nullptr); co.log = Dlog; diag::InstallCrashHandler(co); } }
-    th::Init(); AddFields();
+    th::Init(g_dir); AddFields();
     WNDCLASSW wc = {}; wc.lpfnWndProc = MainProc; wc.hInstance = hi; wc.lpszClassName = L"WitnessLauncher"; wc.hbrBackground = th::BgBrush(); wc.hCursor = LoadCursorW(nullptr, IDC_ARROW); wc.hIcon = LoadIconW(nullptr, IDI_APPLICATION); RegisterClassW(&wc);
     WNDCLASSW pc = {}; pc.lpfnWndProc = PageProc; pc.hInstance = hi; pc.lpszClassName = L"WitnessLauncherPage"; pc.hbrBackground = th::BgBrush(); pc.hCursor = LoadCursorW(nullptr, IDC_ARROW); RegisterClassW(&pc);
     // 1280x800 (a Steam Deck's screen) or the work area if that is smaller; resizable (K8)

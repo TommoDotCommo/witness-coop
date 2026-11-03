@@ -24,6 +24,16 @@ build/notices-test: notices_test.cpp notices.h
 build/notices-mutant-%: notices_test.cpp notices.h
 	mkdir -p build
 	$(CXX) $(CXXFLAGS) -DNOTICE_MUT_$* -o $@ $<
+# the game's own font read from the player's archive (gamefont.h): a zip built in memory; mutant: the inverted member is not undone
+build/gamefont-test: gamefont_test.cpp gamefont.h
+	mkdir -p build
+	$(CXX) $(CXXFLAGS) -g -fsanitize=address,undefined -fno-sanitize-recover=undefined -o $@ $<
+build/gamefont-mutant: gamefont_test.cpp gamefont.h
+	mkdir -p build
+	$(CXX) $(CXXFLAGS) -DGF_MUT_NO_XOR -o $@ $<
+gamefont-test: build/gamefont-test build/gamefont-mutant
+	build/gamefont-test
+	@if build/gamefont-mutant >/dev/null 2>&1; then echo "MUTANT gamefont NO_XOR SURVIVED"; exit 1; else echo "mutant gamefont NO_XOR killed"; fi
 build/buildid-test: buildid_test.cpp buildid.h sha256.h buildid_fixture.h
 	mkdir -p build
 	$(CXX) $(CXXFLAGS) -g -fsanitize=address,undefined -fno-sanitize-recover=undefined -o $@ $<
@@ -42,7 +52,7 @@ build/userdata-mutant-%.exe: userdata_test.cpp userdata.h
 userdata-test: build/userdata-test.exe $(addsuffix .exe,$(addprefix build/userdata-mutant-,$(USERDATA_MUTANTS)))
 	build/userdata-test.exe
 	@for m in $(USERDATA_MUTANTS); do if build/userdata-mutant-$$m.exe >/dev/null; then echo "MUTANT userdata $$m SURVIVED"; exit 1; else echo "mutant userdata $$m killed"; fi; done
-test: pad-test userdata-test build/guide-test $(addprefix build/mutant-,$(MUTANTS)) build/buildid-test build/buildid-mutant build/notices-test $(addprefix build/notices-mutant-,$(NOTICE_MUTANTS))
+test: pad-test userdata-test gamefont-test build/guide-test $(addprefix build/mutant-,$(MUTANTS)) build/buildid-test build/buildid-mutant build/notices-test $(addprefix build/notices-mutant-,$(NOTICE_MUTANTS))
 	build/notices-test
 	@for m in $(NOTICE_MUTANTS); do if build/notices-mutant-$$m >/dev/null 2>&1; then echo "MUTANT notices $$m SURVIVED"; exit 1; else echo "mutant notices $$m killed"; fi; done
 	build/buildid-test $(BUILDID_EXE)
@@ -51,4 +61,4 @@ test: pad-test userdata-test build/guide-test $(addprefix build/mutant-,$(MUTANT
 	@for m in $(MUTANTS); do if build/mutant-$$m >/dev/null 2>&1; then echo "MUTANT $$m SURVIVED"; exit 1; else echo "mutant $$m killed"; fi; done
 clean:
 	rm -rf build
-.PHONY: test clean userdata-test pad-test
+.PHONY: test clean userdata-test pad-test gamefont-test

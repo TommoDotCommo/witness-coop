@@ -3,7 +3,8 @@
 // Import-table hooks on the game's own executable (build 11370412), installed from DllMain before the game starts:
 //  - SHGetFolderPathW: the game finds its save folder with CSIDL_APPDATA, so every copy (and the owner's real game) shares
 //    %APPDATA%\The Witness. With save_dir set, that one folder is redirected, which isolates test instances and protects real saves.
-//  - CreateFileA/W: optionally adds FILE_SHARE_READ to data-pc.zip (share_zip=1) so one hard-linked archive serves several instances.
+//  - CreateFileA/W: optionally adds FILE_SHARE_READ to data-pc.zip (share_zip=1) so one hard-linked archive serves several instances. Just before the
+//    game's first open of data-pc.zip (which locks it: share mode 0), the overlay reads the game's font from it into memory (ui.cpp, common/gamefont.h).
 // DllMain does no I/O: the hooks read the config and write the log when the game calls them.
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -58,12 +59,15 @@ static void NoteZip(const char* api, DWORD access, DWORD share, bool changed) {
     static volatile LONG n; if (InterlockedIncrement(&n) > 4) return;
     char m[160]; snprintf(m, sizeof m, "hooks: %s opens data-pc.zip access %#lx share %#lx%s", api, (unsigned long)access, (unsigned long)share, changed ? " -> FILE_SHARE_READ added" : ""); Log(m);
 }
+void UiPrefetchGameFont(const wchar_t* zipPath, void* (*openFile)(const wchar_t*));      // ui.cpp
+static void* OpenZipForFont(const wchar_t* p) { return g_origCFW(p, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr); }
+static void PrefetchFont(const wchar_t* p) { static volatile LONG once; if (InterlockedExchange(&once, 1) == 0) UiPrefetchGameFont(p, OpenZipForFont); }
 static HANDLE WINAPI HookCreateFileW(LPCWSTR p, DWORD a, DWORD s, LPSECURITY_ATTRIBUTES sa, DWORD cd, DWORD fl, HANDLE t) {
-    if (p && wcsstr(p, L"data-pc.zip")) { bool ch = GetCfg().shareZip && !(s & FILE_SHARE_READ); NoteZip("CreateFileW", a, s, ch); if (ch) s |= FILE_SHARE_READ; }
+    if (p && wcsstr(p, L"data-pc.zip")) { PrefetchFont(p); bool ch = GetCfg().shareZip && !(s & FILE_SHARE_READ); NoteZip("CreateFileW", a, s, ch); if (ch) s |= FILE_SHARE_READ; }
     return g_origCFW(p, a, s, sa, cd, fl, t);
 }
 static HANDLE WINAPI HookCreateFileA(LPCSTR p, DWORD a, DWORD s, LPSECURITY_ATTRIBUTES sa, DWORD cd, DWORD fl, HANDLE t) {
-    if (p && strstr(p, "data-pc.zip")) { bool ch = GetCfg().shareZip && !(s & FILE_SHARE_READ); NoteZip("CreateFileA", a, s, ch); if (ch) s |= FILE_SHARE_READ; }
+    if (p && strstr(p, "data-pc.zip")) { wchar_t w[MAX_PATH]; if (g_origCFW && MultiByteToWideChar(CP_ACP, 0, p, -1, w, MAX_PATH)) PrefetchFont(w); bool ch = GetCfg().shareZip && !(s & FILE_SHARE_READ); NoteZip("CreateFileA", a, s, ch); if (ch) s |= FILE_SHARE_READ; }
     return g_origCFA(p, a, s, sa, cd, fl, t);
 }
 

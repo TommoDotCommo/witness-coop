@@ -173,6 +173,19 @@ def voice_scene(vi):
         V.send(['voicechannel ' + ch], 1.5); snap(V, name, 'Voice channel (H steps through them; the label is in the microphone line at the bottom left). ' + what)
     V.send(['voicechannel proximity'], 0.5)
 
+def look_scene(vi):
+    """The co-op text for a look review (which face the overlay draws with): the player strip with a notice and chat lines, the hold-Tab panel, a chat line
+    being typed, the emote and quick chat wheels, the quick guide, and the glyph atlas. The face is in the log (fontstat)."""
+    V = games[vi]; lineup(vi, None, None); others = [g for k, g in enumerate(games) if k != vi]
+    for k, g in enumerate(others): g.send(['chat ' + MESSAGES[k % len(MESSAGES)]])
+    V.send(['fontstat', 'atlasdump look_atlas', 'notice Fox joined'], 1.0); snap(V, 'look_hud', 'Player strip (top left), a notice (top centre) and the chat log (bottom left).')
+    V.send(['key TAB down'], 0.9); snap(V, 'look_panel', 'The hold-Tab player panel.'); V.send(['key TAB up'], 0.5)
+    V.key('T', 0.1, 0.4); V.send(['typetext Meet me at the gate?'], 0.5); snap(V, 'look_chat', 'Typing a chat line.'); V.key('ENTER', 0.1, 0.6)
+    V.send(['wheel open'], 0.4); V.send(['mouse 40 -40'], 0.5); snap(V, 'look_emote', 'The emote wheel (hold H).'); V.send(['wheel close'], 0.4)
+    V.send(['pad 220 0 0 0 0 0 0'], 0.3); V.send(['pad 20 0 0 0 30000 0 0'], 0.5); snap(V, 'look_quick', 'The quick chat wheel (pad: View + RB).'); V.send(['pad 0 0 0 0 0 0 0'], 0.5); V.send(['pad off'], 0.5)
+    V.send(['key F1 down'], 0.9); snap(V, 'look_guide', 'The quick guide (hold F1).'); V.send(['key F1 up'], 0.5)
+    V.send(['uistat'], 0.5)
+
 def window_picture(h, name, caption):
     """A picture of one window, asked of the window itself (PrintWindow): nothing in front of it can end up in the picture."""
     import ctypes, ctypes.wintypes as wt
@@ -327,9 +340,9 @@ def launcher_scene(vi):
 SCENES = [('lineup', lambda: (lineup(0, 'lineup_a', 'Eight players in one group, each drawn as an adventurer (seen by player 1: players 2 to %d).' % N),
                               lineup(1, 'lineup_b', 'The same group seen by player 2: this time player 1 is in the picture.') if N > 2 else None)),
           ('walk', lambda: walkers(0, 'walk', 'The others walking toward the camera: the walk clip of each model, at the speed the other game measured.')),
-          ('hero', lambda: hero_scene(1)), ('ghost', lambda: ghost_scene(1)), ('lobby', lambda: lobby_scene()), ('race', lambda: race_scene()), ('pov', lambda: pov_scene(0)), ('devmenu', lambda: devmenu_scene(0)), ('pause', lambda: pause_pair(0)), ('social', lambda: social_scene(0)), ('emote', lambda: emote_scene(0)), ('draw', lambda: draw_scene(0)), ('voice', lambda: voice_scene(0)), ('panel', lambda: panel_scene(0)), ('map', lambda: map_scene(0)), ('launcher', lambda: launcher_scene(0))]
+          ('hero', lambda: hero_scene(1)), ('ghost', lambda: ghost_scene(1)), ('lobby', lambda: lobby_scene()), ('race', lambda: race_scene()), ('pov', lambda: pov_scene(0)), ('devmenu', lambda: devmenu_scene(0)), ('pause', lambda: pause_pair(0)), ('social', lambda: social_scene(0)), ('emote', lambda: emote_scene(0)), ('draw', lambda: draw_scene(0)), ('voice', lambda: voice_scene(0)), ('panel', lambda: panel_scene(0)), ('map', lambda: map_scene(0)), ('launcher', lambda: launcher_scene(0)), ('look', lambda: look_scene(0))]
 t0 = time.time(); print('showcase: %d games, scenes %s, spot panel 0x%s' % (N, ','.join(want), SPOT), flush=True)
 teleport_all(SPOT)
 for name, fn in SCENES:
-    if name in want or ('all' in want and name != 'race'): print('scene', name, flush=True); fn()      # (the race needs its own run: SHOWCASE_CFG_EXTRA=game_mode=race tools/showcase.sh 2 race)
+    if name in want or ('all' in want and name not in ('race', 'look')): print('scene', name, flush=True); fn()      # (the race needs its own run: SHOWCASE_CFG_EXTRA=game_mode=race tools/showcase.sh 2 race)
 json.dump(manifest, open(os.path.join(out, 'showcase.json'), 'w'), indent=1); print('done in %.0f s, %d pictures' % (time.time() - t0, len(manifest)))

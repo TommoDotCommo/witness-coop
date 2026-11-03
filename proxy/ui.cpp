@@ -1,5 +1,7 @@
 // Immediate-mode 2D drawing over the game's back buffer (see ui.h). One shader, one atlas: a white texel for solid shapes and the
 // printable ASCII glyphs rendered once with GDI. States are set for each flush; the game sets its own again next frame.
+// The glyphs are the game's own menu face (Karmina Bold) when the player's data-pc.zip has it (common/gamefont.h: read in memory at start,
+// a private GDI font, never written anywhere), else Segoe UI.
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <d3d11.h>
@@ -11,6 +13,7 @@
 #include "ui.h"
 #include "ui/text.h"
 #include "config.h"
+#include "../common/gamefont.h"
 
 void Log(const char* msg);
 extern HMODULE g_selfModule();
@@ -52,18 +55,60 @@ void Quad(float x0, float y0, float x1, float y1, float u0, float v0, float u1, 
 }
 const float kWhiteU = (kAtlasW - 3) / (float)kAtlasW, kWhiteV = (kAtlasH - 3) / (float)kAtlasH;
 int Pitch() { return g_tight ? 40 : kPitchWide; }
+
+// The face of the atlas: the game's font read before the game locks its archive (UiPrefetchGameFont, from the CreateFile hook), or Segoe UI.
+SRWLOCK g_fontMu = SRWLOCK_INIT; struct FontLock { FontLock() { AcquireSRWLockExclusive(&g_fontMu); } ~FontLock() { ReleaseSRWLockExclusive(&g_fontMu); } }; gamefont::Result g_gameFont; bool g_fontTried; std::string g_fontMember, g_fontState = "not loaded";
+HANDLE g_fontHandle; std::string g_fontFace = "Segoe UI";
+void LoadGameFont(const wchar_t* zipPath, void* (*openFile)(const wchar_t*)) {      // caller holds g_fontMu
+    if (g_fontTried) return;
+    const gamefont::Face* face = gamefont::FindFace(GetCfg().uiFont);
+    if (!face) { g_fontTried = true; g_fontState = "ui_font=" + GetCfg().uiFont + " (Segoe UI chosen)"; return; }
+    g_fontMember = face->member; g_gameFont = gamefont::FromZipFile(zipPath, face->member, openFile);
+    g_fontTried = true;
+    g_fontState = g_gameFont.ok() ? "read " + std::to_string(g_gameFont.bytes.size()) + " bytes, family " + g_gameFont.family : g_gameFont.error;
+}
+// Selects the face for the atlas into dc; returns the font object. Falls back to Segoe UI with a log line when the game's font is missing or GDI refuses it.
+HFONT AtlasFont(HDC dc) {
+    FontLock lk;
+    if (!g_fontTried) {      // the hook did not see the game open its archive: try it beside the exe (works while nothing holds it exclusively)
+        wchar_t p[MAX_PATH]; GetModuleFileNameW(nullptr, p, MAX_PATH); wchar_t* sl = wcsrchr(p, L'\\'); if (sl) *(sl + 1) = 0; wcscat_s(p, L"data-pc.zip");
+        LoadGameFont(p, nullptr); g_fontTried = true;
+    }
+    const gamefont::Face* face = gamefont::FindFace(GetCfg().uiFont);
+    if (g_gameFont.ok() && face) {
+        DWORD n = 0; g_fontHandle = AddFontMemResourceEx(g_gameFont.bytes.data(), (DWORD)g_gameFont.bytes.size(), nullptr, &n);      // private to this process by definition
+        if (g_fontHandle && n) {
+            HFONT f = CreateFontA(-40, 0, 0, 0, face->weight, FALSE, FALSE, FALSE, ANSI_CHARSET, OUT_TT_ONLY_PRECIS, CLIP_DEFAULT_PRECIS, ANTIALIASED_QUALITY, DEFAULT_PITCH, g_gameFont.family.c_str());
+            char got[64] = {}; if (f) { SelectObject(dc, f); GetTextFaceA(dc, sizeof got, got); }
+            if (f && g_gameFont.family == got) {
+                g_fontFace = got; char m[220]; snprintf(m, sizeof m, "ui: font %s from the game (%s, %zu bytes)", got, g_fontMember.c_str(), g_gameFont.bytes.size()); Log(m); return f;
+            }
+            g_fontState = std::string("GDI chose '") + got + "' instead of " + g_gameFont.family; if (f) DeleteObject(f);
+        } else g_fontState = "AddFontMemResourceEx failed";
+    }
+    HFONT f = CreateFontA(-40, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, ANSI_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, ANTIALIASED_QUALITY, DEFAULT_PITCH | FF_SWISS, "Segoe UI");
+    g_fontFace = "Segoe UI"; char m[260]; snprintf(m, sizeof m, "ui: font Segoe UI (the game's font is not used: %s)", g_fontState.c_str()); Log(m);
+    SelectObject(dc, f); return f;
+}
 }  // namespace
+
+void UiPrefetchGameFont(const wchar_t* zipPath, void* (*openFile)(const wchar_t*)) { FontLock lk; LoadGameFont(zipPath, openFile); }
+void UiFontStat() {
+    FontLock lk; char m[300];
+    snprintf(m, sizeof m, "fontstat: face %s game %d member %s state %s", g_fontFace.c_str(), g_fontFace != "Segoe UI" ? 1 : 0, g_fontMember.empty() ? "-" : g_fontMember.c_str(), g_fontState.c_str()); Log(m);
+}
 
 bool UiInit(ID3D11Device* dev, ID3D11DeviceContext* ctx) {
     g_dev = dev; g_ctx = ctx;
-    // A 2x atlas keeps scaled text crisp. Segoe UI is a Windows system font: proportional, legible and requires no bundled asset.
+    // A 2x atlas keeps scaled text crisp. The face is the game's own (AtlasFont), or Segoe UI, a Windows system font that needs no bundled asset.
     HDC dc = CreateCompatibleDC(nullptr);
     BITMAPINFO bi = {}; bi.bmiHeader = {sizeof(BITMAPINFOHEADER), kAtlasW, -kAtlasH, 1, 32, BI_RGB, 0, 0, 0, 0, 0};
     void* bits = nullptr; HBITMAP bmp = CreateDIBSection(dc, &bi, DIB_RGB_COLORS, &bits, nullptr, 0);
     if (!dc || !bmp || !bits) { Log("ui: atlas bitmap failed"); return false; }
     SelectObject(dc, bmp);
-    HFONT font = CreateFontA(-40, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, ANSI_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, ANTIALIASED_QUALITY, DEFAULT_PITCH | FF_SWISS, "Segoe UI");
-    SelectObject(dc, font); SetBkMode(dc, TRANSPARENT); SetTextColor(dc, RGB(255, 255, 255));
+    HFONT font = AtlasFont(dc);
+    SetBkMode(dc, TRANSPARENT); SetTextColor(dc, RGB(255, 255, 255));
+    TEXTMETRICA tm = {}; GetTextMetricsA(dc, &tm); const int top = 2 + std::max(0, 43 - (int)tm.tmAscent);      // every face's baseline where Segoe UI's is (ascent 43 at this size), so the layout keeps its line positions
     memset(bits, 0, kAtlasW * kAtlasH * 4);
     g_tight = GetCfg().uiTightAtlas;
     int penX = 1, penY = 1; float minAdv = 1000, maxAdv = 0;
@@ -76,7 +121,7 @@ bool UiInit(ID3D11Device* dev, ID3D11DeviceContext* ctx) {
         minAdv = std::min(minAdv, g.advance); maxAdv = std::max(maxAdv, g.advance);
         if (ch != ' ') {
             HRGN clip = g_tight ? nullptr : CreateRectRgn(penX, penY, penX + cw, penY + Pitch()); if (clip) SelectClipRgn(dc, clip);
-            TextOutA(dc, penX + 4, penY + 2, s, 1);
+            TextOutA(dc, penX + 4, penY + top, s, 1);
             if (clip) { SelectClipRgn(dc, nullptr); DeleteObject(clip); }
         }
         char m[120]; snprintf(m, sizeof m, "uiglyph: %d %d %d %d %d %.3f", ch, penX, penY, cw, Pitch() - 4, g.advance); Log(m);
