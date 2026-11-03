@@ -358,7 +358,7 @@ static LRESULT CALLBACK DevWndProc(HWND w, UINT m, WPARAM wp, LPARAM lp) {
     switch (m) {
     case WM_KILLFOCUS: GuideReset(); break;
     case WM_ACTIVATEAPP: if (!wp) GuideReset(); break;
-    case WM_KEYDOWN: case WM_SYSKEYDOWN: if (wp == guide::MarkerKey(GetCfg()) && !(lp & (1 << 30))) DiagMarkKey(); if (GuideKey((unsigned)wp, true)) return 0; if (DevMenuKey((unsigned)wp, true)) return 0; break;
+    case WM_KEYDOWN: case WM_SYSKEYDOWN: if (wp == guide::MarkerKey(GetCfg()) && !(lp & (1 << 30))) DiagMarkKey(); if (GuideKey((unsigned)wp, true)) return 0; if (InputRepeatIgnored((unsigned)wp, (long long)lp)) return 0; if (DevMenuKey((unsigned)wp, true)) return 0; break;
     case WM_KEYUP: case WM_SYSKEYUP: if (GuideKey((unsigned)wp, false)) return 0; DevMenuKey((unsigned)wp, false); break;
     case WM_CHAR: if (DevMenuOpen()) return 0; break;
     case WM_LBUTTONDOWN: if (DevMenuMouseButton(0, true)) return 0; break;
@@ -381,7 +381,10 @@ static void InstallDevWndProc(HWND w) {
 static volatile LONG g_povBox, g_povPic;      // frames the other player's screen was drawn, and of those the ones with a real picture in it (the test reads them)
 void OverlayPovDrawn(unsigned* box, unsigned* pic) { *box = (unsigned)g_povBox; *pic = (unsigned)g_povPic; }
 static std::atomic<unsigned> g_aimed{0},g_tvAimed{0};          // the player the crosshair is on (0: none), set while drawing, read by the key handler
-static std::atomic<bool> g_rosterOpen{false}; static std::atomic<int> g_rosterSel{0};
+static volatile LONG g_rosterFlips;      // test oracle (command keystat): how often the player list opened or closed
+struct RosterFlag { std::atomic<bool> v{false}; bool load() const { return v.load(); } RosterFlag& operator=(bool b) { if (v.exchange(b) != b) InterlockedIncrement(&g_rosterFlips); return *this; } };
+static RosterFlag g_rosterOpen; static std::atomic<int> g_rosterSel{0};
+unsigned OverlayRosterFlips() { return (unsigned)g_rosterFlips; }
 unsigned OverlayTvAim(){ return g_tvAimed.load(); }
 bool PovRosterOpen() { return g_rosterOpen.load(); }
 void OverlayPovState(unsigned* aimed, int* rosterOpen) { *aimed = g_aimed.load(); *rosterOpen = g_rosterOpen.load() ? 1 : 0; }

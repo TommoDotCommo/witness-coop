@@ -214,6 +214,8 @@ bool SocialKey(unsigned vk, bool down) {
     return took;
 }
 bool SocialSwallowRaw(unsigned vk) { Lock l; auto it = g_swallow.find(vk); return it != g_swallow.end() && GetTickCount64() - it->second < 600; }      // (looked at, not used up: the game reads one event more than once)
+static unsigned g_canvasFlips, g_pingKeys;      // test oracle (command keystat): canvas toggles and ping key presses
+void SocialKeyStats(unsigned* canvasFlips, unsigned* pingKeys) { Lock l; *canvasFlips = g_canvasFlips; *pingKeys = g_pingKeys; }
 static bool SocialKeyImpl(unsigned vk, bool down) {
     const Cfg& c = GetCfg(); Lock l; ULONGLONG now = GetTickCount64();
     if (guide::RadioKeyActs(c, vk)) return VoiceRadioKey(down, g_open || g_wheel || GamePaused());
@@ -238,10 +240,10 @@ static bool SocialKeyImpl(unsigned vk, bool down) {
     if (vk == c.keyEmote) { g_wheel = true; g_wx = g_wy = 0; return true; }
     if (vk == c.keyChat && !c.noChatUi) { g_open = true; g_input.clear(); return true; }
     if (vk == c.keyDraw) { if (g_shift) ClearMine(); else PenDown(now); return true; }
-    if (vk == c.keyCanvas) { g_canvas = !g_canvas; g_ox = g_oy = 0; if (!g_canvas) PenUp(now); return true; }
+    if (vk == c.keyCanvas) { ++g_canvasFlips; g_canvas = !g_canvas; g_ox = g_oy = 0; if (!g_canvas) PenUp(now); return true; }
     if (vk == c.keyColor && c.keyColor != guide::Wheel && (g_canvas || g_pen)) { g_penColor = uint8_t((g_penColor + 1) % kInks); return true; }
     if (vk == VK_BACK && g_canvas) { UndoMine(); return true; }
-    if (vk == c.keyPing || vk == c.keyPingAlt) { g_pingReq = true; g_pingAsked = false; g_pingAt = now; return true; }
+    if (vk == c.keyPing || vk == c.keyPingAlt) { ++g_pingKeys; g_pingReq = true; g_pingAsked = false; g_pingAt = now; return true; }
     return false;
 }
 bool SocialWheel(int delta) {      // the mouse wheel: the ink colour while drawing (key_color=wheel); true when it was used (the game does not scroll)

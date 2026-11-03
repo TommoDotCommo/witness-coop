@@ -53,3 +53,4 @@ void VoicePlayerVolume(unsigned id, float volume);
 int VoiceGlobalVolume(); void VoiceSetGlobalVolume(int percent);      // everybody's voices, percent (the player panel; starts at voice_volume)
 
 float VoiceGetPlayerVolume(unsigned id);
+void SocialKeyStats(unsigned* canvasFlips, unsigned* pingKeys);      // test oracle (command keystat)

@@ -53,6 +53,7 @@ const Cfg& GetCfg() {
             else if (sscanf(line, "no_line_draw=%d", &v) == 1) r.noLineDraw = v != 0;
             else if (sscanf(line, "no_line_mirror=%d", &v) == 1) r.noLineMirror = v != 0;
             else if (sscanf(line, "no_name_tags=%d", &v) == 1) r.noNameTags = v != 0;
+            else if (sscanf(line, "key_repeat_toggle=%d", &v) == 1) r.keyRepeatToggle = v != 0;
             else if (sscanf(line, "emote_third_person=%d", &v) == 1) r.emoteThirdPerson = v != 0;
             else if (sscanf(line, "tp_never_return=%d", &v) == 1) r.tpNeverReturn = v != 0;
             else if (sscanf(line, "tp_ignore_wall=%d", &v) == 1) r.tpIgnoreWall = v != 0;

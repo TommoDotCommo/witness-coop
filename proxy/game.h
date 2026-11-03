@@ -22,4 +22,6 @@ void GameHover(float x, float y, float z, float yaw, float pitch, unsigned secon
 void GameHoverOff();
 void GameTeleport(float x, float y, float z, float yaw, float pitch);   // camera position (eye) and angles, held for a few frames like the tp command
 // Render-thread seat hold: uses camera-eye coordinates just like teleport.
+unsigned OverlayRosterFlips();     // overlay.cpp: test oracle, player list opened/closed count
+unsigned DevMenuToggles();         // devmenu.cpp: test oracle, dev menu opened/closed count
 bool GameSeatPose(const float eye[3],float yaw,float pitch);

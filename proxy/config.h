@@ -87,6 +87,7 @@ struct Cfg {
     std::string uiFont = "karmina"; // ui_font=karmina|notoserif|segoe: the face of the co-op text; the first two are read from the player's own data-pc.zip at start (common/gamefont.h), Segoe UI when that fails
     bool uiTightAtlas = false;     // twin: the old glyph atlas (no room under the glyphs, no clipping): '[' and ']' leave bits over 't' and 'v'
     bool noNameTags = false;       // twin: no name tags over the other players
+    bool keyRepeatToggle = false;  // twin: the press keys (F3, F4, F8, F9, F2, [ ], V, Z, Y, the TV keys) act again on every autorepeat press: a held F8 opens and closes the menu 30 times a second
     bool oldProjection = false;    // twin: world drawing assumes a 60 degree vertical field of view instead of the game's own
     bool noLineDraw = false;       // twin: remote lines are received but not drawn
     bool noLineMirror = false;     // twin: on a symmetry panel only the one traced path is drawn, not its reflection (the owner's report)

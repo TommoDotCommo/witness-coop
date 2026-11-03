@@ -520,7 +520,8 @@ void DevMenuToast(float W, float H) {      // the last message, for a few second
 }
 bool DevMenuOpen() { return g_open; }
 static void Init() { if (!g_csInit) { InitializeCriticalSection(&g_cs); g_csInit = true; } }
-void DevMenuToggle() { Init(); g_open = !g_open; g_ldown = g_rdown = false; if (g_open) g_built = false; }      // rebuild on open: entities may have been recreated by a load
+static unsigned g_toggles; unsigned DevMenuToggles() { return g_toggles; }
+void DevMenuToggle() { Init(); ++g_toggles; g_open = !g_open; g_ldown = g_rdown = false; if (g_open) g_built = false; }      // rebuild on open: entities may have been recreated by a load
 void DevMenuSetPage(int p) { Init(); g_page = p; if (p == 2) SaveListRefresh(); if (!g_open) { g_open = true; g_built = false; } }
 #include "povui.h"
 #include "social.h"
