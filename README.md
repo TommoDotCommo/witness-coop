@@ -276,6 +276,14 @@ installing, an unchecked payload hash, a followed link, a reused folder, a missi
 game's Ansel DLL put back unverified, the old proxy left behind, the chain file ignored, the Proton override written for the wrong exe or left behind on uninstall) that must fail. `tools/test_release_signing.sh` tests the signing hook with a stand-in signer. Publishing is `gh release create v0.x.y --prerelease <the Setup.exe, the zip and their .sha256>`
 (the notes go in `docs/RELEASE-NOTES-v0.x.y.md`). The launcher's updater only accepts a release with the exact asset names and tag shape in [docs/UPDATER.md](docs/UPDATER.md).
 
+## If Windows warns you
+
+The release files are **not code-signed yet** (we will apply for free open-source signing after the public beta).
+Windows may stop Setup with **"Windows protected your PC"**: click **More info**, then **Run anyway**. If Microsoft
+Defender quarantines a file, it is a false positive: we report every release's files to Microsoft. Check the file's
+SHA-256 against the `.sha256` file on the release page, then restore it from Windows Security > Protection history, or
+install with a mod manager or by hand from the zip instead (no Setup needed).
+
 ## Try it (two copies on one PC)
 
 Requirements: Windows with the Steam build above; WSL2 with `make` and MinGW-w64 (`x86_64-w64-mingw32-g++`); Windows Python 3
