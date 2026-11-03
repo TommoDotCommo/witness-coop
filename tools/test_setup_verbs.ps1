@@ -129,7 +129,7 @@ try {
             @('running-code', 'witness-coop.ps1', "Close it and run this again.' `$ExitRunning }", "Close it and run this again.' }"),
             @('build-code', 'witness-coop.ps1', "(Get-WitnessBuildReport `$game)) `$ExitUnknownBuild }", "(Get-WitnessBuildReport `$game)) }"),
             @('manager-overwrite', 'witness-coop.ps1', "    if (`$owner -eq 'vortex') {`n        Fail 'Installed by Vortex: update or remove it there.", "    if (`$false) {`n        Fail 'Installed by Vortex: update or remove it there."),
-            @('owner-by-links', 'install-state.ps1', "-gt 1) {`n                    return 'vortex'", "-gt 99) {`n                    return 'vortex'")
+            @('owner-by-links', 'install-state.ps1', "-gt 1) { return 'vortex' }", "-gt 99) { return 'vortex' }")
         )
         foreach ($t in $twins) {
             $m = Join-Path $root ('mutant-' + $t[0])
