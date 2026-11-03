@@ -62,6 +62,16 @@ The text of the co-op overlay is in the game's own typeface.
 
 A player who overlaps your body fades to a ghost, so the view is not blocked; a step away and it is drawn normally again.
 
+### Shared panels and lines
+
+| The maze, unsolved | Player 2 draws, player 1 watches | Solved in both games |
+|---|---|---|
+| ![The maze, unsolved](showcase/panel_0_before.jpg) | ![The line in progress](showcase/panel_draw_2.jpg) | ![Solved in both games](showcase/panel_2_solved.jpg) |
+
+Player 2 draws the cable-driving maze with real mouse input (through the game's own input path); player 1, standing at an angle in front of it, sees the blue line grow on the
+panel while it is drawn. When the line is finished the panel is solved in both games and the cable lights up: panel and power state travel as reliable events, lines are drawn from
+what the other game sends.
+
 ### Chat, typing dots, pings
 
 ![Chat, typing dots and pings](showcase/social.jpg)
