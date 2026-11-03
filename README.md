@@ -239,6 +239,10 @@ Not run on a real Steam Deck or Linux PC yet (tracked in Known issues). What is 
   makes Play start the game directly; hold Shift while it starts to get the launcher back. On a Deck (`SteamDeck=1`) the launcher fills the screen (1280x800)
   and is driven with the Deck's controls (stick or D-pad, A, B, LB/RB, Start, X/Y as the footer says). Typing (a name, an invite) needs the Steam keyboard
   (Steam + X) for now.
+  In the game the co-op actions are on the pad's View button (tap: ping; hold: the player list; with View held, D-pad up the emote wheel, down chat with
+  Steam's floating keyboard or one on screen, left / right watch, RB quick chat, Y the quick guide; the game gets no pad while View is held). Voice *Automatic*
+  is open mic after pad input. The model is `common/padlayer.h` (`make -C common pad-test`, with mutants); `tools/qa.sh pad` checks it live through the
+  game's own `XInputGetState` (the proxy's `pad <buttons hex> [lx ly rx ry lt rt]` stands in for a pad, `padstat` writes `witness_pad.json`; mutant `pad_leak=1`).
 - Unknown: whether Proton's `dsound` loaded by full path from `system32` (what the proxy forwards to) behaves as on Windows, overlay and model drawing
   under DXVK, voice (microphone) under Proton, window placement on the Deck's screen. Reports welcome.
 
