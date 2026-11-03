@@ -15,7 +15,7 @@
 namespace lw {
 class Mutex { CRITICAL_SECTION cs_; public: Mutex() { InitializeCriticalSection(&cs_); } ~Mutex() { DeleteCriticalSection(&cs_); } void lock() { EnterCriticalSection(&cs_); } void unlock() { LeaveCriticalSection(&cs_); } };
 struct Guard { Mutex& m; explicit Guard(Mutex& mm) : m(mm) { m.lock(); } ~Guard() { m.unlock(); } };
-struct VoiceCfg { int mode = 2; unsigned key = 'N'; int micVolume = 100, outVolume = 100; std::string testTone; bool muteOutput = false; };       // mode: 0 off, 1 open microphone, 2 push to talk
+struct VoiceCfg { int mode = 2; unsigned key = 'B', key2 = 5 /* XBUTTON1 */; int micVolume = 100, outVolume = 100; std::string testTone; bool muteOutput = false; };       // mode: 0 off, 1 open microphone, 2 push to talk
 struct VoiceStats { unsigned sent = 0, received = 0, level = 0; bool speaking = false; std::vector<wvoice::SpeakerStat> speakers; };
 
 class Voice;

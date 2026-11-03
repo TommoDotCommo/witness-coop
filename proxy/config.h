@@ -92,7 +92,9 @@ struct Cfg {
     bool noDiagMarkSend = false; // test mutant: the marker is not sent to the other players
     bool noDiagFlight = false;   // test mutant: no flight recorder samples
     std::vector<std::string> movedKeys, keyConflicts;   // the one-time list of keys whose default moved (common/movedkeys.h writes it), and the shared keys a player's own binding kept (logged)
+    std::string invite;          // invite=<text>: the launcher's invite for this session (the player panel offers Copy invite when it is set)
     bool oldVWatch = false;      // test mutant old_v_watch=1: V watches the player (the pre-2026-11 key) instead of pinging
     bool noPlayerPanel = false;  // test mutant no_player_panel=1: holding Tab does not open the player panel
 };
 const Cfg& GetCfg();
+void WriteMovedKeys();      // once per user: the list of keys whose default moved, for the launcher's What's new (common/movedkeys.h); not from DllMain

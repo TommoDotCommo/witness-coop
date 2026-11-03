@@ -7,13 +7,22 @@ build/guide-test: guide_test.cpp guide.h movedkeys.h bindings.def ../proxy/confi
 build/mutant-%: guide_test.cpp guide.h movedkeys.h bindings.def ../proxy/config.h ../proxy/bindings.h
 	mkdir -p build
 	$(CXX) $(CXXFLAGS) -DGUIDE_MUT_$* -o $@ $<
+NOTICE_MUTANTS = WORDS REPEAT NEVER_LEFT
+build/notices-test: notices_test.cpp notices.h
+	mkdir -p build
+	$(CXX) $(CXXFLAGS) -o $@ $<
+build/notices-mutant-%: notices_test.cpp notices.h
+	mkdir -p build
+	$(CXX) $(CXXFLAGS) -DNOTICE_MUT_$* -o $@ $<
 build/buildid-test: buildid_test.cpp buildid.h sha256.h buildid_fixture.h
 	mkdir -p build
 	$(CXX) $(CXXFLAGS) -g -fsanitize=address,undefined -fno-sanitize-recover=undefined -o $@ $<
 build/buildid-mutant: buildid_test.cpp buildid.h sha256.h buildid_fixture.h
 	mkdir -p build
 	$(CXX) $(CXXFLAGS) -DBI_MUT_SKIP_TEXT -o $@ $<
-test: build/guide-test $(addprefix build/mutant-,$(MUTANTS)) build/buildid-test build/buildid-mutant
+test: build/guide-test $(addprefix build/mutant-,$(MUTANTS)) build/buildid-test build/buildid-mutant build/notices-test $(addprefix build/notices-mutant-,$(NOTICE_MUTANTS))
+	build/notices-test
+	@for m in $(NOTICE_MUTANTS); do if build/notices-mutant-$$m >/dev/null 2>&1; then echo "MUTANT notices $$m SURVIVED"; exit 1; else echo "mutant notices $$m killed"; fi; done
 	build/buildid-test $(BUILDID_EXE)
 	@if build/buildid-mutant >/dev/null 2>&1; then echo "MUTANT buildid SKIP_TEXT SURVIVED"; exit 1; else echo "mutant buildid SKIP_TEXT killed"; fi
 	build/guide-test

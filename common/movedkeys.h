@@ -7,7 +7,20 @@
 #include <cstdlib>
 #include <string>
 #include <vector>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 namespace movedkeys {
+inline FILE* Open(const std::string& utf8, const char* mode) {      // UTF-8 path (a user name with accents is a normal case on Windows)
+#ifdef _WIN32
+    int n = MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), -1, nullptr, 0); std::wstring w(n > 0 ? n - 1 : 0, L'\0');
+    if (n > 1) MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), -1, &w[0], n);
+    std::wstring m; for (const char* c = mode; *c; ++c) m += wchar_t(*c);
+    return _wfopen(w.c_str(), m.c_str());
+#else
+    return std::fopen(utf8.c_str(), mode);
+#endif
+}
 constexpr int kScheme = 2;      // 1: the keys before 2026-11 (P ping, N talk, G emote, H channel, B ink, V watch, F5 list); 2: the shared co-op keys
 // `cfgDir`: the folder of witness_coop.cfg with a trailing separator. The per-user folder (%LOCALAPPDATA%\witness-coop\, where the logs live) is used unless
 // `instance` is true; lab copies (`instance`: a per-instance diag_dir) and installs without one keep the files beside the cfg.
@@ -19,7 +32,7 @@ inline std::string Dir(const std::string& cfgDir, bool instance, const char* loc
     return cfgDir;
 }
 inline int SchemeOf(const std::string& dir) {
-    FILE* f = std::fopen((dir + "keys_scheme").c_str(), "r"); if (!f) return 0;
+    FILE* f = Open(dir + "keys_scheme", "r"); if (!f) return 0;
     int v = 0; if (std::fscanf(f, "%d", &v) != 1) v = 0; std::fclose(f); return v;
 }
 // Writes the list unless this scheme was already handled. Returns true when it wrote one.
@@ -30,10 +43,10 @@ inline bool WriteOnce(const std::string& dir, const std::vector<std::string>& no
     if (SchemeOf(dir) >= kScheme)
 #endif
         return false;
-    FILE* f = std::fopen((dir + "moved_keys.txt").c_str(), "w"); if (!f) return false;
+    FILE* f = Open(dir + "moved_keys.txt", "w"); if (!f) return false;
     for (const auto& n : notes) std::fprintf(f, "%s\n", n.c_str());
     std::fclose(f);
-    FILE* g = std::fopen((dir + "keys_scheme").c_str(), "w"); if (g) { std::fprintf(g, "%d\n", kScheme); std::fclose(g); }
+    FILE* g = Open(dir + "keys_scheme", "w"); if (g) { std::fprintf(g, "%d\n", kScheme); std::fclose(g); }
     return true;
 }
 }  // namespace movedkeys

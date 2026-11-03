@@ -68,7 +68,7 @@ check('B holds the same stroke (same points, from player 1)', st and bt and bt[0
 check('B counts the same strokes and points as A', sa['strokes'] == sb['strokes'] and sa['points'] == sb['points'], (sa['strokes'], sa['points'], sb['strokes'], sb['points']))
 check('B draws the ink (line segments on its screen)', sb['segs'] >= 3, sb['segs'])
 # 4. a colour
-send(da, ['key B down'], 0.15); send(da, ['key B up'], 0.2); send(da, ['reticle 0.6 0.6', 'key X down'], 0.4)
+send(da, ['inkwheel 120'], 0.3); send(da, ['reticle 0.6 0.6', 'key X down'], 0.4)
 for i in range(6): send(da, ['mouse -20 0'], 0.22)
 send(da, ['key X up'], 1.0); sa = draw(da); sb = draw(db)
 check('the next stroke has the next colour in both games', sa['list'] and sb['list'] and sa['list'][-1]['color'] == 1 and sb['list'][-1]['color'] == 1 and sa['strokes'] == sb['strokes'] == 3, (sa['list'] and sa['list'][-1]['color'], sb['list'] and sb['list'][-1]['color'], sa['strokes'], sb['strokes']))

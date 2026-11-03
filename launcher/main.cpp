@@ -76,13 +76,13 @@ void AddFields() {
     add(3, "Game sound off (-no_sound)",
 #endif
  "cfg:launcher_no_sound", kCheck); add(3, "Game volume, percent", "cfg:game_volume", kEdit, {}, "100", "its entry in the Windows volume mixer");
-    add(3, "Voice chat", "cfg:voice_mode", kCombo, {"off", "open", "ptt"}, "ptt", "off, open (voice gate) or ptt (push to talk)"); add(3, "Push-to-talk key", "cfg:key_voice", kEdit, {}, guide::KeyName(Cfg().keyVoice).c_str(), "unique letter, digit or function key; F1 is help"); add(3, "Who hears you (voice channel)", "cfg:voice_channel", kCombo, {"proximity", "radio", "global"}, "proximity", "proximity, radio or global (open line)");
+    add(3, "Voice chat", "cfg:voice_mode", kCombo, {"off", "open", "ptt"}, "ptt", "off, open (voice gate) or ptt (push to talk)"); add(3, "Push-to-talk key", "cfg:key_voice", kEdit, {}, guide::KeyName(Cfg().keyVoice).c_str(), "a letter, digit, function key or mouse button (MMB, XBUTTON1, XBUTTON2, WHEEL); F1 is help"); add(3, "Who hears you (voice channel)", "cfg:voice_channel", kCombo, {"proximity", "radio", "global"}, "proximity", "proximity, radio or global (open line)");
     add(3, "Voice volume, percent", "cfg:voice_volume", kEdit, {}, "100"); add(3, "Microphone volume, percent", "cfg:mic_volume", kEdit, {}, "100"); add(3, "Hear players within (metres)", "cfg:voice_range", kEdit, {}, "25", "beyond it the voice turns into radio");
     add(3, "Radio range (metres, 0: unlimited)", "cfg:voice_radio_range", kEdit, {}, "0"); add(3, "Radio sound when far away", "cfg:voice_radio", kCheck, {}, "1");
     add(3, "Handheld radio", "cfg:radio_enabled", kCheck, {}, "1", "hold the radio key to transmit");
     for (const auto& b : guide::bindings) {
         if (std::string(b.config) == "key_voice") continue; // voice tab already has this control
-        add(4, b.label, (std::string("cfg:") + b.config).c_str(), kEdit, {}, guide::KeyName(b.initial).c_str(), "unique letter, digit or function key; F1 is help");
+        add(4, b.label, (std::string("cfg:") + b.config).c_str(), kEdit, {}, guide::KeyName(b.initial).c_str(), "a letter, digit, function key or mouse button (MMB, XBUTTON1, XBUTTON2, WHEEL); F1 is help");
     }
     for (const auto& d : wl::SaveOptionDefs()) add(5, d.label, (std::string("opt:") + d.name).c_str(), d.kind == wl::OptKind::Bool ? kCheck : kEdit);
     const std::vector<std::vector<std::string>> palettes = {
@@ -156,7 +156,7 @@ Cfg GuideSettings(bool migrate) {
     Cfg keys;
     for (const auto& b : guide::bindings) {
         auto* f = ByKey(std::string("cfg:") + b.config);
-        if (f) keys.*b.member = guide::ParseKey(GetVal(*f).empty() ? guide::KeyName(b.initial) : GetVal(*f));
+        if (f) keys.*b.member = GetVal(*f).empty() ? b.initial : guide::MigrateDefault(b.config, guide::ParseKey(GetVal(*f)));      // (a key still on its old default shows the new default)
     }
     if (migrate) guide::MigrateF1(keys);
     return keys;
@@ -439,10 +439,10 @@ std::string CfgGet(const char* k, const char* d = "") { return LoadCfg().Get(k, 
 lw::VoiceCfg VoiceCfgNow() {
     wl::CfgFile c = LoadCfg(); lw::VoiceCfg v; std::string m = c.Get("voice_mode", "ptt"); v.mode = m == "off" ? 0 : m == "open" ? 1 : 2; Cfg keys;
     for (const auto& b : guide::bindings) {
-        unsigned k = guide::ParseKey(c.Get(b.config, guide::KeyName(b.initial)));
+        unsigned k = guide::MigrateDefault(b.config, guide::ParseKey(c.Get(b.config, guide::KeyName(b.initial))));
         if (k) keys.*b.member = k;
     }
-    guide::MigrateF1(keys); v.key = keys.keyVoice;
+    guide::MigrateAll(keys); v.key = keys.keyVoice; v.key2 = keys.keyVoiceAlt;
     v.micVolume = atoi(c.Get("mic_volume", "100").c_str()); v.outVolume = atoi(c.Get("voice_volume", "100").c_str()); v.testTone = c.Get("voice_test_tone", ""); v.muteOutput = c.Get("voice_mute_output", "0") == "1"; return v;
 }
 void StartVoice() {
@@ -510,6 +510,7 @@ void LaunchFromLobby(const wlobby::Launch& l) {
     std::wstring msg; if (!ApplyAll(&msg)) { LobbyStatus(msg); return; }
     g_cfgBackup = ReadFile8(CfgPath());      // the player's own settings: put back when the game is over
     std::string cfg = wlobby::BuildGameCfg(g_cfgBackup, l, g_sess.HostIp());
+    { std::string inv = g_sess.Invite(); if (!inv.empty() && inv.find_first_of("\r\n") == std::string::npos) { if (!cfg.empty() && cfg.back() != '\n') cfg += "\n"; cfg += "invite=" + inv + "\n"; } }      // the game's player panel offers Copy invite (not kept: the cfg is restored afterwards)
 #ifndef WL_MUT_LOBBY_NO_CFG
     WriteFile8(CfgPath(), cfg);
 #endif

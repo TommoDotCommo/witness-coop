@@ -89,7 +89,7 @@ static UINT WINAPI HookGetRawInputData(HRAWINPUT h, UINT cmd, LPVOID data, PUINT
         if (data && r != (UINT)-1 && cmd == RID_INPUT && r >= sizeof(RAWINPUTHEADER) && !DevMenuOpen()) BoostMouse((RAWINPUT*)data);
         if ((DevMenuOpen() || PovRosterOpen() || SocialMouseCaptured()) && data && r != (UINT)-1 && cmd == RID_INPUT && r >= sizeof(RAWINPUTHEADER)) {      // the dev menu or the player list is open: it takes the mouse motion, the game gets an empty event
             RAWINPUT* ri = (RAWINPUT*)data;
-            if (ri->header.dwType == RIM_TYPEMOUSE) { if (!(ri->data.mouse.usFlags & MOUSE_MOVE_ABSOLUTE)) { if (DevMenuOpen()) DevMenuRawMove(ri->data.mouse.lLastX, ri->data.mouse.lLastY); else if (SocialMouseCaptured()) SocialRawMove(ri->data.mouse.lLastX, ri->data.mouse.lLastY); } ri->data.mouse.lLastX = ri->data.mouse.lLastY = 0; ri->data.mouse.usButtonFlags = 0; ri->data.mouse.usButtonData = 0; }
+            if (ri->header.dwType == RIM_TYPEMOUSE) { if (!(ri->data.mouse.usFlags & MOUSE_MOVE_ABSOLUTE)) { if (DevMenuOpen()) DevMenuRawMove(ri->data.mouse.lLastX, ri->data.mouse.lLastY); else if (PovRosterOpen()) PovPanelMove(ri->data.mouse.lLastX, ri->data.mouse.lLastY); else if (SocialMouseCaptured()) SocialRawMove(ri->data.mouse.lLastX, ri->data.mouse.lLastY); } ri->data.mouse.lLastX = ri->data.mouse.lLastY = 0; ri->data.mouse.usButtonFlags = 0; ri->data.mouse.usButtonData = 0; }
             else if (ri->header.dwType == RIM_TYPEKEYBOARD && !(ri->data.keyboard.Flags & RI_KEY_BREAK) && (DevMenuOpen() || PovRosterOpen() || SocialCapturing())) { ri->data.keyboard.VKey = 0; ri->data.keyboard.MakeCode = 0; ri->data.keyboard.Flags |= RI_KEY_BREAK; }
         }
         if (data && r != (UINT)-1 && cmd == RID_INPUT && r >= sizeof(RAWINPUTHEADER) && ((RAWINPUT*)data)->header.dwType == RIM_TYPEKEYBOARD && !(((RAWINPUT*)data)->data.keyboard.Flags & RI_KEY_BREAK) && (SocialSwallowRaw(((RAWINPUT*)data)->data.keyboard.VKey) || MenuSwallowRaw(((RAWINPUT*)data)->data.keyboard.VKey) || ((RAWINPUT*)data)->data.keyboard.VKey == guide::Help)) { RAWINPUT* ri = (RAWINPUT*)data; ri->data.keyboard.VKey = 0; ri->data.keyboard.MakeCode = 0; ri->data.keyboard.Flags |= RI_KEY_BREAK; }      // a key the mod took (it closed the chat box): the game must not see its raw press either
@@ -115,6 +115,10 @@ static UINT WINAPI HookGetRawInputData(HRAWINPUT h, UINT cmd, LPVOID data, PUINT
     }
     if (DevMenuOpen()) {      // our own (bot) events go to the dev menu while it is open
         if (!e.key) { DevMenuRawMove(e.dx, e.dy); ri.data.mouse.lLastX = ri.data.mouse.lLastY = 0; ri.data.mouse.usButtonFlags = 0; }
+        else if (e.down) { ri.data.keyboard.VKey = 0; ri.data.keyboard.MakeCode = 0; ri.data.keyboard.Flags = RI_KEY_BREAK; }
+    }
+    else if (PovRosterOpen()) {      // ... to the player panel (hold Tab)
+        if (!e.key) { PovPanelMove(e.dx, e.dy); ri.data.mouse.lLastX = ri.data.mouse.lLastY = 0; ri.data.mouse.usButtonFlags = 0; }
         else if (e.down) { ri.data.keyboard.VKey = 0; ri.data.keyboard.MakeCode = 0; ri.data.keyboard.Flags = RI_KEY_BREAK; }
     }
     else if (SocialMouseCaptured()) {      // ... and to the emote wheel / chat box
@@ -147,12 +151,15 @@ static BOOL WINAPI HookPeekMessageA(LPMSG m, HWND w, UINT lo, UINT hi, UINT rm) 
     case WM_KEYDOWN: case WM_SYSKEYDOWN: take = MenuKey((unsigned)m->wParam, true, (m->lParam & (LPARAM(1) << 30)) != 0) || SocialKey((unsigned)m->wParam, true); break;
     case WM_KEYUP: case WM_SYSKEYUP: take = MenuKey((unsigned)m->wParam, false); take = SocialKey((unsigned)m->wParam, false) || take; break;
     case WM_CHAR: take = DevMenuOpen() || PovRosterOpen() || SocialChar((unsigned)m->wParam) || SocialCapturing(); break;
-    case WM_LBUTTONDOWN: take = DevMenuMouseButton(0, true) || PovRosterOpen() || SocialCapturing(); break;
+    case WM_LBUTTONDOWN: take = DevMenuMouseButton(0, true) || PovPanelClick() || SocialCapturing(); break;
     case WM_RBUTTONDOWN: take = DevMenuMouseButton(1, true) || PovRosterOpen() || SocialCapturing(); break;
-    case WM_MBUTTONDOWN: take = DevMenuMouseButton(2, true) || PovRosterOpen() || SocialCapturing(); break;
+    case WM_MBUTTONDOWN: take = DevMenuMouseButton(2, true) || PovRosterOpen() || SocialCapturing() || SocialKey(guide::MouseMiddle, true); break;      // (a mouse button is a key code below 8: common/guide.h)
+    case WM_MBUTTONUP: take = SocialKey(guide::MouseMiddle, false); break;
+    case WM_XBUTTONDOWN: take = SocialKey(guide::MouseX1 + (GET_XBUTTON_WPARAM(m->wParam) == XBUTTON2 ? 1 : 0), true); break;
+    case WM_XBUTTONUP: take = SocialKey(guide::MouseX1 + (GET_XBUTTON_WPARAM(m->wParam) == XBUTTON2 ? 1 : 0), false); break;
     case WM_LBUTTONUP: DevMenuMouseButton(0, false); break;
     case WM_RBUTTONUP: DevMenuMouseButton(1, false); break;
-    case WM_MOUSEWHEEL: take = DevMenuWheel(GET_WHEEL_DELTA_WPARAM(m->wParam)) || PovRosterOpen() || SocialCapturing(); break;
+    case WM_MOUSEWHEEL: take = DevMenuWheel(GET_WHEEL_DELTA_WPARAM(m->wParam)) || PovRosterOpen() || SocialCapturing() || SocialWheel(GET_WHEEL_DELTA_WPARAM(m->wParam)); break;
     case WM_MOUSEMOVE: take = DevMenuOpen() || PovRosterOpen() || SocialCapturing(); break;
     }
     if (take) m->message = WM_NULL;

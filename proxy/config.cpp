@@ -15,6 +15,13 @@ static std::wstring DllDir() {
     wchar_t* s = wcsrchr(p, L'\\'); if (s) *(s + 1) = 0; return p;
 }
 
+#include "../common/movedkeys.h"
+void WriteMovedKeys() {
+    const Cfg& c = GetCfg(); std::wstring dir = DllDir(); bool perUser = c.diagDir.empty();
+    if (perUser) { wchar_t la[MAX_PATH]; DWORD n = GetEnvironmentVariableW(L"LOCALAPPDATA", la, MAX_PATH); if (n && n < MAX_PATH) { dir = std::wstring(la) + L"\\witness-coop\\"; CreateDirectoryW(dir.c_str(), nullptr); } }
+    auto utf8 = [](const std::wstring& w) { int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, nullptr, 0, nullptr, nullptr); std::string s(n > 0 ? n - 1 : 0, '\0'); if (n > 1) WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, &s[0], n, nullptr, nullptr); return s; };
+    movedkeys::WriteOnce(utf8(dir), c.movedKeys);
+}
 const Cfg& GetCfg() {
     static Cfg c = [] {
         Cfg r; FILE* f = _wfopen((DllDir() + L"witness_coop.cfg").c_str(), L"r"); if (!f) { r.movedKeys = guide::MovedNotes(r); return r; }
@@ -55,6 +62,7 @@ const Cfg& GetCfg() {
             else if (sscanf(line, "model_speed=%f", &fv) == 1) r.modelStride = fv;
             else if (sscanf(line, "no_model_depth=%d", &v) == 1) r.noModelDepth = v != 0;
             else if (sscanf(line, "no_pause_hide=%d", &v) == 1) r.noPauseHide = v != 0;
+            else if (!strncmp(line, "invite=", 7)) { std::string t = line + 7; while (!t.empty() && (t.back() == '\r' || t.back() == '\n')) t.pop_back(); r.invite = t; }
             else if (sscanf(line, "old_v_watch=%d", &v) == 1) r.oldVWatch = v != 0;
             else if (sscanf(line, "no_player_panel=%d", &v) == 1) r.noPlayerPanel = v != 0;
             else if (sscanf(line, "no_chat_ui=%d", &v) == 1) r.noChatUi = v != 0;

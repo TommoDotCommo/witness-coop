@@ -52,7 +52,8 @@ std::vector<wvoice::Speaker> Speakers() {
     }
     return r;
 }
-wvoice::Settings MixSettings() { const Cfg& c = GetCfg(); wvoice::Settings s; s.range = c.voiceRange; s.radioRange = c.voiceRadioRange; s.radio = c.voiceRadio; s.volume = c.voiceVolume / 100.0f; s.self = c.voiceNoSelf ? 0 : CoopMyId(); return s; }
+static volatile LONG g_voiceVolumeLive = -1;      // the player panel's voice volume for everybody (percent); -1: the cfg's voice_volume
+wvoice::Settings MixSettings() { const Cfg& c = GetCfg(); wvoice::Settings s; s.range = c.voiceRange; s.radioRange = c.voiceRadioRange; s.radio = c.voiceRadio; s.volume = VoiceGlobalVolume() / 100.0f; s.self = c.voiceNoSelf ? 0 : CoopMyId(); return s; }
 
 // ---- the microphone: a WinMM capture (or the test tones), 20 ms at a time
 void Transmit(const int16_t* pcm, bool want, wvoice::Adpcm* enc) {
@@ -142,6 +143,8 @@ void ApplyGameVolume() {
 }
 DWORD WINAPI VolumeThread(LPVOID) { CoInitializeEx(nullptr, COINIT_MULTITHREADED); for (;;) { ApplyGameVolume(); Sleep(3000); } }
 }  // namespace
+int VoiceGlobalVolume() { LONG v = g_voiceVolumeLive; return v >= 0 ? (int)v : GetCfg().voiceVolume; }
+void VoiceSetGlobalVolume(int pct) { InterlockedExchange(&g_voiceVolumeLive, std::max(0, std::min(100, pct))); }
 
 // ---- the channel: who hears me and how
 static std::string RemoteName(unsigned id) { for (const auto& rp : CoopGetRemotes()) if (rp.id == id && rp.name[0]) return rp.name; char b[24]; snprintf(b, sizeof b, "player %u", id); return b; }
@@ -186,7 +189,7 @@ void VoiceOnPacket(const uint8_t* data, size_t n) {      // network thread
     if (!g_lkInit) return; wvoice::Packet p; if (!wvoice::ParsePacket(data, n, &p)) return; InterlockedIncrement(&g_received);
     if (GetCfg().noVoicePlay) return; Lock l; g_mixer.Push(p);
 }
-bool VoiceKey(unsigned vk, bool down) { if (vk != GetCfg().keyVoice) return false; InterlockedExchange(&g_ptt, down ? 1 : 0); return false; }
+bool VoiceKey(unsigned vk, bool down) { if (!vk || (vk != GetCfg().keyVoice && vk != GetCfg().keyVoiceAlt)) return false; InterlockedExchange(&g_ptt, down ? 1 : 0); return false; }
 bool VoiceProximitySpeaking() { return g_proximityGesture != 0 && !GetCfg().noSpeakingFlag; }
 bool VoiceRadioKey(bool down, bool blocked) {
     wradio::Hold h; h.Key(down, GetCfg().radioEnabled, blocked);

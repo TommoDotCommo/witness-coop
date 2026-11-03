@@ -164,7 +164,7 @@ void Voice::Transmit(const int16_t* pcm, bool want) {
 }
 void Voice::Capture() {
     wvoice::Vad vad; uint64_t sample = 0; std::vector<float> tones; { size_t at = 0; const std::string& t = c_.testTone; while (at < t.size()) { size_t e = t.find(',', at); if (e == std::string::npos) e = t.size(); tones.push_back((float)atof(t.substr(at, e - at).c_str())); at = e + 1; } }
-    auto wanted = [&](const int16_t* pcm) { if (c_.mode == 0 && tones.empty()) return false; if (c_.mode == 2 && tones.empty()) return (GetAsyncKeyState((int)c_.key) & 0x8000) != 0; return tones.empty() ? vad.Feed(pcm) : true; };
+    auto wanted = [&](const int16_t* pcm) { if (c_.mode == 0 && tones.empty()) return false; if (c_.mode == 2 && tones.empty()) return ((c_.key && (GetAsyncKeyState((int)c_.key) & 0x8000)) || (c_.key2 && (GetAsyncKeyState((int)c_.key2) & 0x8000))) != 0; return tones.empty() ? vad.Feed(pcm) : true; };
     timeBeginPeriod(1);
     if (!tones.empty()) {      // no microphone: a test voice, paced by the clock
         ULONGLONG next = GetTickCount64();

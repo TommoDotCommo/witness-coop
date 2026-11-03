@@ -44,6 +44,7 @@ static const uintptr_t kPausedOld = 0x62DAC4;      // the first candidate, WRONG
 #include "playercolor.h"
 #include "social.h"
 #include "povui.h"
+#include "ui/player_panel.h"
 #include <atomic>
 #include <cctype>
 
@@ -329,35 +330,93 @@ unsigned OverlayTvAim(){ return g_tvAimed.load(); }
 bool PovRosterOpen() { return g_rosterOpen.load(); }
 void OverlayPovState(unsigned* aimed, int* rosterOpen) { *aimed = g_aimed.load(); *rosterOpen = g_rosterOpen.load() ? 1 : 0; }
 static std::vector<unsigned> PlayerIds() { std::vector<unsigned> ids; for (const auto& rp : CoopGetRemotes()) if (rp.valid && rp.ageMs < 5000) ids.push_back(rp.id); std::sort(ids.begin(), ids.end()); return ids; }
-bool PovKey(unsigned vk, bool down) {       // V: watch the player you look at (again: stop); ] next, [ previous; F5: the player list
-    if (GetCfg().noPartnerView && !DevMenuEnabled()) return false;
+// ---- The hold-Tab player panel (model, layout and keys: ui/player_panel.h). Tab held opens it, released closes it; it takes the keyboard and the mouse from the game meanwhile.
+static std::atomic<int> g_panelW{1280}, g_panelH{720}; static std::atomic<float> g_panelCx{0}, g_panelCy{0};      // the screen the panel was last drawn for, and its mouse cursor
+static std::atomic<float> g_camSeen[3]; static std::atomic<bool> g_leaveAsk{false}, g_tagsOff{false};
+static wpanel::Nav g_nav; static std::atomic<unsigned> g_panelActs{0}, g_panelLast{0};      // (the test command panelstat reads these)
+static wpanel::Options PanelOptions() { wpanel::Options o; o.canKick = false /* TODO: the lobby has no way to remove a player yet; set when it has */; o.hasInvite = !GetCfg().invite.empty(); o.confirmLeave = g_leaveAsk.load(); return o; }
+static std::vector<wpanel::Row> PanelRows() {
+    std::vector<wpanel::Row> rows; unsigned watching = VideoWatching(); const float* cam = nullptr; float c[3] = {g_camSeen[0], g_camSeen[1], g_camSeen[2]}; cam = c;
+    for (const auto& rp : CoopGetRemotes()) {
+        wpanel::Row r; r.id = rp.id; r.name = rp.name[0] ? rp.name : "?"; PlayerColor(rp.id, r.color);
+        r.host = rp.id == 1; r.speaking = rp.speaking; r.pingMs = rp.ageMs < 5000 ? rp.pingMs : -1; r.watching = watching == rp.id;
+        r.loading = !rp.valid; r.down = rp.valid && rp.ageMs >= 5000;
+        if (rp.valid) { float dx = rp.pos[0] - cam[0], dy = rp.pos[1] - cam[1], dz = rp.pos[2] - cam[2]; r.distance = sqrtf(dx * dx + dy * dy + dz * dz); }
+        float v = VoiceGetPlayerVolume(rp.id); r.volume = v; r.muted = v <= 0;
+        rows.push_back(r);
+    }
+    std::sort(rows.begin(), rows.end(), [](const wpanel::Row& a, const wpanel::Row& b) { return a.id < b.id; });
+    return rows;
+}
+static void PanelCopyInvite() {
+    const std::string& t = GetCfg().invite; if (t.empty() || !OpenClipboard(g_gameWnd)) return;
+    EmptyClipboard(); HGLOBAL g = GlobalAlloc(GMEM_MOVEABLE, t.size() + 1);
+    if (g) { memcpy(GlobalLock(g), t.c_str(), t.size() + 1); GlobalUnlock(g); SetClipboardData(CF_TEXT, g); }
+    CloseClipboard(); DevMenuNotice("The invite is on the clipboard.");
+}
+static void PanelDo(const wpanel::Hit& h) {
+    using wpanel::Act; if (h.act == Act::None) return;
+    g_panelActs.fetch_add(1); g_panelLast = (unsigned)h.act;
+    bool noView = GetCfg().noPartnerView && !DevMenuEnabled();
+    switch (h.act) {
+    case Act::Watch: if (!noView) VideoWatch(h.id); break;
+    case Act::Clear: VideoClear(); break;
+    case Act::Mute: { float v = VoiceGetPlayerVolume(h.id); VoicePlayerVolume(h.id, v > 0 ? 0.f : 1.f); break; }
+    case Act::VolDown: case Act::VolUp: { float v = VoiceGetPlayerVolume(h.id); VoicePlayerVolume(h.id, std::max(0.f, std::min(1.f, v + (h.act == Act::VolUp ? .1f : -.1f)))); break; }
+    case Act::VoiceDown: VoiceSetGlobalVolume(VoiceGlobalVolume() - 10); break;
+    case Act::VoiceUp: VoiceSetGlobalVolume(VoiceGlobalVolume() + 10); break;
+    case Act::NameTags: g_tagsOff = !g_tagsOff.load(); break;
+    case Act::PartnerSize: VideoCycleSize(); break;
+    case Act::CopyInvite: PanelCopyInvite(); break;
+    case Act::Leave: g_leaveAsk = true; break;
+    case Act::LeaveNo: g_leaveAsk = false; break;
+    case Act::LeaveYes: g_leaveAsk = false; g_rosterOpen = false; if (g_gameWnd) PostMessageW(g_gameWnd, WM_CLOSE, 0, 0); break;      // the game closes; the launcher takes the lobby back (the others are not touched)
+    case Act::Close: g_rosterOpen = false; g_leaveAsk = false; break;
+    case Act::Kick: Log("panel: kick is not available (the lobby cannot remove a player yet)"); break;
+    default: break;
+    }
+}
+static void PanelOpen() {
+    g_rosterOpen = true; g_leaveAsk = false; g_nav.sel = 0;
+    g_panelCx = g_panelW.load() / 2.f; g_panelCy = g_panelH.load() / 2.f;
+}
+void PovPanelMove(int dx, int dy) {
+    g_panelCx = std::max(0.f, std::min(float(g_panelW.load()), g_panelCx.load() + dx)); g_panelCy = std::max(0.f, std::min(float(g_panelH.load()), g_panelCy.load() + dy));
+}
+bool PovPanelClick() {
+    if (!g_rosterOpen.load()) return false;
+    auto rows = PanelRows(); wpanel::Options o = PanelOptions();
+    wpanel::Layout L = wpanel::Compute(float(g_panelW.load()), float(g_panelH.load()), rows.size(), o);
+    PanelDo(wpanel::HitTest(L, rows, o, g_panelCx.load(), g_panelCy.load())); return true;
+}
+bool PovKey(unsigned vk, bool down) {       // hold Tab: the player panel; [ previous player, ] next player (the screen you watch); V is the ping (social.cpp) and no longer watches
+    bool noView = GetCfg().noPartnerView && !DevMenuEnabled();
+    if (vk == guide::Roster && !GetCfg().noPlayerPanel) {
+        if (!down) { if (!g_rosterOpen.load()) return false; g_rosterOpen = false; g_leaveAsk = false; return true; }
+        if (g_rosterOpen.load()) return true;      // (autorepeat)
+        if (DevMenuOpen() || SocialBusy() || GamePaused()) return false;
+        PanelOpen(); return true;
+    }
     if (g_rosterOpen.load()) {
         if (!down) return false;       // key-ups still reach the game
-        std::vector<unsigned> ids = PlayerIds(); int n = (int)ids.size(), sel = g_rosterSel.load();
-        if (vk == VK_UP && n) g_rosterSel = (sel + n - 1) % n;
-        else if (vk == VK_DOWN && n) g_rosterSel = (sel + 1) % n;
-        else if (vk == VK_RETURN) { if (n) VideoWatch(ids[std::min(sel, n - 1)]); g_rosterOpen = false; }
-        else if (n && (vk == VK_LEFT || vk == VK_RIGHT || vk == 'M')) {
-            unsigned id=ids[std::min(sel,n-1)]; float v=VoiceGetPlayerVolume(id);
-            VoicePlayerVolume(id,vk=='M' ? (v>0 ? 0 : 1) : v+(vk==VK_RIGHT ? .1f : -.1f));
-        }
-        else if (vk == VK_BACK || vk == VK_DELETE) VideoClear();
-        else if (vk == VK_ESCAPE || vk == guide::Roster) g_rosterOpen = false;
-        return true;
+        auto rows = PanelRows(); wpanel::Options o = PanelOptions();
+        PanelDo(g_nav.Key(vk, rows.size(), rows, o)); return true;
     }
     if (!down) return false;
-    if (vk == guide::Roster) { g_rosterOpen = true; g_rosterSel = 0; return true; }
-    if (vk == guide::Watch) {      // the player the crosshair is on; failing that, the only other player, or the list when there are several (so the key never does nothing while somebody is there)
+    if (GetCfg().oldVWatch && vk == 'V') {      // mutant (old_v_watch=1): V watches the player (the pre-2026-11 key), so the ping never happens
         unsigned a = g_aimed.load(); if (a) { VideoToggleWatch(a); return true; } if (VideoWatching()) { VideoClear(); return true; }
-        if (GetCfg().povNeedsAim) return false;
-        std::vector<unsigned> ids = PlayerIds(); if (ids.size() == 1) { VideoWatch(ids[0]); return true; } if (ids.size() > 1) { g_rosterOpen = true; g_rosterSel = 0; return true; } return false; }
+        std::vector<unsigned> ids = PlayerIds(); if (!ids.empty()) { VideoWatch(ids[0]); return true; } return false; }
+    if (noView) return false;
     if (vk == guide::NextView) { VideoNext(PlayerIds()); return true; }
     if (vk == guide::PrevView) { VideoPrev(PlayerIds()); return true; }
     return false;
 }
+void PovPanelStat() {      // witness_cmd.txt `panelstat`
+    char m[200]; snprintf(m, sizeof m, "panelstat: open %d leave_ask %d sel %d actions %u last %u tags_off %d voice_volume %d cursor %.0f,%.0f", g_rosterOpen.load() ? 1 : 0, g_leaveAsk.load() ? 1 : 0, g_nav.sel, g_panelActs.load(), g_panelLast.load(), g_tagsOff.load() ? 1 : 0, VoiceGlobalVolume(), g_panelCx.load(), g_panelCy.load()); Log(m);
+}
 struct TagInfo { unsigned id; char name[25]; int ping; bool onScreen; float dist; };
 static CRITICAL_SECTION g_tagLock; static bool g_tagLockInit; static std::vector<TagInfo> g_tags;
-static bool TagsWanted() { return !GetCfg().noNameTags; }
+static bool TagsWanted() { return !GetCfg().noNameTags && !g_tagsOff.load(); }
 // One warm prompt chip (the shared look of the guide and dev menu): dark surface, thin border, accent bar, cream text.
 static void PromptChip(float x, float y, const char* text, float k, UiColor accent) {
     float tw = UiTextWidth(text, k), th = UiLineHeight(k), pad = 9 * k;
@@ -413,34 +472,48 @@ static void DrawNameTags(float W, float H) {
     if (!aimed && !g_rosterOpen.load() && !VideoWatching() && !GamePaused()) {      // a quiet reminder that the other players' screens can be watched
         std::vector<unsigned> ids = PlayerIds(); if (!ids.empty()) {
             float k = std::max(1.0f, H / 1080.0f); char b[96]; std::string nm; if (ids.size() == 1) for (const auto& r : CoopGetRemotes()) if (r.id == ids[0] && r.name[0]) nm = r.name;
-            if (!nm.empty()) snprintf(b, sizeof b, "V  watch %s's view", nm.c_str()); else snprintf(b, sizeof b, "V  watch a player's view   F5  list");
+            if (!nm.empty()) snprintf(b, sizeof b, "Hold Tab  watch %s's view", nm.c_str()); else snprintf(b, sizeof b, "Hold Tab  players: watch, mute, volume");
             float tw = UiTextWidth(b, 0.8f * k), x = W - tw - 24 * k, y = H - 50 * k; (void)tw; PromptChip(x, y, b, 0.8f * k, uitheme::Muted);
         }
     }
-    if (g_rosterOpen.load()) {          // the player list: Up/Down, Enter watches, Backspace clears, F5 / Esc closes
-        std::vector<unsigned> ids = PlayerIds(); auto layout=wradio::Roster(W,H,(unsigned)ids.size(),UiLineHeight(1));
-        float k=layout.scale,lh=layout.rowStep,x=layout.x,y=layout.y,w=layout.width;
-        int rows = (int)ids.size(); int sel = std::min(g_rosterSel.load(), std::max(0, rows - 1)); g_rosterSel = sel;
-        UiRect(x, y, w, layout.height, uitheme::Surface);
-        UiFrame(x, y, w, layout.height, uitheme::Border);
-        UiRect(x, y, 4 * k, layout.height, uitheme::Accent);
-        UiText(x + 14 * k, y + 8 * k, "Players   Up/Down  Enter: watch  Backspace: clear  F5: close", uitheme::Accent, 0.8f * k);
-        UiText(x+14*k,y+lh*(rows+2)+6*k,wradio::kRosterHint,uitheme::Muted,.8f*k);
-        std::vector<RemotePose> rem = CoopGetRemotes();
-        for (int i = 0; i < rows; ++i) {
-            const RemotePose* p = nullptr; for (const auto& r : rem) if (r.id == ids[i]) p = &r;
-            float col[3]; PlayerColor(ids[i], col); float ry = y + 10 * k + lh * (i + 1.4f);
-            if (i == sel) {
-                UiRect(x + 6 * k, ry - 3 * k, w - 12 * k, lh, uitheme::Selected);
-                UiRect(x + 6 * k, ry - 3 * k, 3 * k, lh, uitheme::Accent);
-            }
-            UiRect(x + 14 * k, ry + 2 * k, 10 * k, 10 * k, Rgba(col[0], col[1], col[2], 1));
-            char b[96]; snprintf(b, sizeof b, "%-18.18s %s%d ms %s", p && p->name[0] ? p->name : "?", p && p->pingMs >= 0 ? "" : "- ", p && p->pingMs >= 0 ? p->pingMs : 0, VideoWatching() == ids[i] ? "  [watching]" : "");
-            if (p && p->pingMs < 0) snprintf(b, sizeof b, "%-18.18s -- ms %s", p->name[0] ? p->name : "?", VideoWatching() == ids[i] ? "  [watching]" : "");
-            { size_t len=strlen(b); snprintf(b+len,sizeof b-len,"  %d%%",int(VoiceGetPlayerVolume(ids[i])*100+.5f)); }
-            UiText(x + 32 * k, ry, b, i == sel ? uitheme::Text : uitheme::Muted, k);
+    for (int i = 0; i < 3; ++i) g_camSeen[i] = cam[i];
+    g_panelW = (int)W; g_panelH = (int)H;
+    if (g_rosterOpen.load()) {          // the player panel (hold Tab): one row per player, then the live toggles and the session actions
+        auto rows = PanelRows(); wpanel::Options o = PanelOptions(); wpanel::Layout L = wpanel::Compute(W, H, rows.size(), o);
+        float k = L.k, cx = g_panelCx.load(), cy = g_panelCy.load(); wpanel::Hit hot = wpanel::HitTest(L, rows, o, cx, cy);
+        int sel = std::min(g_nav.sel, std::max(0, int(rows.size()) - 1)); g_nav.sel = sel;
+        const wpanel::Rect& P = L.panel; float tx = 0.8f * k;
+        UiRect(P.x, P.y, P.w, P.h, uitheme::Surface); UiFrame(P.x, P.y, P.w, P.h, uitheme::Border); UiRect(P.x, P.y, 4 * k, P.h, uitheme::Accent);
+        UiText(P.x + 14 * k, P.y + 8 * k, "Players   (hold Tab)", uitheme::Accent, 0.9f * k);
+        auto button = [&](const wpanel::Rect& r, const char* label, bool isHot, bool on) {
+            if (r.w <= 0) return; UiRect(r.x, r.y, r.w, r.h, isHot ? uitheme::Hover : (on ? uitheme::Selected : uitheme::Raised)); UiFrame(r.x, r.y, r.w, r.h, uitheme::Border);
+            float w = UiTextWidth(label, tx); UiText(r.x + std::max(2.f * k, (r.w - w) / 2), r.y + (r.h - UiLineHeight(tx)) / 2, label, uitheme::Text, tx); };
+        for (size_t i = 0; i < rows.size(); ++i) {
+            const wpanel::Row& r = rows[i]; const wpanel::RowRects& rr = L.rows[i]; float ry = rr.row.y, ty = ry + (rr.row.h - UiLineHeight(tx)) / 2;
+            if (int(i) == sel) { UiRect(rr.row.x, ry, rr.row.w, rr.row.h, uitheme::Selected); UiRect(rr.row.x, ry, 3 * k, rr.row.h, uitheme::Accent); }
+            UiRect(P.x + 14 * k, ry + rr.row.h / 2 - 5 * k, 10 * k, 10 * k, Rgba(r.color[0], r.color[1], r.color[2], 1));
+            char b[48]; snprintf(b, sizeof b, "%-18.18s", r.name.c_str()); UiText(P.x + 32 * k, ty, b, uitheme::Text, tx);
+            if (r.host) UiText(P.x + 205 * k, ty, "host", uitheme::Accent, tx);
+            UiText(P.x + 250 * k, ty, wpanel::PingText(r).c_str(), uitheme::Muted, tx);
+            UiRect(P.x + 322 * k, ry + rr.row.h / 2 - 4 * k, 8 * k, 8 * k, r.speaking ? uitheme::Good : uitheme::Inset);
+            UiText(P.x + 340 * k, ty, wpanel::Where(r).c_str(), r.down ? uitheme::Danger : uitheme::Muted, tx);
+            button(rr.watch, r.watching ? "Watching" : "Watch", hot.act == wpanel::Act::Watch && hot.id == r.id, r.watching);
+            button(rr.mute, r.muted ? "Unmute" : "Mute", hot.act == wpanel::Act::Mute && hot.id == r.id, r.muted);
+            button(rr.volDown, "-", hot.act == wpanel::Act::VolDown && hot.id == r.id, false); button(rr.volUp, "+", hot.act == wpanel::Act::VolUp && hot.id == r.id, false);
+            button(rr.kick, "Kick", hot.act == wpanel::Act::Kick && hot.id == r.id, false);
+            char v[16]; snprintf(v, sizeof v, "%d%%", int(r.volume * 100 + .5f)); UiText(P.x + 168 * k, ty, v, r.muted ? uitheme::Danger : uitheme::Muted, tx);
         }
-        if (!rows) UiText(x + 14 * k, y + 10 * k + lh * 1.4f, "nobody else is here yet", uitheme::Muted, k);
+        if (rows.empty()) UiText(P.x + 14 * k, L.firstRow + 4 * k, "nobody else is here yet", uitheme::Muted, tx);
+        float ty = L.togglesY + 2 * k + (wpanel::kButtonH * k - UiLineHeight(tx)) / 2; char vb[40];
+        UiText(P.x + 14 * k, ty, "Voice volume", uitheme::Muted, tx); button(L.voiceDown, "-", hot.act == wpanel::Act::VoiceDown, false); button(L.voiceUp, "+", hot.act == wpanel::Act::VoiceUp, false);
+        snprintf(vb, sizeof vb, "%d%%", VoiceGlobalVolume()); UiText(L.voiceDown.x + 26 * k, ty, vb, uitheme::Text, tx);
+        snprintf(vb, sizeof vb, "Name tags: %s", g_tagsOff.load() ? "off" : "on"); button(L.tags, vb, hot.act == wpanel::Act::NameTags, false);
+        snprintf(vb, sizeof vb, "Partner picture: %s", VideoViewMode() == 2 ? "large" : "small"); button(L.partner, vb, hot.act == wpanel::Act::PartnerSize, false);
+        float sy = L.sessionY + 4 * k + (wpanel::kButtonH * k - UiLineHeight(tx)) / 2;
+        if (o.confirmLeave) { UiText(P.x + 14 * k, sy, wpanel::LeaveText(CoopMyId() == 1).c_str(), uitheme::Danger, tx); button(L.yes, "Leave", hot.act == wpanel::Act::LeaveYes, false); button(L.no, "Stay", hot.act == wpanel::Act::LeaveNo, false); }
+        else { UiText(P.x + 14 * k, sy, "Session", uitheme::Muted, tx); button(L.copyInvite, "Copy invite", hot.act == wpanel::Act::CopyInvite, false); button(L.leave, "Leave", hot.act == wpanel::Act::Leave, false); }
+        UiText(P.x + 14 * k, L.hintY, wpanel::kHint, uitheme::Muted, 0.7f * k);
+        UiTri(cx, cy, 9 * k, 3.6f, uitheme::Text);      // the mouse cursor
     }
     EnterCriticalSection(&g_tagLock); g_tags = std::move(now); LeaveCriticalSection(&g_tagLock);
 }

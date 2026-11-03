@@ -8,6 +8,8 @@ SocialSnapshot SocialState(); // process-state bridge, no log parsing
 // Keys are configurable (key_chat=, key_ping=, ... in witness_coop.cfg).
 bool SocialKey(unsigned vk, bool down);       // window thread (the game's message loop): true when the key was taken
 bool SocialSwallowRaw(unsigned vk);           // raw input thread: the mod took this key's press a moment ago, the game must not see it
+bool SocialWheel(int delta);                      // window thread: a wheel step (ink colour while drawing); true when taken
+bool SocialBusy();                                // the chat box or the emote wheel is open
 bool SocialChar(unsigned ch);                 // window thread: a WM_CHAR; true when the chat box took it
 bool SocialCapturing();                       // the chat box is open: it has the keyboard, and the mouse look is frozen
 bool SocialMouseCaptured();                   // that, or the emote wheel is open: the mouse look is frozen (the wheel takes the motion)
@@ -34,5 +36,6 @@ bool VoiceRadioKey(bool down, bool blocked);
 bool VoiceRadioTx();
 unsigned VoiceChannel();
 void VoicePlayerVolume(unsigned id, float volume);
+int VoiceGlobalVolume(); void VoiceSetGlobalVolume(int percent);      // everybody's voices, percent (the player panel; starts at voice_volume)
 
 float VoiceGetPlayerVolume(unsigned id);

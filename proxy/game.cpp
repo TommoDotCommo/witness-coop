@@ -8,6 +8,7 @@
 #include <cstring>
 #include <string>
 #include "game.h"
+#include "povui.h"
 void TracerCommand(const char* line);      // tracer.cpp
 #include "race_game.h"
 #include "model_gpu.h"
@@ -118,7 +119,7 @@ static DWORD WINAPI CmdThread(LPVOID) {
         FILE* f = _wfopen(taken, L"r"); if (!f) continue;
         char line[8192];      // (a tracer command lists every edge of a line)
         while (fgets(line, sizeof line, f)) {
-            unsigned id; float amt = 1.0f;
+            unsigned id; float amt = 1.0f; int wheelDelta = 0;
             char a[16], b[16], a2[64], nm[64]; int dx, dy;
             if (sscanf(line, "door %x %f", &id, &amt) >= 1) GameEnqueueDoorOpen(id, amt);
             else if (sscanf(line, "cableoff %x", &id) == 1) GameEnqueueCableOff(id);
@@ -150,7 +151,7 @@ static DWORD WINAPI CmdThread(LPVOID) {
             else if (!strncmp(line, "mapstat", 7)) DevMenuCommand("mapstat", 0);
             else if (!strncmp(line, "notice ", 7)) DevMenuNotice(line + 7);      // a message on the screen (tools/win/wrecord.py: what to do next)
             else if (sscanf(line, "key %15s %15s", a, b) == 2) {       // key W down|up
-                struct { const char* n; unsigned vk, sc; } keys[] = {{"W", 0x57, 0x11}, {"A", 0x41, 0x1E}, {"S", 0x53, 0x1F}, {"D", 0x44, 0x20}, {"SPACE", 0x20, 0x39}, {"ENTER", 0x0D, 0x1C}, {"ESC", 0x1B, 0x01}, {"F1", 0x70, 0x3B}, {"F2", 0x71, 0x3C}, {"F4", 0x73, 0x3E}, {"F6", 0x75, 0x40}, {"F7", 0x76, 0x41}, {"F8", 0x77, 0x42}, {"TAB", 0x09, 0x0F}, {"F9", 0x78, 0x43}, {"F5", 0x74, 0x3F}, {"V", 0x56, 0x2F}, {"LB", 0xDB, 0x1A}, {"RB", 0xDD, 0x1B}, {"BACK", 0x08, 0x0E}, {"UP", 0x26, 0x48}, {"DOWN", 0x28, 0x50}, {"F3", 0x72, 0x3D}, {"SHIFT", 0xA0, 0x2A}, {"T", 0x54, 0x14}, {"P", 0x50, 0x19}, {"G", 0x47, 0x22}, {"X", 0x58, 0x2D}, {"C", 0x43, 0x2E}, {"Z", 0x5A, 0x2C}, {"B", 0x42, 0x30}, {"N", 0x4E, 0x31}, {"H", 0x48, 0x23}, {"L", 0x4C, 0x26}, {"M", 0x4D, 0x32}, {"R", 0x52, 0x13}, {"O", 0x4F, 0x18}, {"J", 0x4A, 0x24}, {"K", 0x4B, 0x25}, {"F10", 0x79, 0x44}, {"F11", 0x7A, 0x57}, {"F12", 0x7B, 0x58}};
+                struct { const char* n; unsigned vk, sc; } keys[] = {{"W", 0x57, 0x11}, {"A", 0x41, 0x1E}, {"S", 0x53, 0x1F}, {"D", 0x44, 0x20}, {"SPACE", 0x20, 0x39}, {"ENTER", 0x0D, 0x1C}, {"ESC", 0x1B, 0x01}, {"F1", 0x70, 0x3B}, {"F2", 0x71, 0x3C}, {"F4", 0x73, 0x3E}, {"F6", 0x75, 0x40}, {"F7", 0x76, 0x41}, {"F8", 0x77, 0x42}, {"TAB", 0x09, 0x0F}, {"F9", 0x78, 0x43}, {"F5", 0x74, 0x3F}, {"V", 0x56, 0x2F}, {"LB", 0xDB, 0x1A}, {"RB", 0xDD, 0x1B}, {"BACK", 0x08, 0x0E}, {"UP", 0x26, 0x48}, {"DOWN", 0x28, 0x50}, {"F3", 0x72, 0x3D}, {"SHIFT", 0xA0, 0x2A}, {"T", 0x54, 0x14}, {"P", 0x50, 0x19}, {"G", 0x47, 0x22}, {"X", 0x58, 0x2D}, {"C", 0x43, 0x2E}, {"Z", 0x5A, 0x2C}, {"B", 0x42, 0x30}, {"N", 0x4E, 0x31}, {"H", 0x48, 0x23}, {"L", 0x4C, 0x26}, {"M", 0x4D, 0x32}, {"R", 0x52, 0x13}, {"O", 0x4F, 0x18}, {"J", 0x4A, 0x24}, {"K", 0x4B, 0x25}, {"F10", 0x79, 0x44}, {"F11", 0x7A, 0x57}, {"F12", 0x7B, 0x58}, {"Y", 0x59, 0x15}, {"MMB", 0x04, 0}, {"XBUTTON1", 0x05, 0}, {"XBUTTON2", 0x06, 0}};
                 for (auto& k : keys) if (!_stricmp(a, k.n)) { Cmd c = {1, 0, 0, k.vk, k.sc, !_stricmp(b, "down"), 0, 0, 0}; EnterCriticalSection(&g_lock); if (g_n < 64) g_q[g_n++] = c; LeaveCriticalSection(&g_lock); }
             } else if (!strncmp(line, "trace ", 6)) { TracerCommand(line);
             } else if (sscanf(line, "mouse %d %d", &dx, &dy) == 2) { Cmd c = {2, 0, 0, 0, 0, false, dx, dy, 0}; EnterCriticalSection(&g_lock); if (g_n < 64) g_q[g_n++] = c; LeaveCriticalSection(&g_lock); }
@@ -177,6 +178,8 @@ static DWORD WINAPI CmdThread(LPVOID) {
             else if (!strncmp(line, "netstate", 8)) { EnterCriticalSection(&g_lock); if (g_n < 64) g_q[g_n++] = {7, 0, 0, 0, 0, false, 0, 0, 0}; LeaveCriticalSection(&g_lock); }
             else if (sscanf(line, "atlasdump %15s", a) == 1) UiDumpAtlas(a);
             else if (!strncmp(line, "tagstat", 7)) OverlayLogTags();
+            else if (!strncmp(line, "panelstat", 9)) PovPanelStat();
+            else if (sscanf(line, "inkwheel %d", &wheelDelta) == 1) { bool took = SocialWheel(wheelDelta); char mm[60]; snprintf(mm, sizeof mm, "inkwheel: %d took %d", wheelDelta, took ? 1 : 0); Log(mm); }      // a wheel step (the ink colour while drawing)
             else if (!strncmp(line, "povstat", 7)) { unsigned w, s, rq, aimed; int ro; unsigned sent, recv, dec; VideoPovStats(&w, &s, &rq); VideoStats(&sent, &recv, &dec); OverlayPovState(&aimed, &ro); unsigned box, pic; OverlayPovDrawn(&box, &pic); char m[240]; snprintf(m, sizeof m, "povstat: watching %u subscribers %u requests_sent %u pictures_sent %u received %u decoded %u aimed %u roster %d box %u pic %u", w, s, rq, sent, recv, dec, aimed, ro, box, pic); Log(m); }
             else if (sscanf(line, "pov %15s", a) == 1) { if (!strcmp(a, "off")) VideoClear(); else if (!strcmp(a, "next")) { std::vector<unsigned> ids; for (const auto& r : CoopGetRemotes()) if (r.valid) ids.push_back(r.id); VideoNext(ids); } else VideoWatch((unsigned)atoi(a)); }
             else if (!strncmp(line, "linestat", 8)) ModelGpuLogLineStats();

@@ -8,6 +8,7 @@
 #include <cstring>
 #include <set>
 #include <string>
+#include "../../common/notices.h"
 
 namespace wpeers {
 class VersionNotice {
@@ -27,7 +28,7 @@ public:
     }
     // `d`/`n`: a datagram already accepted as coming from that peer's own endpoint. Returns the sentence the first time this player's packets are of another version, else "".
     // `mine`: this build's version; `theirs`: the version the launcher's roster names for that player ("" when not known).
-    std::string Observe(const uint8_t* d, size_t n, const std::string& mine, const std::string& theirs) {
+    std::string Observe(const uint8_t* d, size_t n, const std::string& mine, const std::string& theirs, const std::string& name = "") {
 #ifdef WN_MUT_SILENT
         return "";      // mutant: the packet is dropped without a word, as before
 #endif
@@ -42,10 +43,8 @@ public:
 #ifndef WN_MUT_REPEAT
         if (!told_.insert(sender).second) return "";
 #endif
-        char b[256];
-        if (!theirs.empty()) snprintf(b, sizeof b, "Player %u is on %s, you are on %s: update both", sender, theirs.c_str(), mine.c_str());
-        else snprintf(b, sizeof b, "Player %u runs another version of the mod (its packets are %c%c%c%c, yours are not), you are on %s: update both", sender, d[0], d[1], d[2], dg >= 32 && dg < 127 ? dg : '?', mine.c_str());
-        return b;
+        (void)mine;
+        return wnotice::DifferentVersion(name.empty() ? "Player " + std::to_string(sender) : name, theirs);      // "Fox has a different version (v0.4.0)": the standard's wording (common/notices.h)
     }
 private:
     std::set<unsigned> told_;

@@ -12,6 +12,7 @@ bool VideoEnabled();                                         // on by default; p
 void VideoFrame(IDXGISwapChain* sc, ID3D11Device* dev, ID3D11DeviceContext* ctx);   // render thread, every frame: capture schedule
 void VideoOnPacket(const uint8_t* data, size_t n);           // network thread: one chunk from the peer
 ID3D11ShaderResourceView* VideoRemoteSrv(int* w, int* h, unsigned long* ageMs);   // render thread: the latest picture from the peer (null until one arrived)
+void VideoCycleSize();                                       // small <-> large (the player panel)
 void VideoToggleView();                                      // F9: show the first player's view, large, off
 unsigned VideoWatching();                                    // the player whose screen is shown (0: none)
 void VideoWatch(unsigned id); void VideoClear(); bool VideoToggleWatch(unsigned id);
