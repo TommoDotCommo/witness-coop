@@ -44,11 +44,16 @@ MUTANTS = {
     'apply-leftover-refused': ('if (lu_exists(aux)) return CI_CONFLICT;\n    lu_path(aux, sizeof(aux), dir, t->name, ".coop-receipt.json.tmp");', 'lu_path(aux, sizeof(aux), dir, t->name, ".coop-receipt.json.tmp");'),
     'apply-manager-owned': ('if (lu_owner(dir) == LU_OWNER_MANAGER) return LU_ERR_MANAGER;', ''),
     'owner-setup-receipt': ('if (lu_exists(path)) return LU_OWNER_SETUP;\n    }', 'if (0) return LU_OWNER_SETUP;\n    }'),
-    'apply-journal-block': ('if (lu_journal_status(dir, NULL, 0)) return LU_ERR_RECEIPT;', ''),
-    'apply-rollback-on-fail': ('fail_rollback:\n    if (lu_rollback(dir) != LU_OK) r = LU_ERR_ROLLBACK;', 'fail_rollback:\n    r = r;'),
+    'apply-journal-block': ('if (lu_journal_status(data, NULL, 0) || lu_journal_status(dir, NULL, 0)) return LU_ERR_RECEIPT;', ''),
+    'apply-old-journal-block': ('if (lu_journal_status(data, NULL, 0) || lu_journal_status(dir, NULL, 0)) return LU_ERR_RECEIPT;', 'if (lu_journal_status(data, NULL, 0)) return LU_ERR_RECEIPT;'),
+    'apply-rollback-on-fail': ('fail_rollback:\n    if (lu_rollback(dir, data) != LU_OK) r = LU_ERR_ROLLBACK;', 'fail_rollback:\n    r = r;'),
+    'journal-beside-game': ('lu_path(jpath, sizeof(jpath), data, LU_JOURNAL, "");      /* MUT:journal-beside-game */', 'lu_path(jpath, sizeof(jpath), dir, LU_JOURNAL, "");'),
+    'backup-beside-game': ('lu_path(prev, sizeof(prev), data, lu_targets[i].name, ".coop-prev");\n        lu_path(rpath,', 'lu_path(prev, sizeof(prev), dir, lu_targets[i].name, ".coop-prev");\n        lu_path(rpath,'),
+    'recover-old-journal': ('    if (lu_journal_status(dir, NULL, 0) == 1) return lu_rollback(dir, dir) == LU_OK ? 1 : -1;      /* MUT:old-journal */\n', ''),
+    'old-launcher-other-drive': (' && !lu_rename_replace(target, gold)) { r = LU_ERR_IO; goto fail_rollback; }      /* MUT:old-other-drive */', ') { r = LU_ERR_IO; goto fail_rollback; }'),
     'receipt-original-kept': ('lu_write_receipt(target, rc[i].original, newh[i], NULL)', 'lu_write_receipt(target, NULL, newh[i], NULL)'),
     'receipt-installed-written': ('lu_write_receipt(target, rc[i].original, newh[i], NULL)', 'lu_write_receipt(target, rc[i].original, rc[i].installed, NULL)'),
-    'recover-pending': ('if (lu_journal_status(dir, NULL, 0) == 1) return lu_rollback(dir) == LU_OK ? 1 : -1;', ''),
+    'recover-pending': ('if (lu_journal_status(data, NULL, 0) == 1) return lu_rollback(dir, data) == LU_OK ? 1 : -1;', ''),
     'rollback-verifies-backup': ('if (!lu_file_sha256(prev, got) || strcmp(got, want) != 0) {', 'if (0) {'),
     'ansel-original-untouched': ('{ "witness_models/adventurer.glb.txt", 0, 0 }\n};', '{ "witness_models/adventurer.glb.txt", 0, 0 },\n    { "AnselSDK64.dll", 0, 0 }\n};'),
     'legacy-original-verified': ('static inline int lu_is_original(const char *h) { return h && h[0] && !strcmp(h, LU_ANSEL_SHA); }', 'static inline int lu_is_original(const char *h) { return h && h[0]; }'),
@@ -256,9 +261,15 @@ def suite(R, tmp):
     check('a different hash is a checksum failure', R.run('verify', zf, '0' * 64, len(z2), 0)['result'] == str(r_code('CHECKSUM')))
     check('a truncated download (size differs from the release) is refused', R.run('verify', zf, sha(z2), len(z2) + 10, 0)['result'] == str(r_code('TRUNCATED')))
     # ---- the apply, through the receipts
-    def apply(game, zipbytes, cur='v0.1.0', tag='v0.2.0', running=0, fail=0, crash=0, zname='pkg.zip'):
+    # the journal, the backups and the replaced launcher go to the mod's data folder (J4), here a folder beside each game folder
+    def data_of(game):
+        d = Path(str(game) + '-data'); d.mkdir(parents=True, exist_ok=True); return d
+    def apply(game, zipbytes, cur='v0.1.0', tag='v0.2.0', running=0, fail=0, crash=0, zname='pkg.zip', data=None):
         zp = tmp / zname; zp.write_bytes(zipbytes)
-        return int(R.run('apply', game, zp, PREFIX, cur, tag, running, fail, crash)['result'])
+        return int(R.run('apply', game, zp, PREFIX, cur, tag, running, fail, crash, data or data_of(game))['result'])
+    def recover(game, data=None):
+        return R.run('recover', game, data or data_of(game))['recovered']
+    ARTIFACTS = ('.coop-stage', '.coop-prev', '.coop-receipt.json.tmp', '.coop-receipt.json.coop-prev')
     OK, UPTODATE = 0, r_code('UP_TO_DATE')
     g = make_game(tmp / 'g-ok'); before = tree(g)
     check('a verified package updates the managed files', apply(g, z2) == OK)
@@ -270,9 +281,11 @@ def suite(R, tmp):
     rc2 = json.loads((g / 'witness_models/adventurer.glb.coop-receipt.json').read_text())
     check('a file without an original keeps original null', rc2['original'] is None and rc2['installed'] == sha(new['witness_models/adventurer.glb']))
     check("the game's own AnselSDK64.dll, the chain file and the proxy's kept original are untouched", all(after[k] == before[k] for k in ('AnselSDK64.dll', 'dsound.chain.dll', 'dsound.dll.coop-original', 'dsound.chain.dll.coop-receipt.json')))
-    leftovers = [n for n in after if n.endswith(('.coop-stage', '.coop-prev', '.coop-receipt.json.tmp', '.coop-receipt.json.coop-prev')) or n == 'witness_update.state']
+    dafter = tree(data_of(g))
+    leftovers = [n for n in list(after) + list(dafter) if n.endswith(ARTIFACTS) or n == 'witness_update.state']
     check('no stage, backup, temp or journal file is left (the installer would call them recovery artifacts)', not leftovers)
-    check('the running launcher image is kept as .coop-old until the next start, then removed', after.get('witness_launcher.exe.coop-old') == before['witness_launcher.exe'] and R.run('recover', g)['recovered'] == '0' and not (g / 'witness_launcher.exe.coop-old').exists())
+    check('the running launcher image is kept as .coop-old in the data folder (not the game folder) until the next start, then removed',
+          dafter.get('witness_launcher.exe.coop-old') == before['witness_launcher.exe'] and 'witness_launcher.exe.coop-old' not in after and recover(g) == '0' and not (data_of(g) / 'witness_launcher.exe.coop-old').exists())
     check('the same package again is "already up to date"', apply(g, z2, cur='v0.1.0') == UPTODATE)
     # the installer's own decision for the new state: every file is "current" for the new package (receipt installed == file == package)
     # refusals leave the folder byte for byte as it was
@@ -312,8 +325,10 @@ def suite(R, tmp):
     check('a Setup install with receipts is owned by Setup even if its files have a second name', (os.link(make_game(tmp / 'g-setup-linked')/ 'dsound.dll', tmp / 'link-setup') or True) and R.run('owner', tmp / 'g-setup-linked')['owner'] == '1')
     gh = make_game(tmp / 'g-hand', with_receipts=False)
     check('files copied by hand (no receipts, one name each) belong to nobody the updater knows: the old rule applies', R.run('owner', gh)['owner'] == '0')
-    g7 = make_game(tmp / 'g-journal'); (g7 / 'witness_update.state').write_text('[update]\nstatus=pending\n')
+    g7 = make_game(tmp / 'g-journal'); (data_of(g7) / 'witness_update.state').write_text('[update]\nstatus=pending\n')
     refused('an unsettled earlier update blocks a new one', g7, z2, r_code('RECEIPT'))
+    g7 = make_game(tmp / 'g-journal-old'); (g7 / 'witness_update.state').write_text('[update]\nstatus=pending\n')
+    refused('an unsettled update an older build journaled in the game folder blocks a new one too', g7, z2, r_code('RECEIPT'))
     # an update that fails half way is put back
     for step in (1, 2, 3):
         g = make_game(tmp / f'g-fail{step}'); b = tree(g)
@@ -322,13 +337,35 @@ def suite(R, tmp):
     # an update whose process dies half way: the next start rolls it back
     for step in (1, 3):
         g = make_game(tmp / f'g-crash{step}'); b = tree(g)
-        r = apply(g, z2, fail=step, crash=1); mid = tree(g)
-        check(f'(setup) a crash after {step} files leaves a half-updated folder and a pending journal', r == r_code('IO') and mid != b and 'witness_update.state' in mid)
-        rec = R.run('recover', g)['recovered']; a = tree(g)
+        r = apply(g, z2, fail=step, crash=1); mid = tree(g); dmid = tree(data_of(g))
+        check(f'(setup) a crash after {step} files leaves a half-updated folder and a pending journal', r == r_code('IO') and mid != b and 'witness_update.state' in dmid)
+        check(f'the journal and the backups are in the data folder, none in the game folder (crash after {step})',
+              'witness_update.state' not in mid and not any(n.endswith(('.coop-prev', '.coop-receipt.json.coop-prev')) for n in mid) and any(n.endswith('.coop-prev') for n in dmid))
+        rec = recover(g); a = tree(g)
         check(f'startup recovery of a crash after {step} files restores the previous state exactly', rec == '1' and a == b)
         check('after recovery the update can be tried again', apply(g, z2) == OK)
-    g = make_game(tmp / 'g-nobk'); apply(g, z2, fail=2, crash=1); (g / 'dsound.dll.coop-prev').write_bytes(b'corrupt backup')
-    check('a damaged backup is not copied over the file by a rollback (the rollback reports failure)', R.run('recover', g)['recovered'] == '-1' and tree(g)['dsound.dll'] == sha(new['dsound.dll']))
+    g = make_game(tmp / 'g-nobk'); apply(g, z2, fail=2, crash=1); (data_of(g) / 'dsound.dll.coop-prev').write_bytes(b'corrupt backup')
+    check('a damaged backup is not copied over the file by a rollback (the rollback reports failure)', recover(g) == '-1' and tree(g)['dsound.dll'] == sha(new['dsound.dll']))
+    # an update an older build left unfinished: its journal and backups are in the game folder; the next start (with a data folder) still rolls it back
+    g = make_game(tmp / 'g-oldbuild'); b = tree(g)
+    r = apply(g, z2, fail=3, crash=1, data=g); mid = tree(g)
+    check('(setup) an older build\'s interrupted update: journal and backups in the game folder', r == r_code('IO') and 'witness_update.state' in mid and any(n.endswith('.coop-prev') for n in mid))
+    rec = recover(g); a = tree(g)
+    check('an interrupted update journaled in the game folder by an older build is rolled back at the next start', rec == '1' and a == b and not tree(data_of(g)))
+    check('after that recovery the update can be tried again (journal now in the data folder)', apply(g, z2) == OK and 'witness_update.state' not in tree(g))
+    # a data folder on another drive: the running launcher cannot be renamed across drives, so it is kept beside the game, and still removed at the next start
+    shm = Path('/dev/shm')
+    if shm.is_dir() and os.access(shm, os.W_OK) and os.stat(shm).st_dev != os.stat(tmp).st_dev:
+        other = Path(tempfile.mkdtemp(dir=shm, prefix='wl-upd-'))
+        try:
+            g = make_game(tmp / 'g-otherdrive'); b = tree(g)
+            r = apply(g, z2, data=other); a = tree(g)
+            check('a data folder on another drive: the update works, the old launcher stays beside the game', r == OK and a.get('witness_launcher.exe.coop-old') == b['witness_launcher.exe'] and all(a[n] == sha(d) for n, d in new.items()) and not tree(other))
+            check('... and the next start removes it', recover(g, other) == '0' and not (g / 'witness_launcher.exe.coop-old').exists())
+        finally:
+            import shutil; shutil.rmtree(other, ignore_errors=True)
+    else:
+        print('note: no second file system for the other-drive check (/dev/shm); skipped')
     # ---- the old layout (up to v0.1.0-alpha), migrated by the update when the game is closed
     def migrated(game):
         t = tree(game)
@@ -347,7 +384,7 @@ def suite(R, tmp):
     g = make_legacy(tmp / 'g-legacy-foreign'); (g / 'AnselSDK64.dll').write_bytes(pe(0x55)); (g / 'AnselSDK64.dll.coop-receipt.json').unlink()
     refused('an AnselSDK64.dll that is not this mod\'s old proxy blocks the update, nothing changed', g, z2, r_code('LEGACY'))
     g = make_legacy(tmp / 'g-legacy-crash'); b = tree(g)
-    r = apply(g, z2, fail=1, crash=1); rec = R.run('recover', g)['recovered']; a = tree(g)
+    r = apply(g, z2, fail=1, crash=1); rec = recover(g); a = tree(g)
     check('a migration whose process dies after adding dsound.dll is rolled back at the next start (dsound.dll gone, the old layout as it was)', r == r_code('IO') and rec == '1' and a == b)
     check('after that recovery the migration can be tried again', apply(g, z2) == OK and migrated(g))
 

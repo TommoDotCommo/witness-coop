@@ -1081,6 +1081,22 @@ static inline void lu_path(char *out, size_t cap, const char *dir, const char *n
     snprintf(out, cap, "%s/%s%s", dir, name, suffix);
 }
 
+/* The subfolders of a file's path below `base` (a backup of witness_models/... in the data folder), made if missing. */
+static inline void lu_make_parents(const char *base, const char *name)
+{
+    char p[640];
+    size_t i;
+    for (i = 0; name[i]; i++) {
+        if (name[i] != '/') continue;
+        snprintf(p, sizeof(p), "%s/%.*s", base, (int)i, name);
+#ifdef _WIN32
+        CreateDirectoryA(p, NULL);
+#else
+        mkdir(p, 0755);
+#endif
+    }
+}
+
 /* Who put the files there (co-op mod standard J6): Setup (a receipt beside a managed file), a mod manager (no receipt and a managed file with more than
  * one hard link: Vortex), or nobody Setup knows (no receipt: copied by hand or not installed). */
 #define LU_OWNER_NONE 0
@@ -1198,6 +1214,9 @@ static inline int lu_migrate_legacy(const char *dir)
     return 1;
 }
 
+/* The journal and the backups of an update live in the mod's data folder (`data`: %LOCALAPPDATA%\witness-coop, or the game folder itself for a
+ * per-instance copy; co-op mod standard J4), beside each other; the stage files stay beside their targets (one rename replaces a file). An
+ * older build kept them all in the game folder: an update it left unfinished is still found there and settled from there. */
 static inline int lu_journal_status(const char *dir, char *ver, size_t cap)
 {
     char path[640];
@@ -1218,23 +1237,25 @@ static inline int lu_journal_status(const char *dir, char *ver, size_t cap)
     return pending ? 1 : 2;
 }
 
-/* Put every file back from its .coop-prev (verified against the journal) and the receipts with them. Idempotent; leaves the artifacts when a backup does not verify. */
-static inline enum lu_result lu_rollback(const char *dir)
+/* Put every file back from its .coop-prev (verified against the journal) and the receipts with them. `bdir`: the folder of the journal and the
+ * backups (the data folder; the game folder for an update an older build left). Idempotent; leaves the artifacts when a backup does not verify. */
+static inline enum lu_result lu_rollback(const char *dir, const char *bdir)
 {
     char jpath[640], hashkey[48];
     unsigned char *jb = NULL;
     size_t jl = 0;
     int i, failed = 0;
-    lu_path(jpath, sizeof(jpath), dir, LU_JOURNAL, "");
+    lu_path(jpath, sizeof(jpath), bdir, LU_JOURNAL, "");
     if (!lu_read_bytes(jpath, &jb, &jl)) return LU_ERR_ROLLBACK;
     for (i = 0; i < LU_NTARGETS; i++) {
-        char target[640], prev[640], stage[640], old[640], rprev[640], rpath[640], want[65] = {0}, got[65], tmp[65];
+        char target[640], prev[640], stage[640], old[640], gold[640], rprev[640], rpath[640], want[65] = {0}, got[65], tmp[65];
         const char *p;
         lu_path(target, sizeof(target), dir, lu_targets[i].name, "");
-        lu_path(prev, sizeof(prev), dir, lu_targets[i].name, ".coop-prev");
+        lu_path(prev, sizeof(prev), bdir, lu_targets[i].name, ".coop-prev");
         lu_path(stage, sizeof(stage), dir, lu_targets[i].name, ".coop-stage");
-        lu_path(old, sizeof(old), dir, lu_targets[i].name, ".coop-old");
-        lu_path(rprev, sizeof(rprev), dir, lu_targets[i].name, ".coop-receipt.json.coop-prev");
+        lu_path(old, sizeof(old), bdir, lu_targets[i].name, ".coop-old");
+        lu_path(gold, sizeof(gold), dir, lu_targets[i].name, ".coop-old");
+        lu_path(rprev, sizeof(rprev), bdir, lu_targets[i].name, ".coop-receipt.json.coop-prev");
         lu_path(rpath, sizeof(rpath), dir, lu_targets[i].name, ".coop-receipt.json");
         snprintf(hashkey, sizeof(hashkey), "file%d_add=", i);
         if (strstr((const char *)jb, hashkey)) {      /* a file this update added (the old layout had none): it goes, with its receipt */
@@ -1263,7 +1284,7 @@ static inline enum lu_result lu_rollback(const char *dir)
         if (!lu_file_sha256(target, got) || strcmp(got, want) != 0) { failed = 1; continue; }
         if (lu_exists(rprev) && !lu_rename_replace(rprev, rpath)) { failed = 1; continue; }
         remove(prev);
-        remove(old);
+        remove(old); remove(gold);
     }
     free(jb);
     if (failed) return LU_ERR_ROLLBACK;
@@ -1271,12 +1292,17 @@ static inline enum lu_result lu_rollback(const char *dir)
     return LU_OK;
 }
 
-/* Startup recovery: an update that was interrupted (status=pending) is rolled back. 1: rolled back, 0: nothing to do, -1: could not. */
-static inline int lu_recover_interrupted(const char *dir)
+/* Startup recovery: an update that was interrupted (status=pending) is rolled back: its journal in the data folder, or one an older build left in
+ * the game folder. 1: rolled back, 0: nothing to do, -1: could not. */
+static inline int lu_recover_interrupted(const char *dir, const char *data)
 {
     char old[640];
-    if (lu_journal_status(dir, NULL, 0) == 1) return lu_rollback(dir) == LU_OK ? 1 : -1;
-    /* the launcher that was replaced while it ran is kept as .coop-old until the next start */
+    if (lu_journal_status(data, NULL, 0) == 1) return lu_rollback(dir, data) == LU_OK ? 1 : -1;
+    if (lu_journal_status(dir, NULL, 0) == 1) return lu_rollback(dir, dir) == LU_OK ? 1 : -1;      /* MUT:old-journal */
+    /* the launcher that was replaced while it ran is kept as .coop-old until the next start (in the data folder; in the game folder when the
+     * data folder is on another drive, or by an older build) */
+    lu_path(old, sizeof(old), data, "witness_launcher.exe", ".coop-old");
+    remove(old);
     lu_path(old, sizeof(old), dir, "witness_launcher.exe", ".coop-old");
     remove(old);
     return 0;
@@ -1284,9 +1310,9 @@ static inline int lu_recover_interrupted(const char *dir)
 
 /* The apply: the package (already verified against the release's .sha256) is opened, every file is checked against its receipt first, then all
  * files are staged and backed up, and only then replaced one by one, each through the installer's own receipt steps (pending, replace, installed).
- * Any failure puts everything back. game_running: the proxy DLL cannot be replaced while the game runs. fail_step (tests): fail after replacing
+ * Any failure puts everything back. dir: the game folder; data: the mod's data folder (journal, backups, the replaced launcher). game_running: the proxy DLL cannot be replaced while the game runs. fail_step (tests): fail after replacing
  * that many files (1..); crash (tests): then stop dead without rolling back, as a killed process would. */
-static inline enum lu_result lu_apply_package(const char *dir, const unsigned char *zip, size_t zip_len, const char *prefix, const char *current_ver,
+static inline enum lu_result lu_apply_package(const char *dir, const char *data, const unsigned char *zip, size_t zip_len, const char *prefix, const char *current_ver,
                                               const char *target_tag, int game_running, int fail_step, int crash)
 {
     unsigned char *payload[LU_NTARGETS] = {0};
@@ -1305,7 +1331,7 @@ static inline enum lu_result lu_apply_package(const char *dir, const unsigned ch
     if (lu_is_dev_build(current_ver) || !lu_parse_semver(current_ver, &curv)) return LU_ERR_DEV;
     if (ver == 0) return LU_ERR_DOWNGRADE;
     if (game_running) return LU_ERR_RUNNING;
-    if (lu_journal_status(dir, NULL, 0)) return LU_ERR_RECEIPT;      /* an earlier update has not been settled: recovery first */
+    if (lu_journal_status(data, NULL, 0) || lu_journal_status(dir, NULL, 0)) return LU_ERR_RECEIPT;      /* an earlier update has not been settled: recovery first */
     if (lu_owner(dir) == LU_OWNER_MANAGER) return LU_ERR_MANAGER;      /* MUT:manager: a mod manager's files are its own */
 
     r = lu_zip_check_paths(zip, zip_len);
@@ -1333,15 +1359,16 @@ static inline enum lu_result lu_apply_package(const char *dir, const unsigned ch
         if (!change[i]) continue;
         lu_path(stage, sizeof(stage), dir, lu_targets[i].name, ".coop-stage");
         lu_path(target, sizeof(target), dir, lu_targets[i].name, "");
-        lu_path(prev, sizeof(prev), dir, lu_targets[i].name, ".coop-prev");
+        lu_path(prev, sizeof(prev), data, lu_targets[i].name, ".coop-prev");
         lu_path(rpath, sizeof(rpath), dir, lu_targets[i].name, ".coop-receipt.json");
-        lu_path(rprev, sizeof(rprev), dir, lu_targets[i].name, ".coop-receipt.json.coop-prev");
+        lu_path(rprev, sizeof(rprev), data, lu_targets[i].name, ".coop-receipt.json.coop-prev");
         if (!lu_write_verified(stage, payload[i], plen[i], newh[i])) { r = LU_ERR_IO; goto fail_clean; }
         if (change[i] == 2) continue;      /* added: nothing to back up */
+        lu_make_parents(data, lu_targets[i].name);
         if (!lu_copy_verified(target, prev, chk) || strcmp(chk, oldh[i]) != 0 ||
             !lu_copy_verified(rpath, rprev, chk)) { r = LU_ERR_IO; goto fail_clean; }
     }
-    lu_path(jpath, sizeof(jpath), dir, LU_JOURNAL, "");
+    lu_path(jpath, sizeof(jpath), data, LU_JOURNAL, "");      /* MUT:journal-beside-game */
     jf = fopen(jpath, "wb");
     if (!jf) { r = LU_ERR_IO; goto fail_clean; }
     fprintf(jf, "[update]\nstatus=pending\nprevious_version=%s\ntarget_version=%s\n", current_ver, target_tag);
@@ -1353,13 +1380,15 @@ static inline enum lu_result lu_apply_package(const char *dir, const unsigned ch
 
     k = 0;
     for (i = 0; i < LU_NTARGETS; i++) {
-        char stage[640], target[640], old[640], chk[65];
+        char stage[640], target[640], old[640], gold[640], chk[65];
         if (!change[i]) continue;
         lu_path(stage, sizeof(stage), dir, lu_targets[i].name, ".coop-stage");
         lu_path(target, sizeof(target), dir, lu_targets[i].name, "");
-        lu_path(old, sizeof(old), dir, lu_targets[i].name, ".coop-old");
+        lu_path(old, sizeof(old), data, lu_targets[i].name, ".coop-old");
+        lu_path(gold, sizeof(gold), dir, lu_targets[i].name, ".coop-old");
         if (!lu_write_receipt(target, rc[i].original, change[i] == 2 ? newh[i] : rc[i].installed, newh[i])) { r = LU_ERR_IO; goto fail_rollback; }
-        if (lu_targets[i].launcher && !lu_rename_replace(target, old)) { r = LU_ERR_IO; goto fail_rollback; }      /* the running launcher can be renamed, not overwritten */
+        /* the running launcher can be renamed, not overwritten; a rename does not cross drives, so on another drive than the data folder it stays beside the game */
+        if (lu_targets[i].launcher && !lu_rename_replace(target, old) && !lu_rename_replace(target, gold)) { r = LU_ERR_IO; goto fail_rollback; }      /* MUT:old-other-drive */
         if (!lu_rename_replace(stage, target)) { r = LU_ERR_IO; goto fail_rollback; }
         if (!lu_file_sha256(target, chk) || strcmp(chk, newh[i]) != 0) { r = LU_ERR_IO; goto fail_rollback; }
         if (!lu_write_receipt(target, rc[i].original, newh[i], NULL)) { r = LU_ERR_IO; goto fail_rollback; }
@@ -1376,23 +1405,23 @@ static inline enum lu_result lu_apply_package(const char *dir, const unsigned ch
     for (i = 0; i < LU_NTARGETS; i++) {
         char prev[640], rprev[640];
         if (!change[i]) continue;
-        lu_path(prev, sizeof(prev), dir, lu_targets[i].name, ".coop-prev");
-        lu_path(rprev, sizeof(rprev), dir, lu_targets[i].name, ".coop-receipt.json.coop-prev");
+        lu_path(prev, sizeof(prev), data, lu_targets[i].name, ".coop-prev");
+        lu_path(rprev, sizeof(rprev), data, lu_targets[i].name, ".coop-receipt.json.coop-prev");
         remove(prev); remove(rprev);
     }
     remove(jpath);
     r = LU_OK;
     goto done;
 fail_rollback:
-    if (lu_rollback(dir) != LU_OK) r = LU_ERR_ROLLBACK;
+    if (lu_rollback(dir, data) != LU_OK) r = LU_ERR_ROLLBACK;
 fail_clean:
     for (i = 0; i < LU_NTARGETS; i++) {
         char stage[640], prev[640], rprev[640];
         lu_path(stage, sizeof(stage), dir, lu_targets[i].name, ".coop-stage");
         remove(stage);
         if (r != LU_ERR_ROLLBACK) {      /* (after a failed rollback the backups are all that is left: kept) */
-            lu_path(prev, sizeof(prev), dir, lu_targets[i].name, ".coop-prev");
-            lu_path(rprev, sizeof(rprev), dir, lu_targets[i].name, ".coop-receipt.json.coop-prev");
+            lu_path(prev, sizeof(prev), data, lu_targets[i].name, ".coop-prev");
+            lu_path(rprev, sizeof(rprev), data, lu_targets[i].name, ".coop-receipt.json.coop-prev");
             if (change[i]) { remove(prev); remove(rprev); }
         }
     }

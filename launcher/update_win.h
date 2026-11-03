@@ -36,11 +36,11 @@ inline bool GameRunningIn(const std::wstring& dir) {
 
 class Updater {
 public:
-    // dir: the game folder (the launcher's own); version: the stamped mod version; log: where failures go
+    // dir: the game folder (the launcher's own); dataDir: the mod's data folder (settings, the update journal and backups; common/userdata.h); version: the stamped mod version; log: where failures go
     void Init(const std::wstring& dir, const std::wstring& dataDir, const std::string& version, std::function<void(const std::string&)> log) {
-        dir_ = dir; dirA_ = Narrow(dir); for (auto& c : dirA_) if (c == '\\') c = '/'; version_ = version; log_ = log; cfgPath_ = dataDir + L"\\witness_launcher_update.cfg"; managed_ = lu_owner(dirA_.c_str()) == LU_OWNER_MANAGER;
+        dir_ = dir; dirA_ = Narrow(dir); for (auto& c : dirA_) if (c == '\\') c = '/'; dataA_ = Narrow(dataDir); for (auto& c : dataA_) if (c == '\\') c = '/'; version_ = version; log_ = log; cfgPath_ = dataDir + L"\\witness_launcher_update.cfg"; managed_ = lu_owner(dirA_.c_str()) == LU_OWNER_MANAGER;
         InitializeCriticalSection(&cs_); inited_ = true; snap_.version = version; apiUrl_ = WUP_DEFAULT_API;
-        LoadSettings(); int rec = lu_recover_interrupted(dirA_.c_str());
+        LoadSettings(); int rec = lu_recover_interrupted(dirA_.c_str(), dataA_.c_str());
         if (rec > 0) { Set(kError, "An interrupted update was rolled back to the previous version."); Log("update: an interrupted update was rolled back"); }
         else if (rec < 0) { Set(kError, "An interrupted update could not be rolled back; run Setup again."); Log("update: ROLLBACK FAILED, kept the backups"); }
     }
@@ -137,7 +137,7 @@ private:
         if (r == LU_OK) {
             if (!Get(rel.zip_url, &status, &rem, &retry, &zip, &zipLen, LU_MAX_ASSET_BYTES) || status != 200) r = LU_ERR_TRUNCATED;
             else { r = lu_verify_download(zip, zipLen, rel.zip_size, expect);
-                   if (r == LU_OK) r = lu_apply_package(dirA_.c_str(), zip, zipLen, WUP_PREFIX, version_.c_str(), rel.tag, GameRunningIn(dir_) ? 1 : 0, 0, 0); }
+                   if (r == LU_OK) r = lu_apply_package(dirA_.c_str(), dataA_.c_str(), zip, zipLen, WUP_PREFIX, version_.c_str(), rel.tag, GameRunningIn(dir_) ? 1 : 0, 0, 0); }
             free(zip);
         }
         char b[96]; snprintf(b, sizeof b, "update: apply %s -> code %d", rel.tag, r); Log(b);
@@ -157,7 +157,7 @@ private:
         }
         return r;
     }
-    bool managed_ = false; std::wstring dir_, cfgPath_; std::string dirA_, version_, apiUrl_; std::function<void(const std::string&)> log_; CRITICAL_SECTION cs_; bool inited_ = false; volatile LONG busy_ = 0;
+    bool managed_ = false; std::wstring dir_, cfgPath_; std::string dirA_, dataA_, version_, apiUrl_; std::function<void(const std::string&)> log_; CRITICAL_SECTION cs_; bool inited_ = false; volatile LONG busy_ = 0;
     lu_schedule sched_ = {1, 0, 0, 0}; int prePref_ = -1; lu_release rel_ = {}; Snapshot snap_;
 };
 }  // namespace wup

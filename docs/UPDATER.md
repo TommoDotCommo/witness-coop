@@ -26,7 +26,11 @@ the reason is in the launcher's log as `update: check failed, code N`). Nothing 
 
 It goes through the receipt rules of the installer, so a copy the installer does not own is left alone: see README, *Updating*. In short: only files whose `.coop-receipt.json` matches are
 replaced, all or none; no file of the game is replaced (a folder in the v0.1.0-alpha layout is migrated: `dsound.dll` added, the game's own `AnselSDK64.dll` put back after its SHA-256 is checked); the proxy only while the game is not running; the old launcher stays as `witness_launcher.exe.coop-old` until the next start.
-`witness_update.state` (a journal) exists only while an update is in progress; if it is found at start the update is rolled back.
+`witness_update.state` (a journal) exists only while an update is in progress; if it is found at start the update is rolled back. The journal, the backups
+(`<file>.coop-prev`, `<file>.coop-receipt.json.coop-prev`) and `witness_launcher.exe.coop-old` are in the mod's data folder (`%LOCALAPPDATA%\witness-coop\`, or the
+game folder for a per-instance test copy, `common/userdata.h`); the `.coop-stage` files stay beside their targets so one rename replaces each file. The old launcher
+stays beside the game when the data folder is on another drive (a running program cannot be moved across drives). A journal an older build left in the game folder
+is still found and its update rolled back from there.
 
 ## Testing a release candidate without publishing it
 
