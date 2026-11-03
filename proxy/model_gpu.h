@@ -26,6 +26,8 @@ void ModelGpuLogLineStats();          // witness_cmd.txt: linestat -> one log li
 ModelDrawStats ModelGpuStats();
 void ModelGpuDumpPlayers(); // render-thread test bridge: submitted ids, positions and gait speeds
 void ModelGpuRequestDepthAt(float fx, float fy);   // the same for the point (fx, fy) of the screen, 0..1 (free drawing)
+void ModelGpuRequestDepthPoints(const float* fx, const float* fy, int n);   // up to 8 screen points (0..1): the next frame measures the scene distance (along the view) at each
+int ModelGpuTakeDepthPoints(float* dist, int n);   // 1: the answer is there (-1 per point: the sky); -1: no depth buffer; 0: not yet
 void ModelGpuRequestCenterDepth();     // the next frame measures the distance of the geometry under the middle of the screen
 bool ModelGpuTakeCenterDepth(float* dist);   // true once the answer is there: the distance in metres along the view direction, or -1 (sky / no depth buffer)
 void ModelGpuRequestProbeGrid(float x0 = 0.2f, float y0 = 0.2f, float x1 = 0.8f, float y1 = 0.8f);     // the next frame logs the scene depth on an 11 x 7 grid over that part of the screen (witness_cmd.txt: probegrid [x0 y0 x1 y1])

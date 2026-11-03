@@ -13,6 +13,7 @@
 #include "tv.h"
 #include "frame/panelframe.h"
 #include "game.h"
+#include "thirdperson.h"
 #include "state.h"
 #include "config.h"
 
@@ -122,9 +123,11 @@ public:
     }
     bool pose(float pos[3], float ang[2]) override {
         if (TvProbeHome(pos, ang)) return true;      // (measuring the ground for a screen: the others keep seeing the player where it stood)
+        unsigned gen = ThirdPersonGen();      // (the third-person emote view moves the game's camera while the world is drawn: the others get the real eye)
         const float* cam = (const float*)(Base() + 0x6304B0 + 0x10); const float* a = (const float*)(Base() + 0x6303EC);
         if (IsBadReadPtr(cam, 12) || IsBadReadPtr(a, 8) || (cam[0] == 0 && cam[1] == 0)) return false;
         for (int i = 0; i < 3; i++) pos[i] = cam[i];
+        ThirdPersonFixEye(gen, pos);
         ang[0] = a[0]; ang[1] = a[1]; return true;
     }
 private:

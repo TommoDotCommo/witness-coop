@@ -15,6 +15,9 @@ bool SocialCapturing();                       // the chat box is open: it has th
 bool SocialMouseCaptured();                   // that, or the emote wheel is open: the mouse look is frozen (the wheel takes the motion)
 void SocialRawMove(int dx, int dy);           // raw mouse motion while the wheel is open (the game gets none)
 bool SocialEmoteOf(unsigned playerId, int* emote, float* seconds);   // the emote a remote player is playing now (1..24) and for how long
+#include "core/appearance.h"
+witness::Appearance SocialMyAppearance();       // this player's own look (the third-person view draws it)
+bool SocialMyEmote(int* emote, float* seconds, unsigned* sequence);   // this player's own emote now (1..24) and for how long; sequence: counts every emote started
 const char* SocialEmoteName(int emote);
 void SocialFrame(float W, float H, const float* cam, const float* ang);   // render thread, inside the UI frame (after the name tags)
 void SocialCommand(const char* line);         // witness_cmd.txt: chat <text> | typing on|off | ping | pingat x y z | typetext <text> | socialstat

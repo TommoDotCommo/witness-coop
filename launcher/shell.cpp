@@ -45,6 +45,7 @@ static std::vector<Row> Build() {
         for (size_t i = 0; i < witness::kAppearanceFeatures; ++i) v.push_back(Choice_(std::string("cfg:appearance_") + witness::kAppearanceNames[i], std::string("Your ") + witness::kAppearanceNames[i] + " colour", kPlayers, palettes[i], "0"));
     }
     v.push_back(Toggle("cfg:see_through", "See through players in the way of a puzzle", kPlayers, "1"));
+    v.push_back(Toggle("cfg:emote_third_person", "Third-person view when emoting", kPlayers, "1"));
     v.push_back(Toggle("cfg:dev_menu", "Developer menu (F8)", kPlayers, "0"));
     // Voice and sound
     v.push_back(Choice_("cfg:voice_mode", "Voice chat", kVoice, {"Off", "Open mic (voice gate)", "Push to talk"}, "ptt")); v.back().values = {"off", "open", "ptt"};

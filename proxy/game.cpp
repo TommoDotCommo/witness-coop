@@ -21,6 +21,7 @@ void TracerCommand(const char* line);      // tracer.cpp
 #include "social.h"
 #include "video.h"
 #include "tv.h"
+#include "thirdperson.h"
 
 void Log(const char* msg);
 #include "diag.h"
@@ -132,6 +133,7 @@ static DWORD WINAPI CmdThread(LPVOID) {
             else if (!strncmp(line, "progress ", 9)) { std::string t = line + 9; while (!t.empty() && (t.back() == '\r' || t.back() == '\n')) t.pop_back(); DevMenuCommand(("progress:" + t).c_str(), 0); }
             else if (sscanf(line, "uishot %d %d %15s", &dx, &dy, a) == 3) OverlayRequestUiCapture((unsigned)dx, (unsigned)dy, a);
             else if (DiagCommand(line)) {}
+            else if (ThirdPersonCommand(line)) {}
             else if (!strncmp(line, "uistat", 6)) UiLogStats();
             else if (!strncmp(line, "progressstat", 12)) DevMenuCommand("progressstat", 0);
             else if (sscanf(line, "complete %d", &dx) == 1) DevMenuCommand("complete", (unsigned)dx);
