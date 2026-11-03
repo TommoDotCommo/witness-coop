@@ -37,6 +37,9 @@ prepare a reviewable diff before asking to publish. Never force-push.
 - Diagnostics: `common/diag_log.h` (per-session hash-chained logs, cap), `common/crash_handler.h` (unhandled-exception filter, minidump), `proxy/diag.cpp`
   (flight recorder, F2 marker, desync dump, the commands `diagmark`, `diagdesync`, `testcrash`), `dist/diag.ps1` (the Send diagnostics bundle, embedded in the launcher),
   `tools/diag_report.py`, `tools/minidump.py`, `tools/map_symbols.py`; tests `make -C launcher test` (diag-test, crash-test), `python3 -B tools/test_diag.py`, `tools/qa_diag.sh` (live).
+- Keys and the player panel: `common/bindings.def` is the one binding table (guide, launcher Controls page and cfg parser read it); `common/guide.h` holds key codes (mouse buttons and the wheel are codes below 8),
+  the shared co-op keys, the migration of moved defaults and the shared-key rules; `common/movedkeys.h` writes the one-time moved-keys list; `common/notices.h` is the one table of join/leave/lost/reconnect/version wording;
+  `proxy/ui/player_panel.h` is the hold-Tab panel's model (rows, layout, hit test, keys), drawn by `proxy/overlay.cpp`. Tests: `make -C common test`, `make -C proxy/ui test`, `tools/qa.sh shared`.
 - `local/`: ignored private configuration, disposable test copies, release zips (`local/release/`) and QA evidence.
 
 ## Build and validation
