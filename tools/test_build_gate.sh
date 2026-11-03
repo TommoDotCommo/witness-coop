@@ -7,6 +7,7 @@
 #   forward:  every call reaches the system copy, by name and by the ordinal the game imports (11); with no system copy the call fails, no crash;
 #             mutant -DCOOP_MUT_BARE_NAME (LoadLibrary("dsound.dll"), which is the proxy itself) must be caught
 #   chain:    a dsound.chain.dll beside the proxy is loaded (known and unknown builds) and logged; mutant -DCOOP_MUT_NO_CHAIN must be caught
+#   old copy: the alpha's AnselSDK64.dll proxy already mapped -> this proxy installs nothing, logs it; mutant -DCOOP_MUT_NO_OTHER_COPY must be caught
 #   ordinals: the production proxy/dsound.dll exports the system dsound.dll's 12 names at its ordinals
 # Runs the .exe files on Windows through WSL interop, in a scratch folder on the Windows disk (WITNESS_TMPDIR, as qa_installer.sh).
 set -euo pipefail
@@ -20,6 +21,7 @@ t="$here/proxy/tests"
 $CXX -std=c++17 -O1 -static -Wl,--disable-dynamicbase -Wl,--disable-reloc-section -Wl,--image-base=0x140000000 -o "$work/host.exe" "$t/gate_host.cpp"
 $CXX -shared -o "$work/real.dll" "$t/gate_real.cpp"
 $CXX -shared -o "$work/chain.dll" "$t/gate_chain.cpp"
+$CXX -shared -o "$work/oldproxy.dll" "$t/gate_oldproxy.cpp"
 spec="$("$work/host.exe" fingerprint | tr -d '\r')"
 build() {   # <folder> <extra flags...>: the host, the fake system dsound.dll in sys\, a chain file unless NOCHAIN=1, the proxy as dsound.dll
     local d="$1"; shift; mkdir -p "$d/sys"; cp "$work/host.exe" "$d/host.exe"; cp "$work/real.dll" "$d/sys/dsound.dll"
@@ -74,6 +76,15 @@ echo "$out" | grep -q '^GetDeviceID=0x80004005$' && echo "$out" | grep -q '^ordi
 echo "mutant (the real DLL loaded by bare name, which is the proxy itself) must be caught:"
 build "$work/mutbare" -DCOOP_TEST_SPEC="$spec" -DCOOP_MUT_BARE_NAME
 forwarded "$(run "$work/mutbare")" && check 'MUTANT SURVIVED: the calls reached the system copy although it was loaded by bare name' no || check 'mutant caught (a bare-name load does not reach the system copy)' ok
+echo "the alpha's AnselSDK64.dll proxy loaded too:"
+build "$work/oldcopy" -DCOOP_TEST_SPEC="$spec"; cp "$work/oldproxy.dll" "$work/oldcopy/AnselSDK64.dll"
+out="$(run "$work/oldcopy")"
+echo "$out" | grep -q '^old=1$' && echo "$out" | grep -q '^gate=0,0,0,0,0$' && forwarded "$out" && grep -q '^OTHER COPY: ' "$work/oldcopy/witness_proxy.log" && check 'with the old proxy mapped: nothing hooked or started, forwarded, logged' ok || check 'with the old proxy mapped: nothing hooked or started, forwarded, logged' no
+build "$work/oldreal" -DCOOP_TEST_SPEC="$spec"; cp "$work/real.dll" "$work/oldreal/AnselSDK64.dll"
+echo "$(run "$work/oldreal")" | grep -q '^gate=1,1,1,1,1$' && check 'the game'"'"'s own AnselSDK64.dll (not the old proxy) does not hold the mod back' ok || check 'the game'"'"'s own AnselSDK64.dll (not the old proxy) does not hold the mod back' no
+echo "mutant (the old proxy not looked for) must be caught:"
+build "$work/mutold" -DCOOP_TEST_SPEC="$spec" -DCOOP_MUT_NO_OTHER_COPY; cp "$work/oldproxy.dll" "$work/mutold/AnselSDK64.dll"
+echo "$(run "$work/mutold")" | grep -q '^gate=0,0,0,0,0$' && check 'MUTANT SURVIVED: two copies of the mod would both hook the game' no || check 'mutant caught (both copies would hook)' ok
 echo "export table of the production proxy:"
 if [ -f "$here/proxy/dsound.dll" ]; then
     want='1 DirectSoundCreate|2 DirectSoundEnumerateA|3 DirectSoundEnumerateW|4 DllCanUnloadNow|5 DllGetClassObject|6 DirectSoundCaptureCreate|7 DirectSoundCaptureEnumerateA|8 DirectSoundCaptureEnumerateW|9 GetDeviceID|10 DirectSoundFullDuplexCreate|11 DirectSoundCreate8|12 DirectSoundCaptureCreate8'

@@ -120,6 +120,35 @@ static void ChainLoad() {
     Log(line);
 }
 
+// ---- the old layout beside this one: up to v0.1.0-alpha the mod was the game's AnselSDK64.dll. If that old proxy is in this process
+// too (an alpha install with the new files copied over it, or a test copy prepared by older tools), two copies of the mod would hook the
+// same game: this one stays passive (forwarding only) and the old one runs co-op alone. Decided in DllMain from the images the loader has
+// already mapped (all static imports are mapped before any DllMain runs): no file I/O, only a scan of that module's readable pages.
+static bool g_otherCopy;
+static bool OldProxyMapped() {
+#ifdef COOP_MUT_NO_OTHER_COPY
+    return false;              // mutant: the old proxy is not looked for
+#endif
+    HMODULE m = GetModuleHandleW(L"AnselSDK64.dll");
+    if (!m || m == g_self) return false;
+    const uint8_t* base = (const uint8_t*)m;
+    size_t size = buildid::MappedSize(base);
+    static const char kOld[] = "real Ansel DLL";      // a text only the old co-op proxy carries
+    for (size_t at = 0; at < size;) {
+        MEMORY_BASIC_INFORMATION mbi;
+        if (!VirtualQuery(base + at, &mbi, sizeof mbi)) break;
+        size_t end = (size_t)((const uint8_t*)mbi.BaseAddress + mbi.RegionSize - base); if (end > size) end = size;
+        bool readable = mbi.State == MEM_COMMIT && !(mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD)) &&
+                        (mbi.Protect & (PAGE_READONLY | PAGE_READWRITE | PAGE_WRITECOPY | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY));
+        if (readable)
+            for (size_t i = at; i + sizeof kOld - 1 <= end; ++i)
+                if (base[i] == 'r' && !memcmp(base + i, kOld, sizeof kOld - 1)) return true;
+        if (end <= at) break;
+        at = end;
+    }
+    return false;
+}
+
 // ---- which build of the game is this? Decided in DllMain from the exe already in memory (no I/O under the loader lock).
 // Any build but the one the mod's addresses fit is left strictly alone: no hook, no thread of ours that touches the game,
 // every export still forwards to the system dsound.dll, and the player is told once that co-op is off.
@@ -223,6 +252,11 @@ static bool HandOffSteamJoin() {
 }
 static DWORD WINAPI Init(LPVOID) {
     ChainLoad();
+    if (g_otherCopy) {
+        Log("OTHER COPY: the co-op mod's old AnselSDK64.dll (v0.1.0-alpha layout) is loaded too. This dsound.dll stays passive (sound calls pass through); "
+            "co-op runs from the old copy. Run Setup to finish the move to dsound.dll (it puts the game's own AnselSDK64.dll back).");
+        return 0;
+    }
     if (!g_buildKnown) { UnsupportedBuild(); return 0; }
     char msg[300], exe[MAX_PATH];
     DiagStart();
@@ -244,8 +278,9 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID reserved) {
     if (reason == DLL_PROCESS_DETACH && reserved) DiagStop();      // the process is ending normally: a session log without this line ended in a crash or a kill
     if (reason == DLL_PROCESS_ATTACH) {
         g_self = inst;
+        g_otherCopy = OldProxyMapped();      // memory only: no I/O under the loader lock
         CheckBuild();        // reads the exe's own header and code in memory: no I/O under the loader lock
-        if (g_buildKnown) InstallHooks();      // memory patching only: no I/O under the loader lock
+        if (g_buildKnown && !g_otherCopy) InstallHooks();      // memory patching only: no I/O under the loader lock
         DisableThreadLibraryCalls(inst);
         HANDLE t = CreateThread(nullptr, 0, Init, nullptr, 0, nullptr);
         if (t) CloseHandle(t);

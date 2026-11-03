@@ -15,6 +15,8 @@ int main(int argc, char** argv)
         return 0;
     }
     if (argc < 3 || strcmp(argv[1], "run")) return 2;
+    std::string old = std::string(argv[2]) + "\\AnselSDK64.dll";      // an old co-op proxy beside it (the alpha layout), mapped first as by the loader
+    if (GetFileAttributesA(old.c_str()) != INVALID_FILE_ATTRIBUTES) printf("old=%d\n", LoadLibraryA(old.c_str()) ? 1 : 0);
     std::string dll = std::string(argv[2]) + "\\dsound.dll";
     HMODULE m = LoadLibraryA(dll.c_str());
     printf("loaded=%d\n", m ? 1 : 0);
