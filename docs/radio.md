@@ -1,7 +1,7 @@
 # Handheld radio
 
-Hold **R** to talk on the session radio. **N** retains the selected voice channel;
-**H** cycles channels. Releasing R returns to that selection. **F1** shows the
+Hold **R** to talk on the session radio. **B** retains the selected voice channel;
+**Y** cycles channels. Releasing R returns to that selection. **F1** shows the
 configured bindings. The launcher Controls page, configuration parser and guide
 share `proxy/bindings.h`. Set `key_radio=` to rebind, `radio_enabled=0` to disable
 the prop and dedicated hold key, or `voice_mode=off` to disable capture. The
@@ -16,7 +16,7 @@ No captured audio is recorded or stored. `voice_radio_range` continues to contro
 the automatic distant-radio fallback of proximity chat; the explicit radio
 channel has unlimited range.
 
-In the F5 player list, select a player and use Left/Right to adjust voice volume,
+In the hold-Tab player panel, select a player and use Left/Right to adjust voice volume,
 or M to mute/unmute. These controls affect all their voice channels for this
 listener, for the current process lifetime. The command bridge equivalent is
 `voiceplayer <id> <0..100>`; zero mutes. The microphone HUD identifies the channel,

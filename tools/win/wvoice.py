@@ -108,18 +108,18 @@ elif mode == 'channels':
     send(da, ['voicechannel proximity'], 0.5)
     seen = []
     for k in range(5):
-        send(da, ['key H down'], 0.15); send(da, ['key H up'], 0.4); sa = vstat(da); seen.append((sa['channel'], sa['to']) if sa else None)
-    check('6. the channel key (H) steps proximity > radio > global > direct to player 2 > proximity > radio', seen == [('radio', 0), ('global', 0), ('direct', 2), ('proximity', 0), ('radio', 0)], seen)
+        send(da, ['key Y down'], 0.15); send(da, ['key Y up'], 0.4); sa = vstat(da); seen.append((sa['channel'], sa['to']) if sa else None)
+    check('6. the channel key (Y) steps proximity > radio > global > direct to player 2 > proximity > radio', seen == [('radio', 0), ('global', 0), ('direct', 2), ('proximity', 0), ('radio', 0)], seen)
     time.sleep(1.0); s = vstat(db); sp = s['sp'].get(1) if s else None
     check('   and B hears the channel the key chose (radio, channel 1)', sp and sp['talking'] == 1 and sp['channel'] == 1, sp and sp['channel'])
 else:
     d, beta = place(5.0, 90); time.sleep(1.0); s0 = vstat(db); sp = s0['sp'].get(1) if s0 else None
     check('1. push to talk, key not held: nothing is sent', not sp or (sp['talking'] == 0 and sp['packets'] == 0), sp and (sp['talking'], sp['packets']))
     check('   and B does not see A as speaking', speaking_seen_by_b() in (0, None))
-    send(da, ['key N down'], 1.2); s1 = vstat(db); sp = s1['sp'].get(1) if s1 else None
-    check('2. key N held: B hears A', sp and sp['talking'] == 1 and sp['packets'] > 20, sp and (sp['talking'], sp['packets']))
+    send(da, ['key B down'], 1.2); s1 = vstat(db); sp = s1['sp'].get(1) if s1 else None
+    check('2. key B held: B hears A', sp and sp['talking'] == 1 and sp['packets'] > 20, sp and (sp['talking'], sp['packets']))
     check('   B sees A as speaking', speaking_seen_by_b() == 1)
-    send(da, ['key N up'], 1.5); s2 = vstat(db); sp2 = s2['sp'].get(1) if s2 else None
+    send(da, ['key B up'], 1.5); s2 = vstat(db); sp2 = s2['sp'].get(1) if s2 else None
     check('3. key released: the transmission ends, B stops hearing A and the speaking flag drops', sp2 and sp2['talking'] == 0 and speaking_seen_by_b() == 0, sp2 and sp2['talking'])
     p1 = sp2['packets'] if sp2 else 0; time.sleep(1.0); s3 = vstat(db)
     check('   and nothing more arrives', s3 and s3['sp'][1]['packets'] == p1, s3 and (s3['sp'][1]['packets'], p1))

@@ -208,7 +208,7 @@ static bool SocialKeyImpl(unsigned vk, bool down) {
     const Cfg& c = GetCfg(); Lock l; ULONGLONG now = GetTickCount64();
     if (vk == c.keyRadio) return VoiceRadioKey(down, g_open || g_wheel || GamePaused());
     if (vk == c.keyVoiceChannel && !c.noVoiceChannelKey && down && !g_open && !g_wheel && !GamePaused()) return VoiceCycleChannel();
-    if (vk == c.keyVoice) { if (!down) VoiceKey(vk, false); else if (!g_open && !GamePaused()) VoiceKey(vk, true); }
+    if (vk == c.keyVoice || vk == c.keyVoiceAlt) { if (!down) VoiceKey(vk, false); else if (!g_open && !GamePaused()) VoiceKey(vk, true); }
     if (vk == VK_SHIFT || vk == VK_LSHIFT || vk == VK_RSHIFT) { g_shift = down; return false; }
     if (!down && vk == c.keyDraw) { bool was = g_pen; PenUp(now); return was; }
     if (g_open) {
@@ -229,11 +229,17 @@ static bool SocialKeyImpl(unsigned vk, bool down) {
     if (vk == c.keyChat && !c.noChatUi) { g_open = true; g_input.clear(); return true; }
     if (vk == c.keyDraw) { if (g_shift) ClearMine(); else PenDown(now); return true; }
     if (vk == c.keyCanvas) { g_canvas = !g_canvas; g_ox = g_oy = 0; if (!g_canvas) PenUp(now); return true; }
-    if (vk == c.keyColor && (g_canvas || g_pen)) { g_penColor = uint8_t((g_penColor + 1) % kInks); return true; }
+    if (vk == c.keyColor && c.keyColor != guide::Wheel && (g_canvas || g_pen)) { g_penColor = uint8_t((g_penColor + 1) % kInks); return true; }
     if (vk == VK_BACK && g_canvas) { UndoMine(); return true; }
-    if (vk == c.keyPing) { g_pingReq = true; g_pingAsked = false; g_pingAt = now; return true; }
+    if (vk == c.keyPing || vk == c.keyPingAlt) { g_pingReq = true; g_pingAsked = false; g_pingAt = now; return true; }
     return false;
 }
+bool SocialWheel(int delta) {      // the mouse wheel: the ink colour while drawing (key_color=wheel); true when it was used (the game does not scroll)
+    const Cfg& c = GetCfg(); Lock l;
+    if (c.keyColor != guide::Wheel || !delta || GamePaused() || g_open || g_wheel || !(g_canvas || g_pen)) return false;
+    g_penColor = uint8_t((g_penColor + (delta > 0 ? 1 : kInks - 1)) % kInks); return true;
+}
+bool SocialBusy() { Lock l; return g_open || g_wheel; }
 bool SocialChar(unsigned ch) {
     Lock l; if (!g_open) return false;
     if (ch >= 32 && ch < 127 && g_input.size() < kMaxInput) g_input.push_back(char(ch));
@@ -244,7 +250,7 @@ void SocialFrame(float W, float H, const float* cam, const float* ang) {
     ULONGLONG now = GetTickCount64(); witness::SyncCore* core = CoopCore(); const Cfg& cfg = GetCfg();
 
     Lock l;
-    if (GamePaused() || g_open || g_wheel) { VoiceRadioKey(false,true); VoiceKey(cfg.keyVoice,false); }
+    if (GamePaused() || g_open || g_wheel) { VoiceRadioKey(false,true); VoiceKey(cfg.keyVoice,false); VoiceKey(cfg.keyVoiceAlt,false); }
     if (core) {
         for (const auto& m : core->takeChat()) { if (DiagChat(m.from, m.text)) continue; AddChat(m.from, m.text, now); }
         for (const auto& m : core->takeMarks()) AddMark(m.from, m.kind, m.pos, now);
@@ -316,7 +322,7 @@ void SocialFrame(float W, float H, const float* cam, const float* ang) {
     if (cfg.voiceMode != 0) {      // my own microphone: what the key does, and a bar that follows the level while it is open
         bool talk = VoiceSpeaking(); int lvl = VoiceMicLevel(); char b[80];
         char chn[64]; VoiceChannelText(chn, sizeof chn);
-        char pre[48]; if (talk) snprintf(pre, sizeof pre, "MIC  talking"); else if (cfg.voiceMode == 2) snprintf(pre, sizeof pre, "MIC  hold %c to talk", (char)cfg.keyVoice); else snprintf(pre, sizeof pre, "MIC  open");
+        char pre[48]; if (talk) snprintf(pre, sizeof pre, "MIC  talking"); else if (cfg.voiceMode == 2) snprintf(pre, sizeof pre, "MIC  hold %s to talk", guide::KeyName(cfg.keyVoice ? cfg.keyVoice : cfg.keyVoiceAlt).c_str()); else snprintf(pre, sizeof pre, "MIC  open");
         snprintf(b, sizeof b, "%s  [%s]", pre, chn);
         float tw = UiTextWidth(b, 0.8f * k), bx = 24 * k, by = H - 50 * k;
         UiRect(bx - 6 * k, by - 4 * k, tw + 90 * k, UiLineHeight(0.8f * k) + 8 * k, Rgba(0, 0, 0, 0.5f)); UiText(bx, by, b, talk ? Rgba(0.5f, 1, 0.6f, 1) : Rgba(0.8f, 0.85f, 0.95f, 1), 0.8f * k);

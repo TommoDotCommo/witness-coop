@@ -45,7 +45,7 @@ try:
     a.send(['menusel c335', 'menudo teleport'], 4)
     (x, y, z), (heading, _) = A.camera()
     b.send(['hover %.5f %.5f %.5f %.5f 0' % (x + 4*math.cos(heading), y + 4*math.sin(heading), z, heading + math.pi)], 2)
-    a.send(['voicechannel proximity', 'key R up', 'key N up'], .5)
+    a.send(['voicechannel proximity', 'key R up', 'key B up'], .5)
     state = snapshot(a, da)
     peer = wait_for(b, db, lambda s: entry(s, 'remotes', 1).get('age_ms', 10000) < 2000)
     check(bool(peer), 'two clients have fresh peer state')
@@ -101,5 +101,5 @@ except AssertionError as error:
     print('RADIO_ASSERTION: ' + str(error), flush=True)
     sys.exit(1)
 finally:
-    a.send(['key R up', 'key N up', 'typing off'])
+    a.send(['key R up', 'key B up', 'typing off'])
     b.send(['voiceplayer 1 100'])

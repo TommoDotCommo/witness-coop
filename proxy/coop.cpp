@@ -51,6 +51,8 @@ void CoopSendRawTo(unsigned id, const uint8_t* d, size_t n) {      // one datagr
 }
 #include <cstdarg>
 #include "devmenu.h"
+#include "../common/notices.h"
+#include "config.h"
 static void Msg(const char* fmt, ...) {      // a message shown in the game for a few seconds (the toast: devmenu.cpp), and in the log
     char b[200]; va_list ap; va_start(ap, fmt); vsnprintf(b, sizeof b, fmt, ap); va_end(ap); DevMenuNotice(b);
 }
@@ -218,6 +220,8 @@ static DWORD WINAPI NetThread(LPVOID) {
     g_myId.store((unsigned)id); g_sock = s; g_peerSet.store(true, std::memory_order_release);
     g_core.store(core, std::memory_order_release);
     VoiceStart();
+    WriteMovedKeys(); for (const auto& n : GetCfg().keyConflicts) { std::string l = "keys: " + n; Log(l.c_str()); }      // (once per user; the shared keys a player's own binding kept)
+    wnotice::Roster roster; uint64_t nextRoster = GetTickCount64() + 3000;
     if (flags.raceMode) {      // a race: this thread also runs the race state machine, which reports to everybody
         std::vector<unsigned> others; if (table.empty()) others.push_back(id == 1 ? 2u : 1u); else for (const auto& p : table.peers()) others.push_back(p.first);
         RaceStart((unsigned)id, others, [](const std::vector<uint8_t>& b) { CoopSendRaw(b.data(), b.size()); });
@@ -227,13 +231,19 @@ static DWORD WINAPI NetThread(LPVOID) {
         uint64_t now = GetTickCount64();
         core->tick(now);
         if (flags.raceMode) RaceTick(now, core->ready(), core->solvedPanels());
+        if (now >= nextRoster) {      // join / leave / lost notices, in the standard's words (common/notices.h)
+            nextRoster = now + 1000; std::map<unsigned, wnotice::Seen> seenNow;
+            for (const auto& r : core->remotePoses(now)) seenNow[r.id] = {r.valid, r.ageMs, r.name};
+            for (const auto& n : roster.Update(seenNow, now)) Msg("%s", n.c_str());
+        }
         if (steam && now >= nextWatch) {
             nextWatch = now + 5000;
             for (const auto& kv : table.peers()) {
                 int st = wsteam::State(kv.second.steam); int& was = lastState[kv.first];
                 bool bad = wpeers::SessionLost(was, st);
                 if (bad) { std::string who = "player " + std::to_string(kv.first); for (const auto& r : core->remotePoses(now)) if (r.id == kv.first && !r.name.empty()) who = r.name;
-                           Msg("Co-op over Steam: no connection to %s (Steam says %s). Steam keeps trying; check that both of you are online.", who.c_str(), wsteam::StateName(st)); }
+                           std::string l = std::string("coop: steam session with ") + who + ": " + wsteam::StateName(st); Log(l.c_str()); }
+                if ((st == 1 || st == 2) && was == 3) { std::string who = "player " + std::to_string(kv.first); for (const auto& r : core->remotePoses(now)) if (r.id == kv.first && !r.name.empty()) who = r.name; Msg("%s", wnotice::Reconnecting(who).c_str()); }
                 if (st != was) { snprintf(m, sizeof m, "coop: steam session with %u: %s -> %s", kv.first, wsteam::StateName(was), wsteam::StateName(st)); Log(m); }
                 was = st;
             }
@@ -246,7 +256,8 @@ static DWORD WINAPI NetThread(LPVOID) {
             if (!table.Accept(from, buf, (size_t)n, single)) continue;      // every datagram, pictures included, names its sender: only from that sender's own endpoint
             DiagRxPose(buf, (size_t)n);
             { unsigned sender = n >= 8 ? unsigned(buf[4]) | unsigned(buf[5]) << 8 | unsigned(buf[6]) << 16 | unsigned(buf[7]) << 24 : 0; auto pv = peerVersion.find(sender);
-              std::string note = versionNotice.Observe(buf, (size_t)n, MOD_VERSION, pv == peerVersion.end() ? "" : pv->second);      // another version's packet from a player in the roster: said once, not dropped in silence
+              std::string who; for (const auto& r : core->remotePoses(now)) if (r.id == sender) who = r.name;
+              std::string note = versionNotice.Observe(buf, (size_t)n, MOD_VERSION, pv == peerVersion.end() ? "" : pv->second, who);      // another version's packet from a player in the roster: said once, not dropped in silence
               if (!note.empty()) Msg("%s", note.c_str()); }      // (the toast logs it too)
             if (n >= 4 && (!memcmp(buf, "WTT1", 4) || !memcmp(buf, "WTU1", 4) || !memcmp(buf, "WTD2", 4))) TvOnPacket(buf, (size_t)n);
             else if (n >= 4 && !memcmp(buf, "WTV4", 4)) VideoOnPacket(buf, (size_t)n);            // a chunk of a POV picture

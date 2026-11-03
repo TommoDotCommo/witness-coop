@@ -103,6 +103,7 @@ unsigned VideoNext(const std::vector<unsigned>& players) { Init(); EnterCritical
 unsigned VideoPrev(const std::vector<unsigned>& players) { Init(); EnterCriticalSection(&g_cs); unsigned w = g_view.prev(players); LeaveCriticalSection(&g_cs); return w; }
 void VideoUpdatePlayers(const std::vector<unsigned>& players) { Init(); EnterCriticalSection(&g_cs); g_view.update(players); LeaveCriticalSection(&g_cs); }
 void VideoSetMode(int m) { if (m <= 0) { VideoClear(); return; } g_mode = m > 2 ? 2 : m; if (!VideoWatching()) VideoWatch(LowestRemote()); }
+void VideoCycleSize() { g_mode = g_mode == 1 ? 2 : 1; }      // the player panel: small <-> large, whoever is watched
 void VideoToggleView() { if (!VideoWatching()) { g_mode = 1; VideoWatch(LowestRemote()); } else if (g_mode == 1) g_mode = 2; else { g_mode = 1; VideoClear(); } }      // F9: show (small), large, off
 void VideoStats(unsigned* s, unsigned* r, unsigned* d) { *s = (unsigned)g_sent; *r = (unsigned)g_recv; *d = (unsigned)g_decoded; }
 void VideoPovStats(unsigned* watching, unsigned* subscribers, unsigned* requestsSent) {

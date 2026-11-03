@@ -1,6 +1,6 @@
 # Adventurer gestures
 
-Hold the configured emote key (`G` by default), point at a slot, then release.
+Hold the configured emote key (`H` by default), point at a slot, then release.
 While held, `Tab` advances the page and resets the pointer to its dead zone.
 Release in the centre or press `Esc` to cancel the selection. The wheel remembers
 its page. `F1` toggles the guide; its single binding table also drives social key

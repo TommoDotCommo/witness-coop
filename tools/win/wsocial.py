@@ -60,7 +60,7 @@ time.sleep(12.0); sb = stat(db)
 got = [c[2] for c in sb['chat'] if c[2].startswith('line ')] if sb else []
 check('%d more lines in a row arrive once each and in order' % NLINES, got == ['line %d' % i for i in range(NLINES)], got)
 # pings: from the depth under A's cross-hair (it looks at the pillar 3 m away), then at an exact point
-send(da, ['key P down'], 0.12); send(da, ['key P up'], 2.0)
+send(da, ['key V down'], 0.12); send(da, ['key V up'], 2.0)
 sa = stat(da); sb = stat(db)
 mine = [m for m in sa['marks_list'] if m[0] == 2 or m[0] == 1] if sa else []
 d = math.dist((mine[0][2], mine[0][3], mine[0][4]), (cx, cy, cz)) if mine else -1
