@@ -93,8 +93,29 @@ any other build is refused with a plain explanation and nothing is changed), and
 `witness_models\`. **No file of the game is renamed or changed**: the game imports DirectSound (`dsound.dll`) but does not ship it, so Windows loads the
 mod's copy from the game folder, and the mod hands every DirectSound call to Windows' own `dsound.dll` (loaded by full path from the system folder).
 Every file Setup writes gets a `.coop-receipt.json` beside it, so Uninstall removes exactly what it installed and never a file it did not;
-`witness_coop.cfg`, the log and the saves stay. A Steam update or *Verify integrity of game files* leaves `dsound.dll` alone (Steam does not know it).
+your co-op settings (`witness_coop.cfg`), the logs and the saves stay. A Steam update or *Verify integrity of game files* leaves `dsound.dll` alone (Steam does not know it).
 
+- **Nothing is written into the game folder while you play.** Your co-op settings (`witness_coop.cfg`), the proxy's log (`witness_proxy.log`), the update
+  schedule and the race result live in `%LOCALAPPDATA%\witness-coop\`. A `witness_coop.cfg` that an earlier version left beside the exe is moved there once
+  (copied, compared, then removed). One exception, for test tools and the lab's per-instance copies: a `witness_coop.cfg` beside the exe that carries one of the
+  instance keys (`save_dir`, `force_active`, `run_unfocused`, `diag_dir`) is an explicit per-instance override; then all of those files stay beside the exe, exactly as
+  before, so two copies on one PC (or a copy next to a player's own) keep separate settings. The mod never creates that file. (`common/userdata.h`, tested by
+  `make -C common userdata-test`.)
+- **Mod managers.** The package has `coop-mod.json` (what it is: id `witness-coop`, Steam app 210970, the supported build with its SHA-256, the proxy and the
+  chain file, the Proton override `dsound=native,builtin`, and every game-folder file with its SHA-256) at the zip root and in its top folder, and every
+  `.dll` and `.exe` carries a version resource (product name *The Witness Co-op*, the release version). Copying the files of the package into the game folder
+  is a complete install. Setup tells who put them there: **Setup** (receipts beside the files), **Vortex** (a managed file with more than one hard link, no
+  receipt: Setup shows *Installed by Vortex: update or remove it there*, changes nothing and still offers Play; the launcher says the same instead of
+  updating), or **by hand** (the files match a release, no receipt: Setup adopts them with receipts, after which they update and uninstall like any Setup
+  install). The release script also writes `NEXUS-<version>.txt`, the copy note for the identical zip on Nexus Mods.
+- **Setup from a script.** `Witness-Coop-Setup.exe status [--json] [<game folder>]`, `install <game folder> --yes`, `uninstall <game folder> --yes` (the same
+  words in `install-linux.sh`) run without a window and end with: 0 done, 1 failed, 2 usage, 3 unsupported game build, 4 the game is running.
+- **Setup window.** Every install found (Steam libraries via `libraryfolders.vdf` and `appmanifest_210970.acf`, GOG by registry and known folders, Epic by its
+  manifests, the uninstall list) is a card with its store, the build check and who installed co-op; Browse finds others. Three ticked options: a desktop
+  shortcut, Windows Firewall rule *The Witness Co-op (UDP)* for the game and the launcher on Private and Public networks (one administrator prompt), and
+  *Open invite links in the launcher* (a per-user `witness-coop://` handler that starts `witness_launcher.exe --coop-invite "<link>"`; the launcher puts the
+  invite into its join box and joins nothing until you press Join). Uninstall removes all three. The last screen's primary button is Play. Tests:
+  `tools/test_setup_options.ps1` (fake `netsh`, a throw-away registry key), `tools/test_setup_verbs.ps1`, `tools/test_mod_manifest.py`, `tools/qa_installer.sh`.
 - **Another mod named `dsound.dll`** (an ASI loader, an audio wrapper) found in the game folder is kept as `dsound.chain.dll`; the co-op proxy loads it right
   after itself, so its start-up work still runs, and logs `chain: loaded dsound.chain.dll`. The game's DirectSound calls still go to Windows' own
   `dsound.dll`, not to the chained file: a full DirectSound replacement chained this way gets no calls (rule chosen for safety: a chained proxy that loads
@@ -164,7 +185,7 @@ Close the game; open its folder (Steam: Properties > Installed Files > Browse, t
 Coming from v0.1.0-alpha by hand: delete the old proxy `AnselSDK64.dll` and rename `AnselSDK64_real.dll` back to `AnselSDK64.dll` (or let Steam's
 *Verify integrity of game files* restore it), then step 1.
 
-Uninstall by hand: delete `dsound.dll`, `witness_launcher.exe` and `witness_models\` (`witness_coop.cfg` and `witness_proxy.log` may stay; rename a
+Uninstall by hand: delete `dsound.dll`, `witness_launcher.exe` and `witness_models\` (your settings and logs in `%LOCALAPPDATA%\witness-coop\` may stay; rename a
 `dsound.chain.dll` back to `dsound.dll`). A later Setup can adopt a hand install: it backs up what it replaces.
 
 ### Steam Deck and Linux (Proton): untested
@@ -316,7 +337,7 @@ from another PC is only useful with its logs, so:
 
 Every run (the game and the launcher) writes its own log, `%LOCALAPPDATA%\witness-coop\logs\<UTC start>_p<pid>.log` (the launcher's has
 `_launcher_` in the name). Nothing is overwritten by playing again: the newest 100 MB are kept (`max_log_mb=` in `witness_coop.cfg`), and a run
-that crashed is never deleted. `witness_proxy.log` next to the DLL is still the last run only, and the one before it is `witness_proxy.previous.log`.
+that crashed is never deleted. `witness_proxy.log` (in `%LOCALAPPDATA%\witness-coop\`, or beside the DLL for a per-instance copy) is still the last run only, and the one before it is `witness_proxy.previous.log`.
 Each log line is numbered and hash-chained, so a missing or edited line shows (accidents, not forgery).
 
 **Crashes.** The mod installs an unhandled-exception filter (not a first-chance handler, so exceptions the game catches itself, as
@@ -360,7 +381,7 @@ a door is open when the word at `+0x1D0` is `1.0`. The game's stored target IDs 
 base ID at `[[base+0x62D0A0]+0x08]` (observed `1`) to get a table index. Writing those fields into another game does not start a door: its opening is
 started by the function call. Panel requested power is at `+0x2A4`; the visible level at `+0x2A0` follows it in the engine. Sources and the evidence for each are in the hub notes.
 
-`witness_coop.cfg` (next to the DLL): `id`, `listen`, `peer` (UDP ports on localhost), optional `peer_host`. Instance isolation (all
+`witness_coop.cfg` (in `%LOCALAPPDATA%\witness-coop\`; beside the DLL as a per-instance override when it has an instance key, see above): `id`, `listen`, `peer` (UDP ports on localhost), optional `peer_host`. Instance isolation (all
 off by default, so a player's own game is unchanged): `save_dir=instance` (the game's save folder, `%APPDATA%\The Witness`, becomes
 `<game folder>\appdata`, or give a path; the owner's real saves are then never touched), `cap_fps=N` (frame cap), `share_zip=1`
 (see above), `force_active=1` (the game believes its window is always active: full speed, and it accepts injected input, without taking the focus or the mouse; the real cursor is replaced by a virtual one). Test-only switches: `drop_first_event=1`, `no_resend=1`, `no_echo_guard=1`, `no_resync_on_restart=1`, `skip_entity_zero=1`, `no_panel_power=1`, `no_cable_sync=1`, `no_cable_off=1`, `no_off_snapshot=1`, `no_snap_reassert=1`, `no_cable_arbiter=1`, `no_power_link=1`, `no_target_dispatch=1`. The log is `witness_proxy.log` next to the DLL.
