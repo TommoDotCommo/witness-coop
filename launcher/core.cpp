@@ -129,6 +129,18 @@ std::vector<SaveInfo> ListSaves(const std::wstring& dir) {
     return r;
 }
 
+std::wstring PicturePath(const SaveInfo& s) { size_t dot = s.path.rfind(L'.'); return (dot == std::wstring::npos ? s.path : s.path.substr(0, dot)) + L".png"; }
+ArtPick PickArt(const std::vector<SaveInfo>& saves, const std::function<bool(const std::wstring&)>& loads) {
+    ArtPick a;
+    for (const auto& s : saves) {
+        if (s.hasPng && loads(PicturePath(s))) { a.picture = true; a.png = PicturePath(s); return a; }
+#ifdef WL_MUT_ART_NO_FALLBACK
+        break;      // (mutant: only the newest save is tried; an older save's picture is never used)
+#endif
+    }
+    return a;
+}
+
 // ---- the launch
 std::string ProgressSpec(const std::vector<std::string>& areas, int lasers, const std::vector<std::string>& presets) {
     std::string s; auto add = [&](const std::string& t) { if (!s.empty()) s += ";"; s += t; };

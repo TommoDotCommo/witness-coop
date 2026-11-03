@@ -2,6 +2,7 @@
 #include "core.h"
 #include "../common/buildid_fixture.h"
 #include <cstdio>
+#include <set>
 #include <cstring>
 #include <windows.h>
 using namespace wl;
@@ -74,5 +75,17 @@ int main() {
     check("saves: newest first, with the picture and the co-op sidecar", l.size() == 2 && l[0].stem.find("02.00.00") != std::string::npos && l[0].hasMeta && l[0].meta.solved == 5 && l[0].meta.players.size() == 1 && !l[0].hasPng && l[1].hasPng && !l[1].hasMeta);
     for (auto& f : l) { DeleteFileW(f.path.c_str()); } DeleteFileW((dir + L"\\2026.10.26__time_01.00.00.png").c_str()); DeleteFileW((dir + L"\\2026.10.26__time_02.00.00.coop.txt").c_str()); RemoveDirectoryW(dir.c_str());
     check("saves: a folder that is not there lists nothing", ListSaves(L"C:\\no\\such\\folder").empty());
+    // the banner's art: the newest save whose picture loads, else the drawn panel
+    {
+        auto save = [](const wchar_t* stem, bool png) { SaveInfo s; s.path = std::wstring(L"S:\\saves\\") + stem + L".witness_campaign"; s.hasPng = png; return s; };
+        std::set<std::wstring> good = {L"S:\\saves\\b.png", L"S:\\saves\\c.png"}; std::vector<std::wstring> tried;
+        auto loads = [&](const std::wstring& p) { tried.push_back(p); return good.count(p) > 0; };
+        check("art: no saves (first start) draws the panel", !PickArt({}, loads).picture);
+        check("art: saves without pictures draw the panel", !PickArt({save(L"a", false), save(L"x", false)}, loads).picture);
+        ArtPick a = PickArt({save(L"c", true), save(L"b", true)}, loads); check("art: the newest save's picture", a.picture && a.png == L"S:\\saves\\c.png");
+        a = PickArt({save(L"a", false), save(L"b", true)}, loads); check("art: the newest save has no picture: the next save's picture", a.picture && a.png == L"S:\\saves\\b.png");
+        tried.clear(); a = PickArt({save(L"x", true), save(L"b", true)}, loads); check("art: a picture that does not load is passed over", a.picture && a.png == L"S:\\saves\\b.png" && tried.size() == 2);
+        check("art: no picture loads: the panel", !PickArt({save(L"x", true), save(L"y", true)}, loads).picture);
+    }
     printf("%d checks, %d failed\n", checks, fails); return fails ? 1 : 0;
 }

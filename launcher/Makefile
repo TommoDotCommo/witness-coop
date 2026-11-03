@@ -2,7 +2,7 @@
 CXX = x86_64-w64-mingw32-g++
 BUILD = build
 SRC = core.cpp core_test.cpp ../proxy/progress/savemeta.cpp ../proxy/progress/progress.cpp ../proxy/progress/progress_data.cpp
-MUTANTS = BUILD_ALWAYS_OK NO_ROUNDTRIP INT_AS_FLOAT KEEP_DUPLICATES NO_RANGE LOOKALIKE ANY_TEXT
+MUTANTS = BUILD_ALWAYS_OK NO_ROUNDTRIP INT_AS_FLOAT KEEP_DUPLICATES NO_RANGE LOOKALIKE ANY_TEXT ART_NO_FALLBACK
 $(BUILD)/core-test.exe: $(SRC) core.h ../common/buildid.h ../common/buildid_fixture.h
 	mkdir -p $(BUILD)
 	$(CXX) -std=c++17 -O2 -Wall -Wextra -static -o $@ $(SRC)
