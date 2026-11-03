@@ -56,6 +56,16 @@ try:
     cmd('leave'); time.sleep(0.5); u = ui()[0]
     check('   leaving returns to the tiles', 'label Play lobbyview 0' in u, u)
     check('9. lines the launcher does not know are kept', cfg().get('some_future_key') == 'kept')
+    cmd('quit'); p.wait(5)
+    # an invite link (Setup's witness-coop:// handler starts the launcher with it as one argument): Play, the Join tile, the invite in the box; not joined, the choice not remembered
+    for f in (statf, cmdf):
+        try: os.remove(f)
+        except OSError: pass
+    link, invite = 'witness-coop://192.168.1.20:47100/ABC123/', '192.168.1.20:47100/ABC123'
+    p = subprocess.Popen([exe, link, '--dir', gdir, '--no-activate', '--size', '1280', '800', '--stat-file', statf, '--cmd-file', cmdf], startupinfo=si)
+    time.sleep(2.5); t = stat(); u, s, h = ui(); jb = re.search(r'^joinbox (.*)$', t, re.M); la = re.search(r'^lobby active (\d)', t, re.M)
+    check('10. an invite link opens Play on the Join tile with the invite in the join box, and says to check it', 'tab 0 label Play' in u and 'choice join' in u and jb and jb[1] == invite and 'Check it, then press Join' in s, (u, jb and jb[1], s))
+    check('   it is not joined by itself, and the remembered choice is not changed', la and la[1] == '0' and cfg().get('launcher_choice') == 'host', (la and la[1], cfg().get('launcher_choice')))
 finally:
     try: cmd('quit'); p.wait(5)
     except Exception: pass
