@@ -18,6 +18,8 @@
 #include "gamecam.h"
 #include "ui.h"
 #include "ui/text.h"
+#include "ui/tag_layout.h"
+#include "povui.h"
 #include "guide_ui.h"
 #include "input.h"
 #include "model_gpu.h"
@@ -354,8 +356,13 @@ void SocialFrame(float W, float H, const float* cam, const float* ang) {
     }
     for (const auto& rp : rem) {      // a player who is talking: three bars moving beside the top of the head, in their colour
         if (!rp.speaking || rp.ageMs > 2000) continue;
-        float head[3] = {rp.pos[0], rp.pos[1], rp.pos[2] + 0.30f}, sx, sy; if (!ToScreen(cam, ang[0], ang[1], head, W, H, &sx, &sy)) continue;
-        float col[3]; PlayerColor(rp.id, col); float dist = sqrtf((rp.pos[0] - cam[0]) * (rp.pos[0] - cam[0]) + (rp.pos[1] - cam[1]) * (rp.pos[1] - cam[1]) + (rp.pos[2] - cam[2]) * (rp.pos[2] - cam[2]));
+        float col[3]; PlayerColor(rp.id, col);
+        float bx, by, bw, bh, bk; if (OverlayTagBars(rp.id, &bx, &by, &bw, &bh, &bk)) {      // a name tag is drawn: the bars beside its ping, inside its box (ui/tag_layout.h)
+            for (int b = 0; b < 3; ++b) { float ph = float(now % 500) / 500.0f * 6.2831853f + b * 2.1f, hgt = wtag::BarHeight(0.5f + 0.5f * sinf(ph), bk, bh); UiRect(bx + b * wtag::kBarStep * bk, by + bh - hgt, wtag::kBarW * bk, hgt, Rgba(col[0], col[1], col[2], 0.95f)); }
+            if (rp.radioTx && cfg.RadioOn()) UiText(bx, by + bh + 8 * bk, "RADIO", Rgba(1,.7f,.3f), bk*.7f);
+            ++g_speakDrawn; continue;
+        }
+        float head[3] = {rp.pos[0], rp.pos[1], rp.pos[2] + 0.30f}, sx, sy; if (!ToScreen(cam, ang[0], ang[1], head, W, H, &sx, &sy)) continue; float dist = sqrtf((rp.pos[0] - cam[0]) * (rp.pos[0] - cam[0]) + (rp.pos[1] - cam[1]) * (rp.pos[1] - cam[1]) + (rp.pos[2] - cam[2]) * (rp.pos[2] - cam[2]));
         float kk = k * std::min(1.0f, std::max(0.6f, 10.0f / std::max(dist, 1.0f)));
         for (int b = 0; b < 3; ++b) { float ph = float(now % 500) / 500.0f * 6.2831853f + b * 2.1f, hgt = (7 + 9 * (0.5f + 0.5f * sinf(ph))) * kk; UiRect(sx + (30 + b * 7) * kk, sy - 6 * kk - hgt, 4.5f * kk, hgt, Rgba(col[0], col[1], col[2], 0.95f)); }
         if (rp.radioTx && cfg.RadioOn()) UiText(sx + 30 * kk, sy + 4 * kk, "RADIO", Rgba(1,.7f,.3f), kk*.7f);

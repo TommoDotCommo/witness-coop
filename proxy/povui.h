@@ -8,3 +8,4 @@ bool PovRosterOpen();
 void PovPanelStat();                      // log the panel state (test command panelstat)
 unsigned OverlayTvAim();
 void OverlayPovState(unsigned* aimed, int* rosterOpen);      // test command povstat
+bool OverlayTagBars(unsigned id, float* x, float* y, float* w, float* h, float* k);      // render thread, after the name tags of this frame: where a talking player's voice bars go (false: no tag drawn for them)

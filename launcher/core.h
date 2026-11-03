@@ -4,6 +4,7 @@
 //   Launcher.variables    the game's video options (in its save folder): render profile, fullscreen, vsync, resolution, multisampling, qualities
 //   <save>.witness_campaign   the game's save: it carries the game's own options (mouse speed, invert, brightness, field of view, ...) as named values, patched in place
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <vector>
 #include "../proxy/progress/savemeta.h"
@@ -51,6 +52,11 @@ bool WriteSaveOption(std::vector<uint8_t>* campaign, const std::string& name, fl
 // ---- saves
 struct SaveInfo { std::wstring path; std::string stem; unsigned long long bytes = 0, when = 0; bool hasPng = false, hasMeta = false; wprog::SaveMeta meta; };
 std::vector<SaveInfo> ListSaves(const std::wstring& dir);     // newest first; the sidecar is read when there is one
+std::wstring PicturePath(const SaveInfo& s);                  // the picture the game writes beside the save (<save>.png)
+// The launcher's art (its banner): the picture of the newest save whose picture loads; no save, no picture or none that loads: a puzzle panel the launcher draws.
+// `loads` decodes a picture (and keeps it for the caller); the list is newest first (ListSaves).
+struct ArtPick { bool picture = false; std::wstring png; };
+ArtPick PickArt(const std::vector<SaveInfo>& saves, const std::function<bool(const std::wstring&)>& loads);
 
 // ---- invite links (the witness-coop:// handler Setup registers starts the launcher with the link as one argument)
 // The invite text inside a link ("witness-coop://<invite>", percent-escapes decoded, a closing slash dropped), or "" when the argument is not such a link
