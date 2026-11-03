@@ -11,4 +11,4 @@ bool ThirdPersonViewCam(float pos[3], float ang[2]);   // the camera this frame'
 bool ThirdPersonSelf(float pos[3], float* yaw, int* emote, float* seconds);   // this player's own figure is to be drawn (the third-person view is out)
 void ThirdPersonSelfDrawn(bool drawn);   // overlay.cpp: the figure was submitted this frame
 void ThirdPersonClick();        // a mouse button went down (raw input): the view returns
-bool ThirdPersonCommand(const char* line);   // witness_cmd.txt: tpstate (writes witness_tp.json) | tpforce on|off|cfg (test override of the setting)
+bool ThirdPersonCommand(const char* line);   // witness_cmd.txt: tpstate (writes witness_tp.json) | tpforce on|off|cfg (test override of the setting) | tpwatch <rva>|dump|0 (developer: who writes there)

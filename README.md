@@ -488,6 +488,12 @@ default 4; it waits up to `QA_WAIT` seconds for room instead of failing). The sh
 typical seconds in `tools/qa_durations.json` (`tools/shard.py`, tested game-free by `tools/test_shard.py`), and the run ends with a table of
 scenario, shard, seconds and result and the total wall time. `tools/qa.sh --serial` runs the suite on one pair of games.
 
+`tools/qa.sh thirdperson` checks the third-person view while emoting (`tools/qa_thirdperson.py`, `tools/win/wthird.py`): A emotes and the
+game's own main view (exe+0x649860) stands at the camera in front of A while it draws; A's own figure is drawn doing the emote; the player
+entity never moves; B receives A's real eye and stays first person; the view returns when the emote ends, on walking and on a click; with
+the setting off it stays first person; a wall 1.2 m ahead keeps it first person. The mutant `tp_never_return=1` must fail it. The camera
+itself is tested game-free in `make -C proxy/core test` (`proxy/core/tests/thirdperson.cpp`, mutant `TP_MUT_NO_RETURN`).
+
 `tools/qa.sh model` runs the adventurer suite (`tools/suite_model.py`, `tools/win/wmodel.py`): visibility, idle/walk/run animation, measured speed, render-thread statistics, occlusion behind the first door, blinking, the glance at a near player and the sun shadow on the floor. It also checks migration from a removed model name. Mutants disable gait, read statistics on the command thread, draw through walls, turn the life layer off and turn the shadow off. The updated live scenarios require a fresh verifier run; no old model-selector results apply to this version.
 
 Last full run from this repo (2026-10-22, one machine, localhost, build 11370412, about 8 minutes now that the bot teleports instead of

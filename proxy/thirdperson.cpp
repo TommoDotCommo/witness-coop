@@ -142,9 +142,10 @@ void WriteState() {
 } // namespace
 
 // Diagnostic (finding which code writes a game address each frame): `tpwatch <rva>` arms a hardware write watchpoint (DR0, 4 bytes) on the
-// render thread; a vectored handler counts the instructions that wrote there; `tpwatch dump` logs them (as exe RVAs after the write).
-volatile DWORD g_renderTid = 0; struct WatchHit { uintptr_t rip, c1, c2; unsigned n; }; WatchHit g_hits[16]; volatile LONG g_hitCount = 0, g_watchTotal = 0;
-LONG CALLBACK WatchHandler(EXCEPTION_POINTERS* e) {
+// render thread; a vectored handler counts the instructions that wrote there; `tpwatch dump` logs them (as exe RVAs after the write) with
+// two stack slots that held return addresses for the view builder exe+0x2C8D50. `tpwatch 0` disarms. Needs dev_menu=1.
+static volatile DWORD g_renderTid = 0; struct WatchHit { uintptr_t rip, c1, c2; unsigned n; }; static WatchHit g_hits[16]; static volatile LONG g_hitCount = 0, g_watchTotal = 0;
+static LONG CALLBACK WatchHandler(EXCEPTION_POINTERS* e) {
     if (e->ExceptionRecord->ExceptionCode != EXCEPTION_SINGLE_STEP || !(e->ContextRecord->Dr6 & 1)) return EXCEPTION_CONTINUE_SEARCH;
     uintptr_t rip = (uintptr_t)e->ExceptionRecord->ExceptionAddress - Base(); e->ContextRecord->Dr6 = 0;
     if (InterlockedIncrement(&g_watchTotal) > 2000) e->ContextRecord->Dr7 = 0;      // enough: disarm
@@ -155,7 +156,7 @@ LONG CALLBACK WatchHandler(EXCEPTION_POINTERS* e) {
     if (g_hitCount < 16) { g_hits[g_hitCount].rip = rip; g_hits[g_hitCount].c1 = c1; g_hits[g_hitCount].c2 = c2; g_hits[g_hitCount].n = 1; ++g_hitCount; }
     return EXCEPTION_CONTINUE_EXECUTION;
 }
-void WatchArm(uintptr_t rva) {
+static void WatchArm(uintptr_t rva) {
     static PVOID veh; if (!veh) veh = AddVectoredExceptionHandler(1, WatchHandler);
     HANDLE t = g_renderTid ? OpenThread(THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT | THREAD_SET_CONTEXT, FALSE, g_renderTid) : nullptr; if (!t) { Log("tpwatch: no render thread"); return; }
     g_hitCount = 0; g_watchTotal = 0;
@@ -164,7 +165,7 @@ void WatchArm(uintptr_t rva) {
     ResumeThread(t); CloseHandle(t);
     char m[100]; snprintf(m, sizeof m, "tpwatch: write watch on exe+%#llx %s", (unsigned long long)rva, rva ? "armed" : "off"); Log(m);
 }
-void WatchDump() {
+static void WatchDump() {
     char m[160]; snprintf(m, sizeof m, "tpwatch: %ld writes, %ld places", (long)g_watchTotal, (long)g_hitCount); Log(m);
     for (LONG i = 0; i < g_hitCount; ++i) { snprintf(m, sizeof m, "tpwatch:   after exe+%#llx  x%u  (stack +0xb8 exe+%#llx, +0xf8 exe+%#llx)", (unsigned long long)g_hits[i].rip, g_hits[i].n, (unsigned long long)g_hits[i].c1, (unsigned long long)g_hits[i].c2); Log(m); }
 }
@@ -227,8 +228,10 @@ void ThirdPersonSelfDrawn(bool drawn) { if (drawn) ++g_selfDraws; }
 void ThirdPersonClick() { InterlockedExchange(&g_clicks, 1); }
 bool ThirdPersonCommand(const char* line) {
     if (!strncmp(line, "tpstate", 7)) { InterlockedExchange(&g_stateReq, 1); return true; }
-    if (!strncmp(line, "tpwatch dump", 12)) { WatchDump(); return true; }
-    { unsigned long long rva; if (sscanf(line, "tpwatch %llx", &rva) == 1) { WatchArm((uintptr_t)rva); return true; } }
+    if (!strncmp(line, "tpwatch", 7)) {      // developer diagnostic: only with the dev menu on
+        unsigned long long rva; if (!GetCfg().devMenu) Log("tpwatch: needs dev_menu=1"); else if (!strncmp(line, "tpwatch dump", 12)) WatchDump(); else if (sscanf(line, "tpwatch %llx", &rva) == 1) WatchArm((uintptr_t)rva);
+        return true;
+    }
     if (!strncmp(line, "tpforce on", 10)) { InterlockedExchange(&g_force, 1); return true; }
     if (!strncmp(line, "tpforce off", 11)) { InterlockedExchange(&g_force, 0); return true; }
     if (!strncmp(line, "tpforce cfg", 11)) { InterlockedExchange(&g_force, -1); return true; }
