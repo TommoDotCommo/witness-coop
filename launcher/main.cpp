@@ -903,6 +903,9 @@ void OnFieldChanged(Field& f) {
     if (f.key == "upd:auto") { g_upd.SetAutoCheck(SendMessageW(f.h, BM_GETCHECK, 0, 0) == BST_CHECKED); return; }
     if (f.key == "upd:pre") { g_upd.SetPrereleases(SendMessageW(f.h, BM_GETCHECK, 0, 0) == BST_CHECKED ? 1 : -1); return; }
     if (f.key == "cfg:name") { g_loading = true; SetWindowTextW(C(ID_NAME), W(GetVal(f)).c_str()); g_loading = false; }
+#ifdef WL_MUT_NO_SAVE_ON_CHANGE
+    return;      // (mutant: a change is not saved)
+#endif
     if (g_game) { g_dirty = true; Status(L"Saved when the game ends (the lobby's game is using the settings file)."); return; }
     std::wstring msg; if (ApplyAll(&msg)) Status(L"Saved: " + W(f.row ? f.row->label : f.label) + (f.row && f.row->inSave ? L" (in the chosen save)" : L"")); else Status(msg);
 }

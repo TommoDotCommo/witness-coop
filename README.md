@@ -137,7 +137,8 @@ Four tabs, the same in every co-op mod: **Play**, **Saves**, **Settings**, **Abo
 Keyboard: Enter, Esc (back), Tab, Ctrl+Tab (tabs), Ctrl+Enter (the page's main button), hold F1 (quick guide). A pad (XInput: Xbox pads, the Steam Deck's
 controls) works too: stick or D-pad move, A selects, B goes back, LB/RB change tabs, Start presses the page's main button, X and Y are the actions the footer
 names. The window is resizable, opens at 1280x800 (or the screen when that is smaller) and fills the screen on a Steam Deck. The shape is in `launcher/shell.h`,
-tested game-free by `make -C launcher shell-test` (with mutants); the launcher's command file (`--cmd-file`: `tab`, `section`, `choice`, `pad <buttons hex> <lx> <ly>`,
+tested game-free by `make -C launcher shell-test` (with mutants) and on the real window by `python3 tools/qa_launcher_shell.py` (no game slot; a
+launcher that does not save on change must fail it); `tools/qa.sh steamstart` (one slot) checks Play in Steam handing over; the launcher's command file (`--cmd-file`: `tab`, `section`, `choice`, `pad <buttons hex> <lx> <ly>`,
 `capture <key> <vk>`, `setting <key> <value>`) drives it in tests.
 
 ### Updating
