@@ -47,10 +47,9 @@ static std::vector<Row> Build() {
     v.push_back(Toggle("cfg:see_through", "See through players in the way of a puzzle", kPlayers, "1"));
     v.push_back(Toggle("cfg:dev_menu", "Developer menu (F8)", kPlayers, "0"));
     // Voice and sound
-    v.push_back(Choice_("cfg:voice_mode", "Voice chat", kVoice, {"off", "open", "ptt"}, "ptt"));
-    v.back().hint = "open: the voice gate; ptt: push to talk";
+    v.push_back(Choice_("cfg:voice_mode", "Voice chat", kVoice, {"Off", "Open mic (voice gate)", "Push to talk"}, "ptt")); v.back().values = {"off", "open", "ptt"};
     { Row r = R("cfg:key_voice", "Push-to-talk key", kVoice, kKey); r.def = guide::KeyName('B'); v.push_back(r); }
-    v.push_back(Choice_("cfg:voice_channel", "Who hears you", kVoice, {"proximity", "radio", "global"}, "proximity"));
+    v.push_back(Choice_("cfg:voice_channel", "Who hears you", kVoice, {"Players nearby", "Radio", "Everyone"}, "proximity")); v.back().values = {"proximity", "radio", "global"};
     v.push_back(Slider("cfg:voice_volume", "Voice volume", kVoice, 0, 100, 1, 5, "%", "100"));
     v.push_back(Slider("cfg:mic_volume", "Microphone volume", kVoice, 0, 100, 1, 5, "%", "100"));
     v.push_back(Slider("cfg:voice_range", "Hearing range", kVoice, 1, 200, 1, 5, "m", "25"));

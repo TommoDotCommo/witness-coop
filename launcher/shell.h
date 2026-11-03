@@ -26,7 +26,8 @@ struct Row {
     std::string label;
     Section section;
     RowKind kind;
-    std::vector<std::string> choices;
+    std::vector<std::string> choices;      // what the player sees
+    std::vector<std::string> values;       // what the cfg stores, when it differs from the words shown (empty: the words themselves)
     std::string def;            // the default as text (cfg rows)
     double min = 0, max = 0, step = 1, coarse = 1;      // sliders: range, the step of a value, the step of a pad/arrow press
     std::string unit;           // sliders: "%", "m", "fps", "degrees", ...
