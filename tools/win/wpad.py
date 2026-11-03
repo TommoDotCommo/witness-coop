@@ -42,6 +42,16 @@ def social(d):
         if len(idx) > n0: block = ls[idx[-1]:idx[-1] + 120]; return [l.split(' text ', 1)[1] for l in block if l.startswith('socialstat: chat from 1 ') and ' text ' in l], sum(1 for l in block if l.startswith('socialstat: mark from 1'))
         time.sleep(0.1)
     return None, None
+def net(d):
+    f = os.path.join(d, 'witness_net.json'); t0 = os.path.getmtime(f) if os.path.exists(f) else 0
+    send(d, ['netstate']); t = time.time()
+    while time.time() - t < 5:
+        try:
+            if os.path.getmtime(f) > t0: return json.load(open(f))
+        except (OSError, ValueError): pass
+        time.sleep(0.05)
+    return None
+def pov(d): return nums(last(d, 'povstat', 'povstat:'))
 def pad(buttons, lx=0, ly=0, rx=0, ry=0, lt=0, rt=0, settle=0.0): send(da, ['pad %x %d %d %d %d %d %d' % (buttons, lx, ly, rx, ry, lt, rt)], settle)
 ok = True
 def check(name, cond, detail=''):
@@ -58,9 +68,14 @@ calls0 = s0['game_calls'] if s0 else 0
 # 1. hold View: the player panel
 pad(VIEW, settle=0.9); s1 = padstat(da); p1 = pstat(da)
 check('holding View opens the player panel', s1 and s1['list'] and s1['panel_open'] and p1.get('open') == 1, s1 and (s1['list'], s1['panel_open'], p1.get('open')))
+# the list's click: the panel cursor onto B's Watch button (raw mouse, as a hand on the stick would get there), then RT clicks
+if p1.get('watchx') is not None:
+    send(da, ['mouse %d %d' % (p1['watchx'] - p1['cursorx'], p1['watchy'] - p1['cursory'])], 0.4)
+    pad(VIEW, rt=255, settle=0.3); pad(VIEW, settle=0.6); w1 = pov(da)
+    check('in the panel RT clicks: Watch on B\'s row watches B', w1.get('watching') == 2, w1.get('watching'))
 check('the glyphs switched to the pad; voice is open mic (automatic)', s1 and s1['glyphs'] == 'pad' and s1['voice_mode'] == 1, s1 and (s1['glyphs'], s1['voice_mode']))
 # 2. View + D-pad up: the emote wheel; with the left stick pushed forward and the right stick aside, the player stays where they are
-(x0, y0, z0), (th0, ph0) = A.camera()
+e0 = net(da); (x0, y0, z0), (th0, ph0) = A.camera()
 pad(VIEW | UP, 0, 32000, settle=0.4); pad(VIEW, 0, 32000, 0, 30000, settle=1.5)
 s2 = padstat(da); (x1, y1, z1), (th1, ph1) = A.camera(); moved = math.dist((x0, y0, z0), (x1, y1, z1)); turned = abs(th1 - th0) + abs(ph1 - ph0)
 check('View + D-pad up opens the emote wheel and closes the panel', s2 and s2['wheel'] == 1 and not s2['panel_open'] and s2['social_busy'], s2 and (s2['wheel'], s2['panel_open']))
@@ -68,6 +83,13 @@ check('the game got no D-pad, no stick while View was held (its last pad read)',
 check('the player did not move or turn (left stick forward 1.5 s while View was held)', moved < 0.05 and turned < 0.01, 'moved %.3f m, turned %.4f rad' % (moved, turned))
 pad(0, settle=0.6); s3 = padstat(da)
 check('letting go of View closes the wheel (the stick picked an emote), no ping', s3 and s3['wheel'] == 0 and not s3['social_busy'] and s3['pings'] == 0, s3 and (s3['wheel'], s3['social_busy'], s3['pings']))
+e1 = net(da)
+check('the emote the right stick pointed at plays', e0 and e1 and e1['emote_seq'] == e0['emote_seq'] + 1 and e1['emote'] > 0, e0 and e1 and (e0['emote_seq'], e1['emote_seq'], e1['emote']))
+# View + D-pad right: watch the next player; View + Y: the quick guide while held
+send(da, ['pad off'], 0.2); send(da, ['key TAB down'], 0.4); send(da, ['key BACK down', 'key BACK up'], 0.3); send(da, ['key TAB up'], 0.4); pad(0, settle=0.3)      # (stop watching B first)
+w2 = pov(da); pad(VIEW | 0x08, settle=0.3); pad(VIEW, settle=0.2); pad(VIEW | 0x8000, settle=0.5); s3g = padstat(da); n3 = net(da); pad(VIEW, settle=0.3); pad(0, settle=0.5); w3 = pov(da); n4 = net(da)
+check('View + D-pad right watches the next player (B)', w2.get('watching') == 0 and w3.get('watching') == 2, (w2.get('watching'), w3.get('watching')))
+check('View + Y shows the quick guide while held, and only then', s3g and s3g['guide'] and n3 and n3['guide'] and n4 and not n4['guide'], (s3g and s3g['guide'], n3 and n3['guide'], n4 and n4['guide']))
 # 3. View + RB: the quick chat wheel; the right stick up picks "Ready", letting go sends it; B gets it
 pad(VIEW | RB, settle=0.3); pad(VIEW, 0, 0, 0, 30000, settle=0.4); s4 = padstat(da); pad(0, settle=2.5)
 chat_b, _ = social(db)
