@@ -62,7 +62,7 @@ void Transmit(const int16_t* pcm, bool want, wvoice::Adpcm* enc) {
     static bool on; static uint8_t lastChannel = 0, lastTo = 0; const Cfg& cfg = GetCfg(); InterlockedIncrement(&g_captured);
     float lvl = 0; for (int i = 0; i < wvoice::kFrame; ++i) lvl = std::max(lvl, std::fabs(pcm[i] / 32768.0f)); InterlockedExchange(&g_micLevel, (LONG)(lvl * 1000));
     wvoice::Packet p; p.from = CoopMyId(); p.seq = g_seq; { Lock l; if (!cfg.noVoiceChannel) { p.channel = g_channel; p.to = uint8_t(g_to); } }
-    bool radio = cfg.radioEnabled && g_radioHeld && !GamePaused() && !SocialCapturing();
+    bool radio = cfg.RadioOn() && g_radioHeld && !GamePaused() && !SocialCapturing();
     if (radio && want && !cfg.noVoiceChannel) { p.channel = wvoice::kRadio; p.to = 0; }
     static wvoice::GestureActivity activity;
     float energy=0; for(int i=0;i<wvoice::kFrame;++i) energy+=float(pcm[i])*float(pcm[i]);
@@ -89,7 +89,7 @@ DWORD WINAPI CaptureThread(LPVOID) {
     const Cfg& cfg = GetCfg(); wvoice::Adpcm enc; wvoice::Vad vad; uint64_t sample = 0;
     std::vector<float> tones; { size_t at = 0; const std::string& t = cfg.voiceTestTone; while (at < t.size()) { size_t e = t.find(',', at); if (e == std::string::npos) e = t.size(); tones.push_back((float)atof(t.substr(at, e - at).c_str())); at = e + 1; } }
     timeBeginPeriod(1);
-    auto wanted = [&](const int16_t* pcm) { if (cfg.voiceMode == 0) return false; if (GamePaused() || SocialCapturing()) return false; if (cfg.radioEnabled && g_radioHeld) return true; if (cfg.voiceMode == 2) return g_ptt != 0; return tones.empty() ? vad.Feed(pcm) : true; };
+    auto wanted = [&](const int16_t* pcm) { if (cfg.voiceMode == 0) return false; if (GamePaused() || SocialCapturing()) return false; if (cfg.RadioOn() && g_radioHeld) return true; if (cfg.voiceMode == 2) return g_ptt != 0; return tones.empty() ? vad.Feed(pcm) : true; };
     if (!tones.empty()) {      // no microphone: the test voice, paced by the clock
         ULONGLONG next = GetTickCount64();
         for (;;) { int16_t pcm[wvoice::kFrame]; wvoice::Tone(tones.data(), (int)tones.size(), 0.9f * cfg.micVolume / 100.0f, &sample, pcm); Transmit(pcm, wanted(pcm), &enc); next += 20; ULONGLONG now = GetTickCount64(); if (next > now) Sleep((DWORD)(next - now)); else next = now; }
@@ -153,17 +153,19 @@ static std::string RemoteName(unsigned id) { for (const auto& rp : CoopGetRemote
 void VoiceSetChannel(const char* text) {
     wvoice::Channel ch; unsigned to = 0; char t[40]; snprintf(t, sizeof t, "%s", text); for (char* q = t; *q; ++q) if (*q == '\r' || *q == '\n') *q = 0;
     g_lkInit = true;
-    if (!wvoice::ParseChannel(t, &ch, &to)) return; { Lock l; g_channel = ch; g_to = ch == wvoice::kDirect ? to : 0; }
+    if (!wvoice::ParseChannel(t, &ch, &to)) return;
+    if (ch == wvoice::kRadio && !GetCfg().RadioOn()) ch = wvoice::kProximity;      // (no radio channel without experimental_radio)
+    { Lock l; g_channel = ch; g_to = ch == wvoice::kDirect ? to : 0; }
     char m[120]; if (ch == wvoice::kDirect) snprintf(m, sizeof m, "voice: channel direct to %u", to); else snprintf(m, sizeof m, "voice: channel %s", wvoice::ChannelName(ch)); Log(m);
 }
 bool VoiceCycleChannel() {
-    std::vector<std::string> all = {"proximity", "radio", "global"}; for (const auto& rp : CoopGetRemotes()) all.push_back("direct:" + std::to_string(rp.id));
+    std::vector<std::string> all = {"proximity"}; if (GetCfg().RadioOn()) all.push_back("radio"); all.push_back("global"); for (const auto& rp : CoopGetRemotes()) all.push_back("direct:" + std::to_string(rp.id));
     char cur[40]; { Lock l; if (g_channel == wvoice::kDirect) snprintf(cur, sizeof cur, "direct:%u", g_to); else snprintf(cur, sizeof cur, "%s", wvoice::ChannelName(g_channel)); }
     size_t i = 0; for (; i < all.size(); ++i) if (all[i] == cur) break;
     VoiceSetChannel(all[(i + 1) % all.size()].c_str()); return true;
 }
 void VoiceChannelText(char* out, size_t n) {
-    if (g_radioHeld && GetCfg().radioEnabled) { snprintf(out, n, "Radio"); return; }
+    if (g_radioHeld && GetCfg().RadioOn()) { snprintf(out, n, "Radio"); return; }
     wvoice::Channel ch; unsigned to; { Lock l; ch = g_channel; to = g_to; }
     if (ch == wvoice::kDirect) snprintf(out, n, "Private: %s", RemoteName(to).c_str()); else snprintf(out, n, "%s", ch == wvoice::kRadio ? "Radio" : ch == wvoice::kGlobal ? "Open line" : "Proximity");
 }
@@ -194,11 +196,11 @@ void VoiceOnPacket(const uint8_t* data, size_t n) {      // network thread
 bool VoiceKey(unsigned vk, bool down) { if (!vk || (vk != GetCfg().keyVoice && vk != GetCfg().keyVoiceAlt)) return false; InterlockedExchange(&g_ptt, down ? 1 : 0); return false; }
 bool VoiceProximitySpeaking() { return g_proximityGesture != 0 && !GetCfg().noSpeakingFlag; }
 bool VoiceRadioKey(bool down, bool blocked) {
-    wradio::Hold h; h.Key(down, GetCfg().radioEnabled, blocked);
-    InterlockedExchange(&g_radioHeld, h.down ? 1 : 0); return GetCfg().radioEnabled;
+    wradio::Hold h; h.Key(down, GetCfg().RadioOn(), blocked);
+    InterlockedExchange(&g_radioHeld, h.down ? 1 : 0); return GetCfg().RadioOn();
 }
 unsigned VoiceChannel() { if (!g_lkInit) return wvoice::kProximity; if (g_transmitting) return (unsigned)g_txChannel; Lock l; return g_channel; }
-bool VoiceRadioTx() { return g_transmitting && g_txChannel == wvoice::kRadio && GetCfg().radioEnabled; }
+bool VoiceRadioTx() { return g_transmitting && g_txChannel == wvoice::kRadio && GetCfg().RadioOn(); }
 float VoiceGetPlayerVolume(unsigned id) { if (!g_lkInit) return 1; Lock l; auto it=g_playerVolume.find(id); return it==g_playerVolume.end()?1:it->second; }
 void VoicePlayerVolume(unsigned id, float volume) { if (!g_lkInit) return; Lock l; g_playerVolume[id] = std::max(0.0f, std::min(1.0f, volume)); }
 bool VoiceSpeaking() { return g_transmitting != 0 && !GetCfg().noSpeakingFlag; }

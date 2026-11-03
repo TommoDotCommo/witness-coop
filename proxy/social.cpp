@@ -211,7 +211,7 @@ bool SocialKey(unsigned vk, bool down) {
 bool SocialSwallowRaw(unsigned vk) { Lock l; auto it = g_swallow.find(vk); return it != g_swallow.end() && GetTickCount64() - it->second < 600; }      // (looked at, not used up: the game reads one event more than once)
 static bool SocialKeyImpl(unsigned vk, bool down) {
     const Cfg& c = GetCfg(); Lock l; ULONGLONG now = GetTickCount64();
-    if (vk == c.keyRadio) return VoiceRadioKey(down, g_open || g_wheel || GamePaused());
+    if (guide::RadioKeyActs(c, vk)) return VoiceRadioKey(down, g_open || g_wheel || GamePaused());
     if (vk == c.keyVoiceChannel && !c.noVoiceChannelKey && down && !g_open && !g_wheel && !GamePaused()) return VoiceCycleChannel();
     if (vk == c.keyVoice || vk == c.keyVoiceAlt) { if (!down) VoiceKey(vk, false); else if (!g_open && !GamePaused()) VoiceKey(vk, true); }
     if (vk == VK_SHIFT || vk == VK_LSHIFT || vk == VK_RSHIFT) { g_shift = down; return false; }
@@ -260,7 +260,7 @@ void SocialFrame(float W, float H, const float* cam, const float* ang) {
         for (const auto& m : core->takeChat()) { if (DiagChat(m.from, m.text)) continue; AddChat(m.from, m.text, now); }
         for (const auto& m : core->takeMarks()) AddMark(m.from, m.kind, m.pos, now);
         for (const auto& s : core->takeStrokes()) ApplyStroke(s);
-        witness::Presence p; p.appearance = MyAppearance(); p.typing = g_open && !cfg.noTypingDots; p.speaking = VoiceSpeaking(); p.proximitySpeaking = VoiceProximitySpeaking(); p.radioEquipped = cfg.radioEnabled; p.radioTx = VoiceRadioTx() && p.speaking; p.voiceChannel = (uint8_t)VoiceChannel();
+        witness::Presence p; p.appearance = MyAppearance(); p.typing = g_open && !cfg.noTypingDots; p.speaking = VoiceSpeaking(); p.proximitySpeaking = VoiceProximitySpeaking(); p.radioEquipped = cfg.RadioOn(); p.radioTx = VoiceRadioTx() && p.speaking; p.voiceChannel = (uint8_t)VoiceChannel();
         if (g_emote && !EmoteAlive(g_emote,now-g_emoteAt)) g_emote = 0;
         if (!cfg.noEmoteSend) { p.emote = uint8_t(g_emote); p.emoteSeq = uint8_t(g_emoteSeq); }
         core->setPresence(p);
@@ -321,7 +321,7 @@ void SocialFrame(float W, float H, const float* cam, const float* ang) {
         float col[3]; PlayerColor(rp.id, col); float dist = sqrtf((rp.pos[0] - cam[0]) * (rp.pos[0] - cam[0]) + (rp.pos[1] - cam[1]) * (rp.pos[1] - cam[1]) + (rp.pos[2] - cam[2]) * (rp.pos[2] - cam[2]));
         float kk = k * std::min(1.0f, std::max(0.6f, 10.0f / std::max(dist, 1.0f)));
         for (int b = 0; b < 3; ++b) { float ph = float(now % 500) / 500.0f * 6.2831853f + b * 2.1f, hgt = (7 + 9 * (0.5f + 0.5f * sinf(ph))) * kk; UiRect(sx + (30 + b * 7) * kk, sy - 6 * kk - hgt, 4.5f * kk, hgt, Rgba(col[0], col[1], col[2], 0.95f)); }
-        if (rp.radioTx) UiText(sx + 30 * kk, sy + 4 * kk, "RADIO", Rgba(1,.7f,.3f), kk*.7f);
+        if (rp.radioTx && cfg.RadioOn()) UiText(sx + 30 * kk, sy + 4 * kk, "RADIO", Rgba(1,.7f,.3f), kk*.7f);
         ++g_speakDrawn;
     }
     if (cfg.voiceMode != 0) {      // my own microphone: what the key does, and a bar that follows the level while it is open

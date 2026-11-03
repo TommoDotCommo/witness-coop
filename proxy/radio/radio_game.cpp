@@ -21,7 +21,7 @@ void RadioDumpFrame() {
     unsigned token=(unsigned)InterlockedExchange(&request,0); if(!token) return;
     wchar_t path[MAX_PATH]; GetModuleFileNameW(g_selfModule(),path,MAX_PATH); wchar_t* s=wcsrchr(path,L'\\'); if(!s) return; *(s+1)=0;
     wcscat_s(path,L"witness_radio.json"); wchar_t tmp[MAX_PATH]; wcscpy_s(tmp,path); wcscat_s(tmp,L".tmp"); FILE* f=_wfopen(tmp,L"w"); if(!f) return;
-    fprintf(f,"{\"token\":%u,\"enabled\":%s,\"tx\":%s,\"channel\":%u,\"draws\":[",token,GetCfg().radioEnabled?"true":"false",VoiceRadioTx()?"true":"false",VoiceChannel());
+    fprintf(f,"{\"token\":%u,\"enabled\":%s,\"tx\":%s,\"channel\":%u,\"draws\":[",token,GetCfg().RadioOn()?"true":"false",VoiceRadioTx()?"true":"false",VoiceChannel());
     bool comma=false; for(const auto& kv:draws) if(GetTickCount64()-kv.second.at<250) { const auto& d=kv.second;
         fprintf(f,"%s{\"id\":%u,\"raise\":%.5f,\"vertices\":%u,\"wrist\":[%.5f,%.5f,%.5f]}",comma?",":"",kv.first,d.raise,d.vertices,d.wrist[0],d.wrist[1],d.wrist[2]); comma=true; }
     fprintf(f,"],\"remotes\":["); comma=false; for(const auto& r:CoopGetRemotes()) {

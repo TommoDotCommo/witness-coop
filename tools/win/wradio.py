@@ -1,5 +1,6 @@
 """T2: actual process snapshots, synthetic live audio, independent first/third person draws.
-Usage: wradio.py <pidA> <dirA> <pidB> <dirB> [enabled|disabled]
+Usage: wradio.py <pidA> <dirA> <pidB> <dirB> [enabled|disabled|off]
+'off' is the default (no experimental_radio): R does nothing, the channel list has no Radio, and a far voice still sounds like a radio.
 The launcher supplies two isolated clients; this script never starts a process.
 """
 import json, math, os, sys, time
@@ -8,7 +9,8 @@ sys.path.insert(0,HERE)
 from wcontrol import Control
 exec(compile(open(os.path.join(HERE, 'wlib.py')).read(), 'wlib.py', 'exec'))
 pa, da, pb, db = int(sys.argv[1]), sys.argv[2], int(sys.argv[3]), sys.argv[4]
-disabled = len(sys.argv) > 5 and sys.argv[5] == 'disabled'
+off = len(sys.argv) > 5 and sys.argv[5] == 'off'
+disabled = off or (len(sys.argv) > 5 and sys.argv[5] == 'disabled')
 a, b = Control(da), Control(db)
 A, B = attach(pa), attach(pb)
 token = int(time.time()) & 0x3fffffff
@@ -54,6 +56,22 @@ try:
     if disabled:
         state = snapshot(a, da)
         check(not state['enabled'] and not state['tx'] and not entry(state, 'draws', 0), 'disabled radio cannot transmit or submit a first-person prop')
+        if off:
+            a.send(['key R up', 'voicechannel radio'], .5)
+            check(snapshot(a, da)['channel'] == 0, 'the radio channel cannot be chosen while off')
+            seen = []
+            for _ in range(4):
+                a.send(['key Y down', 'key Y up'], .4); seen.append(snapshot(a, da)['channel'])
+            check(1 not in seen and 2 in seen and 0 in seen, 'Y skips the radio channel: %r' % seen)
+            check(not entry(snapshot(b, db), 'remotes', 1).get('equipped') and not entry(snapshot(b, db), 'remotes', 1).get('tx'), 'nothing radio-specific reaches B')
+            a.send(['voicechannel proximity', 'key B down'], .5)
+            (bx, by, bz), _ = B.camera()
+            a.send(['hover %.5f %.5f %.5f %.5f 0' % (bx+1000, by, bz, heading)], 2)
+            far = wait_for(b, db, lambda s: entry(s, 'speakers', 1).get('rms', 0) > .005)
+            fs = entry(far, 'speakers', 1); t = fs['tone']
+            check(fs['channel'] == 0 and fs['radio'] > .8 and fs['prox'] == 0, 'beyond hearing range the proximity voice still turns into the radio sound')
+            check(t[1] > .02 and t[0] < .25*t[1] and t[2] < .25*t[1], 'the far voice is band-limited at B')
+            a.send(['key B up'], .3)
     else:
         state = wait_for(a, da, lambda s: s['tx'] and entry(s, 'draws', 0).get('raise', 0) > .98)
         check(entry(state, 'draws', 0)['vertices'] > 0, 'A submits the raised first-person model')

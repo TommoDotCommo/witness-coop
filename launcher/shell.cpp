@@ -50,14 +50,13 @@ static std::vector<Row> Build() {
     // Voice and sound
     v.push_back(Choice_("cfg:voice_mode", "Voice chat", kVoice, {"Off", "Open mic (voice gate)", "Push to talk"}, "ptt")); v.back().values = {"off", "open", "ptt"};
     { Row r = R("cfg:key_voice", "Push-to-talk key", kVoice, kKey); r.def = guide::KeyName('B'); v.push_back(r); }
-    v.push_back(Choice_("cfg:voice_channel", "Who hears you", kVoice, {"Players nearby", "Radio", "Everyone"}, "proximity")); v.back().values = {"proximity", "radio", "global"};
+    v.push_back(Choice_("cfg:voice_channel", "Who hears you", kVoice, {"Players nearby", "Everyone", "Radio"}, "proximity")); v.back().values = {"proximity", "global", "radio"};      // (Radio is last: the launcher leaves it out unless Experimental: handheld radio is on)
     v.push_back(Slider("cfg:voice_volume", "Voice volume", kVoice, 0, 100, 1, 5, "%", "100"));
     v.push_back(Slider("cfg:mic_volume", "Microphone volume", kVoice, 0, 100, 1, 5, "%", "100"));
     v.push_back(Slider("cfg:voice_range", "Hearing range", kVoice, 1, 200, 1, 5, "m", "25"));
     v.back().hint = "beyond it the voice turns into radio";
-    v.push_back(Slider("cfg:voice_radio_range", "Radio range", kVoice, 0, 1000, 10, 50, "m", "0", "unlimited"));
-    v.push_back(Toggle("cfg:voice_radio", "Radio sound when far away", kVoice, "1"));
-    v.push_back(Toggle("cfg:radio_enabled", "Handheld radio", kVoice, "1", "hold the radio key to transmit"));
+    v.push_back(Slider("cfg:voice_radio_range", "Radio range", kVoice, 0, 1000, 10, 50, "m", "0", "unlimited")); v.back().hideAtDefault = true;      // (shown only when the cfg changed them)
+    v.push_back(Toggle("cfg:voice_radio", "Radio sound when far away", kVoice, "1")); v.back().hideAtDefault = true;
     v.push_back(Slider("cfg:game_volume", "Game volume", kVoice, 0, 100, 1, 5, "%", "100"));
 #ifdef WL_MUT_LONG_LABELS
     v.push_back(Toggle("cfg:launcher_no_sound", "Game sound off (starts the game with -no_sound, the game's own sound switched off entirely)", kVoice, "0", "starts the game with -no_sound"));      // (mutant: a label longer than its box)
@@ -69,6 +68,7 @@ static std::vector<Row> Build() {
         if (std::string(b.config) == "key_voice") continue;
         Row r = R(std::string("cfg:") + b.config, b.label, kControls, kKey); r.def = guide::KeyName(b.initial);
         if (guide::IsTvBinding(b)) r.hint = "only with Experimental: TV features (Launcher)";
+        if (guide::IsRadioBinding(b)) r.hint = "only with Experimental: handheld radio (Launcher)";
         v.push_back(r);
     }
     for (const auto& d : wl::SaveOptionDefs()) {
@@ -108,6 +108,11 @@ static std::vector<Row> Build() {
     v.push_back(Toggle("cfg:experimental_tv", "Experimental: TV features", kLauncher, "1", "mutant"));
 #else
     v.push_back(Toggle("cfg:experimental_tv", "Experimental: TV features", kLauncher, "0", "back TV, sky TV, audience seats and the TV camera; off: none of it runs or is sent; applies next start"));
+#endif
+#ifdef SHELL_MUT_RADIO_DEFAULT_ON
+    v.push_back(Toggle("cfg:experimental_radio", "Experimental: handheld radio", kLauncher, "1", "mutant"));
+#else
+    v.push_back(Toggle("cfg:experimental_radio", "Experimental: handheld radio", kLauncher, "0", "the walkie-talkie in your hand (key R) and the Radio voice channel; off: none of it runs or is sent; applies next start"));
 #endif
     return v;
 }

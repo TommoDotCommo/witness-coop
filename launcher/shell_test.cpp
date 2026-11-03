@@ -32,7 +32,7 @@ int main() {
     // every field of the old nine pages is a row in exactly one section (the player number is gone: the lobby assigns ids)
     const char* old[] = {"vid:renderProfile", "vid:fullscreen", "vid:vsync", "vid:highdpi", "vid:resolution", "vid:multisampling", "vid:shading", "vid:reflection", "vid:texture", "vid:textureDetail", "vid:geometry",
         "cfg:cap_fps", "cfg:launcher_no_sound", "cfg:game_volume", "cfg:voice_mode", "cfg:key_voice", "cfg:voice_channel", "cfg:voice_volume", "cfg:mic_volume", "cfg:voice_range", "cfg:voice_radio_range", "cfg:voice_radio",
-        "cfg:radio_enabled", "cfg:name", "cfg:listen", "cfgmulti:peer", "cfg:dev_menu", "cfg:see_through", "cfg:run_unfocused", "cfg:lobby_port", "cfg:lobby_advertise", "upd:auto", "upd:pre",
+        "cfg:experimental_radio", "cfg:name", "cfg:listen", "cfgmulti:peer", "cfg:dev_menu", "cfg:see_through", "cfg:run_unfocused", "cfg:lobby_port", "cfg:lobby_advertise", "upd:auto", "upd:pre",
         "opt:mouse_speed_3d", "opt:mouse_speed_2d", "opt:invert_y_axis", "opt:invert_x_axis", "opt:mouse_smoothing", "opt:user_brightness", "opt:user_fov_vertical", "opt:user_reticle", "opt:user_vignetting", "opt:look_magnetism_enabled",
         "cfg:appearance_skin"};
     std::string missing; for (const char* k : old) if (!ls::FindRow(k)) missing += std::string(" ") + k;
@@ -53,6 +53,15 @@ int main() {
         const ls::Row* e = ls::FindRow("cfg:experimental_tv");
         Check(e && e->section == ls::kLauncher && e->kind == ls::kToggle && e->def == "0" && e->label == "Experimental: TV features", "Experimental: TV features is a Launcher toggle, off by default");
         Check(ls::FindRow("cfg:key_tv_deploy") && ls::FindRow("cfg:key_tv_seat"), "the TV keys stay bound (rows kept) while the option is off");
+    }
+    {   // t90b: the handheld radio is one experimental option beside the TV one; the far-voice radio rows are hidden at their defaults
+        const ls::Row* e = ls::FindRow("cfg:experimental_radio");
+        Check(e && e->section == ls::kLauncher && e->kind == ls::kToggle && e->def == "0" && e->label == "Experimental: handheld radio", "Experimental: handheld radio is a Launcher toggle, off by default");
+        Check(!ls::FindRow("cfg:radio_enabled"), "the old Handheld radio row is gone (the key is still read)");
+        const ls::Row* a = ls::FindRow("cfg:voice_radio_range"); const ls::Row* b = ls::FindRow("cfg:voice_radio"); const ls::Row* vc = ls::FindRow("cfg:voice_channel");
+        Check(a && b && a->hideAtDefault && b->hideAtDefault, "Radio range and Radio sound when far away are hidden at their defaults");
+        Check(vc && !vc->values.empty() && vc->values.back() == "radio" && vc->choices.back() == "Radio", "Radio is the last entry of Who hears you (the launcher drops it while the option is off)");
+        const ls::Row* kr = ls::FindRow("cfg:key_radio"); Check(kr && !kr->hint.empty(), "the radio key keeps its Controls row, marked as experimental");
     }
     for (int s = 0; s < ls::kSectionCount; ++s) Check(!ls::RowsOf((ls::Section)s).empty(), "section has rows", ls::SectionName(s));
     // E3: sliders with units for volumes, ranges, FOV, brightness and the frame limit; no typed numbers except the port

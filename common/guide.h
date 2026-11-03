@@ -23,6 +23,7 @@ constexpr unsigned Help = 0x70, Boost = 0x72, Nearby = 0x73, Roster = 0x09 /* ho
     PrevView = 0xDB, NextView = 0xDD;
 struct Fixed { unsigned key; const char* text; };
 inline bool IsTvBinding(const Binding& b) { return std::string(b.config).compare(0, 7, "key_tv_") == 0; }      // the experimental TV features (experimental_tv)
+inline bool IsRadioBinding(const Binding& b) { return std::string(b.config) == "key_radio"; }      // the experimental handheld radio (experimental_radio)
 inline const Fixed fixed[] = {
     {Help, "Hold: quick guide (game and launcher)"},
     {Boost, "Toggle puzzle mouse speed boost"},
@@ -48,6 +49,14 @@ inline TvKeyAction TvKey(const Cfg& c, unsigned vk) {
     if (vk == c.keyTvDeploy) return TvKeyAction::Deploy;
     if (vk == c.keyTvSeat) return TvKeyAction::Seat;
     return TvKeyAction::None;
+}
+// What the radio key does: nothing at all while experimental_radio is off (the key then belongs to the game).
+inline bool RadioKeyActs(const Cfg& c, unsigned vk) {
+#ifdef GUIDE_MUT_RADIO_KEY_WHILE_OFF
+    return vk == c.keyRadio;
+#else
+    return c.RadioOn() && vk == c.keyRadio;
+#endif
 }
 // The diagnostics marker: F2, unless a binding already uses it (the F1 migration may have put one there), then F12, else none.
 inline unsigned MarkerKey(const Cfg& c) {
@@ -198,6 +207,9 @@ inline Columns Content(const Cfg& c) {
 #ifndef GUIDE_MUT_TV_IN_GUIDE
         if (IsTvBinding(b) && !c.experimentalTv) continue;      // experimental TV features are not in the guide while they are off
 #endif
+#ifndef GUIDE_MUT_RADIO_IN_GUIDE
+        if (IsRadioBinding(b) && !c.RadioOn()) continue;      // nor the handheld radio
+#endif
         out[0].push_back(KeyName(c.*b.member) + "  " + b.text);
     }
     out[0].push_back("FIXED KEYS");
@@ -218,7 +230,8 @@ inline Columns Content(const Cfg& c) {
         "Shared keys (the same in every co-op mod): V or middle mouse pings, B or the mouse side button talks, hold H for emotes, hold Tab for the player panel (watch, mute, volume, leave), [ and ] watch the previous / next player.",
         "Co-op shares solved panels, traced puzzle lines, opened doors, panel power and cable lighting. Late arrivals recover shared progress.",
         "Players fade during close body overlap. Watch a partner's view to compare clues. Draw on surfaces or use the precise screen canvas.",
-        "Voice: proximity is spatial nearby, radio farther away. Channels: proximity, radio, open line (global), or one on one. The mic indicator names yours.",
+        c.RadioOn() ? "Voice: proximity is spatial nearby, radio farther away. Channels: proximity, radio, open line (global), or one on one. The mic indicator names yours."
+                    : "Voice: proximity is spatial nearby, radio farther away. Channels: proximity, open line (global), or one on one. The mic indicator names yours.",
         "Race mode keeps worlds and puzzle lines separate. Players, chat and voice remain. Wait for all worlds, countdown, GO; first to the chosen goal wins.",
         "HOST / JOIN - in the launcher",
         "Host a lobby, copy the invite and send it to friends. Join with the invite. Check the roster and chat / voice before starting.",

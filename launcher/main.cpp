@@ -82,11 +82,13 @@ void LobbyPartsChosen(const std::string& spec);
 HWND C(int id); void LoadPlayUi(const wl::CfgFile& c); void LoadSaveOptions(int pick);
 
 void AddFields() {
-    int id = ID_FIELD;
+    int id = ID_FIELD; wl::CfgFile cfg = LoadCfg();
     for (const auto& r : ls::Rows()) {
+        if (r.hideAtDefault && (r.key.rfind("cfg:", 0) != 0 || cfg.Get(r.key.substr(4).c_str(), r.def.c_str()) == r.def)) continue;      // (a setting left at its default is not offered; the cfg key still works)
         Kind k = r.kind == ls::kToggle ? kCheck : r.kind == ls::kChoice ? kCombo : r.kind == ls::kSlider ? kSlider : r.kind == ls::kKey ? kKeyBtn : r.kind == ls::kPeers ? kMulti : r.kind == ls::kNote ? kNoteK : kEdit;
         std::string label = r.label + (r.hostDecides ? "  (host decides)" : "");
         g_fields.push_back({id++, r.section, label, r.key, k, r.choices, r.def, r.hint, &r});
+        if (r.key == "cfg:voice_channel" && cfg.Get("experimental_radio", "0") != "1" && !g_fields.back().choices.empty()) g_fields.back().choices.pop_back();      // (no Radio entry without the handheld radio)
     }
 }
 Field* ByKey(const std::string& k) { for (auto& f : g_fields) if (f.key == k) return &f; return nullptr; }
@@ -157,7 +159,8 @@ Cfg GuideSettings(bool migrate) {
         if (f) keys.*b.member = GetVal(*f).empty() ? b.initial : guide::MigrateDefault(b.config, guide::ParseKey(GetVal(*f)));      // (a key still on its old default shows the new default)
     }
     if (migrate) guide::MigrateF1(keys);
-    if (auto* f = ByKey("cfg:experimental_tv")) keys.experimentalTv = GetVal(*f) == "1";      // (the guide lists the TV keys only while the option is on)
+    if (auto* f = ByKey("cfg:experimental_tv")) keys.experimentalTv = GetVal(*f) == "1";
+    if (auto* f = ByKey("cfg:experimental_radio")) keys.experimentalRadio = GetVal(*f) == "1";      // (the guide lists the TV keys only while the option is on)
     return keys;
 }
 void MigrateGuideKeys() {

@@ -17,9 +17,9 @@ int main() {
         check(c.*b.member == 0x71, "legacy F1 action moves to F2");
         check(guide::Validate(c).empty(), "moved binding is collision free");
         auto cols = guide::Content(c);
-        check(std::count(cols[0].begin(), cols[0].end(), guide::KeyName(c.*b.member) + "  " + b.text) == (guide::IsTvBinding(b) ? 0 : 1),
-              "guide lists actual configured action exactly once (the experimental TV keys not while experimental_tv is off)");
-        c.experimentalTv = true; cols = guide::Content(c);
+        check(std::count(cols[0].begin(), cols[0].end(), guide::KeyName(c.*b.member) + "  " + b.text) == (guide::IsTvBinding(b) || guide::IsRadioBinding(b) ? 0 : 1),
+              "guide lists actual configured action exactly once (the experimental TV and radio keys not while their options are off)");
+        c.experimentalTv = true; c.experimentalRadio = true; cols = guide::Content(c);
         check(std::count(cols[0].begin(), cols[0].end(), guide::KeyName(c.*b.member) + "  " + b.text) == 1, "with experimental_tv on every action is listed exactly once");
         c = Cfg();
     }
@@ -49,6 +49,17 @@ int main() {
             check(go.find(w) == std::string::npos, "the quick guide leaves out the TV features while off");
             check(gn.find(w) != std::string::npos, "the quick guide lists the TV features while on");
         }
+    }
+    {   // experimental_radio: off (the default) R does nothing and stays bound, the guide does not mention the radio
+        Cfg off; check(!off.experimentalRadio && !off.RadioOn(), "experimental_radio is off by default");
+        check(!guide::RadioKeyActs(off, 'R'), "R does nothing while experimental_radio is off");
+        Cfg on; on.experimentalRadio = true; check(guide::RadioKeyActs(on, 'R') && !guide::RadioKeyActs(on, 'Q'), "with experimental_radio on R acts");
+        on.radioEnabled = false; check(!guide::RadioKeyActs(on, 'R'), "radio_enabled=0 still switches it off");
+        check(guide::Validate(off).empty() && off.keyRadio == 'R', "R stays bound while off");
+        auto text = [](const guide::Columns& cols) { std::string t; for (const auto& col : cols) for (const auto& l : col) t += l + "\n"; return t; };
+        Cfg on2; on2.experimentalRadio = true; std::string go = text(guide::Content(off)), gn = text(guide::Content(on2));
+        check(go.find("Channels: proximity, open line") != std::string::npos && go.find("adio (hold)") == std::string::npos && go.find("walkie") == std::string::npos, "the quick guide has no radio channel while off");
+        check(gn.find("Channels: proximity, radio, open line") != std::string::npos, "the quick guide names the radio channel while on");
     }
     guide::Hold h;
     check(!h.Open() && !h.Key('T', true), "only F1 opens guide");
@@ -105,7 +116,8 @@ int main() {
     std::string col0Text;
     for (const auto& line : defaultCols[0]) col0Text += line + "\n";
     check(col0Text.find("H  Hold: emote wheel") != std::string::npos, "guide lists emote binding");
-    check(col0Text.find("R  Hold: radio channel") != std::string::npos, "guide lists radio binding");
+    check(col0Text.find("R  Hold: radio channel") == std::string::npos, "guide leaves out the radio key (experimental_radio off by default)");
+    { Cfg on; on.experimentalRadio = true; auto oc = guide::Content(on); std::string t; for (const auto& l : oc[0]) t += l + "\n"; check(t.find("R  Hold: radio channel") != std::string::npos, "guide lists the radio key with experimental_radio on"); }
     check(col0Text.find("F1  Hold: quick guide") != std::string::npos, "guide lists F1 quick guide");
     check(col0Text.find("F10  Toggle back TV viewer") == std::string::npos, "guide leaves out the TV view key (experimental_tv off by default)");
     check(col0Text.find("F11  Toggle back TV camera broadcast consent") == std::string::npos, "guide leaves out the TV consent key (experimental_tv off by default)");

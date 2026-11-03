@@ -247,18 +247,18 @@ static void DrawMarkers(IDXGISwapChain* sc) {
                 const float* pp = (const float*)(e + 0x24); const float* qp = (const float*)(e + 0x34); wframe::Q pq = {qp[0], qp[1], qp[2], qp[3]};
                 float l[3]; for (int k = 0; k < 3; ++k) l[k] = r.pts.back().d[k] * witness::LineUnit(r.fine);
                 wframe::ToWorld(pp, pq, l, ex.reachAt); ex.reaching = true; break;
-            } ex.appearance = rp.appearance; ex.proximitySpeaking = rp.proximitySpeaking; ex.radioEquipped = rp.radioEquipped; ex.radioTx = rp.radioTx; ex.viewPitch = rp.ang[1]; { int e = 0; float t = 0; if (SocialEmoteOf(rp.id, &e, &t)) { ex.emote = e; ex.emoteT = t; } }
+            } ex.appearance = rp.appearance; ex.proximitySpeaking = rp.proximitySpeaking; ex.radioEquipped = rp.radioEquipped && GetCfg().RadioOn(); ex.radioTx = rp.radioTx && GetCfg().RadioOn(); ex.viewPitch = rp.ang[1]; { int e = 0; float t = 0; if (SocialEmoteOf(rp.id, &e, &t)) { ex.emote = e; ex.emoteT = t; } }
             ModelGpuDraw(rtv, td.Width, td.Height, wc, true, rp.seq, rp.pos, rp.ang[0], rp.id, first, &ex); first = false;
         }
         { float sp[3], sy = 0, st = 0; int se = 0; static unsigned selfSeq;      // the third-person view: this player's own figure, doing its emote
-            if (ThirdPersonSelf(sp, &sy, &se, &st)) { ModelExtra ex; ex.appearance = SocialMyAppearance(); ex.emote = se; ex.emoteT = st; ex.radioEquipped = GetCfg().radioEnabled;
+            if (ThirdPersonSelf(sp, &sy, &se, &st)) { ModelExtra ex; ex.appearance = SocialMyAppearance(); ex.emote = se; ex.emoteT = st; ex.radioEquipped = GetCfg().RadioOn();
                 ThirdPersonSelfDrawn(ModelGpuDraw(rtv, td.Width, td.Height, wc, true, ++selfSeq, sp, sy, CoopMyId(), first, &ex)); first = false; } }
         if (first) { float p[3] = {}; ModelGpuDraw(rtv, td.Width, td.Height, wc, false, 0, p, 0); }
         ModelGpuDrawAudience(rtv,td.Width,td.Height,wc);
         std::vector<LineVert> lv; unsigned nl = 0; if (!GetCfg().noLineDraw) nl = BuildLineVerts(wc.pos, lv);
         nl += SocialInkVerts(wc.pos, lv, 60000);
         ModelGpuDrawLines(rtv, td.Width, td.Height, wc, lv.data(), lv.size(), nl);
-        if (GetCfg().radioEnabled && !GetCfg().noRadioView && cam == (const float*)(base + kCamPos)) {      // (the radio in the hand is a first-person view only)
+        if (GetCfg().RadioOn() && !GetCfg().noRadioView && cam == (const float*)(base + kCamPos)) {      // (the radio in the hand is a first-person view only)
             static wradio::Raise raise; static uint64_t last; uint64_t now=GetTickCount64();
             raise.Step(VoiceRadioTx(), last ? (now-last)/1000.0f : 0); last=now;
             std::vector<LineVert> radio; float tv=std::tan(wc.vfovDeg*.00872664626f);
