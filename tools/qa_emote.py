@@ -10,7 +10,9 @@ import qa_sweep
 def run(cfg_a='', cfg_b=''):
     qa_sweep.restart(('name=Alpha\nvoice_test_tone=1000\nvoice_mode=ptt\nvoice_mute_output=1\n' + cfg_a).strip(), ('name=Beta\n' + cfg_b).strip())
     r = subprocess.run([PYW, '-I', win(os.path.join(TOOLS, 'win', 'wemote.py')), str(pid('A')), win(DIR1), str(pid('B')), win(DIR2)], capture_output=True, text=True, timeout=600)
-    print(r.stdout, end=''); return r.returncode == 0 and 'ALL OK' in r.stdout
+    print(r.stdout, end='')
+    if r.returncode != 0 and r.stderr.strip(): print('  (the bot said:)', r.stderr.strip()[-600:])
+    return r.returncode == 0 and 'ALL OK' in r.stdout
 
 def main():
     results = []
