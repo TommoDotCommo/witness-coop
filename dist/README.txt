@@ -153,11 +153,21 @@ Known limits of this alpha
 - Steam Deck / Linux (Proton) is untested (see above). Copies of the game that are not Steam build 11370412 are not supported.
 - The game's own Launcher.variables (video settings) is written by the launcher's Video tab.
 
+Mod managers and scripts
+------------------------
+coop-mod.json lists what this package puts into the game folder, with SHA-256. Copying those files into the game folder is a complete install.
+Files that Vortex deployed (hard links) stay Vortex's: Setup says "Installed by Vortex: update or remove it there" and the launcher offers no
+update of its own. Files copied by hand that match this release are taken over by Setup. From a script:
+  Witness-Coop-Setup.exe status [--json] [<game folder>]     (on Linux: sh install-linux.sh status ...)
+  Witness-Coop-Setup.exe install <game folder> --yes
+  Witness-Coop-Setup.exe uninstall <game folder> --yes
+Exit codes: 0 done, 1 failed, 2 usage, 3 unsupported game build, 4 the game is running.
+
 Uninstall
 ---------
 Open Witness-Coop-Setup.exe and choose Uninstall (on Linux: sh install-linux.sh uninstall). It removes dsound.dll (and puts back a
-dsound.dll of another mod it found there), the launcher and the player model, undoes the Proton override, and keeps witness_coop.cfg (your co-op settings),
-witness_proxy.log and your saves. Only files this setup installed are touched (each has a
+dsound.dll of another mod it found there), the launcher and the player model, undoes the Proton override, and keeps your co-op settings and logs
+(%LOCALAPPDATA%\witness-coop) and your saves. It also removes what the three options added (desktop shortcut, Windows Firewall rule, invite-link handler). Only files this setup installed are touched (each has a
 .coop-receipt.json beside it); files it does not own are kept.
 
 What the installer changes
@@ -168,14 +178,17 @@ Only the game folder (the single-file Setup also unpacks itself for a moment int
 - An install of v0.1.0-alpha is undone first: the game's own AnselSDK64.dll goes back (its SHA-256 is
   checked), the old co-op AnselSDK64.dll and AnselSDK64_real.dll are removed.
 - witness_launcher.exe (the lobby and settings window) and witness_models\ (the adventurer).
-- witness_coop.cfg is written by the launcher when you play; witness_proxy.log is the mod's log.
-No registry, no Steam files, no saves. No file of the game is changed. (On Linux, install-linux.sh also
+- Your co-op settings (witness_coop.cfg) and the mod's log (witness_proxy.log) are kept in %LOCALAPPDATA%\witness-coop, not in the game folder.
+- Only if you leave the options ticked: a desktop shortcut, a Windows Firewall rule "The Witness Co-op (UDP)" for the game and the launcher on
+  Private and Public networks (one administrator prompt), and a per-user link handler for witness-coop:// (registry, HKCU) that opens the launcher
+  with the invite in its join box.
+No Steam files, no saves. No file of the game is changed. (On Linux, install-linux.sh also
 writes the one DLL override above into the game's Proton prefix.)
 
 Reporting a problem
 -------------------
 https://github.com/TommoDotCommo/witness-coop/issues/new
-Attach witness_proxy.log from the game folder (both players' if you can) and say who hosted,
+Attach witness_proxy.log from %LOCALAPPDATA%\witness-coop (both players' if you can) and say who hosted,
 the mod version (the name of this zip), and what you were doing.
 
 MIT licensed (LICENSE.txt). The Witness itself is not included.

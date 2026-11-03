@@ -97,4 +97,5 @@ struct Cfg {
     bool noPlayerPanel = false;  // test mutant no_player_panel=1: holding Tab does not open the player panel
 };
 const Cfg& GetCfg();
+const std::wstring& DataDir();      // trailing backslash: %LOCALAPPDATA%\witness-coop\, or the game folder when its witness_coop.cfg is an explicit per-instance override (common/userdata.h)
 void WriteMovedKeys();      // once per user: the list of keys whose default moved, for the launcher's What's new (common/movedkeys.h); not from DllMain

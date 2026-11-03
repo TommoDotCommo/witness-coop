@@ -3,7 +3,10 @@
 # Plain POSIX sh. It does what Witness-Coop-Setup.exe does on Windows, with the same ownership receipts, so either can uninstall the other's install.
 #   ./install-linux.sh install   [GAME_FOLDER]   put the mod into the game folder (the folder with witness64_d3d11.exe)
 #   ./install-linux.sh uninstall [GAME_FOLDER]   put the game's own files back; only files this script or the Windows setup installed are touched
-#   ./install-linux.sh status    [GAME_FOLDER]   say what is there
+#   ./install-linux.sh status    [GAME_FOLDER]   say what is there; with --json one JSON object (build, who installed co-op, what Setup can do)
+# The verbs are the same on every co-op Setup (install <game folder> --yes, uninstall <game folder> --yes, status [--json] [<game folder>]; --yes is accepted
+# and changes nothing, nothing here asks) with the same exit codes: 0 done, 1 failed, 2 usage, 3 unsupported game build, 4 the game is running.
+# Files that a mod manager put into the game folder (hard links) are its own: install says so and changes nothing. A release copied in by hand is adopted.
 # The mod is dsound.dll in the game folder (the game's own files are never changed). Proton loads its own dsound unless told otherwise, so the
 # install also writes one DLL override for the game's exe into the game's Proton prefix (steamapps/compatdata/210970/pfx/user.reg), with a
 # backup of user.reg and an exact undo on uninstall. Run it with the game closed: Proton rewrites user.reg when the game exits.
@@ -28,6 +31,7 @@ PROTON_RECEIPT=witness-coop-proton.receipt    # in the game folder: which prefix
 
 say() { printf '%s\n' "$*"; }
 die() { printf '\n%s\n' "$*" >&2; exit 1; }
+die_code() { c=$1; shift; printf '\n%s\n' "$*" >&2; exit "$c"; }
 
 hash_of() {     # hash_of FILE -> lower-case sha256, empty when the file is absent
     [ -f "$1" ] || { printf ''; return 0; }
@@ -56,7 +60,7 @@ check_build() {     # the exe must be the one build the mod fits; otherwise say 
     exe_hash=$(hash_of "$game/witness64_d3d11.exe")
     [ -n "$exe_hash" ] || die "No witness64_d3d11.exe in '$game'. Give the folder of The Witness (the one that holds witness64_d3d11.exe)."
     if [ "$exe_hash" != "$EXE_SHA" ]; then
-        die "This copy of The Witness is not Steam build 11370412, the build the co-op mod is made for. Nothing was changed.
+        die_code 3 "This copy of The Witness is not Steam build 11370412, the build the co-op mod is made for. Nothing was changed.
 Found:  witness64_d3d11.exe with SHA-256 starting $(printf '%s' "$exe_hash" | cut -c1-12)
 Needed: SHA-256 starting $(printf '%s' "$EXE_SHA" | cut -c1-12) (Steam build 11370412)
 What to do: in Steam, right-click The Witness > Properties > Betas > None, then Properties > Installed Files > Verify integrity of game files, then run this again.
@@ -231,14 +235,42 @@ proton_uninstall() {
     rm -f "$rc"
 }
 
+game_running() {    # any process with the game's exe as a command-line word (Proton shows the Windows path)
+    for f in /proc/[0-9]*/cmdline; do
+        pid=${f#/proc/}; pid=${pid%/cmdline}; [ "$pid" = "$$" ] && continue
+        if tr '\0' '\n' 2>/dev/null < "$f" | grep -a -q -E '(^|[\\/])witness64_d3d11\.exe$'; then return 0; fi      # an argument that IS the exe (not text that mentions it)
+    done
+    return 1
+}
+link_count() { n=$(stat -c %h "$1" 2>/dev/null) || n=$(ls -l "$1" 2>/dev/null | awk '{print $2}'); printf '%s' "${n:-1}"; }
+# who installed co-op: setup (receipts), vortex (hard-linked files: a mod manager deployed them), manual (a copy of this release by hand), none
+get_owner() {
+    owner=none; [ -f "$game/dsound.dll.coop-receipt.json" ] || [ -f "$game/AnselSDK64.dll.coop-receipt.json" ] && { owner=setup; return 0; }
+    for rel in $MANAGED; do [ -f "$game/$rel.coop-receipt.json" ] && { owner=setup; return 0; }; done
+    for rel in $MANAGED; do [ -f "$here/$rel" ] && [ "$(hash_of "$game/$rel")" = "$(hash_of "$here/$rel")" ] || return 0; done
+    owner=manual
+    for rel in $MANAGED; do [ "$(link_count "$game/$rel")" -gt 1 ] && { owner=vortex; return 0; }; done
+}
+adopt() {     # a hand copy that matches this release: receipts without an original, so uninstall removes the files
+    for rel in $MANAGED; do
+        refuse_link "$game/$rel" "$game/$rel.coop-receipt.json"
+        [ ! -e "$game/$rel.coop-original" ] || die "An original backup is next to $rel; look at it first. Nothing was changed."
+    done
+    for rel in $MANAGED; do h=$(hash_of "$game/$rel"); rcpt_write "$game/$rel" "" "$h" ""; done
+}
+
 do_install() {
     check_build
+    game_running && die_code 4 "The Witness is running. Close it and run this again."
+    get_owner
+    [ "$owner" != vortex ] || die "Installed by Vortex: update or remove it there. These files are linked from the mod manager, so this script leaves them alone."
     for f in $MANAGED; do
         [ -f "$here/$f" ] || die "$f is missing next to this script. Unpack the whole zip and run the script from there."
     done
     legacy_check
     [ -z "$legacy_block" ] || die "An older co-op install is in '$game', and it cannot be undone safely:
 $legacy_block"
+    if [ "$owner" = manual ]; then adopt; say "These files were copied in by hand and match this release. This script looks after them from now on."; fi
     say "Installing into $game"
     migrate || true
     chain_install || true
@@ -251,6 +283,9 @@ $legacy_block"
 }
 
 do_uninstall() {
+    game_running && die_code 4 "The Witness is running. Close it and run this again."
+    get_owner
+    [ "$owner" != vortex ] || die "Installed by Vortex: remove it there. This script leaves the mod manager's files alone."
     # check everything first, then change anything
     for rel in dsound.dll $CHAIN witness_launcher.exe witness_models/adventurer.glb witness_models/adventurer.glb.txt; do
         target="$game/$rel"
@@ -303,16 +338,59 @@ do_status() {
         if [ -n "$legacy_block" ]; then say "  AnselSDK64.dll: an older co-op install that cannot be undone: $legacy_block"
         else say "  AnselSDK64.dll: an older co-op install (install migrates it)"; fi
     fi
+    get_owner
+    case $owner in setup) say "  Installed by Setup" ;; vortex) say "  Installed by Vortex: update or remove it there" ;; manual) say "  Copied by hand: install takes it over" ;; *) say "  Not installed" ;; esac
     reg=$(proton_userreg)
     if [ -z "$reg" ]; then say "  Proton override: no prefix found (the game has not run under Proton yet), or not on Proton"
     elif [ "$(override_get "$reg")" = "$OVERRIDE_VALUE" ]; then say "  Proton override: in place ($reg)"
     else say "  Proton override: missing ($reg): run install again, or use the launch option WINEDLLOVERRIDES=\"$OVERRIDE_DLL=n,b\" %command%"; fi
 }
 
+json_str() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
+do_status_json() {      # one object, the shape the Windows setup prints (installs[0]); the package version comes from coop-mod.json beside this script
+    exe_hash=$(hash_of "$game/witness64_d3d11.exe")
+    known=false; build=unknown; [ -z "$exe_hash" ] || build=unsupported
+    [ "$exe_hash" = "$EXE_SHA" ] && { known=true; build='Steam build 11370412'; }
+    get_owner; legacy_check
+    ver=unknown; [ -f "$here/coop-mod.json" ] && ver=$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$here/coop-mod.json" | head -n 1)
+    owned=0; outdated=0; missing=0; modified=0
+    for rel in $MANAGED; do
+        t="$game/$rel"; r="$t.coop-receipt.json"
+        if [ -f "$r" ]; then
+            owned=1; obs=$(hash_of "$t")
+            if [ "$obs" = "$(hash_of "$here/$rel")" ]; then :; elif [ "$obs" = "$(rcpt_field "$r" installed)" ]; then outdated=1; elif [ -z "$obs" ]; then missing=1; else modified=1; fi
+        else missing=1; fi
+    done
+    [ "$legacy" = 1 ] && { owned=1; outdated=1; }
+    inst=''; unin=false; blocked=false
+    if [ "$known" = true ]; then
+        if [ "$modified" = 1 ] || [ -n "${legacy_block:-}" ]; then blocked=true
+        elif [ "$owned" = 0 ]; then inst=Install
+        elif [ "$outdated" = 1 ]; then inst=Update
+        elif [ "$missing" = 1 ]; then inst=Repair; fi
+        [ "$owned" = 1 ] && unin=true
+        if [ "$owner" = vortex ]; then inst=''; unin=false; blocked=false; fi
+        if [ "$owner" = manual ] && [ "$blocked" = false ]; then inst=Install; unin=false; fi
+    fi
+    chain=false; [ -f "$game/$CHAIN" ] && chain=true
+    printf '{"schema":1,"tool":"install-linux.sh","package_version":"%s","installs":[{"path":"%s","build":"%s","known_build":%s,"owner":"%s","chain_dll":%s,"actions":{"install":"%s","uninstall":%s,"blocked":%s}}]}\n' \
+        "$(json_str "$ver")" "$(json_str "$game")" "$build" "$known" "$owner" "$chain" "$inst" "$unin" "$blocked"
+}
+
 cmd=${1:-}
-case $cmd in install|uninstall|status) ;; *) say "usage: $0 install|uninstall|status [GAME_FOLDER]"; exit 2 ;; esac
-game=${2:-}
+case $cmd in install|uninstall|status) shift ;; *) say "usage: $0 install <game folder> --yes | uninstall <game folder> --yes | status [--json] [<game folder>]"; exit 2 ;; esac
+game=''; json=0
+for a in "$@"; do
+    case $a in
+        --yes|-y) ;;
+        --json) json=1 ;;
+        -*) say "unknown option $a"; say "usage: $0 install <game folder> --yes | uninstall <game folder> --yes | status [--json] [<game folder>]"; exit 2 ;;
+        *) [ -z "$game" ] || { say "only one game folder"; exit 2; }; game=$a ;;
+    esac
+done
+[ "$cmd" = status ] || [ -n "$game" ] || { say "$cmd needs the game folder: $0 $cmd <game folder> --yes"; exit 2; }
 if [ -z "$game" ]; then game=$(find_game) || die "The Witness was not found in the usual Steam folders. Give the game folder: $0 $cmd \"/path/to/steamapps/common/The Witness\""; fi
 [ -d "$game" ] || die "'$game' is not a folder."
 game=$(cd "$game" && pwd)
+if [ "$cmd" = status ] && [ "$json" = 1 ]; then do_status_json; exit 0; fi
 case $cmd in install) do_install ;; uninstall) do_uninstall ;; status) do_status ;; esac

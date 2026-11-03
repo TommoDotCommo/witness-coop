@@ -35,10 +35,9 @@ void RaceStart(unsigned myId, const std::vector<unsigned>& others, const std::fu
     char m[160]; snprintf(m, sizeof m, "race: %zu other players, goal %s", others.size(), wrace::GoalText(g).c_str()); Log(m);
 }
 bool RaceActive() { return g_race != nullptr; }
-// The result of a race, for the launcher's lobby (witness_race_result.txt next to the DLL): the goal, the winner, and one line per player: place|name|finish ms|phase.
+// The result of a race, for the launcher's lobby (witness_race_result.txt in the data folder: common/userdata.h): the goal, the winner, and one line per player: place|name|finish ms|phase.
 static void WriteResult(uint64_t now) {
-    wchar_t wp[MAX_PATH]; HMODULE self = nullptr; GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCWSTR)&WriteResult, &self); GetModuleFileNameW(self, wp, MAX_PATH);
-    wchar_t* sl = wcsrchr(wp, L'\\'); if (sl) *(sl + 1) = 0; wcscat_s(wp, L"witness_race_result.txt"); FILE* f = _wfopen(wp, L"w"); if (!f) return;
+    wchar_t wp[MAX_PATH]; wcscpy_s(wp, DataDir().c_str()); wcscat_s(wp, L"witness_race_result.txt"); FILE* f = _wfopen(wp, L"w"); if (!f) return;
     fprintf(f, "goal=%s\nwinner=%u\n", wrace::GoalText(g_goal).c_str(), g_race->winner());
     for (const auto& s : g_race->standings(now)) fprintf(f, "%d|%s|%u|%s\n", s.place, NameOf(s.id).c_str(), s.finishMs, PhaseName(s.phase));
     fclose(f);

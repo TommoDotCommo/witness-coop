@@ -7,6 +7,7 @@
 #include <cstring>
 #include "config.h"
 #include "../common/guide.h"
+#include "../common/userdata.h"
 
 extern HMODULE g_selfModule();
 
@@ -14,17 +15,18 @@ static std::wstring DllDir() {
     wchar_t p[MAX_PATH]; GetModuleFileNameW(g_selfModule(), p, MAX_PATH);
     wchar_t* s = wcsrchr(p, L'\\'); if (s) *(s + 1) = 0; return p;
 }
+// Where the settings and the run-time files live (common/userdata.h): %LOCALAPPDATA%\witness-coop\, or the game folder for an explicit per-instance cfg.
+const std::wstring& DataDir() { static const std::wstring d = userdata::DataDir(DllDir()); return d; }
 
 #include "../common/movedkeys.h"
 void WriteMovedKeys() {
-    const Cfg& c = GetCfg(); std::wstring dir = DllDir(); bool perUser = c.diagDir.empty() && c.saveDir.empty();      // (a test copy has save_dir=instance: its files stay beside the cfg)
-    if (perUser) { wchar_t la[MAX_PATH]; DWORD n = GetEnvironmentVariableW(L"LOCALAPPDATA", la, MAX_PATH); if (n && n < MAX_PATH) { dir = std::wstring(la) + L"\\witness-coop\\"; CreateDirectoryW(dir.c_str(), nullptr); } }
+    const Cfg& c = GetCfg(); std::wstring dir = DataDir();      // (a test copy with an instance cfg keeps its files beside it)
     auto utf8 = [](const std::wstring& w) { int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, nullptr, 0, nullptr, nullptr); std::string s(n > 0 ? n - 1 : 0, '\0'); if (n > 1) WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, &s[0], n, nullptr, nullptr); return s; };
     movedkeys::WriteOnce(utf8(dir), c.movedKeys);
 }
 const Cfg& GetCfg() {
     static Cfg c = [] {
-        Cfg r; FILE* f = _wfopen((DllDir() + L"witness_coop.cfg").c_str(), L"r"); if (!f) { r.movedKeys = guide::MovedNotes(r); return r; }
+        Cfg r; FILE* f = _wfopen((DataDir() + L"witness_coop.cfg").c_str(), L"r"); if (!f) { r.movedKeys = guide::MovedNotes(r); return r; }
         char line[400];
         while (fgets(line, sizeof line, f)) {
             if (SetBindingLine(&r,line)) continue;

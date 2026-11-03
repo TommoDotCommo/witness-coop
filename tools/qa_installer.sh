@@ -4,7 +4,8 @@
 # The fixtures go under WITNESS_TMPDIR (a scratch folder on the Windows disk, set in local/env.sh), per WITNESS_RESOURCE_OWNER when set.
 # Runs: the release build and its package check; the build-id header against the real exe; the setup core natively; the PowerShell installer
 # suite (install, update, repair, refusals in plain words, uninstall); the one-file Setup.exe (extract, hash, planted links, zip location, run);
-# install-linux.sh on fixtures, and its install read back by the Windows installer. Every protection has a mutant that must fail.
+# install-linux.sh on fixtures, and its install read back by the Windows installer; coop-mod.json and the version resources; the Setup options, install cards
+# and verbs. Every protection has a mutant that must fail.
 set -euo pipefail
 here="$(cd "$(dirname "$0")/.." && pwd)"
 [ -f "$here/local/env.sh" ] && . "$here/local/env.sh"
@@ -44,6 +45,12 @@ mig_mutant() {  # <label> <sed expression on install-state.ps1 or witness-coop.p
 mig_mutant original-not-verified 's/return (\$hash -and \$hash -eq \$script:WitnessAnselSha) }      # verify-original/return [bool]$hash }      # verify-original/' install-state.ps1
 mig_mutant old-proxy-left-behind 's/if (Invoke-WitnessMigration \$game) { Say \(.\)  AnselSDK64.dll/if ($false) { Say \1  AnselSDK64.dll/' witness-coop.ps1
 mig_mutant chain-file-ignored    's/if (Install-WitnessChain \$game) {/if ($false) {/' witness-coop.ps1
+
+echo "== coop-mod.json and VERSIONINFO (with mutants)"
+python3 -I "$here/tools/test_mod_manifest.py" "$rel/$name.zip"
+echo "== Setup options, install cards and verbs (fake netsh, throw-away registry key; mutants)"
+ps "$here/tools/test_setup_options.ps1" -TestRoot "$(wslpath -w "$fixtures")" -Mutants
+ps "$here/tools/test_setup_verbs.ps1" -PackageDir "$(wslpath -w "$fixtures/package")" -GameDir "$(wslpath -w "$src")" -TestRoot "$(wslpath -w "$fixtures")" -SingleFile "$(wslpath -w "$rel/$name-single/Witness-Coop-Setup.exe")" -Mutants
 
 echo "== one-file Setup.exe"
 exes="$fixtures/exes"; mkdir -p "$exes"

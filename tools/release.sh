@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # Build the player downloads into local/release/:
 #   witness-coop-<version>.zip                 the manual-install zip: the proxy (dsound.dll), the launcher, the player model, the thin Setup.exe
-#                                              (runs the scripts beside it), the PowerShell scripts, install-linux.sh, README.txt, LICENSE.txt
+#                                              (runs the scripts beside it), the PowerShell scripts, install-linux.sh, README.txt, LICENSE.txt,
+#                                              coop-mod.json (what the package is: tools/mod_manifest.py; also at the zip root); every shipped exe and
+#                                              dll carries a VERSIONINFO (ProductName "The Witness Co-op", the version)
+#   NEXUS-<version>.txt                        the copy note for Nexus Mods: the same zip, the same version string (no upload)
 #   witness-coop-<version>-single/Witness-Coop-Setup.exe   THE MAIN DOWNLOAD: one file that carries all of the above (SHA-256 checked, unpacked to a fresh
 #                                              per-version folder under %LOCALAPPDATA%\witness-coop\setup\), plus its .sha256
 #   tools/release.sh            version from `git describe --tags --always`
@@ -46,14 +49,15 @@ if [ -z "${SIGN_CMD:-}" ]; then
     echo "         Fine for a test build. A public release should be signed: see docs/SIGNING.md." >&2
 fi
 
-make -s -C "$here/proxy"
-make -s -C "$here/launcher" launcher
+# the mod version goes into the VERSIONINFO of every binary (and MOD_VERSION): the release version, not `git describe`
+make -s -C "$here/proxy" VERSION="$ver"
+make -s -C "$here/launcher" launcher VERSION="$ver"
 rm -rf "$stage" "$single" "$out/$name.zip" "$out/$name.zip.sha256"
 mkdir -p "$stage/witness_models" "$single"
 cp "$here/proxy/dsound.dll" "$stage/"
 cp "$here/launcher/build/witness_launcher.exe" "$stage/"
 cp "$here/assets/models/adventurer.glb" "$here/assets/models/adventurer.glb.txt" "$stage/witness_models/"
-"$here/tools/build_install_policy.sh" "$stage/install-policy.exe"
+MOD_VERSION="$ver" "$here/tools/build_install_policy.sh" "$stage/install-policy.exe"
 sign "$stage/dsound.dll" "$stage/witness_launcher.exe" "$stage/install-policy.exe"
 for f in witness-coop.ps1 installer-gui.ps1 install-state.ps1; do
     sed 's/\r$//; s/$/\r/' "$here/dist/$f" > "$stage/$f"; done
@@ -64,6 +68,9 @@ sed 's/\r$//; s/$/\r/' "$here/LICENSE" > "$stage/LICENSE.txt"
 # the thin Setup.exe of the zip, then the one-file setup that carries everything but itself and the Linux script
 "$here/tools/build_setup.sh" "$stage/Witness-Coop-Setup.exe" "$ver"
 sign "$stage/Witness-Coop-Setup.exe"
+# coop-mod.json (tools/mod_manifest.py): what this package is and the hashes of the game-folder files as signed; inside the top folder (Setup, the updater
+# and diagnostics read it there; it is in the one-file Setup's payload too) and, below, at the zip root for mod managers
+python3 -I "$here/tools/mod_manifest.py" "$ver" "$stage" > "$stage/coop-mod.json"
 python3 -I "$here/tools/pack_payload.py" "$stage" "$out/$name-payload.bin" --skip Witness-Coop-Setup.exe --skip install-linux.sh > "$out/$name-payload.sha256"
 "$here/tools/build_setup.sh" "$single/Witness-Coop-Setup.exe" "$ver" "$out/$name-payload.bin"
 sign "$single/Witness-Coop-Setup.exe"
@@ -77,12 +84,17 @@ for root, _, files in os.walk(sys.argv[1]):
         info = zipfile.ZipInfo.from_file(p, p)
         info.compress_type = zipfile.ZIP_DEFLATED
         z.writestr(info, open(p, "rb").read())
+info = zipfile.ZipInfo("coop-mod.json"); info.compress_type = zipfile.ZIP_DEFLATED     # the copy at the root, for mod managers
+z.writestr(info, open(os.path.join(sys.argv[1], "coop-mod.json"), "rb").read())
 z.close()' "$name")
 (cd "$out" && sha256sum "$name.zip" > "$name.zip.sha256")
+# one version everywhere: GitHub Releases is canonical; Nexus gets this very zip under the same version string (a copy note, nothing is uploaded)
+python3 -I "$here/tools/mod_manifest.py" --nexus-note "$out/$name.zip" > "$out/NEXUS-$ver.txt"
 check=(python3 -I "$here/tools/check_release_package.py" "$out/$name.zip" --single "$single/Witness-Coop-Setup.exe")
 [ -n "${SIGN_CMD:-}" ] && check+=(--require-signed)
 "${check[@]}"
 # the proxy's linker map and DLL of this release, kept (not shipped): tools/diag_report.py --map ... --dll ... names the function a crash report from this version is in
 rm -rf "$out/$name.symbols"; mkdir -p "$out/$name.symbols"; cp "$here/proxy/dsound.map" "$here/proxy/dsound.dll" "$out/$name.symbols/"
 echo "$out/$name.zip ($(du -h "$out/$name.zip" | cut -f1)); symbols for crash reports: $out/$name.symbols"
+echo "$out/NEXUS-$ver.txt (copy note for Nexus Mods)"
 echo "$single/Witness-Coop-Setup.exe ($(du -h "$single/Witness-Coop-Setup.exe" | cut -f1)) <- the main download"

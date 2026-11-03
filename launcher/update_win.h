@@ -1,7 +1,7 @@
 #pragma once
 // The launcher's self-update on Windows: GitHub's release list over WinINet on a worker thread (the window stays responsive), the verified download, and the apply
 // through update.h (the installer's receipts). No telemetry: one GET of the public release list a day at most, one GET per asset when the player says Update; nothing
-// about the player or the PC is sent. A failure of the automatic check is only logged. Settings (a small key=value file next to the launcher, witness_launcher_update.cfg):
+// about the player or the PC is sent. A failure of the automatic check is only logged. Settings (a small key=value file in the mod's data folder, witness_launcher_update.cfg: %LOCALAPPDATA%\witness-coop, or beside the launcher for a per-instance copy):
 //   update_check=1|0           the automatic check when the launcher starts (once a day at most)
 //   update_prereleases=auto|1|0   auto: pre-releases are offered only to an installed pre-release
 //   update_api_url=...         tests only: https://, or http://127.0.0.1:<port> / http://localhost:<port>
@@ -17,7 +17,7 @@ namespace wup {
 #define WUP_DEFAULT_API "https://api.github.com/repos/TommoDotCommo/witness-coop/releases?per_page=10"
 #define WUP_PREFIX "witness-coop"
 enum State { kIdle, kChecking, kCurrent, kAvailable, kDownloading, kApplied, kError };
-struct Snapshot { State state = kIdle; std::string message, tag, notes, version; bool prerelease = false; int lastError = 0; bool autoCheck = true; int prereleases = -1; bool manual = false; };
+struct Snapshot { State state = kIdle; std::string message, tag, notes, version; bool prerelease = false; int lastError = 0; bool autoCheck = true; int prereleases = -1; bool manual = false; bool managed = false; };      // managed: a mod manager (Vortex) installed the files; it updates them
 
 inline std::string Narrow(const std::wstring& w) { if (w.empty()) return ""; int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr); std::string s(n, 0); WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), &s[0], n, nullptr, nullptr); return s; }
 
@@ -37,8 +37,8 @@ inline bool GameRunningIn(const std::wstring& dir) {
 class Updater {
 public:
     // dir: the game folder (the launcher's own); version: the stamped mod version; log: where failures go
-    void Init(const std::wstring& dir, const std::string& version, std::function<void(const std::string&)> log) {
-        dir_ = dir; dirA_ = Narrow(dir); for (auto& c : dirA_) if (c == '\\') c = '/'; version_ = version; log_ = log; cfgPath_ = dir + L"\\witness_launcher_update.cfg";
+    void Init(const std::wstring& dir, const std::wstring& dataDir, const std::string& version, std::function<void(const std::string&)> log) {
+        dir_ = dir; dirA_ = Narrow(dir); for (auto& c : dirA_) if (c == '\\') c = '/'; version_ = version; log_ = log; cfgPath_ = dataDir + L"\\witness_launcher_update.cfg"; managed_ = lu_owner(dirA_.c_str()) == LU_OWNER_MANAGER;
         InitializeCriticalSection(&cs_); inited_ = true; snap_.version = version; apiUrl_ = WUP_DEFAULT_API;
         LoadSettings(); int rec = lu_recover_interrupted(dirA_.c_str());
         if (rec > 0) { Set(kError, "An interrupted update was rolled back to the previous version."); Log("update: an interrupted update was rolled back"); }
@@ -48,9 +48,13 @@ public:
     // the automatic check at start: only when due; never says anything on failure
     void StartAuto() { if (!inited_) return; lu_schedule s; { Lock l(&cs_); s = sched_; } if (!lu_can_check(&s, (uint64_t)time(nullptr), 0)) return; Start(false); }
     void StartManual() { if (inited_) Start(true); }
-    void StartApply() { if (!inited_) return; { Lock l(&cs_); if (snap_.state != kAvailable) return; snap_.state = kDownloading; snap_.message = std::string("Downloading and verifying ") + rel_.zip_name + " ..."; } if (InterlockedCompareExchange(&busy_, 1, 0) != 0) return; HANDLE t = CreateThread(nullptr, 0, ApplyThread, this, 0, nullptr); if (t) CloseHandle(t); else InterlockedExchange(&busy_, 0); }
+    void StartApply() { if (!inited_ || managed_) return; { Lock l(&cs_); if (snap_.state != kAvailable) return; snap_.state = kDownloading; snap_.message = std::string("Downloading and verifying ") + rel_.zip_name + " ..."; } if (InterlockedCompareExchange(&busy_, 1, 0) != 0) return; HANDLE t = CreateThread(nullptr, 0, ApplyThread, this, 0, nullptr); if (t) CloseHandle(t); else InterlockedExchange(&busy_, 0); }
     void Later() { Lock l(&cs_); if (snap_.state == kAvailable) { snap_.state = kCurrent; snap_.message = "Update " + snap_.tag + " postponed; it is offered again at the next check."; } }
-    Snapshot Get() { Lock l(&cs_); Snapshot s = snap_; s.autoCheck = sched_.auto_enabled != 0; s.prereleases = prePref_; return s; }
+    Snapshot Get() {
+        Lock l(&cs_); Snapshot s = snap_; s.autoCheck = sched_.auto_enabled != 0; s.prereleases = prePref_; s.managed = managed_;
+        if (managed_ && s.state == kAvailable) s.message = "Update available: " + s.tag + ". Installed by Vortex: update it in Vortex (Nexus Mods), or download it from GitHub Releases. The launcher leaves its files alone.";
+        return s;
+    }
     void SetAutoCheck(bool on) { { Lock l(&cs_); sched_.auto_enabled = on; } SaveSettings(); }
     void SetPrereleases(int pref) { { Lock l(&cs_); prePref_ = pref; sched_.include_prereleases = pref < 0 ? lu_version_is_prerelease(version_.c_str()) : pref; } SaveSettings(); }
     bool Busy() const { return busy_ != 0; }
@@ -145,6 +149,7 @@ private:
         case LU_ERR_TRUNCATED: snap_.state = kError; snap_.message = "Update refused: the download was interrupted or incomplete. Nothing was changed."; break;
         case LU_ERR_SIDECAR: snap_.state = kError; snap_.message = "Update refused: the release has no usable .sha256 file. Nothing was changed."; break;
         case LU_ERR_RUNNING: snap_.state = kAvailable; snap_.message = "Close The Witness first, then press Update again."; break;
+        case LU_ERR_MANAGER: snap_.state = kError; snap_.message = "Installed by Vortex: update it in Vortex. Nothing was changed."; break;
         case LU_ERR_RECEIPT: snap_.state = kError; snap_.message = "This copy was not installed by Setup (or a file was changed): download the new Setup from the release page instead. Nothing was changed."; break;
         case LU_ERR_LEGACY: snap_.state = kError; snap_.message = "An older co-op install is in the game folder and its AnselSDK64 files are not the game's own: run the new Setup, which explains what to do. Nothing was changed."; break;
         case LU_ERR_DOWNGRADE: case LU_ERR_DEV: snap_.state = kError; snap_.message = "Update refused: not a newer release for this build. Nothing was changed."; break;
@@ -152,7 +157,7 @@ private:
         }
         return r;
     }
-    std::wstring dir_, cfgPath_; std::string dirA_, version_, apiUrl_; std::function<void(const std::string&)> log_; CRITICAL_SECTION cs_; bool inited_ = false; volatile LONG busy_ = 0;
+    bool managed_ = false; std::wstring dir_, cfgPath_; std::string dirA_, version_, apiUrl_; std::function<void(const std::string&)> log_; CRITICAL_SECTION cs_; bool inited_ = false; volatile LONG busy_ = 0;
     lu_schedule sched_ = {1, 0, 0, 0}; int prePref_ = -1; lu_release rel_ = {}; Snapshot snap_;
 };
 }  // namespace wup

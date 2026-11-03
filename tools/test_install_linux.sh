@@ -49,7 +49,7 @@ suite() {   # suite <install script copy> -> 0 when every check passes
     # the script needs its package files beside it
     local pk="$work/pkg-$(basename "$script")"; rm -rf "$pk"; mkdir -p "$pk"; cp -r "$pkg"/dsound.dll "$pkg"/witness_launcher.exe "$pkg"/witness_models "$pk"/; cp "$script" "$pk/install-linux.sh"; chmod +x "$pk/install-linux.sh"
     local sh="$pk/install-linux.sh"
-    local proxy; proxy=$(h "$pk/dsound.dll")
+    local proxy; proxy=$(h "$pk/dsound.dll"); local PKGFILES="dsound.dll witness_launcher.exe witness_models/adventurer.glb witness_models/adventurer.glb.txt"
     ck '[ "$proxy" != "$ANSEL_SHA" ] && grep -a -q -F "witness-coop:proxy:dsound" "$pk/dsound.dll"' 'the package holds the dsound.dll proxy' || return 1
 
     fixture fresh
@@ -140,6 +140,28 @@ $SEC 1700000000
     # a symbolic link in the way is refused
     fixture link; printf 'elsewhere' > "$work/elsewhere.txt"; ln -s "$work/elsewhere.txt" "$d/witness_launcher.exe"
     sh "$sh" install "$d" >/dev/null 2>&1; ck '[ "$(cat "$work/elsewhere.txt")" = "elsewhere" ]' 'a link is never written through' || return 1
+    # the shared verbs (J9): install/uninstall <folder> --yes, status [--json], exit codes 2 usage / 3 unsupported build / 4 game running
+    fixture verbs; cp "$pkg/coop-mod.json" "$pk/" 2>/dev/null
+    sh "$sh" frobnicate >/dev/null 2>&1; rc=$?; ck '[ $rc = 2 ]' 'an unknown verb: exit 2' || return 1
+    sh "$sh" install >/dev/null 2>&1; rc=$?; ck '[ $rc = 2 ]' 'install without a folder: exit 2' || return 1
+    sh "$sh" install "$d" --nonsense >/dev/null 2>&1; rc=$?; ck '[ $rc = 2 ]' 'an unknown option: exit 2' || return 1
+    out=$(sh "$sh" status --json "$d" 2>&1); ck 'echo "$out" | python3 -I -c "import json,sys; j=json.load(sys.stdin)[\"installs\"][0]; assert j[\"known_build\"] and j[\"owner\"]==\"none\" and j[\"actions\"][\"install\"]==\"Install\" and j[\"build\"]==\"Steam build 11370412\", j"' "status --json before install: $out" || return 1
+    out=$(sh "$sh" install "$d" --yes 2>&1); rc=$?; ck '[ $rc = 0 ] && newlayout "$d"' "install <folder> --yes: $rc" || return 1
+    out=$(sh "$sh" status --json "$d" 2>&1); ck 'echo "$out" | python3 -I -c "import json,sys; j=json.load(sys.stdin)[\"installs\"][0]; assert j[\"owner\"]==\"setup\" and j[\"actions\"][\"install\"]==\"\" and j[\"actions\"][\"uninstall\"] is True, j"' "status --json after install: $out" || return 1
+    sh "$sh" uninstall "$d" --yes >/dev/null 2>&1; rc=$?; ck '[ $rc = 0 ] && [ ! -e "$d/dsound.dll" ] && [ ! -e "$d/witness_launcher.exe" ]' 'uninstall <folder> --yes' || return 1
+    fixture badbuild; printf 'x' >> "$d/witness64_d3d11.exe"
+    sh "$sh" install "$d" --yes >/dev/null 2>&1; rc=$?; ck '[ $rc = 3 ] && [ ! -e "$d/dsound.dll" ]' 'an unsupported build: exit 3, nothing written' || return 1
+    fixture running; ( exec -a witness64_d3d11.exe sleep 30 ) & running=$!; sleep 0.3
+    sh "$sh" install "$d" --yes >/dev/null 2>&1; rc=$?; kill "$running" 2>/dev/null; wait "$running" 2>/dev/null
+    ck '[ $rc = 4 ] && [ ! -e "$d/dsound.dll" ]' "the game running: exit $rc, want 4, nothing written" || return 1
+    # a release copied in by hand is adopted; a mod manager's hard links are left alone
+    fixture hand; mkdir -p "$d/witness_models"; for f in $PKGFILES; do cp "$pk/$f" "$d/$f"; done
+    out=$(sh "$sh" status --json "$d" 2>&1); ck 'echo "$out" | python3 -I -c "import json,sys; j=json.load(sys.stdin)[\"installs\"][0]; assert j[\"owner\"]==\"manual\" and j[\"actions\"][\"install\"]==\"Install\", j"' "a hand copy: adoption offered: $out" || return 1
+    sh "$sh" install "$d" --yes >/dev/null 2>&1; rc=$?; ck '[ $rc = 0 ] && [ -f "$d/dsound.dll.coop-receipt.json" ] && newlayout "$d"' 'a hand copy is adopted' || return 1
+    sh "$sh" uninstall "$d" --yes >/dev/null 2>&1; rc=$?; ck '[ $rc = 0 ] && [ ! -e "$d/dsound.dll" ] && [ ! -e "$d/dsound.dll.coop-receipt.json" ]' 'an adopted copy is removed on uninstall (nothing is restored)' || return 1
+    fixture vortex; mkdir -p "$d/witness_models"; for f in $PKGFILES; do ln "$pk/$f" "$d/$f"; done
+    out=$(sh "$sh" status --json "$d" 2>&1); ck 'echo "$out" | python3 -I -c "import json,sys; j=json.load(sys.stdin)[\"installs\"][0]; assert j[\"owner\"]==\"vortex\" and j[\"actions\"][\"install\"]==\"\" and j[\"actions\"][\"uninstall\"] is False, j"' "hard-linked files: a mod manager's: $out" || return 1
+    sh "$sh" install "$d" --yes >/dev/null 2>&1; rc=$?; ck '[ $rc = 1 ] && [ ! -e "$d/dsound.dll.coop-receipt.json" ]' 'a mod manager'"'"'s files are not overwritten' || return 1
     echo "    $n checks"
     return 0
 }
@@ -159,4 +181,6 @@ mutate old-proxy-left-behind 's/^    migrate || true$/    :/'
 mutate chain-file-ignored 's/^    chain_install || true$/    :/'
 mutate override-wrong-exe '/MUT:exe/s/witness64_d3d11.exe/witness_d3d11.exe/'
 mutate uninstall-leaves-override '/MUT:unoverride/c\            :'
+mutate manager-overwritten 's/^    \[ "\$owner" != vortex \] || die "Installed by Vortex: update or remove it there\./    [ "$owner" != never ] || die "Installed by Vortex: update or remove it there./'
+mutate running-ignored 's/^    game_running && die_code 4 "The Witness is running\. Close it and run this again\."$/    :/'
 exit $fail

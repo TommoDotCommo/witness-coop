@@ -14,6 +14,7 @@
 #include <cctype>
 #include "../common/buildid.h"
 #include "diag.h"
+#include "config.h"
 
 static const char* kNames[] = {
     "DirectSoundCreate", "DirectSoundEnumerateA", "DirectSoundEnumerateW", "DllCanUnloadNow", "DllGetClassObject",
@@ -32,9 +33,7 @@ void Log(const char* msg) {
     if (!g_otherCopy) DiagLine(msg);      // this run's own session log (and the rotation of witness_proxy.log on the first line); a passive copy opens none
 
     wchar_t path[MAX_PATH];
-    GetModuleFileNameW(g_self, path, MAX_PATH);
-    wchar_t* slash = wcsrchr(path, L'\\');
-    if (slash) *(slash + 1) = 0;
+    wcscpy_s(path, DataDir().c_str());      // %LOCALAPPDATA%\witness-coop\, or the game folder for a per-instance cfg (common/userdata.h)
     wcscat_s(path, L"witness_proxy.log");
     HANDLE f = CreateFileW(path, FILE_APPEND_DATA, FILE_SHARE_READ, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (f == INVALID_HANDLE_VALUE) return;
@@ -265,7 +264,7 @@ static DWORD WINAPI Init(LPVOID) {
     snprintf(msg, sizeof msg, "proxy loaded: pid=%lu host=%s tick=%lu", GetCurrentProcessId(), exe, GetTickCount());
     Log(msg);
     if (HandOffSteamJoin()) TerminateProcess(GetCurrentProcess(), 0);
-    { wchar_t p[MAX_PATH]; GetModuleFileNameW(g_selfModule(), p, MAX_PATH); wchar_t* sl = wcsrchr(p, L'\\'); if (sl) sl[1] = 0; wcscat_s(p, L"witness_crash_stack.txt");
+    { wchar_t p[MAX_PATH]; wcscpy_s(p, DataDir().c_str()); wcscat_s(p, L"witness_crash_stack.txt");
       g_overflowFile = CreateFileW(p, GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr); }
     AddVectoredExceptionHandler(1, CrashLogger);
     OverlayInstall();

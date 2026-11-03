@@ -16,6 +16,7 @@
 param(
     [string]$GameDir = '',
     [string]$LogsDir = '',
+    [string]$DataDir = '',      # where witness_coop.cfg and witness_proxy.log are (%LOCALAPPDATA%\witness-coop, or the game folder for a per-instance copy); default: the game folder
     [string]$Version = 'unknown',
     [string]$OutDir = '',
     [string]$ResultFile = '',
@@ -34,6 +35,7 @@ function Finish($text) {
 $stage = $null
 try {
     if (-not $GameDir -or -not (Test-Path -LiteralPath $GameDir)) { throw "game folder not found: $GameDir" }
+    if (-not $DataDir) { $DataDir = $GameDir }
     if (-not $LogsDir) { $LogsDir = Join-Path $env:LOCALAPPDATA 'witness-coop\logs' }
     if (-not $OutDir) { $OutDir = [Environment]::GetFolderPath('Desktop') }
     if (-not $OutDir -or -not (Test-Path -LiteralPath $OutDir)) { $OutDir = $env:USERPROFILE }
@@ -134,7 +136,7 @@ public static class WitChain {
         }
     }
     foreach ($name in 'witness_proxy.log', 'witness_proxy.previous.log', 'witness_coop.cfg') {
-        $p = Join-Path $GameDir $name
+        $p = Join-Path $DataDir $name
         if (Test-Path -LiteralPath $p) { Section $name { StageCopy $p $name } }
     }
     Section 'game folder listing' {
@@ -237,7 +239,7 @@ public static class WitChain {
 
         # the peer from witness_coop.cfg: peer_host=<ip> (two players) or peer=<id>,<ip>,<port> lines (a group); the first one that is not this computer
         $peer = $null
-        $ini = Join-Path $GameDir 'witness_coop.cfg'
+        $ini = Join-Path $DataDir 'witness_coop.cfg'
         if (Test-Path -LiteralPath $ini) {
             foreach ($l in Get-Content -LiteralPath $ini) {
                 if (-not $peer -and $l -match '^\s*peer_host\s*=\s*(\S+)' -and $Matches[1] -notlike '127.*') { $peer = $Matches[1] }

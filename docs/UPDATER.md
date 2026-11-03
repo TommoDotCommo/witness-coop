@@ -3,6 +3,8 @@
 The launcher (`launcher/update.h`, `update_win.h`) offers an update only for a GitHub release that passes every rule below. A release that fails one is never offered (the check is silent;
 the reason is in the launcher's log as `update: check failed, code N`). Nothing here needs a server of ours: GitHub's public release list is the whole interface.
 
+**Mod managers.** When the managed files have more than one hard link and no Setup receipt (Vortex deploys that way), the launcher does not download or replace anything: the banner and the About block say "Installed by Vortex: update it in Vortex" and the Update buttons are hidden (`lu_owner` in `launcher/update.h`; `LU_ERR_MANAGER`). Files copied by hand have no receipt either: run Setup once and it adopts them.
+
 ## Publishing
 
 1. `tools/release.sh v0.x.y` (signed if `SIGN_CMD` is set, see SIGNING.md). It writes `local/release/witness-coop-v0.x.y.zip` and `witness-coop-v0.x.y.zip.sha256`, and
