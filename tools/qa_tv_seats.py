@@ -18,7 +18,7 @@ from witness import DIR1, DIR2, RUN, PYW, TOOLS, pyw, win, pid, real_saves
 import qa_sweep
 
 EYE = 1.71
-CFG = 'pov_tv=1\npov_tv_consent=%d'
+CFG = 'experimental_tv=1\npov_tv=1\npov_tv_consent=%d'
 
 
 class Game:

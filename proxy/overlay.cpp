@@ -478,7 +478,7 @@ static void DrawNameTags(float W, float H) {
         PromptChip(W/2-tw/2,H/2+130*k,b,k,uitheme::Accent);
     }
     unsigned deployed=TvDeploymentTarget(),tvTarget=deployed?deployed:g_tvAimed.load();
-    if(tvTarget && !g_rosterOpen.load()){
+    if(tvTarget && TvExperimental() && !g_rosterOpen.load()){
         std::string name="player"; for(const auto& r:CoopGetRemotes()) if(r.id==tvTarget && r.name[0]) name=r.name;
         char b[160]; snprintf(b,sizeof b,deployed?"[%s] retract %s's sky TV":"[%s] deploy %s's sky TV",guide::KeyName(GetCfg().keyTvDeploy).c_str(),name.c_str());
         float k=std::max(1.f,H/1080.f),tw=UiTextWidth(b,k),th=UiLineHeight(k),x=W/2-tw/2,y=H/2+100*k;

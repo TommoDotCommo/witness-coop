@@ -137,7 +137,7 @@ def prepare(c, config):
     models = d / 'witness_models'; models.mkdir(exist_ok=True)
     for asset in (ROOT / 'assets/models').iterdir():
         if asset.suffix in ('.glb', '.txt'): replace_copy(asset, models / asset.name)
-    extra = os.environ.get('TV3_EXTRA', '').replace(';', '\n') + '\nforce_active=1\ncap_fps=30\ndev_menu=1\nvoice_mode=off\nvoice_mute_output=1\npov_tv=1\npov_tv_consent=0\n'
+    extra = os.environ.get('TV3_EXTRA', '').replace(';', '\n') + '\nforce_active=1\ncap_fps=30\ndev_menu=1\nvoice_mode=off\nvoice_mute_output=1\nexperimental_tv=1\npov_tv=1\npov_tv_consent=0\n'
     cfg = d / 'witness_coop.cfg'; cfg.unlink(missing_ok=True); cfg.write_text(config + extra)
     for name in ('witness_cmd.txt', 'witness_proxy.log', 'witness_net.json', 'witness_tv.json'):
         (d / name).unlink(missing_ok=True)

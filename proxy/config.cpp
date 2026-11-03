@@ -40,6 +40,7 @@ const Cfg& GetCfg() {
             else if (sscanf(line, "force_active=%d", &v) == 1) r.forceActive = v != 0;
             else if (sscanf(line, "skip_entity_zero=%d", &v) == 1) r.skipEntityZero = v != 0;
             else if (sscanf(line, "dev_menu=%d", &v) == 1) r.devMenu = v != 0;
+            else if (sscanf(line, "experimental_tv=%d", &v) == 1) r.experimentalTv = v != 0;
             else if (sscanf(line, "pov_tv=%d", &v) == 1) r.povTv = v != 0;
             else if (sscanf(line, "pov_tv_consent=%d", &v) == 1) r.povTvConsent = v != 0;
             else if (sscanf(line, "partner_view=%d", &v) == 1) { r.partnerView = v != 0; r.noPartnerView = v == 0; }

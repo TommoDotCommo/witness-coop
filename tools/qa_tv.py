@@ -5,7 +5,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from witness import TOOLS, DIR1, DIR2, PYW, pid, win, real_saves
 
 def run(extra=''):
-    subprocess.run([os.path.join(TOOLS, 'restart.sh')], env={**os.environ, 'CFG_A': 'name=Alpha\n'+extra, 'CFG_B': 'name=Beta'}, check=True)
+    subprocess.run([os.path.join(TOOLS, 'restart.sh')], env={**os.environ, 'CFG_A': 'name=Alpha\nexperimental_tv=1\n'+extra, 'CFG_B': 'name=Beta\nexperimental_tv=1'}, check=True)
     r = subprocess.run([PYW, '-I', win(os.path.join(TOOLS, 'win/wtv.py')), str(pid('A')), win(DIR1), str(pid('B')), win(DIR2)], text=True, capture_output=True, timeout=400)
     print(r.stdout, end=''); print(r.stderr, end='', file=sys.stderr)
     if not extra:

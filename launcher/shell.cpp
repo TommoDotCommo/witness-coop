@@ -67,7 +67,9 @@ static std::vector<Row> Build() {
     // Controls: every key of the one binding table (push to talk is in Voice and sound), then the game's own mouse options (inside a save)
     for (const auto& b : guide::bindings) {
         if (std::string(b.config) == "key_voice") continue;
-        Row r = R(std::string("cfg:") + b.config, b.label, kControls, kKey); r.def = guide::KeyName(b.initial); v.push_back(r);
+        Row r = R(std::string("cfg:") + b.config, b.label, kControls, kKey); r.def = guide::KeyName(b.initial);
+        if (guide::IsTvBinding(b)) r.hint = "only with Experimental: TV features (Launcher)";
+        v.push_back(r);
     }
     for (const auto& d : wl::SaveOptionDefs()) {
         std::string n = d.name; bool display = n == "user_brightness" || n == "user_fov_vertical" || n == "user_reticle" || n == "user_vignetting";
@@ -102,6 +104,11 @@ static std::vector<Row> Build() {
     v.push_back(Toggle("cfg:show_launcher", "Show the launcher at start", kLauncher, "1", "off: Play in Steam starts the game directly; hold Shift while it starts to see the launcher"));
     v.push_back(Toggle("upd:auto", "Check for updates when the launcher starts", kLauncher, "1", "once a day at most; nothing about you is sent"));
     v.push_back(Toggle("upd:pre", "Offer pre-releases", kLauncher, "0"));
+#ifdef SHELL_MUT_TV_DEFAULT_ON
+    v.push_back(Toggle("cfg:experimental_tv", "Experimental: TV features", kLauncher, "1", "mutant"));
+#else
+    v.push_back(Toggle("cfg:experimental_tv", "Experimental: TV features", kLauncher, "0", "back TV, sky TV, audience seats and the TV camera; off: none of it runs or is sent; applies next start"));
+#endif
     return v;
 }
 const std::vector<Row>& Rows() {
