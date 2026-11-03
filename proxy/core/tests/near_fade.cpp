@@ -20,5 +20,7 @@ int main() {
     eye[0]=1; eye[1]=0;
     assert(custom.step(cam,3.14159265f,0,54,16.f/9,eye)==1);
     assert(custom.step(cam,0,0,54,16.f/9,eye)<1);
+    // one fade, not two: a ghosted body (0.22) half faded by distance stays at 0.22, not 0.11; either alone is kept
+    assert(wnear::BodyOpacity(.22f,.5f)==.22f && wnear::BodyOpacity(1,.5f)==.5f && wnear::BodyOpacity(.22f,1)==.22f && wnear::BodyOpacity(.6f,.6f)==.6f);
     std::puts("near fade: distance, deadband, overlap, view gate, restore and disable switch passed");
 }

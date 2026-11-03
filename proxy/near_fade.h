@@ -29,4 +29,13 @@ struct State {
         return std::clamp((distance-end)/(start-end),0.f,1.f);
     }
 };
+// The body's opacity when the overlap ghost (ghost/ghost.h) and this fade both apply: the stronger of the two, never their product
+// (a body both overlapping and close would otherwise be faded twice). Mutant NF_MUT_PRODUCT: the product.
+inline float BodyOpacity(float ghost, float nearAlpha) {
+#ifdef NF_MUT_PRODUCT
+    return ghost * nearAlpha;
+#else
+    return std::min(ghost, nearAlpha);
+#endif
+}
 } // namespace wnear

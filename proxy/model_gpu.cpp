@@ -526,7 +526,7 @@ bool ModelGpuDraw(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Cam& ca
         gs.alpha = wghost::Approach(gs.alpha, gs.target, dt, 5.0f); T[3] = gs.alpha;
     }
     float nearAng[2]={cam.theta,cam.phi};
-    T[3] = std::min(T[3], NearFadeAlpha(playerId,cam.pos,nearAng,pos,cam.aspect));      // one fade, not two: the stronger of the overlap ghost (ghost/ghost.h) and the near-camera fade (near_fade.h)
+    T[3] = wnear::BodyOpacity(T[3], NearFadeAlpha(playerId,cam.pos,nearAng,pos,cam.aspect));      // one fade, not two: the stronger of the overlap ghost and the near-camera fade
     memcpy(fc.tint, T, 16);
     ID3D11ShaderResourceView* sceneSrv = nullptr; bool ms = false;
     unsigned ns = 4; bool haveScene = !cfg.noModelDepth && DepthScene(&sceneSrv, &ms, &ns);
