@@ -118,7 +118,8 @@ def panel_scene(vi):
     if not plan:
         drawer.send(['solve 293'], 4.0); snap(V, 'panel_2_solved', 'Player %d solves the panel (the solve test command, not a drawn line): it is solved in this game too and the cable is lit.' % (drawer.idx + 1)); return
     pid_, nodes = plan.split(':', 1); import subprocess
-    pr = subprocess.Popen([sys.executable, '-I', os.path.join(HERE, 'wdraw.py'), str(drawer.pid), drawer.dir, pid_, nodes], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+    # Follow the game's own trace progress (as qa_lines does): the maze's projected first edge can stall, and the bot then stops before node 1.
+    pr = subprocess.Popen([sys.executable, '-I', os.path.join(HERE, 'wdraw.py'), str(drawer.pid), drawer.dir, pid_, nodes], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, env={**os.environ, 'WDRAW_STEER': '1'})
     t = time.time(); k = 0
     while pr.poll() is None and time.time() - t < 150:
         time.sleep(1.0)
