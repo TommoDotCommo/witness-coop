@@ -28,9 +28,15 @@ build/dsound_proxy_mut_gate.o: dsound_proxy.cpp Makefile
 	$(CXX) $(CXXFLAGS) -DCOOP_MUT_ALWAYS_KNOWN -c -o $@ $<
 dsound_mut_gate.dll: $(filter-out build/dsound_proxy.o,$(OBJ)) build/dsound_proxy_mut_gate.o $(RES) dsound.def
 	$(CXX) -shared -static-libgcc -static-libstdc++ -o $@ $(filter-out build/dsound_proxy.o,$(OBJ)) build/dsound_proxy_mut_gate.o $(RES) dsound.def $(LIBS)
+# Test builds for tools/qa_dropin.sh: dsound_mut_NO_CHAIN.dll (the chain file ignored), dsound_mut_NO_OTHER_COPY.dll (the alpha's proxy not looked for).
+build/dsound_proxy_mut_%.o: dsound_proxy.cpp Makefile
+	@mkdir -p build
+	$(CXX) $(CXXFLAGS) -DCOOP_MUT_$* -c -o $@ $<
+dsound_mut_%.dll: $(filter-out build/dsound_proxy.o,$(OBJ)) build/dsound_proxy_mut_%.o $(RES) dsound.def
+	$(CXX) -shared -static-libgcc -static-libstdc++ -o $@ $(filter-out build/dsound_proxy.o,$(OBJ)) build/dsound_proxy_mut_$*.o $(RES) dsound.def $(LIBS)
 -include $(OBJ:.o=.d)
 clean:
-	rm -rf build $(OUT) dsound.map dsound_mut_silent.dll dsound_mut_gate.dll
+	rm -rf build $(OUT) dsound.map dsound_mut_*.dll
 .PHONY: clean
 
 # a mutant for tools/qa.sh steam: the loop with the Steam overlay's Present hook is not broken (the game must be seen to crash)

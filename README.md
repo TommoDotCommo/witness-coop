@@ -203,7 +203,9 @@ what it needs and what to do:
 How the runtime check works: `common/buildid.h` reads the exe's PE header and hashes its code section **in memory** (no file I/O inside `DllMain`); anything
 but the known build leaves `proxy/dsound_proxy.cpp` with no hook and no thread of ours touching the game. `tools/test_build_gate.sh` tests the real `DllMain`
 with a host program that is not the known build (and a mutant that ignores the check must fail), the forwarding to the system `dsound.dll` by name and by the
-ordinal the game imports (a bare-name load must fail), a missing system copy (every call fails cleanly), the chain load (a mutant that ignores the chain file must fail) and the export table; `make -C common test` tests the check on synthetic exes, truncated
+ordinal the game imports (a bare-name load must fail), a missing system copy (every call fails cleanly), the chain load (a mutant that ignores the chain file must fail), the
+alpha's `AnselSDK64.dll` proxy mapped beside it (this copy stays passive; a mutant that does not look must fail) and the export table; `tools/qa_dropin.sh` (one game slot)
+checks the chain load and the passive copy in the real game, each with its mutant; `make -C common test` tests the check on synthetic exes, truncated
 files and the real exe; `tools/unknown_build_slot.sh` (one game slot) starts a slot copy whose exe has one code byte changed and requires: the game keeps running, exactly one message box, nothing hooked or started (and a proxy that ignores the check must hook it); `tools/buildid_of.py <exe> --check` verifies the constants against a game exe when the target build changes.
 
 ### Making a release
