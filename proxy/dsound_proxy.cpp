@@ -7,6 +7,8 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include "../common/steam_ids.h"
+#include "../common/handover.h"
+#include "config.h"
 #include <string>
 #include <cstdio>
 #include <cstdint>
@@ -238,17 +240,32 @@ static LONG WINAPI CrashLogger(EXCEPTION_POINTERS* ep) {
     Log(line); Sleep(300);      // the log thread gets a moment to write
     return EXCEPTION_CONTINUE_SEARCH;
 }
-// A friend accepted a Steam invite (or chose Join Game) while The Witness was not running: Steam starts the game itself with "+connect_lobby <id>".
-// The lobby lives in the launcher, so the launcher is started with the same words (it inherits Steam's environment) and this game closes before it opens a window.
-static bool HandOffSteamJoin() {
-    uint64_t lobby = 0; if (!steamids::ParseConnect(GetCommandLineA(), &lobby)) return false;
+// Who opens first (common/handover.h, co-op standard K1): pressing Play in Steam starts this game with Steam's environment; co-op lives in the launcher, so a game
+// Steam started on its own starts witness_launcher.exe instead (it inherits Steam's environment, so the whole session stays inside the one Steam launch, Game Mode
+// on a Steam Deck included) and closes before it opens a window. A friend who accepted a Steam invite (or chose Join Game) while The Witness was not running gets
+// "+connect_lobby <id>" from Steam: the launcher is started with the same words and joins that lobby. A game the launcher started carries WITNESS_COOP_LAUNCHER and stays.
+static bool EnvSet(const wchar_t* name) { wchar_t b[8]; return GetEnvironmentVariableW(name, b, 8) > 0; }
+static bool g_startSteam, g_startSession;      // read in DllMain (memory only), before the game's own SteamAPI_Init could set SteamAppId in this process
+static bool HandOverToLauncher() {
     wchar_t dir[MAX_PATH]; GetModuleFileNameW(nullptr, dir, MAX_PATH); wchar_t* sl = wcsrchr(dir, L'\\'); if (sl) *sl = 0;
     std::wstring launcher = std::wstring(dir) + L"\\witness_launcher.exe";
-    if (GetFileAttributesW(launcher.c_str()) == INVALID_FILE_ATTRIBUTES) { Log("steam: +connect_lobby on the command line, but no witness_launcher.exe beside the game"); return false; }
-    std::wstring cmd = L"\"" + launcher + L"\" +connect_lobby " + std::to_wstring((unsigned long long)lobby);
+    uint64_t lobby = 0; handover::Inputs in;
+    in.connectLobby = steamids::ParseConnect(GetCommandLineA(), &lobby);
+    in.launcherExists = GetFileAttributesW(launcher.c_str()) != INVALID_FILE_ATTRIBUTES;
+    in.launcherSession = g_startSession;
+    in.steamLaunch = g_startSteam;
+    in.showLauncher = GetCfg().showLauncher;
+    in.shiftHeld = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
+    handover::Decision d = handover::Decide(in);
+    { char m[200]; snprintf(m, sizeof m, "handover: steam %d launcher_session %d connect_lobby %d show_launcher %d shift %d launcher %d -> %s", (int)in.steamLaunch, (int)in.launcherSession, (int)in.connectLobby, (int)in.showLauncher, (int)in.shiftHeld, (int)in.launcherExists, d == handover::kStay ? "stay" : d == handover::kToLauncherJoin ? "launcher (join)" : "launcher"); Log(m); }
+    if (in.connectLobby && !in.launcherExists) Log("steam: +connect_lobby on the command line, but no witness_launcher.exe beside the game");
+    if (d == handover::kStay) return false;
+    std::wstring cmd = L"\"" + launcher + L"\"";
+    if (d == handover::kToLauncherJoin) cmd += L" +connect_lobby " + std::to_wstring((unsigned long long)lobby);
     STARTUPINFOW si = {sizeof si}; PROCESS_INFORMATION pi = {};
-    if (!CreateProcessW(nullptr, &cmd[0], nullptr, nullptr, FALSE, 0, nullptr, dir, &si, &pi)) { Log("steam: could not start the launcher for the Steam invite"); return false; }
-    CloseHandle(pi.hThread); CloseHandle(pi.hProcess); Log("steam: a Steam invite started the game: the launcher joins the lobby, this game closes"); Sleep(200);
+    if (!CreateProcessW(nullptr, &cmd[0], nullptr, nullptr, FALSE, 0, nullptr, dir, &si, &pi)) { Log("handover: could not start the launcher; the game starts on its own"); return false; }
+    { char m[160]; snprintf(m, sizeof m, "handover: the launcher runs (pid %lu)%s; this game closes", (unsigned long)pi.dwProcessId, d == handover::kToLauncherJoin ? " and joins the Steam lobby" : ""); Log(m); }
+    CloseHandle(pi.hThread); CloseHandle(pi.hProcess); Sleep(200);
     return true;
 }
 static DWORD WINAPI Init(LPVOID) {
@@ -264,7 +281,7 @@ static DWORD WINAPI Init(LPVOID) {
     GetModuleFileNameA(nullptr, exe, MAX_PATH);
     snprintf(msg, sizeof msg, "proxy loaded: pid=%lu host=%s tick=%lu", GetCurrentProcessId(), exe, GetTickCount());
     Log(msg);
-    if (HandOffSteamJoin()) TerminateProcess(GetCurrentProcess(), 0);
+    if (HandOverToLauncher()) TerminateProcess(GetCurrentProcess(), 0);
     { wchar_t p[MAX_PATH]; GetModuleFileNameW(g_selfModule(), p, MAX_PATH); wchar_t* sl = wcsrchr(p, L'\\'); if (sl) sl[1] = 0; wcscat_s(p, L"witness_crash_stack.txt");
       g_overflowFile = CreateFileW(p, GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr); }
     AddVectoredExceptionHandler(1, CrashLogger);
@@ -279,6 +296,7 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID reserved) {
     if (reason == DLL_PROCESS_DETACH && reserved) DiagStop();      // the process is ending normally: a session log without this line ended in a crash or a kill
     if (reason == DLL_PROCESS_ATTACH) {
         g_self = inst;
+        g_startSteam = EnvSet(L"SteamAppId") || EnvSet(L"SteamGameId"); g_startSession = EnvSet(handover::kSessionEnv);      // (environment block only: no I/O under the loader lock)
         g_otherCopy = OldProxyMapped();      // memory only: no I/O under the loader lock
         CheckBuild();        // reads the exe's own header and code in memory: no I/O under the loader lock
         if (g_buildKnown && !g_otherCopy) InstallHooks();      // memory patching only: no I/O under the loader lock

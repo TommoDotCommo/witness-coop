@@ -94,6 +94,7 @@ const Cfg& GetCfg() {
             else if (sscanf(line, "pov_needs_aim=%d", &v) == 1) r.povNeedsAim = v != 0;
             else if (sscanf(line, "run_unfocused_old_byte=%d", &v) == 1) r.runUnfocusedOldByte = v != 0;
             else if (sscanf(line, "run_unfocused=%d", &v) == 1) r.runUnfocused = v != 0;
+            else if (sscanf(line, "show_launcher=%d", &v) == 1) r.showLauncher = v != 0;
             else if (sscanf(line, "line_old_anchor=%d", &v) == 1) r.lineOldAnchor = v != 0;
             else if (sscanf(line, "line_whole_edge=%d", &v) == 1) r.lineWholeEdge = v != 0;
             else if (sscanf(line, "see_through=%d", &v) == 1) r.noSeeThrough = v == 0;
