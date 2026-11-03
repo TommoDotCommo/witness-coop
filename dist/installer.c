@@ -8,6 +8,10 @@
  *  - the thin Setup.exe inside the zip (no payload): runs the scripts that sit beside it. If they are not there it says why in plain words
  *    (most often: it was started from inside the zip) and where to get the one-file setup.
  *
+ * Scriptable verbs (co-op mod standard J9): Setup.exe status [--json] [<game folder>] | install <game folder> --yes | uninstall <game folder> --yes. No window:
+ * witness-coop.ps1 runs with the same words, Setup waits and returns its exit code: 0 done, 1 failed (also a damaged or unpackable Setup), 2 usage,
+ * 3 unsupported game build, 4 the game is running. The output goes to Setup's own standard output (redirect it) or to the console it was started from.
+ *
  * Test hooks (environment): WITNESS_SETUP_MESSAGE_FILE writes the message to that file instead of showing a box;
  * --extract-only unpacks and stops (no window, no cleanup). Mutants for the tests: SETUP_MUT_NO_HASH_CHECK, SETUP_MUT_FOLLOW_LINKS, SETUP_MUT_REUSE_DIR. */
 #define UNICODE
@@ -39,7 +43,58 @@ static void say(const char* text, int icon)
     MessageBoxW(NULL, wide, L"The Witness Co-op Setup", MB_OK | icon);
 }
 
-static int fail(int code, const char* text) { say(text, MB_ICONERROR); return code; }
+static int g_verb;      /* a verb was given: every failure of Setup itself is exit code 1 (the verbs' own codes come from witness-coop.ps1) */
+static int fail(int code, const char* text) { say(text, MB_ICONERROR); return g_verb ? 1 : code; }
+
+static int is_verb(int argc, wchar_t** argv)
+{
+    return argv && argc >= 2 && (!wcscmp(argv[1], L"status") || !wcscmp(argv[1], L"install") || !wcscmp(argv[1], L"uninstall"));
+}
+
+/* A verb: witness-coop.ps1 in dir with the arguments as given, no window; the exit code is the script's. */
+static int run_verb(const wchar_t* dir, int argc, wchar_t** argv)
+{
+    wchar_t powershell[MAX_PATH], cmd[4096];
+    STARTUPINFOW startup = { 0 };
+    PROCESS_INFORMATION process = { 0 };
+    DWORD code = 1;
+    HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE), err = GetStdHandle(STD_ERROR_HANDLE);
+    int i;
+    if (!GetSystemDirectoryW(powershell, MAX_PATH) || wcslen(powershell) + 40 >= MAX_PATH) return 1;
+    wcscat(powershell, L"\\WindowsPowerShell\\v1.0\\powershell.exe");
+    if (swprintf(cmd, 4096, L"\"%ls\" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"%ls\\witness-coop.ps1\"", powershell, dir) < 0) return 1;
+    for (i = 1; i < argc; i++) {
+        size_t n = wcslen(cmd), k = wcslen(argv[i]), b = 0;
+        if (wcschr(argv[i], L'"') || n + k + 4 >= 4096) return 2;
+        swprintf(cmd + n, 4096 - n, L" \"%ls", argv[i]);
+        while (b < k && argv[i][k - 1 - b] == L'\\') b++;      /* a folder ending in backslashes: double them, or the closing quote would be escaped */
+        n = wcslen(cmd);
+        if (n + b + 2 >= 4096) return 2;
+        while (b--) cmd[n++] = L'\\';
+        cmd[n++] = L'"'; cmd[n] = 0;
+    }
+    if (!out || out == INVALID_HANDLE_VALUE) {     /* not redirected: the console of the prompt that started Setup */
+        if (AttachConsole(ATTACH_PARENT_PROCESS)) {
+            out = CreateFileW(L"CONOUT$", GENERIC_WRITE, FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
+            err = out;
+        }
+    }
+    startup.cb = sizeof(startup);
+    if (out && out != INVALID_HANDLE_VALUE) {
+        SetHandleInformation(out, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT);
+        if (err && err != INVALID_HANDLE_VALUE) SetHandleInformation(err, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT);
+        startup.dwFlags = STARTF_USESTDHANDLES;
+        startup.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+        startup.hStdOutput = out;
+        startup.hStdError = err && err != INVALID_HANDLE_VALUE ? err : out;
+    }
+    if (!CreateProcessW(powershell, cmd, NULL, NULL, TRUE, CREATE_NO_WINDOW, NULL, dir, &startup, &process)) return 1;
+    WaitForSingleObject(process.hProcess, INFINITE);
+    GetExitCodeProcess(process.hProcess, &code);
+    CloseHandle(process.hThread);
+    CloseHandle(process.hProcess);
+    return (int)code;
+}
 
 static inline int is_link(const wchar_t* p)
 {
@@ -173,7 +228,7 @@ static int run_powershell(const wchar_t* script, int wait)
 #ifndef PAYLOAD_SHA256
 #error "PAYLOAD_SHA256 (64 hex digits of the container) must be given with HAVE_PAYLOAD"
 #endif
-static int onefile(int extractOnly)
+static int onefile(int extractOnly, int argc, wchar_t** argv)
 {
     HRSRC r = FindResourceW(NULL, MAKEINTRESOURCEW(100), RT_RCDATA);
     HGLOBAL g = r ? LoadResource(NULL, r) : NULL;
@@ -193,6 +248,7 @@ static int onefile(int extractOnly)
     if (rc == EXIT_LINK) { cleanup(entries, count, dir, created); return fail(rc, "Setup stopped: a folder it needs below your user profile (witness-coop\\setup) is a link or was swapped for one while Setup was unpacking. Nothing was installed. Remove or rename the folder %LOCALAPPDATA%\\witness-coop and run Setup again."); }
     if (rc != EXIT_OK) { cleanup(entries, count, dir, created); return fail(rc, "Setup could not unpack its files into %LOCALAPPDATA%\\witness-coop\\setup (disk full, or a security program blocked the write?). Nothing was installed."); }
     if (extractOnly) { swprintf(note, MAX_PATH * 2 + 40, L"extracted: %ls", dir); { char n8[MAX_PATH * 4]; WideCharToMultiByte(CP_UTF8, 0, note, -1, n8, sizeof n8, NULL, NULL); say(n8, MB_ICONINFORMATION); } return EXIT_OK; }
+    if (g_verb) { rc = run_verb(dir, argc, argv); cleanup(entries, count, dir, created); return rc; }
     swprintf(script, MAX_PATH * 2, L"%ls\\installer-gui.ps1", dir);
     rc = run_powershell(script, 1);
     cleanup(entries, count, dir, created);
@@ -206,15 +262,17 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPSTR command, int sh
     wchar_t** argv = CommandLineToArgvW(GetCommandLineW(), &argc);
     (void)instance; (void)previous; (void)command; (void)show;
     for (i = 1; argv && i < argc; i++) if (!wcscmp(argv[i], L"--extract-only")) extractOnly = 1;
+    g_verb = is_verb(argc, argv);
+    if (argv && argc >= 2 && !g_verb && argv[1][0] != L'-' && argv[1][0] != L'/') return 2;      /* a word that is no verb: usage */
 #ifdef HAVE_PAYLOAD
-    return onefile(extractOnly);
+    return onefile(extractOnly, argc, argv);
 #else
     {
         wchar_t path[MAX_PATH], script[MAX_PATH], temp[MAX_PATH], *end; char path8[MAX_PATH * 4];
         (void)extractOnly;
         if (!GetModuleFileNameW(NULL, path, MAX_PATH) || !(end = wcsrchr(path, L'\\'))) return EXIT_FILES;
         if ((size_t)(end - path) + 1 + wcslen(L"installer-gui.ps1") >= MAX_PATH) return EXIT_FILES;
-        wcscpy(script, path); wcscpy(script + (end - path) + 1, L"installer-gui.ps1");
+        wcscpy(script, path); wcscpy(script + (end - path) + 1, g_verb ? L"witness-coop.ps1" : L"installer-gui.ps1");
         if (GetFileAttributesW(script) == INVALID_FILE_ATTRIBUTES) {
             int inTemp = GetTempPathW(MAX_PATH, temp) && _wcsnicmp(path, temp, wcslen(temp)) == 0;
             WideCharToMultiByte(CP_UTF8, 0, path, -1, path8, sizeof path8, NULL, NULL);
@@ -225,6 +283,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPSTR command, int sh
 #endif
             return fail(EXIT_FILES, WP_MSG_MISSING);
         }
+        if (g_verb) { *end = 0; return run_verb(path, argc, argv); }
         return run_powershell(script, 1) == EXIT_POWERSHELL ? EXIT_POWERSHELL : EXIT_OK;
     }
 #endif
