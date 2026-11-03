@@ -1,6 +1,7 @@
 // Game-free check of the dev menu's map page: at every supported screen size the selected panel's details (every information line,
 // action button, "Targeted by" button and chain button) lie inside the detail pane's clip rectangle, at a readable size, and the spot
-// list above keeps room for rows. Glyph advances are the ones the game's atlas measured (Segoe UI, ui.cpp: "uiglyph" log lines).
+// list above keeps room for rows. Glyph advances are the ones the game's atlas measured (ui.cpp: "uiglyph" log lines), for both faces the atlas
+// may use: Segoe UI (the fallback) and Karmina Bold (the game's own menu face, read from the player's archive; GDI at -40 px, halved).
 #include "detail_layout.h"
 #include <cstdio>
 #include <string>
@@ -10,9 +11,16 @@ static const float kAdvance[95] = {
     14.0f, 5.5f, 7.0f, 11.5f, 9.5f, 18.0f, 15.0f, 15.0f, 11.0f, 15.0f, 12.0f, 10.5f, 10.5f, 13.5f, 12.5f, 18.5f, 12.0f, 11.0f, 11.5f, 6.0f,
     7.5f, 6.0f, 13.5f, 8.5f, 5.5f, 10.0f, 12.0f, 9.0f, 12.0f, 10.5f, 6.5f, 12.0f, 11.5f, 5.0f, 5.0f, 10.0f, 5.0f, 17.0f, 11.5f, 11.5f,
     12.0f, 12.0f, 7.0f, 8.5f, 7.0f, 11.5f, 9.5f, 14.5f, 9.0f, 9.5f, 9.0f, 6.0f, 5.0f, 6.0f, 13.5f};
+static const float kAdvanceKarmina[95] = {
+    3.5f, 6.0f, 8.5f, 12.5f, 10.5f, 18.5f, 15.5f, 5.0f, 6.0f, 6.0f, 9.0f, 10.5f, 5.5f, 7.0f, 5.0f, 8.0f, 11.5f, 8.0f, 10.5f, 9.5f,
+    10.0f, 9.5f, 11.0f, 9.5f, 10.5f, 10.5f, 5.0f, 5.5f, 10.5f, 10.5f, 10.5f, 9.0f, 18.0f, 13.5f, 11.5f, 12.0f, 13.5f, 11.0f, 10.5f, 13.5f,
+    14.5f, 7.0f, 6.5f, 12.5f, 11.0f, 17.0f, 14.5f, 14.0f, 11.0f, 14.0f, 12.0f, 10.5f, 12.0f, 14.5f, 13.0f, 19.0f, 13.5f, 12.0f, 12.0f, 5.5f,
+    8.0f, 5.5f, 11.0f, 10.0f, 10.5f, 10.0f, 11.0f, 9.5f, 11.0f, 9.5f, 7.5f, 9.5f, 11.5f, 6.0f, 5.5f, 11.0f, 6.0f, 16.5f, 11.5f, 11.0f,
+    11.0f, 10.5f, 8.0f, 8.5f, 7.0f, 11.5f, 10.0f, 15.0f, 10.5f, 10.0f, 9.5f, 6.0f, 6.0f, 6.0f, 9.5f};
+static const float* g_adv = kAdvance;
 static int failures;
 static void check(bool ok, const char* what, float W, float H) { if (!ok) { std::printf("FAILED at %.0fx%.0f: %s\n", W, H, what); ++failures; } }
-static float Measure(const char* s, float sc) { uitext::Glyph g[95]; for (int i = 0; i < 95; i++) g[i].advance = kAdvance[i]; return uitext::Width(s, sc, g); }
+static float Measure(const char* s, float sc) { uitext::Glyph g[95]; for (int i = 0; i < 95; i++) g[i].advance = g_adv[i]; return uitext::Width(s, sc, g); }
 
 static uidetail::Content Worst(bool legacy) {      // the most a selected panel can show: every action, eight "Targeted by" buttons, full chains
     uidetail::Content c; c.legacy = legacy;
@@ -60,7 +68,8 @@ static int Clipped(float W, float H, const uidetail::Content& c, bool report) {
 
 int main() {
     const float sizes[][2] = {{1024, 768}, {1280, 720}, {1280, 800}, {1366, 768}, {1600, 900}, {1920, 1080}, {2560, 1080}, {2560, 1440}, {3440, 1440}, {3840, 1600}, {3840, 2160}};
-    for (const auto& s : sizes) {
+    for (const float* adv : {kAdvanceKarmina, kAdvance}) for (const auto& s : sizes) {
+        g_adv = adv;
         for (const auto& c : {Worst(false), Panel293()}) check(Clipped(s[0], s[1], c, true) == 0, "every detail line and button inside the pane", s[0], s[1]);
         // the right-hand pane of the nearby page (DetailPane at full scale, the pane's whole height)
         uidetail::Frame f = uidetail::MenuFrame(s[0], s[1]); uidetail::Content c = Worst(false);

@@ -136,6 +136,7 @@ static DWORD WINAPI CmdThread(LPVOID) {
             else if (DiagCommand(line)) {}
             else if (ThirdPersonCommand(line)) {}
             else if (!strncmp(line, "uistat", 6)) UiLogStats();
+            else if (!strncmp(line, "fontstat", 8)) UiFontStat();
             else if (!strncmp(line, "progressstat", 12)) DevMenuCommand("progressstat", 0);
             else if (sscanf(line, "complete %d", &dx) == 1) DevMenuCommand("complete", (unsigned)dx);
             else if (sscanf(line, "menusel %x", &id) == 1) DevMenuCommand("select", id);

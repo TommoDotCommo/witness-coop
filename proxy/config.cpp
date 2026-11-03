@@ -56,6 +56,7 @@ const Cfg& GetCfg() {
             else if (sscanf(line, "tp_never_return=%d", &v) == 1) r.tpNeverReturn = v != 0;
             else if (sscanf(line, "tp_ignore_wall=%d", &v) == 1) r.tpIgnoreWall = v != 0;
             else if (sscanf(line, "ui_tight_atlas=%d", &v) == 1) r.uiTightAtlas = v != 0;
+            else if (sscanf(line, "ui_font=%40[A-Za-z]", s) == 1) r.uiFont = s;
             else if (sscanf(line, "no_pov_request=%d", &v) == 1) r.noPovRequest = v != 0;
             else if (sscanf(line, "no_line_depth=%d", &v) == 1) r.noLineDepth = v != 0;
             else if (sscanf(line, "no_teleport_hold=%d", &v) == 1) r.noTeleportHold = v != 0;

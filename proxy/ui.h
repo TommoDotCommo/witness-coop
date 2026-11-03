@@ -20,6 +20,9 @@ ID3D11ShaderResourceView* UiMakeTexture(const uint8_t* bgra, int w, int h);     
 void UiClip(float x, float y, float w, float h);                                 // scissor for the following quads (flushes the batch); w<=0 clears
 void UiImage(float x, float y, float w, float h, ID3D11ShaderResourceView* srv, UiColor tint = {1, 1, 1, 1});   // a whole RGBA texture, stretched into the rectangle
 
+void UiPrefetchGameFont(const wchar_t* zipPath, void* (*openFile)(const wchar_t*));   // the CreateFile hook, just before the game opens (and locks) data-pc.zip
+void UiFontStat();                                                               // test oracle: which face the atlas uses and why
+
 void UiLogStats(); // test oracle: previous frame text bounds and smallest font
 
 void UiCheckReachable(float x, float y, float w, float h); // test oracle: counts action buttons and information lines that are not fully inside the visible area
