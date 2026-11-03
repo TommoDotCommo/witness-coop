@@ -62,23 +62,23 @@ function Test-Refusals {
     $status = Status $other
     Check ($status.build -eq 'conflict' -and $status.actions.blocked) 'another build is reported and blocks setup'
     Check ($status.report.sha -and $status.report.store -eq 'unknown') 'the status says what was found'
-    $text = (Install $other @() 1 | Out-String)
+    $text = (Install $other @() 3 | Out-String)
     Check (-not (Test-Path (Join-Path $other 'dsound.dll')) -and (Get-CoopHash (Join-Path $other 'AnselSDK64.dll')) -eq $script:WitnessAnselSha -and -not (Test-Path (Join-Path $other 'witness_launcher.exe'))) 'another build: nothing changed'
     Check ($text -match 'Found:' -and $text -match 'SHA-256 starting [0-9a-f]{12}' -and $text -match 'Needed: Steam build 11370412' -and $text -match 'What to do:' -and $text -match 'faq-not-the-supported-build') 'another build: the refusal says what was found, what is needed, what to do, and links the FAQ'
     $truncated = Fixture 'truncated'
     $head = New-Object byte[] 4096; $fs = [IO.File]::OpenRead($sourceExe); [void]$fs.Read($head, 0, 4096); $fs.Dispose()
     [IO.File]::WriteAllBytes((Join-Path $truncated 'witness64_d3d11.exe'), $head)
-    $text = (Install $truncated @() 1 | Out-String)
+    $text = (Install $truncated @() 3 | Out-String)
     Check ($text -match 'only 4096 bytes' -and $text -match 'Verify integrity' -and -not (Test-Path (Join-Path $truncated 'dsound.dll'))) 'a truncated exe is refused as damaged, with the Steam advice'
     # a Steam library layout: the build id comes from the store's manifest
     $steamRoot = Join-Path $root 'steam-lib'; $steamGame = Join-Path $steamRoot 'steamapps\common\The Witness'
     New-Item -ItemType Directory -Force $steamGame | Out-Null
     Copy-Item (Join-Path $other 'witness64_d3d11.exe') $steamGame; Copy-Item $sourceAnsel (Join-Path $steamGame 'AnselSDK64.dll')
     Set-Content (Join-Path $steamRoot 'steamapps\appmanifest_210970.acf') '"AppState" { "appid" "210970" "buildid" "99999999" }' -Encoding ASCII
-    $text = (Install $steamGame @() 1 | Out-String)
+    $text = (Install $steamGame @() 3 | Out-String)
     Check ($text -match 'Steam copy \(Steam build 99999999\)' -and $text -match 'Properties > Betas > choose None') 'a Steam copy: its build id and the Betas > None advice'
     $gog = Fixture 'gog-copy'; [IO.File]::WriteAllBytes((Join-Path $gog 'witness64_d3d11.exe'), $bytes); Set-Content (Join-Path $gog 'goggame-1234.info') '{}' -Encoding ASCII
-    $text = (Install $gog @() 1 | Out-String)
+    $text = (Install $gog @() 3 | Out-String)
     Check ($text -match 'GOG copy' -and $text -match 'not supported yet' -and -not (Test-Path (Join-Path $gog 'dsound.dll'))) 'a GOG copy: named, and told it is not supported yet'
     $status = Status $gog
     Check ($status.actions.blocked -and $status.build -eq 'conflict') 'a GOG copy blocks setup'

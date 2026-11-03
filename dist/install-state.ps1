@@ -311,6 +311,241 @@ function Format-WitnessBuildShort($report) {
     $todo = if ($report.store -eq 'Steam') { 'In Steam: Properties > Betas > None, then Verify integrity of game files.' } else { 'Only the Steam copy is supported yet.' }
     return "Not Steam build 11370412 (found $where, SHA-256 $($report.sha)...). $todo See the README FAQ."
 }
+# ---- coop-mod.json (tools/mod_manifest.py): the files the package puts into the game folder, with their hashes. Setup reads its file list from the
+# package's copy; a copy in the game folder (a mod manager deployed the whole package) names that release.
+function Read-CoopManifest($folder) {
+    $file = Join-Path $folder 'coop-mod.json'
+    if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { return $null }
+    try { $m = Get-Content -LiteralPath $file -Raw | ConvertFrom-Json } catch { return $null }
+    if ($m.schema -ne 1 -or -not $m.files) { return $null }
+    foreach ($f in $m.files) { if ("$($f.path)" -notmatch '^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$' -or "$($f.sha256)" -notmatch '^[a-f0-9]{64}$') { return $null } }
+    return $m
+}
+function Get-CoopPackageFiles($package) {
+    $m = Read-CoopManifest $package
+    if (-not $m) { return $script:WitnessManaged }
+    return @($m.files | ForEach-Object { "$($_.path)".Replace('/', '\') })
+}
+# ---- who installed the files: Setup receipts, a mod manager's hard links (Vortex deploys by hard link), a hand copy that matches a release, or nobody
+function Get-CoopLinkCount($file) {
+    try {
+        $result = Invoke-CoopHiddenProcess 'fsutil.exe' ('hardlink list "{0}"' -f $file)
+        if ($result.ExitCode -eq 0 -and $result.Output) { return @($result.Output -split '\r?\n' | Where-Object { $_.Trim() }).Count }
+    } catch { }
+    return 1
+}
+function Get-CoopOwner($game, $package) {
+    $manifests = @(@(Read-CoopManifest $package; Read-CoopManifest $game) | Where-Object { $_ })
+    $files = @(Get-CoopPackageFiles $package) + @('AnselSDK64.dll')      # (the receipt of the alpha's layout counts: Setup put that one there)
+    foreach ($relative in $files) { if (Test-Path -LiteralPath (Join-Path $game "$relative.coop-receipt.json")) { return 'setup' } }
+    foreach ($m in $manifests) {
+        $match = $true
+        foreach ($f in $m.files) {
+            $target = Join-Path $game ("$($f.path)".Replace('/', '\'))
+            try { $h = Get-CoopHash $target } catch { $h = $null }
+            if ($h -ne "$($f.sha256)") { $match = $false; break }
+        }
+        if ($match) {
+            foreach ($f in $m.files) {
+                if ((Get-CoopLinkCount (Join-Path $game ("$($f.path)".Replace('/', '\')))) -gt 1) { return 'vortex' }
+            }
+            return 'manual'
+        }
+    }
+    return 'none'
+}
+# Adopt only a complete, verified release copy, never a manager's linked deployment. These files are the mod itself, so uninstall removes them
+# (nothing is restored): the receipt has no original.
+function Adopt-CoopInstall($game, $package) {
+    if ((Get-CoopOwner $game $package) -ne 'manual') { throw 'Only a verified manual install can be adopted.' }
+    foreach ($m in @(Read-CoopManifest $package; Read-CoopManifest $game)) {
+        if (-not $m) { continue }
+        $matching = $true
+        foreach ($f in $m.files) {
+            $target = Join-Path $game ($f.path.Replace('/', '\'))
+            Assert-CoopRegularPath $target
+            Assert-CoopNoRecoveryArtifacts $target
+            Assert-CoopRegularPath "$target.coop-receipt.json"
+            if (Test-Path -LiteralPath "$target.coop-original") { throw 'An original backup needs review before adoption.' }
+            if ((Get-CoopHash $target) -ne $f.sha256 -or (Get-CoopLinkCount $target) -gt 1) { $matching = $false; break }
+        }
+        if (-not $matching) { continue }
+        foreach ($f in $m.files) {
+            Write-CoopReceipt (Join-Path $game ($f.path.Replace('/', '\'))) ([pscustomobject]@{ schema=1; original=$null; installed=$f.sha256; pending=$null })
+        }
+        return
+    }
+    throw 'The manual install changed; refresh Setup and try again.'
+}
+$script:CoopOwnerText = @{
+    setup  = 'Installed by Setup'
+    vortex = 'Installed by Vortex: update or remove it there'
+    manual = 'Copied by hand: Setup can take it over'
+    none   = 'Not installed'
+}
+
+# ---- every install of the game on this PC: Steam libraries, GOG, Epic, the uninstall list
+function Steam-Libraries {
+    $roots = @()
+    foreach ($k in 'HKLM:\SOFTWARE\WOW6432Node\Valve\Steam', 'HKLM:\SOFTWARE\Valve\Steam', 'HKCU:\Software\Valve\Steam') {
+        $p = Get-ItemProperty $k -ErrorAction SilentlyContinue
+        if ($p.SteamPath)   { $roots += ($p.SteamPath -replace '/', '\') }
+        if ($p.InstallPath) { $roots += $p.InstallPath }
+    }
+    $libs = @()
+    foreach ($r in ($roots | Select-Object -Unique)) {
+        $libs += $r
+        $vdf = Join-Path $r 'steamapps\libraryfolders.vdf'
+        if (Test-Path $vdf) {
+            foreach ($m in [regex]::Matches((Get-Content $vdf -Raw), '"path"\s+"([^"]+)"')) {
+                $libs += ($m.Groups[1].Value -replace '\\\\', '\')
+            }
+        }
+    }
+    $libs | Where-Object { $_ } | ForEach-Object { $_.TrimEnd('\') } | Select-Object -Unique
+}
+function Find-AllGames {
+    $found = @()
+    $exe = 'witness64_d3d11.exe'
+    foreach ($lib in Steam-Libraries) {
+        $acf = Join-Path $lib 'steamapps\appmanifest_210970.acf'
+        $dirs = @()
+        if (Test-Path $acf) {
+            $m = [regex]::Match((Get-Content $acf -Raw), '"installdir"\s+"([^"]+)"')
+            if ($m.Success) { $dirs += Join-Path $lib "steamapps\common\$($m.Groups[1].Value)" }
+        }
+        $dirs += Join-Path $lib 'steamapps\common\The Witness'
+        foreach ($d in $dirs) { if (Test-Path (Join-Path $d $exe)) { $found += $d } }
+    }
+    # registered locations: the uninstall list (GOG Galaxy, other launchers, manual installs)
+    foreach ($key in @('HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall',
+                       'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall',
+                       'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall')) {
+        foreach ($entry in @(Get-ChildItem $key -ErrorAction SilentlyContinue)) {
+            $value = Get-ItemProperty $entry.PSPath -ErrorAction SilentlyContinue
+            if ($value.DisplayName -match '^The Witness' -and $value.InstallLocation -and
+                (Test-Path -LiteralPath (Join-Path $value.InstallLocation $exe) -PathType Leaf)) { $found += $value.InstallLocation }
+        }
+    }
+    if ($env:ProgramData) {      # Epic Games Launcher manifests
+        $epic = Join-Path $env:ProgramData 'Epic\EpicGamesLauncher\Data\Manifests'
+        foreach ($entry in @(Get-ChildItem -LiteralPath $epic -Filter '*.item' -ErrorAction SilentlyContinue)) {
+            try {
+                $value = Get-Content -LiteralPath $entry.FullName -Raw | ConvertFrom-Json
+                if ($value.InstallLocation -and (Test-Path -LiteralPath (Join-Path $value.InstallLocation $exe) -PathType Leaf)) { $found += $value.InstallLocation }
+            } catch { }      # a damaged manifest must not hide the other installs
+        }
+    }
+    foreach ($key in @('HKLM:\SOFTWARE\GOG.com\Games', 'HKLM:\SOFTWARE\WOW6432Node\GOG.com\Games')) {
+        foreach ($entry in @(Get-ChildItem $key -ErrorAction SilentlyContinue)) {
+            $value = Get-ItemProperty $entry.PSPath -ErrorAction SilentlyContinue
+            if ($value.path -and (Test-Path -LiteralPath (Join-Path $value.path $exe) -PathType Leaf)) { $found += $value.path }
+        }
+    }
+    foreach ($root in @($env:ProgramFiles, ${env:ProgramFiles(x86)}, $env:ProgramW6432, (Join-Path $env:SystemDrive 'GOG Games'))) {
+        if (-not $root) { continue }
+        foreach ($suffix in @('GOG Galaxy\Games\The Witness', 'The Witness')) {
+            $d = Join-Path $root $suffix
+            if (Test-Path -LiteralPath (Join-Path $d $exe) -PathType Leaf) { $found += $d }
+        }
+    }
+    return @($found | ForEach-Object { (Resolve-Path $_).ProviderPath } | Select-Object -Unique)
+}
+
+# ---- the three optional Windows integrations (G3): desktop shortcut, Windows Firewall rule, witness-coop:// links. Uninstall removes all three.
+$script:CoopFirewallName = 'The Witness Co-op (UDP)'
+function Get-CoopFirewallPrograms($game) { return @((Join-Path $game 'witness64_d3d11.exe'), (Join-Path $game 'witness_launcher.exe')) }
+function New-WitnessDesktopShortcut($dir, $desktop = [Environment]::GetFolderPath('DesktopDirectory')) {
+    if (-not (Test-Path -LiteralPath (Join-Path $dir 'witness64_d3d11.exe') -PathType Leaf)) { throw 'Choose the folder containing witness64_d3d11.exe.' }
+    $shell = New-Object -ComObject WScript.Shell
+    $link = $null
+    try {
+        $link = $shell.CreateShortcut((Join-Path $desktop 'The Witness Co-op.lnk'))
+        $link.TargetPath = Join-Path $dir 'witness_launcher.exe'
+        $link.WorkingDirectory = $dir
+        $link.IconLocation = (Join-Path $dir 'witness64_d3d11.exe') + ',0'
+        $link.Description = 'Play The Witness together: the co-op launcher'
+        $link.Save()
+    } finally {
+        if ($link) { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($link) }
+        [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($shell)
+    }
+}
+function Get-CoopShortcutTarget($desktop = [Environment]::GetFolderPath('DesktopDirectory')) {
+    $file = Join-Path $desktop 'The Witness Co-op.lnk'
+    if (-not (Test-Path -LiteralPath $file)) { return '' }
+    $shell = New-Object -ComObject WScript.Shell
+    $link = $null
+    try { $link = $shell.CreateShortcut($file); return $link.TargetPath }
+    finally {
+        if ($link) { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($link) }
+        [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($shell)
+    }
+}
+# The link handler starts the launcher with the link as its one argument; the launcher puts it into its join box (nothing is joined without a click).
+function Get-CoopInviteCommand($game) {
+    return '"{0}" --coop-invite "%1"' -f (Join-Path $game 'witness_launcher.exe')
+}
+function Test-CoopFirewallRule($rule, $program) {
+    return $rule.Name -eq $script:CoopFirewallName -and $rule.ApplicationName -eq $program -and $rule.Protocol -eq 17 -and $rule.Direction -eq 1
+}
+function Get-CoopFirewallRules($program) {
+    $policy = $null
+    try {
+        $policy = New-Object -ComObject HNetCfg.FwPolicy2
+        return @($policy.Rules | Where-Object { Test-CoopFirewallRule $_ $program })
+    } catch { return @() }
+    finally { if ($policy) { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($policy) } }
+}
+function Get-CoopOptions($game) {
+    $exe = Join-Path $game 'witness_launcher.exe'
+    $protocol = Get-ItemProperty 'HKCU:\Software\Classes\witness-coop\shell\open\command' -ErrorAction SilentlyContinue
+    $allowed = $true
+    foreach ($program in Get-CoopFirewallPrograms $game) {      # both programs, on Private and Public
+        $profiles = 0
+        foreach ($rule in @(Get-CoopFirewallRules $program)) { if ($rule.Enabled -and $rule.Action -eq 1) { $profiles = $profiles -bor $rule.Profiles } }
+        if (($profiles -band 6) -ne 6) { $allowed = $false }      # Private=2, Public=4
+    }
+    return [pscustomobject]@{
+        desktop_shortcut=((Get-CoopShortcutTarget) -eq $exe)
+        allow_hosting=$allowed
+        invite_links=([bool]($protocol -and $protocol.'(default)' -eq (Get-CoopInviteCommand $game)))
+    }
+}
+function Test-CoopAdmin {
+    return ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+function Set-CoopFirewall($game, [bool]$remove) {
+    foreach ($program in Get-CoopFirewallPrograms $game) {
+        # Keep all other rules, including the rules of another copy of the game.
+        $delete = 'advfirewall firewall delete rule name="{0}" program="{1}" protocol=UDP dir=in' -f $script:CoopFirewallName, $program
+        if ($remove) {
+            if (@(Get-CoopFirewallRules $program).Count) { $result = Invoke-CoopHiddenProcess 'netsh.exe' $delete } else { continue }
+        } else {
+            # Replace our exact rule to make retries idempotent; one rule per program covers both profiles.
+            if (@(Get-CoopFirewallRules $program).Count) { [void](Invoke-CoopHiddenProcess 'netsh.exe' $delete) }
+            $add = 'advfirewall firewall add rule name="{0}" dir=in action=allow program="{1}" protocol=UDP profile=private,public enable=yes' -f $script:CoopFirewallName, $program
+            $result = Invoke-CoopHiddenProcess 'netsh.exe' $add
+        }
+        if ($result.ExitCode -ne 0) { throw 'Windows Firewall could not be changed. Run Setup again and allow administrator permission, or untick Allow hosting.' }
+    }
+}
+function Set-CoopUserOptions($game, [bool]$shortcut, [bool]$invites) {
+    if ($shortcut) { New-WitnessDesktopShortcut $game }
+    if ($invites) {
+        $root = 'HKCU:\Software\Classes\witness-coop'
+        New-Item -Path "$root\shell\open\command" -Force | Out-Null
+        Set-Item -LiteralPath $root -Value 'URL:The Witness Co-op invite'
+        New-ItemProperty -LiteralPath $root -Name 'URL Protocol' -Value '' -PropertyType String -Force | Out-Null
+        Set-Item -LiteralPath "$root\shell\open\command" -Value (Get-CoopInviteCommand $game)
+    }
+}
+function Remove-CoopUserOptions($game) {
+    $options = Get-CoopOptions $game
+    if ($options.desktop_shortcut) { Remove-Item -LiteralPath (Join-Path ([Environment]::GetFolderPath('DesktopDirectory')) 'The Witness Co-op.lnk') }
+    if ($options.invite_links) { Remove-Item -LiteralPath 'HKCU:\Software\Classes\witness-coop' -Recurse }
+}
+
 function Get-WitnessInstallStatus($game, $package) {
     $rows = @(); $states = @(); $owned = $false
     $build = Get-WitnessBuildState $game
@@ -355,8 +590,37 @@ function Get-WitnessInstallStatus($game, $package) {
     }
     $actions = Get-CoopActions $states $owned
     if ($legacy.present -and -not $legacy.blocked -and $actions.install) { $actions.install = 'Update' }
+    $owner = Get-CoopOwner $game $package
+    if ($owner -eq 'vortex') {
+        # a mod manager's files: it updates and removes them; Setup says so and offers Play (J6, J7)
+        $actions = [pscustomobject]@{ install=''; uninstall=$false; blocked=$false }
+    }
+    if ($owner -eq 'manual' -and -not $actions.blocked -and $build -eq 'current') {
+        $actions.install = 'Install'; $actions.uninstall = $false      # a hand copy: Setup takes it over (adopts it) and updates it from then on
+    }
     $rows += [pscustomobject]@{ item='witness_coop.cfg'; status=$(if (Test-Path -LiteralPath (Join-Path $game 'witness_coop.cfg')) { 'present' } else { 'written by the launcher' }); detail='Your co-op settings; kept on uninstall' }
     $rows += [pscustomobject]@{ item='Saves, registry, the game''s own files'; status='untouched'; detail='Saves stay in %APPDATA%\The Witness; the game''s executable and DLLs are never changed' }
     $report = if ($build -ne 'current') { Get-WitnessBuildReport $game } else { $null }
-    return [pscustomobject]@{ schema=1; items=$rows; actions=$actions; build=$build; report=$report; legacy=[bool]$legacy.present; chain=[bool](Test-Path -LiteralPath $chain) }
+    $options = Get-CoopOptions $game
+    foreach ($name in 'desktop_shortcut', 'allow_hosting', 'invite_links') {
+        $rows += [pscustomobject]@{ item=$name; status=$(if ($options.$name) { 'current' } else { 'missing' }); detail='Optional Setup integration; removed on uninstall' }
+    }
+    return [pscustomobject]@{ schema=1; items=$rows; actions=$actions; build=$build; report=$report; legacy=[bool]$legacy.present; chain=[bool](Test-Path -LiteralPath $chain); owner=$owner; options=$options }
+}
+# One card per install found: where, which build (checked against the supported one), who put co-op there, and what Setup can do. Co-op installs and
+# the supported Steam build come first in the choice: the one with co-op, else the first supported build, else the first.
+function Get-CoopInstallCards($package, $dirs = @(Find-AllGames)) {
+    $cards = @(); $selected = $null
+    foreach ($dir in $dirs) {
+        $snapshot = Get-WitnessInstallStatus $dir $package
+        $hasCoop = $snapshot.owner -ne 'none' -or (Test-WitnessProxy (Join-Path $dir 'dsound.dll'))
+        $report = Get-WitnessBuildReport $dir
+        $card = [pscustomobject]@{ path=$dir; build=$snapshot.build; supported=($snapshot.build -eq 'current'); store=$report.store; build_id=$report.buildId; state=$snapshot; has_coop=$hasCoop; selected=$false }
+        $cards += $card
+        if (-not $selected -and $hasCoop) { $selected = $card }
+    }
+    if (-not $selected) { $selected = $cards | Where-Object { $_.supported } | Select-Object -First 1 }
+    if (-not $selected) { $selected = $cards | Select-Object -First 1 }
+    if ($selected) { $selected.selected = $true }
+    return $cards
 }
