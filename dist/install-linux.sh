@@ -245,7 +245,8 @@ $legacy_block"
     for rel in $MANAGED; do install_file "$game/$rel" "$here/$rel"; done
     proton_install
     say ""
-    say "Done. Play The Witness from Steam as usual: co-op starts from the launcher (witness_launcher.exe); see the README for Proton."
+    say "Done. For co-op start the launcher (witness_launcher.exe) in the game's Proton prefix, as the README describes"
+    say "(a non-Steam game with the same Proton). The Witness started from Steam as usual loads the mod alone."
     say "Proton is untested for this mod. The README says what to expect and how to report what you see."
 }
 
