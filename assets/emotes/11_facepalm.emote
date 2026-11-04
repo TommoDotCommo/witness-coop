@@ -6,7 +6,7 @@ drag 0.045
 touch hand.R head 0.03 0.7 2.95       # on the face, then sliding off it
 key 0.00 rest
 key 0.35 head=-12,0,0 neck=-4 chest=-3
-key 0.75 hit arm.R=78,-12,22 fore.R=89 hand.R=-10,0,0 head=8,0,-4 neck=4
+key 0.75 hit arm.R=81,-6,25 fore.R=82 hand.R=-10,0,0 head=8,0,-4 neck=4
 key 1.00 head=15,0,-6 neck=6 chest=3 spine=2 hips=0,-2,-1 pelvis=0,0,3
 key 1.40 head=14,-6,-7 hand.R=-10,0,4
 key 1.80 head=14,5,-4 hand.R=-10,0,-4

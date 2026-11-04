@@ -200,9 +200,9 @@ for s, x in (('L', 1), ('R', -1)):
         part(box('bracer_buckle.' + s, (0.314*x, -0.005, z), (0.008, 0.025, 0.023), 'brass', 0.002), ['forearm.' + s])
 # -- legs: breeches, a knee strap, tall boots with a turned cuff, a sole and a heel
 for s, x in (('L', 1), ('R', -1)):
-    part(loft('trousers.' + s, [(0.46, 0.10 * x, 0, 0.082, 0.084), (0.58, 0.10 * x, 0, 0.092, 0.094), (0.72, 0.10 * x, 0, 0.106, 0.108), (0.88, 0.10 * x, 0, 0.116, 0.118), (0.98, 0.10 * x, 0, 0.122, 0.122)], 'trousers', 14, folds=0.05), ['pelvis', 'thigh.' + s, 'shin.' + s])
+    part(loft('trousers.' + s, [(0.46, 0.10 * x, 0, 0.084, 0.086), (0.525, 0.10 * x, 0, 0.100, 0.102), (0.60, 0.10 * x, 0, 0.097, 0.099), (0.72, 0.10 * x, 0, 0.106, 0.108), (0.88, 0.10 * x, 0, 0.116, 0.118), (0.98, 0.10 * x, 0, 0.122, 0.122)], 'trousers', 18, folds=0.06), ['pelvis', 'thigh.' + s, 'shin.' + s])      # bloused over the boot tops
     part(loft('knee_strap.' + s, [(0.50, 0.10 * x, 0, 0.078, 0.080), (0.535, 0.10 * x, 0, 0.078, 0.080)], 'strap', 12, 0), ['thigh.' + s, 'shin.' + s])
-    part(loft('boot_shaft.' + s, [(0.07, 0.10 * x, 0.004, 0.066, 0.075), (0.16, 0.10 * x, 0.004, 0.064, 0.072), (0.30, 0.10 * x, 0.004, 0.072, 0.078), (0.42, 0.10 * x, 0.004, 0.082, 0.084), (0.470, 0.10 * x, 0.004, 0.088, 0.088)], 'boots', 14), ['shin.' + s, 'foot.' + s])
+    part(loft('boot_shaft.' + s, [(0.07, 0.10 * x, 0.004, 0.066, 0.075), (0.13, 0.10 * x, 0.004, 0.057, 0.065), (0.22, 0.10 * x, 0.006, 0.066, 0.072), (0.32, 0.10 * x, 0.008, 0.077, 0.081), (0.42, 0.10 * x, 0.004, 0.082, 0.084), (0.470, 0.10 * x, 0.004, 0.088, 0.088)], 'boots', 18), ['shin.' + s, 'foot.' + s])      # a shaped boot: a slim ankle, a full calf
     part(loft('boot_cuff.' + s, [(0.44, 0.10 * x, 0.004, 0.093, 0.093), (0.505, 0.10 * x, 0.004, 0.106, 0.106)], 'boots_cuff', 14, 0), ['shin.' + s])
     part(ellipsoid('boot_toe.' + s, (0.10 * x, -0.056, 0.064), (0.080, 0.174, 0.071), 'boots', 14, 9), ['foot.' + s])
     part(box('boot_sole.' + s, (0.10 * x, -0.066, 0.020), (0.140, 0.300, 0.034), 'sole', 0.016), ['foot.' + s])
@@ -263,14 +263,16 @@ head_field = sdf.intersect(headmod.skull_and_face(), sdf.plane((0, 0, -1), 1.425
 head_surface = field_part('head', head_field, (-0.13, -0.16, 1.40), (0.13, 0.13, 1.84), HEAD_CELL, 'skin', 16000, 2, True)
 mz = FACE['mouth_z']
 paint(head_surface, headmod.lip_mask, 'lips')
-paint(head_surface, headmod.mouth_mask, 'mouth')      # the walls of the mouth's line (its own field, so nothing beside it)
+pass      # (the mouth's line is painted on the skin along the smile: paint_materials)
 # the lower lip and the skin under it follow the lip bone (the proxy drops it while the player speaks): a smooth falloff from the lip to the chin and the corners
 B['lip_lower'] = (V(0, -0.104, mz - 0.004), V(0, -0.104, mz - 0.014), 'head')
 def head_weights(i, co=None):
     p = head_surface.data.vertices[i].co
+    if 'HEAD_SCALE' in globals() and HEAD_SCALE != 1.0: p = HEAD_PIVOT + (p - HEAD_PIVOT) / HEAD_SCALE      # (weights are designed on the sculpt's own scale)
     dx = abs(p.x) / (FACE['mouth_w'] * 0.62); dz = (mz - 0.0006 - p.z) / 0.016
     lip = 0.0
-    if p.y < -0.085 and p.z < mz - 0.0006 and dx < 1 and dz < 1: lip = (1 - dx * dx) ** 2 * (1 - max(0.0, dz) ** 2) ** 2
+    if p.y < -0.085 and p.z < mz - 0.0006 and dx < 1 and dz < 1:      # the lower lip moves whole; the skin below it and toward the corners follows less and less
+        a_ = max(0.0, (dx - 0.68) / 0.32); b_ = max(0.0, (dz - 0.42) / 0.58); lip = (1 - a_ * a_) ** 2 * (1 - b_ * b_) ** 2
     raw = {b: math.exp(-(seg_dist(p, B[b][0], B[b][1]) / SIGMA) ** 2) * mult for b, mult in (('head', 1.0), ('neck', 0.7), ('chest', 0.6))}
     tot = sum(raw.values()) or 1.0; ws = {b: w / tot * (1 - lip) for b, w in raw.items()}
     if p.z > 1.58: ws = {'head': 1 - lip}      # the face itself is rigid on the skull
@@ -332,6 +334,18 @@ for s, x in (('L', 1), ('R', -1)):
 # -- hair: a sculpted crop (head.hair): a shell with a designed hairline and soft clumps along its edge, clear of the ears, thin under the hat
 hair_ob = field_part('hair', headmod.hair(headmod.skull_and_face()), (-0.13, -0.16, 1.52), (0.13, 0.15, 1.84), HEAD_CELL * 1.2, 'hair', 7000, 1, True)
 part(hair_ob, ['head'])
+# Storybook proportions: the whole head (skull, face, eyes, lids, brows, hair, their bones and the face's paint) is HEAD_SCALE times the
+# sculpt, about the base of the neck. The hat is fitted to it below; the proxy's eye-height fit absorbs the rest.
+HEAD_SCALE = 1.0 if '--life-size-head' in args else 1.08; HEAD_PIVOT = V(0, 0.012, 1.50)
+def head_scaled(p): return HEAD_PIVOT + (Vector(p) - HEAD_PIVOT) * HEAD_SCALE
+if HEAD_SCALE != 1.0:
+    hx = Matrix.Translation(HEAD_PIVOT) @ Matrix.Scale(HEAD_SCALE, 4) @ Matrix.Translation(-HEAD_PIVOT)
+    for o, _, _ in parts:
+        if o.name.split('.')[0] in ('head', 'eye_white', 'iris_ring', 'iris', 'pupil', 'eye_glint', 'lid', 'brow', 'hair'): o.data.transform(hx)
+    for bn in ('eye.L', 'eye.R', 'lid.L', 'lid.R', 'brow.L', 'brow.R', 'lip_lower'):
+        h, t, par = B[bn]; B[bn] = (head_scaled(h), head_scaled(t), par)
+    head_bvh = BVHTree.FromObject(head_surface, bpy.context.evaluated_depsgraph_get())
+    print('REPORT head scaled %.2f about the neck' % HEAD_SCALE)
 HAT0 = len(parts)
 # -- weathered felt hat, with an asymmetric brim, a pinched crown and a feather vane
 # The opening is an oval the size of the head at the brow line (plus the hair), so the hat sits on the head instead of above it
@@ -366,6 +380,8 @@ def head_reach(direction, z):
     d = V(direction[0], direction[1], 0).normalized(); hit = head_bvh.ray_cast(V(0, 0.006, z) + d * 0.3, -d)[0]
     return (hit - V(0, 0.006, z)).length if hit is not None else None
 z_open = 1.768 - HAT_DROP
+hat_rise = (HEAD_SCALE - 1.0) * (z_open - HEAD_PIVOT.z); z_open += hat_rise      # the hat rides on the scaled head
+for o, _, _ in parts[HAT0:]: o.data.transform(Matrix.Translation((0, 0, hat_rise)))
 want = [head_reach(d, z_open) for d in ((1, 0), (-1, 0), (0, 1), (0, -1))]
 if '--hat-mutant' not in args and None not in want:
     hsx = (max(want[0], want[1]) + 0.0105) / HAT_OPEN[0]; hsy = (max(want[2], want[3]) + 0.0105) / HAT_OPEN[1]
@@ -623,6 +639,7 @@ def paint_materials():
             mr.interpolation_type = 'SMOOTHSTEP'; nt.links.new(sep.outputs['Z'], mr.inputs['Value']); blend_to(colour, mr.outputs[0], strength)
         def spot(centre, radius, colour, strength, squash=(1, 1, 1)):      # a soft round patch of colour in object space (a blush, a nose tip)
             nonlocal out
+            if name in ('skin', 'lips', 'hair') and centre[2] > 1.45: centre = tuple(head_scaled(centre)); radius *= HEAD_SCALE; squash = squash      # (the face's paint follows the head's scale)
             vm = node('ShaderNodeVectorMath', (-1000, -700), operation='SUBTRACT'); vm.inputs[1].default_value = centre; nt.links.new(tc.outputs['Object'], vm.inputs[0])
             sc = node('ShaderNodeVectorMath', (-900, -700), operation='MULTIPLY'); sc.inputs[1].default_value = squash; nt.links.new(vm.outputs[0], sc.inputs[0])
             ln = node('ShaderNodeVectorMath', (-800, -700), operation='LENGTH'); nt.links.new(sc.outputs[0], ln.inputs[0])
@@ -663,6 +680,10 @@ def paint_materials():
             for sx in (1, -1): spot((0.0365*sx, -0.088, 1.683), 0.020, (0.30, 0.16, 0.14), 0.16, (1.2, 1, 0.6))      # the lids: a little darker and warmer than the cheek
             spot((0, -0.075, 1.575), 0.070, (0.075, 0.045, 0.028), 0.16, (1.25, 0.65, 0.80))      # the jaw's shadow
             spot((0, -0.111, 1.611), 0.010, (0.065, 0.038, 0.024), 0.16, (1, 0.25, 2.4))      # the philtrum
+            mw_ = FACE['mouth_w'] * 0.5
+            for i in range(17):      # the mouth's line: soft dark red along the smile, fading at the corners
+                u = -1 + 2 * i / 16; x = u * mw_ * 0.96; z = FACE['mouth_z'] + FACE['smile'] * u * u
+                spot((x, -0.112 + 0.012 * u * u, z), 0.0016, (0.28, 0.09, 0.08), 0.55 * (1 - 0.6 * u ** 4), (1, 0.4, 1.6))
             if STYLE == 'witness' and '--freckles' in args:      # (off: at the atlas's density a freckle is a texel or two and reads as dirt)      # freckles over the nose and the cheeks: someone who lives outdoors
                 import random; rnd = random.Random(7)
                 for _ in range(34):
@@ -691,6 +712,17 @@ def bake_texture(body, size, outdir):
     if not FLAT_MATERIALS: paint_materials()
     bpy.ops.object.select_all(action='DESELECT'); body.select_set(True); bpy.context.view_layer.objects.active = body
     bpy.ops.object.mode_set(mode='EDIT'); bpy.ops.mesh.select_all(action='SELECT'); bpy.ops.uv.smart_project(angle_limit=math.radians(70), island_margin=0.0065); bpy.ops.object.mode_set(mode='OBJECT')      # (the island margin is wider than the bake's 10 px: no colour bleeds between islands)
+    # The face and the hands are where a player looks: their islands get 2.2 times the texel density of the clothes, then the atlas is repacked.
+    if '--even-texels' not in args:
+        names = [m_.name for m_ in body.data.materials]; FOCUS = {'skin', 'lips', 'mouth', 'mouth_dark', 'lash', 'white', 'iris', 'iris_ring', 'eye', 'hair', 'nail'}
+        uvl = body.data.uv_layers.active.data; k = 0
+        for poly in body.data.polygons:
+            if names[poly.material_index] in FOCUS:
+                for li in poly.loop_indices: uvl[li].uv = uvl[li].uv * 2.2
+                k += 1
+        scene.tool_settings.use_uv_select_sync = True
+        bpy.ops.object.mode_set(mode='EDIT'); bpy.ops.mesh.select_all(action='SELECT'); bpy.ops.uv.pack_islands(rotate=True, scale=True, margin=0.0065); bpy.ops.object.mode_set(mode='OBJECT')
+        print('REPORT face and hands at 2.2x texel density: %d faces' % k)
     scene.render.engine = 'CYCLES'; scene.cycles.device = 'CPU'; scene.cycles.samples = 24; scene.cycles.use_denoising = False
     if scene.world is None: scene.world = bpy.data.worlds.new('w')
     scene.world.light_settings.distance = 0.09

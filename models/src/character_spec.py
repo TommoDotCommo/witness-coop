@@ -33,7 +33,7 @@ FACE = dict(
 
 # Targets the gate holds the built model to: (low, high). Ratios are of head height (chin to crown) unless named.
 TARGETS = dict(
-    heads_tall=(6.4, 7.1),               # standing height / head height: stylized (life is about 7.5)
+    heads_tall=(6.0, 6.9),               # standing height / head height: storybook (the owner's choice, 2026-11-05; life is about 7.5)
     eye_line=(0.45, 0.53),               # eye line above the chin / head height
     aperture_aspect=(0.36, 0.60),        # visible eye, height / width, seen from the front: open and readable (the old squint: 0.26)
     eye_spacing=(0.95, 1.40),            # gap between the two openings / one opening's width (about one eye apart)

@@ -14,7 +14,7 @@ stays (a traveller with a coat, scarf, hat and handmade gear); the drawing chang
 
 | Rule | Why |
 |---|---|
-| About 6.7 heads tall, not 7.5 | A slightly large head reads as designed and carries expression at a distance. |
+| About 6.4 heads tall (storybook), not 7.5 | A slightly large head reads as designed and carries expression at a distance. |
 | Real eyeballs in sockets, under lids with thickness | Eyes painted on the face's surface read as dead. Depth, a lid rim and a catchlight read as alive. |
 | An open almond: visible eye height about half its width | The old 0.26 aspect read as a squint. The gate holds 0.36 to 0.60. |
 | The upper lid touches the top of the iris | White above the iris reads as alarm. White all round reads as a stare. |
@@ -81,7 +81,7 @@ measures again. It measures proportions, the face's mirror symmetry (point to su
 
 | Target | Range | The old model |
 |---|---|---|
-| heads tall | 6.4 – 7.1 | 7.55 (miss) |
+| heads tall | 6.0 – 6.9 | 7.55 (miss) |
 | eye line above the chin / head | 0.45 – 0.53 | 0.52 |
 | visible eye height / width | 0.36 – 0.60 | 0.26 (miss) |
 | gap between the eyes / eye width | 0.95 – 1.40 | 1.53 (miss) |
@@ -109,7 +109,7 @@ where they read: the face, the lids, the hands, the silhouette.
 
 - The body still has the first version's proportions and construction (a long torso, tube limbs, a boxy coat): the stylized head
   sits on a realistic body. The next pass resizes the figure as a whole and sculpts the coat, sleeves and boots.
-- The face is correct but not yet distinctive; small dark specks remain at the eye corners, the mouth line and the neck.
+- In the game the figure renders a little darker than the island around it: match the proxy's shading to the game's light.
 
 - The coat, sleeves, trousers and boots are still the lofted shapes of the first version: tubes without folds or weight.
   They are the next pass, with the same method (fields for the soft forms, folds from the joints).

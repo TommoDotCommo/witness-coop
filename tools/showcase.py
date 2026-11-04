@@ -19,7 +19,8 @@ def prepare(c, config):
     gs.replace_copy(Path(ROOT) / 'proxy/AnselSDK64.dll', d / 'AnselSDK64.dll')
     if (Path(ROOT) / 'launcher/build/witness_launcher.exe').exists(): gs.replace_copy(Path(ROOT) / 'launcher/build/witness_launcher.exe', d / 'witness_launcher.exe')
     models = d / 'witness_models'; models.mkdir(exist_ok=True)
-    for f in models.iterdir(): f.unlink()
+    for f in models.iterdir():
+        if f.is_file(): f.unlink()      # (witness_models/emotes/ is a folder: install.sh puts the clips there for `emotes reload`)
     for name in ('adventurer.glb', 'adventurer.glb.txt'):
         gs.replace_copy(Path(ROOT) / 'assets/models' / name, models / name)
     config += 'name=Adventurer %d\nforce_active=1\ncap_fps=30\ndev_menu=1\nvoice_mute_output=1\n' % c.id
