@@ -66,6 +66,15 @@ int main() {
     check(h.Key(guide::Help, true) && h.Open(), "F1 down opens guide");
     h.Key(guide::Help, true); check(h.Open(), "autorepeat keeps guide open");
     h.Key(guide::Help, false); check(!h.Open(), "release hides guide");
+    {   // a real hold: one press, then autorepeat presses (30 a second) for 3 s, then the release: the card changes state exactly twice and is open on every event in between
+        guide::Hold k; int changes = 0, openEvents = 0, events = 0; bool ch = false;
+        for (int i = 0; i < 90; ++i) { k.Key(guide::Help, true, &ch); changes += ch; ++events; openEvents += k.Open(); }
+        check(changes == 1 && openEvents == events, "autorepeat presses neither toggle nor re-arm the guide (1 change in 90 presses, open on all)");
+        k.Key(guide::Help, false, &ch); changes += ch; check(changes == 2 && !k.Open(), "release is the second and last change");
+        k.Key(guide::Help, false, &ch); check(!ch && !k.Open(), "a stray release changes nothing");
+        k.Key('T', true, &ch); check(!ch && !k.Open(), "other keys neither open nor change the guide");
+        k.Key(guide::Help, true, &ch); k.Reset(); k.Key(guide::Help, true, &ch); check(ch && k.Open(), "after a focus loss the key opens the guide again");
+    }
     h.Key(guide::Help, true); h.Reset(); check(!h.Open(), "focus loss hides guide");
     auto cols = guide::Wrap(guide::Content(Cfg()));
     size_t rows = 0;

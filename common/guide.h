@@ -185,13 +185,24 @@ inline void MigrateAll(Cfg& c, std::vector<std::string>* notes = nullptr) { Migr
 class Hold {
     std::atomic<bool> held{false};
 public:
-    bool Key(unsigned vk, bool down) {
+    // F1 is a hold, not a toggle: the card is open exactly while the key is down. `changed` (optional) says whether this event changed
+    // that state: the first press and the release do, the autorepeat presses while it is held (30 a second) do not, so the caller
+    // shows and hides its card on a change only and never redraws or repositions it on a repeat.
+    bool Key(unsigned vk, bool down, bool* changed = nullptr) {
         if (vk != Help) return false;
+        bool was = held.load();
 #ifdef GUIDE_MUT_TOGGLE
-        if (down) held = !held.load();
+        if (down) held = !was;
 #else
         held = down;
 #endif
+        if (changed) {
+#ifdef GUIDE_MUT_REARM
+            *changed = down || was;      // twin: every press (autorepeat too) re-arms the card
+#else
+            *changed = was != held.load();
+#endif
+        }
         return true;
     }
     void Reset() { held = false; }

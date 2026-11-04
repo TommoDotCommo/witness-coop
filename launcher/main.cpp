@@ -56,6 +56,7 @@ enum { ID_TAB = 100, ID_APPLY, ID_LAUNCH, ID_NEWGAME, ID_BROWSE, ID_GAMEDIR, ID_
 enum Kind { kCheck, kCombo, kEdit, kMulti, kSlider, kKeyBtn, kNoteK };
 struct Field { int id; ls::Section section; std::string label, key; Kind kind; std::vector<std::string> choices; std::string def, hint; const ls::Row* row; HWND h = nullptr, hLabel = nullptr, hHint = nullptr, hValue = nullptr; };
 guide::Hold g_guideHold;
+static unsigned g_guideShows, g_guidePaints;      // tests: how often the guide window was shown or moved, and painted (a held F1 must show it once and paint it once)
 HWND g_guide;
 std::vector<Field> g_fields; HWND g_main, g_tab, g_pages[ls::kTabCount], g_status, g_hints; int g_npages = ls::kTabCount;
 HWND g_tiles, g_lobbyPanel, g_secList, g_secPanel[ls::kSectionCount]; int g_section;
@@ -1011,6 +1012,7 @@ void WriteStat() {      // tests: what the lobby is, as text lines, rewritten ev
     { wup::Snapshot us = g_upd.Get(); snprintf(b, sizeof b, "version mod %s host %s\nupdate state %d tag %s busy %d auto %d\n", MOD_VERSION, g_sess.HostVersion().empty() ? "-" : g_sess.HostVersion().c_str(), (int)us.state, us.tag.empty() ? "-" : us.tag.c_str(), g_upd.Busy() ? 1 : 0, us.autoCheck ? 1 : 0); o += b; }
     { wchar_t sb[400] = {}; GetWindowTextW(LB(ID_LB_STATUS), sb, 400); o += "lobbystatus " + U(sb) + "\n"; }
     o += std::string("guide ") + (g_guideHold.Open() ? "1\n" : "0\n");
+    snprintf(b, sizeof b, "guideshows %u\nguidepaints %u\n", g_guideShows, g_guidePaints); o += b;
     snprintf(b, sizeof b, "invite %s\n", g_sess.Invite().c_str()); o += b;
     { std::string code, msg; bool ok = g_sess.Active() && g_sess.IsHost() && HostInvite(&code, &msg); o += "hostinvite_code " + (ok ? code : std::string("-")) + "\n" + "hostinvite_text " + (ok ? msg : std::string("-")) + "\n";      // (not "invite...": older test parsers read every line that starts so)
       char hd[2048]; hd[0] = 0; if (g_sess.Active() && g_sess.IsHost()) nf_host_dump(hd, sizeof hd); o += hd;
@@ -1038,7 +1040,8 @@ void WriteStat() {      // tests: what the lobby is, as text lines, rewritten ev
 LRESULT CALLBACK GuideProc(HWND h, UINT m, WPARAM w, LPARAM l) {
     if (m == WM_ERASEBKGND) return 1;
     if (m != WM_PAINT) return DefWindowProcW(h, m, w, l);
-    PAINTSTRUCT ps; HDC dc = BeginPaint(h, &ps); RECT rc; GetClientRect(h, &rc);
+    PAINTSTRUCT ps; HDC screen = BeginPaint(h, &ps); RECT rc; GetClientRect(h, &rc); ++g_guidePaints;
+    HDC dc = CreateCompatibleDC(screen); HBITMAP buffer = CreateCompatibleBitmap(screen, rc.right, rc.bottom); HGDIOBJ oldBuffer = SelectObject(dc, buffer);      // drawn off screen and copied once, so a repaint never shows the bare background
     FillRect(dc, &rc, th::BgBrush()); SetBkMode(dc, TRANSPARENT);
     auto cols = guide::Wrap(guide::Content(GuideSettings(true)));
     auto layout = guide::Fit(float(rc.right), float(rc.bottom), cols);
@@ -1059,7 +1062,8 @@ LRESULT CALLBACK GuideProc(HWND h, UINT m, WPARAM w, LPARAM l) {
             std::wstring text = W(line); TextOutW(dc, 16 + c * cw, y, text.c_str(), (int)text.size()); y += fh;
         }
     }
-    SelectObject(dc, old); DeleteObject(font); EndPaint(h, &ps); return 0;
+    SelectObject(dc, old); DeleteObject(font);
+    BitBlt(screen, 0, 0, rc.right, rc.bottom, dc, 0, 0, SRCCOPY); SelectObject(dc, oldBuffer); DeleteObject(buffer); DeleteDC(dc); EndPaint(h, &ps); return 0;
 }
 void ShowGuide(bool open) {
     if (!open) { ShowWindow(g_guide, SW_HIDE); return; }
@@ -1078,7 +1082,7 @@ void ShowGuide(bool open) {
     int height = std::min(800, int(mi.rcWork.bottom - mi.rcWork.top));
     int x = std::max(int(mi.rcWork.left), std::min(int(mi.rcWork.right) - width, int(parent.left + parent.right - width) / 2));
     int y = std::max(int(mi.rcWork.top), std::min(int(mi.rcWork.bottom) - height, int(parent.top + parent.bottom - height) / 2));
-    SetWindowPos(g_guide, HWND_TOP, x, y, width, height, SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    SetWindowPos(g_guide, HWND_TOP, x, y, width, height, SWP_NOACTIVATE | SWP_SHOWWINDOW); ++g_guideShows;
     InvalidateRect(g_guide, nullptr, FALSE);
 }
 
@@ -1395,11 +1399,16 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, LPWSTR cmdline, int show) {
         const std::pair<int, const char*> lb[] = {{ID_LB_INVITE, "lobby:invite"}, {ID_LB_COPY, "lobby:copy"}, {ID_LB_LEAVE, "lobby:leave"}, {ID_LB_READY, "lobby:ready"}, {ID_LB_START, "lobby:start"}, {ID_LB_MEMBERS, "lobby:members"}, {ID_LB_LOG, "lobby:log"}, {ID_LB_CHAT, "lobby:chat"}, {ID_LB_SEND, "lobby:send"}, {ID_LB_MODE, "lobby:mode"}, {ID_LB_GOAL, "lobby:goal"}, {ID_LB_NEWGAME, "lobby:newgame"}, {ID_LB_PARTS, "lobby:parts"}, {ID_LB_STATUS, "lobby:status"}, {ID_LB_MUTE, "lobby:mute"}, {ID_LB_DEAF, "lobby:deaf"}, {ID_LB_RESULT, "lobby:result"}, {ID_LB_STEAM_INVITE, "lobby:steaminvite"}, {ID_LB_STEAM_FRIENDS, "lobby:steamfriends"}, {ID_LB_STEAM_SEND, "lobby:steamsend"}};
         for (const auto& k : lb) t += std::to_string(k.first) + " " + k.second + "\n";
         WriteFile8(dumpTo, t); }
-    MSG msg; while (GetMessageW(&msg, nullptr, 0, 0) > 0) {
+    MSG msg; bool guideChanged = false; while (GetMessageW(&msg, nullptr, 0, 0) > 0) {
         if (CaptureMessage(msg)) continue;
         if ((msg.message == WM_KEYDOWN || msg.message == WM_SYSKEYDOWN || msg.message == WM_KEYUP || msg.message == WM_SYSKEYUP) &&
-            g_guideHold.Key((unsigned)msg.wParam, msg.message == WM_KEYDOWN || msg.message == WM_SYSKEYDOWN)) {
-            ShowGuide(g_guideHold.Open()); continue;
+            g_guideHold.Key((unsigned)msg.wParam, msg.message == WM_KEYDOWN || msg.message == WM_SYSKEYDOWN, &guideChanged)) {
+            // F1 held repeats WM_KEYDOWN about 30 times a second: the card is shown and hidden when the hold starts and ends, not re-shown and repainted on every repeat (that flickered)
+#ifdef WL_MUT_GUIDE_REARM
+            guideChanged = true;
+#endif
+            if (guideChanged) ShowGuide(g_guideHold.Open());
+            continue;
         }
         if (msg.message == WM_LBUTTONDOWN || msg.message == WM_MOUSEMOVE) g_padLast = false;
         if ((!g_ng || GetForegroundWindow() != g_ng) && KeyMessage(msg)) continue;
