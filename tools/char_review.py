@@ -27,7 +27,7 @@ with tempfile.TemporaryDirectory(prefix='char-review-') as tmp:
     rows = []
     for tag, glb in (('before', before), ('after', after)):
         for sheet in ('face', 'body', 'hands'):
-            subprocess.run([str(exe), glb, str(out / ('%s_%s.png' % (tag, sheet))), '--sheet', sheet, '--size', '1.2' if sheet == 'face' else '1'], check=True, stdout=subprocess.DEVNULL)
+            subprocess.run([str(exe), glb, str(out / ('%s_%s.png' % (tag, sheet))), '--sheet', sheet, '--size', '1.2' if sheet == 'face' else '1', '--light', 'island'], check=True, stdout=subprocess.DEVNULL)
         d, r, misses = check_character.check(glb); rows.append((tag, r, misses))
 def cell(name, v):
     lo, hi = TARGETS[name]; ok = lo <= v <= hi

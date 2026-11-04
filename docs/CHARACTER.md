@@ -27,6 +27,21 @@ stays (a traveller with a coat, scarf, hat and handmade gear); the drawing chang
 | Hands slightly large, with chunky tapered fingers in a relaxed curl | Thin realistic fingers are the second most uncanny thing on a figure. |
 | The hat sits above the brows and tips back | Players look from eye height; a low brim hides the face. |
 
+## Witness flair
+
+The adventurer belongs to the island, so it borrows the island's look rather than a generic game's:
+
+- **Painted colour fields, not grain.** The default `witness` style (`--style classic` keeps the first version's grime) paints each
+  material as a broad clean field with light painted in: sunlit above, cooler in the folds below, a very broad painter's unevenness.
+  The knit of the scarf is the one texture kept, because it reads.
+- **The island's palette.** The coat is the sea's teal, the scarf the autumn trees' marigold, the hat sunlit sandstone with an
+  autumn-red band, the leather warm, and the hat's feather the pink of the cherry trees.
+- **The puzzle line as the character's sign.** A start circle, a path through a four-by-four grid and a rounded end, embroidered in
+  cream on the rucksack (seen from behind, where players see each other most) and worked as a small panel-blue tile on the satchel.
+  The motif is geometry ray-cast onto the surface it sits on (`decal()` in the generator), so it follows the leather's shape.
+- **Judged in the island's light.** `tools/char_lookdev --light island` lights the model with a warm high sun, the sky's blue from
+  above and the sandstone's bounce from below, on sky and sand; the review page uses it.
+
 ## How the organic parts are built
 
 The head (skull, face, ears, neck), the moving upper lids, the brows, the hair and the hands are **signed distance fields**
@@ -91,6 +106,10 @@ ceilings that catch an accident (250 000 vertices, 400 000 triangles, 4096 textu
 where they read: the face, the lids, the hands, the silhouette.
 
 ## What is not done yet
+
+- The body still has the first version's proportions and construction (a long torso, tube limbs, a boxy coat): the stylized head
+  sits on a realistic body. The next pass resizes the figure as a whole and sculpts the coat, sleeves and boots.
+- The face is correct but not yet distinctive; small dark specks remain at the eye corners, the mouth line and the neck.
 
 - The coat, sleeves, trousers and boots are still the lofted shapes of the first version: tubes without folds or weight.
   They are the next pass, with the same method (fields for the soft forms, folds from the joints).

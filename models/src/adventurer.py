@@ -9,6 +9,7 @@ from appearance import material_group, parse_appearance, tint_colour
 from mathutils import Vector, Matrix
 
 args = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else []
+STYLE = args[args.index('--style') + 1] if '--style' in args else 'witness'      # witness: painterly colour fields (docs/CHARACTER.md); classic: the first version's grain and grime
 TEXTURE = '--no-texture' not in args; FLAT_MATERIALS = '--flat-materials' in args; TEXSIZE = int(args[args.index('--texsize') + 1]) if '--texsize' in args else 2048
 APPEARANCE = parse_appearance(args[args.index('--appearance') + 1] if '--appearance' in args else '')
 OUT = args[0]; PREVIEW = args[args.index('--preview') + 1] if '--preview' in args else None
@@ -22,8 +23,8 @@ def srgb(h, material=None):      # '#rrggbb' -> linear rgba
     c = [int(h[i:i + 2], 16) / 255.0 for i in (1, 3, 5)]
     rgb = [(v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4) for v in c]
     return tuple(tint_colour(rgb, material, APPEARANCE) + [1.0])
-COLOURS = dict(nail='#bd967f', coat='#4a7872', coat_dark='#294b47', trousers='#8f8164', boots='#3c2b22', scarf='#bd8a35', hat='#aa9570', band='#754435', skin='#d3a180', hair='#43362c',
-               leather='#70472e', brass='#aa8a4b', mouth_dark='#6d3930', skin_dark='#ae775e', vest='#725138', shirt='#c9bda5', sole='#211914', iris='#5a4a33', iris_ring='#231d16', lash='#2a1f19', lips='#9f766a', boots_cuff='#584031', scarf_dark='#916528', white='#e2dccf', mouth='#8e5549', bedroll='#a99b7c', feather='#40544d', strap='#49301f', metal='#9c9688', eye='#17191a', thread='#a99b78', stitching='#b49a70')
+COLOURS = dict(panel='#203a57', panel_line='#f3e7c8', nail='#bd967f', coat='#2f857d', coat_dark='#1d5753', trousers='#a8946b', boots='#563826', scarf='#df9d34', hat='#cfb58a', band='#a3442e', skin='#d3a180', hair='#43362c',
+               leather='#8a5634', brass='#aa8a4b', mouth_dark='#6d3930', skin_dark='#ae775e', vest='#725138', shirt='#c9bda5', sole='#211914', iris='#5a4a33', iris_ring='#231d16', lash='#2a1f19', lips='#9f766a', boots_cuff='#584031', scarf_dark='#b8742a', white='#e2dccf', mouth='#8e5549', bedroll='#a99b7c', feather='#e48aa2', strap='#49301f', metal='#9c9688', eye='#17191a', thread='#a99b78', stitching='#b49a70')
 MATS = {}
 def mat(name):
     if name not in MATS:
@@ -409,11 +410,12 @@ for tail, rings in (('a', TAIL_A), ('b', TAIL_B)):
 part(loft('scarf_tail_a', TAIL_A, 'scarf', 16, folds=0.06), ['scarf_a.1', 'scarf_a.2', 'scarf_a.3'])
 part(loft('scarf_tail_b', TAIL_B, 'scarf_dark', 16, folds=0.05), ['scarf_b.1', 'scarf_b.2'])
 B['satchel'] = (V(-0.312, 0.040, 0.985), V(-0.312, 0.040, 0.80), 'spine')
-part(box('satchel', (-0.312, 0.040, 0.86), (0.092, 0.270, 0.230), 'leather', 0.020), ['satchel'])
+satchel = box('satchel', (-0.312, 0.040, 0.86), (0.092, 0.270, 0.230), 'leather', 0.020); part(satchel, ['satchel'])
 part(box('satchel_gusset', (-0.316, 0.040, 0.850), (0.098, 0.238, 0.196), 'strap', 0.016), ['satchel'])
 part(box('satchel_flap', (-0.315, 0.040, 0.950), (0.102, 0.282, 0.100), 'leather', 0.014), ['satchel'])
 part(box('satchel_clasp', (-0.370, 0.040, 0.915), (0.009, 0.034, 0.044), 'brass', 0.003), ['satchel'])
 part(box('satchel_clasp_inset', (-0.376, 0.040, 0.915), (0.004, 0.020, 0.027), 'strap', 0.002), ['satchel'])
+SATCHEL_MOTIF = True      # (made below, once the decal helper exists)
 from mathutils.bvhtree import BVHTree as SurfaceBVH
 strap_surfaces = [SurfaceBVH.FromObject(ob, bpy.context.evaluated_depsgraph_get()) for ob, _, _ in parts if ob.name == 'vest']
 def strap_surface(x, z):
@@ -446,12 +448,47 @@ def pack_drape(ob):
         p.y += 0.008*bulge; p.z += 0.004*math.cos(p.x*18)*math.exp(-((p.z-0.91)/0.06)**2)
         p.x *= 1+0.025*math.sin((p.z-1.06)*9)
     return ob
-part(pack_drape(box('rucksack', (0, 0.205, 1.06), (0.250, 0.115, 0.310), 'leather', 0.028, None, 1)), ['spine', 'pelvis', 'chest'])
+rucksack = pack_drape(box('rucksack', (0, 0.205, 1.06), (0.250, 0.115, 0.310), 'leather', 0.028, None, 1)); part(rucksack, ['spine', 'pelvis', 'chest'])
 part(pack_drape(box('rucksack_flap', (0, 0.212, 1.185), (0.256, 0.122, 0.095), 'strap', 0.020, None, 1)), ['spine', 'chest'])
 for x in (-0.075, 0.075):
     part(box('pack_strap', (x, 0.275, 1.065), (0.025, 0.012, 0.235), 'strap', 0.004), ['spine', 'pelvis', 'chest'])
     part(box('pack_keeper', (x, 0.283, 1.13), (0.034, 0.008, 0.030), 'brass', 0.003), ['spine', 'chest'])
     part(box('pack_keeper_inset', (x, 0.288, 1.13), (0.019, 0.005, 0.015), 'strap', 0.001), ['spine', 'chest'])
+# -- the island's sign: a puzzle line (a start circle, a path through a grid, a rounded end), embroidered in cream on the rucksack and
+# worked as a little panel on the satchel. Ribbons and discs are ray-cast onto the surface they sit on and raised off it.
+MOTIF_PATH = [(0.0, 0.0), (0.0, 0.5), (0.5, 0.5), (0.5, 0.25), (1.0, 0.25), (1.0, 1.0), (1.0, 1.12)]      # a 4 x 4 grid, unit square
+def decal(name, target, origin, u_axis, v_axis, size, width, material, bones, raise_=0.0018, path=MOTIF_PATH, start=2.3, panel=None):
+    tb = BVHTree.FromObject(target, bpy.context.evaluated_depsgraph_get()); O = V(*origin); U = V(*u_axis).normalized(); W = V(*v_axis).normalized(); Nn = U.cross(W).normalized()
+    def onto(u, v, lift):
+        p = O + U * (u * size) + W * (v * size); hit, nrm, _, _ = tb.ray_cast(p + Nn * 0.06, -Nn)
+        if hit is None: raise ValueError('%s misses its surface at %.2f %.2f' % (name, u, v))
+        return hit + nrm * lift, nrm
+    bm = bmesh.new()
+    def disc(u, v, r, lift):
+        c, n_ = onto(u, v, lift); ring = []
+        for i in range(20):
+            a = 2 * math.pi * i / 20; q, _ = onto(u + r * math.cos(a) / size, v + r * math.sin(a) / size, lift); ring.append(bm.verts.new(q))
+        mid = bm.verts.new(c)
+        for i in range(20): bm.faces.new((mid, ring[i], ring[(i + 1) % 20]))
+    def ribbon(a, b, w, lift):
+        L = math.hypot(b[0] - a[0], b[1] - a[1]) * size; n = max(2, int(L / 0.004)); du, dv = (b[0] - a[0]) / (L / size), (b[1] - a[1]) / (L / size); pu, pv = -dv, du
+        rows = []
+        for k in range(n + 1):
+            t = k / n; u, v = a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t
+            rows.append([bm.verts.new(onto(u + pu * w / size * sgn, v + pv * w / size * sgn, lift)[0]) for sgn in (-1, 1)])
+        for r0, r1 in zip(rows, rows[1:]): bm.faces.new((r0[0], r1[0], r1[1], r0[1]))
+    if panel:      # the panel behind the line: a rounded square a little larger than the grid
+        m_ = panel / size; grid = 8; rows = []
+        for j in range(grid + 1):
+            rows.append([bm.verts.new(onto(-m_ + (1 + 2 * m_) * i / grid, -m_ + (1 + 2 * m_) * j / grid, raise_ * 0.5)[0]) for i in range(grid + 1)])
+        for j in range(grid):
+            for i in range(grid): bm.faces.new((rows[j][i], rows[j][i + 1], rows[j + 1][i + 1], rows[j + 1][i]))
+        ob = finish(name + '_panel', bm, 'panel', True, 0, 0.006); part(ob, bones); bm = bmesh.new()
+    disc(path[0][0], path[0][1], width * start, raise_)
+    for a_, b_ in zip(path, path[1:]): ribbon(a_, b_, width, raise_); disc(b_[0], b_[1], width, raise_)
+    part(finish(name, bm, material, True), bones)
+decal('motif_satchel', satchel, (-0.40, 0.080, 0.790), (0, -1, 0), (0, 0, 1), 0.080, 0.0030, 'panel_line', ['satchel'], 0.0022, panel=0.012)
+decal('motif_rucksack', rucksack, (0.050, 0.30, 0.960), (-1, 0, 0), (0, 0, 1), 0.100, 0.0042, 'panel_line', ['spine', 'pelvis', 'chest'])
 part(tube('bedroll', (-0.165, 0.205, 1.305), (0.165, 0.205, 1.305), 0.058, 'bedroll', 24), ['chest', 'spine'])
 for bx in (-0.09, 0.09): part(loft('bedroll_strap', [(1.244, bx, 0.205, 0.014, 0.065), (1.366, bx, 0.205, 0.014, 0.065)], 'strap', 16, 0), ['chest', 'spine'])
 B['canteen'] = (V(0.185, 0.215, 1.125), V(0.185, 0.215, 0.94), 'spine')
@@ -580,6 +617,10 @@ def paint_materials():
             nz = node('ShaderNodeTexNoise', (-1000, 700)); nz.inputs['Detail'].default_value = 5.0; nt.links.new(mp.outputs[0], nz.inputs['Vector'])
             mu = node('ShaderNodeMath', (-600, 560), operation='MULTIPLY'); nt.links.new(mr.outputs[0], mu.inputs[0]); nt.links.new(nz.outputs['Fac'], mu.inputs[1]); ad = node('ShaderNodeMath', (-400, 560), operation='ADD'); nt.links.new(mr.outputs[0], ad.inputs[0]); nt.links.new(mu.outputs[0], ad.inputs[1])
             cl = node('ShaderNodeMath', (-300, 560), operation='MULTIPLY'); cl.inputs[1].default_value = 0.6; nt.links.new(ad.outputs[0], cl.inputs[0]); return cl.outputs[0]
+        def grad(z0, z1, colour, strength):      # a soft, clean shift toward colour from object height z0 (full) to z1 (none): painted light and shade
+            sep = node('ShaderNodeSeparateXYZ', (-1000, 900)); nt.links.new(tc.outputs['Object'], sep.inputs[0])
+            mr = node('ShaderNodeMapRange', (-800, 900)); mr.inputs['From Min'].default_value = z0; mr.inputs['From Max'].default_value = z1; mr.inputs['To Min'].default_value = 1.0; mr.inputs['To Max'].default_value = 0.0
+            mr.interpolation_type = 'SMOOTHSTEP'; nt.links.new(sep.outputs['Z'], mr.inputs['Value']); blend_to(colour, mr.outputs[0], strength)
         def spot(centre, radius, colour, strength, squash=(1, 1, 1)):      # a soft round patch of colour in object space (a blush, a nose tip)
             nonlocal out
             vm = node('ShaderNodeVectorMath', (-1000, -700), operation='SUBTRACT'); vm.inputs[1].default_value = centre; nt.links.new(tc.outputs['Object'], vm.inputs[0])
@@ -599,13 +640,23 @@ def paint_materials():
             ramp = node('ShaderNodeValToRGB', (-300, -1100)); ramp.color_ramp.elements[0].color = (1-amount, 1-amount, 1-amount, 1); nt.links.new(cross.outputs[0], ramp.inputs[0])
             mix = node('ShaderNodeMixRGB', (-100, 200), blend_type='MULTIPLY'); mix.inputs['Fac'].default_value = 1.0; nt.links.new(out, mix.inputs['Color1']); nt.links.new(ramp.outputs[0], mix.inputs['Color2']); out = mix.outputs[0]
             add_height(cross.outputs[0], bump)
-        if name in ('coat', 'coat_dark'): noise_mul(45, 0.09, (1, 1, 4), 0, 0.0, 2); noise_mul(7, 0.28, (1, 1, 1.6), 1, 1.0); weave(260, 0.07); noise_mul(22, 0.0, (1, 1, 2.5), 3, 0.2, 2); blend_to((0.02, 0.05, 0.04), z_mask(0.45, 0.85), 0.36)
+        if STYLE == 'witness' and name not in ('skin',):
+            # The island's look: large clean colour fields, light painted in (sunlit above, cooler in the folds below), almost no grain.
+            c = base; cool = tuple(max(0.0, c[k] * f) for k, f in enumerate((0.62, 0.70, 0.86))); warm = tuple(min(1.0, c[k] * f) for k, f in enumerate((1.22, 1.16, 1.04)))
+            noise_mul(2.4, 0.07, (1, 1, 1), 0, 0.0, 1)      # a painter's unevenness, very broad
+            if name in ('coat', 'coat_dark'): grad(0.55, 1.05, cool, 0.42); grad(1.48, 1.28, warm, 0.28); noise_mul(9, 0.0, (1, 1, 3), 1, 0.25, 1)
+            elif name in ('trousers', 'vest', 'shirt', 'bedroll'): grad(0.45, 0.95, cool, 0.35); noise_mul(9, 0.0, (1, 1, 1), 1, 0.2, 1)
+            elif name in ('hat', 'band'): grad(1.70, 1.80, cool, 0.30); grad(1.92, 1.82, warm, 0.25); noise_mul(8, 0.0, (1, 1, 1), 1, 0.25, 1)
+            elif name in ('boots', 'boots_cuff', 'leather', 'strap', 'sole'): grad(0.0, 0.25, cool, 0.30); noise_mul(14, 0.03, (1, 1, 1), 1, 0.45, 2)
+            elif name in ('scarf', 'scarf_dark'): grad(1.20, 1.50, cool, 0.30); weave(120, 0.05, 0.4)      # the knit stays: the one texture you can read
+            elif name == 'hair': grad(1.58, 1.72, cool, 0.35); noise_mul(40, 0.10, (1, 1, 6), 2, 0.35, 2)      # strand direction, soft
+        elif name in ('coat', 'coat_dark'): noise_mul(45, 0.09, (1, 1, 4), 0, 0.0, 2); noise_mul(7, 0.28, (1, 1, 1.6), 1, 1.0); weave(260, 0.07); noise_mul(22, 0.0, (1, 1, 2.5), 3, 0.2, 2); blend_to((0.02, 0.05, 0.04), z_mask(0.45, 0.85), 0.36)
         elif name in ('trousers', 'vest', 'bedroll', 'shirt'): noise_mul(40, 0.08, (4, 1, 1), 0, 0.0, 2); noise_mul(7, 0.24, (1, 1, 1), 1, 1.0); weave(240, 0.06); noise_mul(20, 0.0, (1, 1, 1), 3, 0.15, 2); blend_to((0.05, 0.035, 0.02), z_mask(0.50, 1.10), 0.35)
         elif name in ('hat', 'band'): noise_mul(40, 0.08, (1, 1, 1), 0, 0.0, 2); noise_mul(6, 0.24, (1, 1, 1), 1, 0.8); weave(220, 0.05); noise_mul(24, 0.0, (1, 1, 1), 3, 0.12, 2)
         elif name in ('boots', 'boots_cuff', 'leather', 'strap', 'sole'): noise_mul(60, 0.06, (1, 1, 1), 0, 0.0, 2); noise_mul(6, 0.28, (1, 1, 1), 1, 0.7); noise_mul(36, 0.0, (1, 1, 1), 3, 0.3, 2); blend_to((0.04, 0.03, 0.02), z_mask(0.0, 0.40), 0.50)
         elif name in ('scarf', 'scarf_dark'): noise_mul(45, 0.09, (1, 4, 1), 0, 0.0, 2); noise_mul(8, 0.22, (1, 1, 1), 1, 0.9); weave(180, 0.10); noise_mul(40, 0.0, (1, 4, 1), 3, 0.3, 2)
         elif name == 'skin':
-            noise_mul(30, 0.03, (1, 1, 1), 0, 0.0, 2)
+            noise_mul(30, 0.03 if STYLE != 'witness' else 0.012, (1, 1, 1), 0, 0.0, 2)
             for sx in (1, -1): spot((0.044*sx, -0.094, 1.630), 0.028, (0.66, 0.26, 0.19), 0.16)      # cheeks: warm, soft
             spot((0, -0.127, 1.630), 0.013, (0.66, 0.26, 0.19), 0.20)      # the nose tip
             for sx in (1, -1): spot((0.093*sx, 0.012, 1.664), 0.022, (0.62, 0.22, 0.16), 0.18)      # the ears (light through them)
@@ -613,7 +664,8 @@ def paint_materials():
             spot((0, -0.075, 1.575), 0.070, (0.075, 0.045, 0.028), 0.16, (1.25, 0.65, 0.80))      # the jaw's shadow
             spot((0, -0.111, 1.611), 0.010, (0.065, 0.038, 0.024), 0.16, (1, 0.25, 2.4))      # the philtrum
             for sx in (1, -1): spot((0.084*sx, -0.025, 1.630), 0.042, (0.070, 0.042, 0.026), 0.38, (0.75, 1.0, 1.4))
-            noise_mul(70, 0.035, (1, 1, 1), 2, 0.0, 2); noise_mul(16, 0.0, (1, 1, 1), 3, 0.15, 2)
+            if STYLE != 'witness': noise_mul(70, 0.035, (1, 1, 1), 2, 0.0, 2)
+            noise_mul(16, 0.0, (1, 1, 1), 3, 0.15, 2)
         elif name == 'hair': noise_mul(60, 0.18, (1, 1, 5), 0, 0.3, 3); noise_mul(12, 0.15, (1, 1, 1), 1, 0.5); noise_mul(90, 0.08, (1, 1, 8), 2, 0.0, 2); noise_mul(30, 0.0, (1, 1, 6), 3, 0.4, 2)
         else: noise_mul(30, 0.05, (1, 1, 1), 0, 0.1, 2)
         nt.links.new(out, bsdf.inputs['Base Color'])
@@ -625,10 +677,10 @@ def paint_materials():
         bsdf.inputs['Metallic'].default_value = metal
 
 # roughness and metalness per material (the material map), and how strong each one's relief is (the normal map)
-SURFACE = dict(skin=(0.62, 0.0), nail=(0.45, 0.0), lips=(0.50, 0.0), skin_dark=(0.65, 0.0), mouth=(0.45, 0.0), mouth_dark=(0.5, 0.0), hair=(0.55, 0.0), eye=(0.12, 0.0), white=(0.18, 0.0), iris=(0.14, 0.0), iris_ring=(0.2, 0.0), lash=(0.6, 0.0),
+SURFACE = dict(skin=(0.62, 0.0), nail=(0.45, 0.0), lips=(0.50, 0.0), skin_dark=(0.65, 0.0), mouth=(0.45, 0.0), mouth_dark=(0.5, 0.0), hair=(0.55, 0.0), eye=(0.12, 0.0), white=(0.18, 0.0), iris=(0.14, 0.0), iris_ring=(0.2, 0.0), lash=(0.6, 0.0), panel=(0.55, 0.0), panel_line=(0.6, 0.0),
                coat=(0.92, 0.0), coat_dark=(0.90, 0.0), vest=(0.88, 0.0), shirt=(0.80, 0.0), trousers=(0.90, 0.0), scarf=(0.95, 0.0), scarf_dark=(0.95, 0.0), hat=(0.90, 0.0), band=(0.65, 0.0), feather=(0.55, 0.0), bedroll=(0.92, 0.0), thread=(0.8, 0.0), stitching=(0.8, 0.0),
                boots=(0.42, 0.0), boots_cuff=(0.50, 0.0), sole=(0.70, 0.0), leather=(0.52, 0.0), strap=(0.55, 0.0), brass=(0.32, 1.0), metal=(0.38, 1.0))
-BUMP = dict(white=0.0, iris=0.0, iris_ring=0.0, eye=0.0, lash=0.0, coat=0.55, coat_dark=0.55, vest=0.5, shirt=0.4, trousers=0.5, scarf=0.8, scarf_dark=0.8, hat=0.45, band=0.3, boots=0.5, boots_cuff=0.5, leather=0.6, strap=0.5, sole=0.4, skin=0.05, hair=0.5, bedroll=0.5, brass=0.1, metal=0.15, nail=0.05, lips=0.05, skin_dark=0.05)
+BUMP = dict(white=0.0, iris=0.0, iris_ring=0.0, eye=0.0, lash=0.0, panel=0.1, panel_line=0.3, coat=0.55, coat_dark=0.55, vest=0.5, shirt=0.4, trousers=0.5, scarf=0.8, scarf_dark=0.8, hat=0.45, band=0.3, boots=0.5, boots_cuff=0.5, leather=0.6, strap=0.5, sole=0.4, skin=0.05, hair=0.5, bedroll=0.5, brass=0.1, metal=0.15, nail=0.05, lips=0.05, skin_dark=0.05)
 def bake_texture(body, size, outdir):
     if not FLAT_MATERIALS: paint_materials()
     bpy.ops.object.select_all(action='DESELECT'); body.select_set(True); bpy.context.view_layer.objects.active = body
@@ -700,7 +752,7 @@ def bake_texture(body, size, outdir):
     n4 = np.empty(size * size * 4, dtype=np.float32); imgs['NORMAL'].pixels.foreach_get(n4); n4 = n4.reshape(size, size, 4)
     nm = shrink(n4, 2); v = nm[:, :, :3] * 2 - 1; l = np.maximum(1e-6, np.sqrt((v * v).sum(axis=2, keepdims=True))); nm[:, :, :3] = (v / l) * 0.5 + 0.5; nm[:, :, 3] = 1
     flat = np.abs(nm[:, :, :2] - 0.5).mean(); print('REPORT normal map mean tilt %.4f (0 = flat)' % flat)
-    if flat < 0.005: raise ValueError('the normal map is flat: the bump relief was not baked')
+    if flat < (0.0015 if STYLE == 'witness' else 0.005): raise ValueError('the normal map is flat: the bump relief was not baked')      # (the painterly style is flatter on purpose)
     r4 = np.empty(size * size * 4, dtype=np.float32); imgs['ROUGHNESS'].pixels.foreach_get(r4); r4 = shrink(r4.reshape(size, size, 4), 2)
     m4 = np.empty(size * size * 4, dtype=np.float32); imgs['METAL'].pixels.foreach_get(m4); m4 = shrink(m4.reshape(size, size, 4), 2)
     orm = np.empty_like(r4); orm[:, :, 0] = shrink(np.clip(b[:, :1], 0, 1).reshape(size, size, 1).repeat(4, axis=2), 2)[:, :, 0]; orm[:, :, 1] = np.clip(r4[:, :, 0], 0, 1); orm[:, :, 2] = np.clip(m4[:, :, 0], 0, 1); orm[:, :, 3] = 1

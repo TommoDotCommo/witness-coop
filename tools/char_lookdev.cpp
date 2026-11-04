@@ -39,6 +39,7 @@ static float Lin(float s) { return s <= .04045f ? s / 12.92f : powf((s + .055f) 
 static float Srgb(float l) { l = std::max(0.f, std::min(1.f, l)); return l <= .0031308f ? l * 12.92f : 1.055f * powf(l, 1 / 2.4f) - .055f; }
 static void Norm(float* v) { float l = sqrtf(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]); if (l > 1e-12f) for (int k = 0; k < 3; ++k) v[k] /= l; }
 
+static bool g_island = false;      // --light island: the game's daylight (a warm sun, a blue sky above, sandstone bounce below)
 struct Posed { std::vector<std::array<float, 3>> P, N, T; };
 // Skin positions, normals and tangents (the bind tangents come from the UVs, per vertex).
 static Posed Pose(const Model& m, const float* mats, const std::vector<std::array<float, 3>>& bindT) {
@@ -85,6 +86,7 @@ static void Render(const Model& m, const Posed& p, const Frame& f, Tile& t, floa
     for (int y = 0; y < t.H; ++y) for (int x = 0; x < t.W; ++x) {
         size_t i = (size_t(y) * t.W + x) * 3; float a = float(y) / t.H;
         float c[3] = {.70f - .10f * a, .72f - .10f * a, .74f - .09f * a}; if (y > gy[1]) { c[0] = .52f; c[1] = .53f; c[2] = .54f; }
+        if (g_island) { c[0] = .50f + .30f * a; c[1] = .68f + .18f * a; c[2] = .90f + .02f * a; if (y > gy[1]) { c[0] = .80f; c[1] = .72f; c[2] = .58f; } }
         for (int k = 0; k < 3; ++k) t.rgb[i + k] = Lin(c[k]);
     }
     std::fill(t.depth.begin(), t.depth.end(), -1e30f);
@@ -92,7 +94,13 @@ static void Render(const Model& m, const Posed& p, const Frame& f, Tile& t, floa
     for (size_t i = 0; i < n; ++i) { screen(p.P[i].data(), S[i].data()); view(p.N[i].data(), VN[i].data()); view(p.T[i].data(), VT[i].data()); }
     // lights in view space (x right, y up, z toward the viewer): a warm key high left, a cool fill low right, a rim from behind
     float key[3] = {-.55f, .62f, .56f}, fill[3] = {.65f, -.05f, .75f}, rim[3] = {.35f, .45f, -.82f}; Norm(key); Norm(fill); Norm(rim);
-    const float keyC[3] = {1.25f, 1.12f, .98f}, fillC[3] = {.30f, .36f, .44f}, rimC[3] = {.55f, .55f, .60f}, ambC[3] = {.16f, .17f, .19f};
+    float keyC[3] = {1.25f, 1.12f, .98f}, fillC[3] = {.30f, .36f, .44f}, rimC[3] = {.55f, .55f, .60f}, ambC[3] = {.16f, .17f, .19f};
+    float bounce[3] = {0, -1, .2}, bounceC[3] = {0, 0, 0}; Norm(bounce);
+    if (g_island) {      // the sun high and warm, the sky's blue from above, the sandstone's warmth from below
+        float k2[3] = {-.45f, .78f, .45f}, f2[3] = {.1f, 1, .2f}; Norm(k2); Norm(f2); memcpy(key, k2, 12); memcpy(fill, f2, 12);
+        float kc[3] = {1.55f, 1.36f, 1.08f}, fc[3] = {.34f, .44f, .62f}, ac[3] = {.10f, .11f, .13f}, bc[3] = {.30f, .24f, .16f};
+        memcpy(keyC, kc, 12); memcpy(fillC, fc, 12); memcpy(ambC, ac, 12); memcpy(bounceC, bc, 12);
+    }
     auto sample = [](const std::vector<uint8_t>& img, int w, int h, float u, float v, float* o) {
         int x = std::max(0, std::min(w - 1, int(u * w))), y = std::max(0, std::min(h - 1, int(v * h)));
         for (int k = 0; k < 4; ++k) o[k] = img[(size_t(y) * w + x) * 4 + k] / 255.f;
@@ -128,11 +136,11 @@ static void Render(const Model& m, const Posed& p, const Frame& f, Tile& t, floa
             if (N[2] < 0) for (float& k : N) k = -k;      // a back face seen through a gap: light its other side
             float H[3] = {key[0], key[1], key[2] + 1}; Norm(H);
             float nk = std::max(0.f, N[0] * key[0] + N[1] * key[1] + N[2] * key[2]), nf = std::max(0.f, N[0] * fill[0] + N[1] * fill[1] + N[2] * fill[2]);
-            float nr = std::max(0.f, N[0] * rim[0] + N[1] * rim[1] + N[2] * rim[2]), fres = powf(1 - std::max(0.f, N[2]), 4);
+            float nr = std::max(0.f, N[0] * rim[0] + N[1] * rim[1] + N[2] * rim[2]), fres = powf(1 - std::max(0.f, N[2]), 4), nb = std::max(0.f, N[0] * bounce[0] + N[1] * bounce[1] + N[2] * bounce[2]);
             float shin = 2 / (rough * rough * rough * rough + 1e-3f) - 2, spec = powf(std::max(0.f, N[0] * H[0] + N[1] * H[1] + N[2] * H[2]), std::max(1.f, shin)) * (shin + 8) / 25.f * nk;
             float f0 = .04f + .6f * metal;
             for (int k = 0; k < 3; ++k) {
-                float diff = col[k] * (1 - metal) * (keyC[k] * nk + fillC[k] * nf + ambC[k] * ao * 1.6f);
+                float diff = col[k] * (1 - metal) * (keyC[k] * nk + fillC[k] * nf * ao + bounceC[k] * nb * ao + ambC[k] * ao * 1.6f);
                 float sp2 = (f0 + (1 - f0) * fres * .5f) * spec * keyC[k] * (metal > .5f ? col[k] * 2 : 1) * ao;
                 t.rgb[pi * 3 + k] = diff + sp2 + rimC[k] * (nr * .25f + fres * .35f) * col[k] * ao;
             }
@@ -154,6 +162,7 @@ int main(int argc, char** argv) {
         if (!strcmp(argv[i], "--sheet")) sheetKind = argv[i + 1];
         else if (!strcmp(argv[i], "--size")) size = float(atof(argv[i + 1]));
         else if (!strcmp(argv[i], "--time")) when = float(atof(argv[i + 1]));
+        else if (!strcmp(argv[i], "--light")) g_island = !strcmp(argv[i + 1], "island");
     }
     std::ifstream f(argv[1], std::ios::binary); std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(f)), {});
     Model m; std::string err; if (!LoadGlb(bytes.data(), bytes.size(), &m, &err)) { fprintf(stderr, "%s\n", err.c_str()); return 3; }
