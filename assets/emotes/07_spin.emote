@@ -6,8 +6,8 @@ duration 2.6
 drag 0.04
 key 0.00 rest
 key 0.32 turn=-28 hips=0,-4,0 chest=0,-10,0 head=0,-14,0 arm.LR=16,0,34 fore.LR=70
-key 0.70 turn=110 hips=0,-1,0 chest=-2,8,0 head=0,30,0 arm.R=30,0,128 fore.R=46 hand.R=0,0,14 arm.L=64,-40,22 fore.L=88
-key 1.10 turn=260 chest=-3,10,0 head=-2,34,0 arm.R=26,0,136 fore.R=40 arm.L=66,-42,22 fore.L=90
+key 0.70 turn=110 hips=0,-1,0 chest=-2,8,0 head=0,30,0 arm.R=30,0,128 fore.R=46 hand.R=0,0,14 arm.L=64,-38,26 fore.L=88
+key 1.10 turn=260 chest=-3,10,0 head=-2,34,0 arm.R=26,0,136 fore.R=40 arm.L=66,-40,26 fore.L=90
 key 1.50 turn=372 chest=-1,2,0 head=0,6,0 arm.R=24,0,110 fore.R=40 arm.L=40,-30,20 fore.L=70
 key 1.82 turn=360 hips=0,-2.5,0 chest=-4,0,0 head=-6,0,0 arm.R=20,0,62 arm.L=24,0,52 fore.LR=12 hand.LR=0,0,-10   # ta-da
 key 2.20 hips=0 chest=-1 head=-1 arm.LR=8,0,30 fore.LR=12 hand.LR=0

@@ -275,7 +275,7 @@ static void BindChain(const Model& m, LifeChain& c, const char* prefix, int coun
         c.length[i] = len > 0.01f ? len : 0.1f;
     }
 }
-void LifeRig::Bind(const Model& m, float lidCloseScale) {
+void LifeRig::Bind(const Model& m, float lidCloseScale, float lidRotateAngle) {
     const float fwd[3] = {0, 0, 1}, left[3] = {1, 0, 0}, up[3] = {0, 1, 0};
     head = NodeNamed(m, "head"); neck = NodeNamed(m, "neck"); chest = NodeNamed(m, "chest"); eye[0] = NodeNamed(m, "eye.L"); eye[1] = NodeNamed(m, "eye.R"); lid[0] = NodeNamed(m, "lid.L"); lid[1] = NodeNamed(m, "lid.R");
     brow[0] = NodeNamed(m, "brow.L"); brow[1] = NodeNamed(m, "brow.R"); lip = NodeNamed(m, "lip_lower");
@@ -284,6 +284,7 @@ void LifeRig::Bind(const Model& m, float lidCloseScale) {
         float best = 0; for (int k = 0; k < 3; k++) { float e3[3] = {0, 0, 0}; e3[k] = 1; float d[3]; Rot3(GP, e3, d); float l = sqrtf(d[0]*d[0] + d[1]*d[1] + d[2]*d[2]); if (l > 1e-9f && fabsf(d[1] / l) > fabsf(best)) { best = d[1] / l; lipUp = k; lipUpSign = (d[1] > 0 ? 1.0f : -1.0f) / l; } }
     }
     lidClose = lidCloseScale > 1.0f && lidCloseScale < 4.0f ? lidCloseScale : 1.0f; ok = head >= 0;
+    lidRotate = std::isfinite(lidRotateAngle) && fabsf(lidRotateAngle) > 0.05f && fabsf(lidRotateAngle) < 2.5f ? lidRotateAngle : 0.0f;
     float G[16];
     if (head >= 0) { BindGlobal(m, head, G); headYaw = ProbeAxis(G, fwd, left); headPitch = ProbeAxis(G, fwd, up); }
     if (neck >= 0) { BindGlobal(m, neck, G); neckYaw = ProbeAxis(G, fwd, left); neckPitch = ProbeAxis(G, fwd, up); }
@@ -337,7 +338,12 @@ static void ApplyLife(const Model& m, const LifeRig& rig, const LifeState& L, fl
     if (rig.chest >= 0) RotLocal(&R[rig.chest * 4], rig.chestPitch, 0.012f * L.breath);      // breathing in lifts the chest
     for (int e = 0; e < 2; e++) {
         if (rig.eye[e] >= 0) { RotLocal(&R[rig.eye[e] * 4], rig.eyeYaw[e], L.eyeYaw); RotLocal(&R[rig.eye[e] * 4], rig.eyePitch[e], L.eyePitch); }
-        if (rig.lid[e] >= 0) S[rig.lid[e] * 3 + 1] *= 1 + (rig.lidClose - 1) * L.blink;      // the lid bone stretches along its length (local Y)
+        if (rig.lid[e] >= 0 && rig.lidRotate != 0) {      // the lid turns down over the round eyeball, about the ball's centre (the bone's head)
+#ifndef WM_MUT_NO_LID_TURN
+            LifeAxis x; x.axis = 0; x.sign = 1; RotLocal(&R[rig.lid[e] * 4], x, rig.lidRotate * L.blink);
+#endif
+        }
+        else if (rig.lid[e] >= 0) S[rig.lid[e] * 3 + 1] *= 1 + (rig.lidClose - 1) * L.blink;      // the lid bone stretches along its length (local Y)
     }
     auto chain = [&](const LifeChain& c, const LifePendulum* p) { for (int i = 0; i < c.count; i++) { RotLocal(&R[c.node[i] * 4], c.swing[i], p[i].a); RotLocal(&R[c.node[i] * 4], c.sway[i], p[i].b); } };
     chain(rig.scarfA, L.scarfA); chain(rig.scarfB, L.scarfB); chain(rig.canteen, &L.canteen); chain(rig.satchel, &L.satchel);

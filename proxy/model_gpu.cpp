@@ -212,12 +212,12 @@ static bool LoadAdventurer() {
     wm::Model nm; std::string err;
     if (!LoadFile(path, &nm, &err)) { char m[240]; snprintf(m, sizeof m, "model: cannot load %s: %s", "adventurer", err.c_str()); return Fail(m); }
     g_L->model = std::move(nm);
-    float height = 1.8f, speed = 1.6f, yaw = cfg.modelYaw, runSpeed = 0, eye = wm::kCameraEye, lidClose = 1.0f; char eyeJoint[80] = "";
+    float height = 1.8f, speed = 1.6f, yaw = cfg.modelYaw, runSpeed = 0, eye = wm::kCameraEye, lidClose = 1.0f, lidRotate = 0.0f; char eyeJoint[80] = "";
     // the model's own <file>.glb.txt sets its size, walking speed and facing; witness_coop.cfg overrides it. eye_joint=<part of a joint name> sizes the model so that
     // those joints (its eyes) are at the camera's height above the feet (eye=<metres> asks for another height); run_speed=<m/s> is what the run clip was made for.
     if (FILE* sc = _wfopen((path + L".txt").c_str(), L"r")) {
         char l[200]; float v; while (fgets(l, sizeof l, sc)) { if (sscanf(l, "height=%f", &v) == 1) height = v; else if (sscanf(l, "speed=%f", &v) == 1) speed = v; else if (sscanf(l, "yaw=%f", &v) == 1) yaw += v;
-            else if (sscanf(l, "run_speed=%f", &v) == 1) runSpeed = v; else if (sscanf(l, "eye=%f", &v) == 1) eye = v; else if (sscanf(l, "lid_close=%f", &v) == 1) lidClose = v; else if (sscanf(l, "eye_joint=%79s", eyeJoint) == 1) {} }
+            else if (sscanf(l, "run_speed=%f", &v) == 1) runSpeed = v; else if (sscanf(l, "eye=%f", &v) == 1) eye = v; else if (sscanf(l, "lid_close=%f", &v) == 1) lidClose = v; else if (sscanf(l, "lid_rotate=%f", &v) == 1) lidRotate = v; else if (sscanf(l, "eye_joint=%79s", eyeJoint) == 1) {} }
         fclose(sc);
     }
     if (cfg.modelHeight > 0) height = cfg.modelHeight; if (cfg.modelStride > 0) speed = cfg.modelStride;
@@ -228,7 +228,7 @@ static bool LoadAdventurer() {
     g_L->height = (g_L->model.bmax[1] - g_L->model.bmin[1]) * g_L->fit.scale;
     if (eyeJoint[0]) { char m[200]; snprintf(m, sizeof m, "model: eyes (%s) %s: %.3f m above the feet, camera %.3f m, model %.3f m high", eyeJoint, eyeAt > wm::kNoEye * 0.5f ? "found" : "NOT found", eyeAt > wm::kNoEye * 0.5f ? (eyeAt - g_L->model.bmin[1]) * g_L->fit.scale : -1.0f, wm::kCameraEye, g_L->height); Log(m); }
     wm::GaitCfg gc; gc.refSpeed = speed; gc.runRef = runSpeed; if (cfg.noModelGait) gc.idleBelow = 1e9f; g_L->gait = gc;
-    g_L->rig.Bind(g_L->model, lidClose);
+    g_L->rig.Bind(g_L->model, lidClose, lidRotate);
     { char m[240]; snprintf(m, sizeof m, "model: life rig %s: lids %s (close %.2f), eyes %s, scarf chain %d+%d, gear %d+%d, maps normal %dx%d material %dx%d", g_L->rig.ok ? "bound" : "NOT bound (no head)", g_L->rig.lid[0] >= 0 ? "found" : "none", g_L->rig.lidClose, g_L->rig.eye[0] >= 0 ? "found" : "none", g_L->rig.scarfA.count, g_L->rig.scarfB.count, g_L->rig.canteen.count, g_L->rig.satchel.count, g_L->model.nrmW, g_L->model.nrmH, g_L->model.mrW, g_L->model.mrH); Log(m); }
     if (std::none_of(g_L->model.verts.begin(), g_L->model.verts.end(), [](const wm::Vertex& v) { return v.appearanceGroup > 0; }))
         Log("model: appearance regions absent; regenerate the bundled adventurer to enable palettes");

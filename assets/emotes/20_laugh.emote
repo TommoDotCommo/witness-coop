@@ -20,6 +20,6 @@ key 2.02 chest=13 head=13
 key 2.40 pelvis=2 spine=2 chest=-2 head=-6 hips=0,-1,-1 arm.R=40,-20,20 fore.R=110 arm.L=16,-30,6 fore.L=60
 key 2.56 chest=-5 head=-9
 key 2.72 chest=-2 head=-5
-key 3.10 chest=0 head=0 spine=0 pelvis=0 hips=0 arm.R=62,-30,26 fore.R=126 hand.R=-10       # wipes an eye
+key 3.10 chest=0 head=0 spine=0 pelvis=0 hips=0 arm.R=60,-30,27 fore.R=118 hand.R=-10       # wipes an eye
 key 3.50 arm.R=20,-10,10 fore.R=50 hand.R=0 arm.L=6,0,8 fore.L=20
 key 3.95 rest

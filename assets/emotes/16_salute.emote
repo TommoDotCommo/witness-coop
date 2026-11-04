@@ -7,9 +7,9 @@ stiffness 1.4
 touch hand.R head 0.03 0.6 2.3
 key 0.00 rest
 key 0.22 chest=-3 head=-3 arm.R=8,10,20 fore.R=40
-key 0.48 hit arm.R=23,39,89 fore.R=104 hand.R=0,0,-8 chest=-4 head=-4
-key 0.70 arm.R=23,39,88 fore.R=105
-key 1.60 arm.R=24,40,89 fore.R=104 head=-5
-key 2.30 arm.R=23,39,89 fore.R=104 head=-4
+key 0.48 hit arm.R=25,44,98 fore.R=95 hand.R=0,0,-8 chest=-4 head=-4
+key 0.70 arm.R=25,44,97 fore.R=96
+key 1.60 arm.R=26,45,98 fore.R=95 head=-5
+key 2.30 arm.R=25,44,98 fore.R=95 head=-4
 key 2.52 hit arm.R=6,10,10 fore.R=30 hand.R=0 chest=-2 head=-2
 key 3.18 rest

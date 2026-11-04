@@ -1,0 +1,38 @@
+<title>Adventurer Model Review</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400&display=swap">
+<style>
+/* Layout: a review sheet. The verdict and the gate's table first, then each look-dev sheet as a before/after pair. */
+:root { --bg: #e6ebea; --panel: #f4f7f6; --fg: #17201f; --muted: #56625f; --line: #c3cdca; --good: #2f7d4a; --bad: #b23a2c; --accent: #23675f;
+  --display: "Barlow Condensed", "Arial Narrow", sans-serif; --body: "IBM Plex Sans", system-ui, sans-serif; --mono: "IBM Plex Mono", ui-monospace, monospace; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #111716; --panel: #19211f; --fg: #e3ebe8; --muted: #93a29e; --line: #2c3835; --good: #6cc489; --bad: #ef7a6a; --accent: #5fb3a7; color-scheme: dark } }
+:root[data-theme="dark"] { --bg: #111716; --panel: #19211f; --fg: #e3ebe8; --muted: #93a29e; --line: #2c3835; --good: #6cc489; --bad: #ef7a6a; --accent: #5fb3a7; color-scheme: dark }
+* { box-sizing: border-box }
+body { background: var(--bg); color: var(--fg); font: 15px/1.5 var(--body); padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 24px 48px }
+main { max-width: 1240px; margin: 0 auto; display: flex; flex-direction: column; gap: 28px }
+h1 { font: 700 clamp(30px, 5vw, 46px)/1 var(--display); margin: 0; text-wrap: balance }
+h2 { font: 600 24px/1.1 var(--display); margin: 0; letter-spacing: .02em }
+p { margin: 0; max-width: 70ch; color: var(--muted) }
+.verdict { font: 600 20px var(--display); color: var(--accent) }
+.wrap { overflow-x: auto }
+table { border-collapse: collapse; font-size: 14px; min-width: 520px }
+th, td { text-align: left; padding: 5px 14px; border-bottom: 1px solid var(--line) }
+th { font: 600 13px var(--display); letter-spacing: .08em; text-transform: uppercase; color: var(--muted) }
+td.ok, td.miss { font-family: var(--mono); font-variant-numeric: tabular-nums } td.ok { color: var(--good) } td.miss { color: var(--bad); font-weight: 500 }
+section { display: flex; flex-direction: column; gap: 10px }
+.pair { display: grid; grid-template-columns: 1fr; gap: 10px }
+figure { margin: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 8px }
+figure img { width: 100%; height: auto; display: block; border-radius: 3px }
+figcaption { font: 600 13px var(--display); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); padding: 4px 2px 0 }
+</style>
+<main>
+  <header style="display:flex;flex-direction:column;gap:10px">
+    <h1>Adventurer Model Review</h1>
+    <p>The bundled character before and after the stylized rebuild, shaded as a player sees it (smooth skinned normals, the normal and material maps, key, fill and rim light), and measured by the character gate against models/src/character_spec.py.</p>
+    <div class="verdict"><!--VERDICT--></div>
+  </header>
+  <section><h2>The gate</h2><div class="wrap"><table><!--TABLE--></table></div></section>
+  <section><h2>Face</h2><div class="pair"><figure><img src="before_face.png" alt="The old face from five angles"><figcaption>Before</figcaption></figure><figure><img src="after_face.png" alt="The rebuilt face from five angles"><figcaption>After</figcaption></figure></div></section>
+  <section><h2>Turntable</h2><div class="pair"><figure><img src="before_body.png" alt="The old model from eight angles"><figcaption>Before</figcaption></figure><figure><img src="after_body.png" alt="The rebuilt model from eight angles"><figcaption>After</figcaption></figure></div></section>
+  <section><h2>Hands</h2><div class="pair"><figure><img src="before_hands.png" alt="The old hands"><figcaption>Before</figcaption></figure><figure><img src="after_hands.png" alt="The rebuilt hands"><figcaption>After</figcaption></figure></div></section>
+</main>

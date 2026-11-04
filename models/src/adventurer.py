@@ -23,7 +23,7 @@ def srgb(h, material=None):      # '#rrggbb' -> linear rgba
     rgb = [(v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4) for v in c]
     return tuple(tint_colour(rgb, material, APPEARANCE) + [1.0])
 COLOURS = dict(nail='#bd967f', coat='#4a7872', coat_dark='#294b47', trousers='#8f8164', boots='#3c2b22', scarf='#bd8a35', hat='#aa9570', band='#754435', skin='#d3a180', hair='#43362c',
-               leather='#70472e', brass='#aa8a4b', mouth_dark='#6d3930', skin_dark='#ae775e', vest='#725138', shirt='#c9bda5', sole='#211914', iris='#413b30', lips='#9f766a', boots_cuff='#584031', scarf_dark='#916528', white='#b8b6a6', mouth='#8e5549', bedroll='#a99b7c', feather='#40544d', strap='#49301f', metal='#9c9688', eye='#17191a', thread='#a99b78', stitching='#b49a70')
+               leather='#70472e', brass='#aa8a4b', mouth_dark='#6d3930', skin_dark='#ae775e', vest='#725138', shirt='#c9bda5', sole='#211914', iris='#5a4a33', iris_ring='#231d16', lash='#2a1f19', lips='#9f766a', boots_cuff='#584031', scarf_dark='#916528', white='#e2dccf', mouth='#8e5549', bedroll='#a99b7c', feather='#40544d', strap='#49301f', metal='#9c9688', eye='#17191a', thread='#a99b78', stitching='#b49a70')
 MATS = {}
 def mat(name):
     if name not in MATS:
@@ -197,32 +197,6 @@ for s, x in (('L', 1), ('R', -1)):
     for z in (0.955, 1.012):
         part(loft('bracer_strap.' + s, [(z-0.010, 0.265*x, 0, 0.049, 0.055), (z+0.010, 0.265*x, 0, 0.049, 0.055)], 'strap', 20, 0, False, 0.003), ['forearm.' + s])
         part(box('bracer_buckle.' + s, (0.314*x, -0.005, z), (0.008, 0.025, 0.023), 'brass', 0.002), ['forearm.' + s])
-    # A tapered palm and fingers with knuckle volume and a relaxed curl.
-    # The hand is turned sideways: its knuckles span the Y axis and its
-    # outward-facing surface is toward +/- X.
-    part(loft('palm.' + s, [(0.819, 0.265*x, 0.000, 0.017, 0.035),
-                            (0.836, 0.265*x, 0.001, 0.022, 0.039),
-                            (0.866, 0.264*x, 0.001, 0.024, 0.040),
-                            (0.891, 0.264*x, 0.002, 0.020, 0.031),
-                            (0.905, 0.265*x, 0.002, 0.024, 0.027),
-                            (0.925, 0.265*x, 0.002, 0.030, 0.034),
-                            (0.950, 0.265*x, 0.002, 0.036, 0.040)], 'leather', 18), ['hand.' + s, 'forearm.' + s])
-    for i, y in enumerate((-0.027, -0.009, 0.009, 0.027)):
-        length = (0.062, 0.071, 0.066, 0.052)[i]
-        finger = [(0.833, 0.266*x, y, 0.008, 0.009),
-                  (0.824, 0.266*x, y, 0.009, 0.009),
-                  (0.813, 0.267*x, y - 0.001, 0.0085, 0.0085),
-                  (0.833 - length * 0.52, 0.268*x, y - 0.003, 0.008, 0.008),
-                  (0.833 - length * 0.82, 0.269*x, y - 0.007, 0.007, 0.007),
-                  (0.833 - length, 0.269*x, y - 0.010, 0.0045, 0.005)]
-        part(loft('finger.' + s + '.' + str(i), finger, 'skin', 10, 1), ['hand.' + s])
-        part(ellipsoid('nail.' + s + '.' + str(i), (0.275*x, y - 0.008, 0.833 - length + 0.010),
-                       (0.0018, 0.0045, 0.007), 'nail', 10, 7), ['hand.' + s])
-    part(loft('thumb.' + s, [(0.814, 0.246*x, -0.050, 0.007, 0.008),
-                              (0.827, 0.246*x, -0.047, 0.010, 0.010),
-                              (0.850, 0.248*x, -0.043, 0.012, 0.012),
-                              (0.874, 0.252*x, -0.035, 0.014, 0.014),
-                              (0.884, 0.255*x, -0.029, 0.013, 0.013)], 'skin', 12), ['hand.' + s, 'forearm.' + s])
 # -- legs: breeches, a knee strap, tall boots with a turned cuff, a sole and a heel
 for s, x in (('L', 1), ('R', -1)):
     part(loft('trousers.' + s, [(0.46, 0.10 * x, 0, 0.082, 0.084), (0.58, 0.10 * x, 0, 0.092, 0.094), (0.72, 0.10 * x, 0, 0.106, 0.108), (0.88, 0.10 * x, 0, 0.116, 0.118), (0.98, 0.10 * x, 0, 0.122, 0.122)], 'trousers', 14, folds=0.05), ['pelvis', 'thigh.' + s, 'shin.' + s])
@@ -233,237 +207,130 @@ for s, x in (('L', 1), ('R', -1)):
     part(box('boot_sole.' + s, (0.10 * x, -0.066, 0.020), (0.140, 0.300, 0.034), 'sole', 0.016), ['foot.' + s])
     part(box('boot_heel.' + s, (0.10 * x, 0.048, 0.033), (0.112, 0.080, 0.050), 'sole', 0.010), ['foot.' + s, 'shin.' + s])
     part(box('boot_lace.' + s, (0.10 * x, -0.095, 0.112), (0.034, 0.100, 0.014), 'boots_cuff', 0.004, Matrix.Rotation(-0.55, 3, 'X')), ['foot.' + s])
-# -- an adult face with recessed almond-shaped eyes and restrained sculptural detail
-# the neck sits behind the jaw and rises into the base of the skull (a thin column under the chin read as a stalk)
-part(loft('neck', [(1.44, 0, 0.012, 0.062, 0.060), (1.58, 0, 0.022, 0.055, 0.056), (1.63, 0, 0.034, 0.048, 0.050)], 'skin', 20), ['neck', 'head', 'chest'])
-def sculpt_head():
-    ctrl = [(1.548, -0.041, 0.024, 0.034), (1.565, -0.037, 0.055, 0.063), (1.590, -0.023, 0.080, 0.091), (1.640, -0.004, 0.099, 0.108), (1.690, 0.003, 0.104, 0.115), (1.738, 0.008, 0.099, 0.109), (1.776, 0.012, 0.077, 0.086), (1.794, 0.012, 0.034, 0.042)]
-    def cr(p0, p1, p2, p3, t): return 0.5 * ((2 * p1) + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t + (-p0 + 3 * p1 - 3 * p2 + p3) * t ** 3)
-    def ring(z):
-        for k in range(len(ctrl) - 1):
-            if ctrl[k][0] <= z <= ctrl[k + 1][0]:
-                t = (z - ctrl[k][0]) / (ctrl[k + 1][0] - ctrl[k][0]); a, b, c, d = ctrl[max(k - 1, 0)], ctrl[k], ctrl[k + 1], ctrl[min(k + 2, len(ctrl) - 1)]
-                return [cr(a[i], b[i], c[i], d[i], t) for i in (1, 2, 3)]
-        return list(ctrl[-1][1:])
-    # Sculpt in facial depth, rather than along a ray from the cranium: the
-    # bridge, muzzle and chin must keep their anatomical height as they project.
-    def disp(p):
-        if p.y > -0.035: return p
-        x, z = p.x, p.z
-        def g(cx, cz, rx, rz):
-            return math.exp(-((x-cx)/rx)**2-((z-cz)/rz)**2)
-        def pair(cx, cz, rx, rz): return g(cx, cz, rx, rz)+g(-cx, cz, rx, rz)
-        depth = 0.0
-        depth += 0.0060*pair(0.039, 1.696, 0.028, 0.010)  # supraorbital ridge
-        depth -= 0.0045*pair(0.039, 1.677, 0.023, 0.011)  # orbital hollow
-        depth += 0.0040*pair(0.055, 1.653, 0.027, 0.016)  # cheekbone plane
-        depth -= 0.0025*pair(0.064, 1.615, 0.024, 0.023)  # cheek hollow
-        depth += 0.013*g(0, 1.669, 0.010, 0.027)          # continuous nasal bridge
-        depth += 0.024*g(0, 1.643, 0.012, 0.012)          # tip
-        depth += 0.009*pair(0.013, 1.637, 0.007, 0.007)   # alar wings
-        depth -= 0.003*pair(0.010, 1.634, 0.0035, 0.0025) # nostril recesses
-        depth -= 0.003*g(0, 1.629, 0.011, 0.004)          # under nose
-        depth += 0.0035*g(0, 1.612, 0.030, 0.019)        # muzzle blends into cheek
-        depth += 0.0020*pair(0.007, 1.620, 0.0045, 0.008) # philtral columns
-        depth -= 0.0020*g(0, 1.620, 0.004, 0.007)
-        depth += 0.0035*g(0, 1.608, 0.020, 0.004)
-        depth += 0.0045*g(0, 1.599, 0.019, 0.004)
-        depth -= 0.0018*g(0, 1.603, 0.023, 0.0015)        # mouth closure
-        depth -= 0.0025*g(0, 1.587, 0.022, 0.004)         # labiomental fold
-        depth += 0.010*g(0, 1.574, 0.029, 0.012)          # chin pad
-        depth += 0.002*pair(0.063, 1.590, 0.024, 0.016)   # jaw angles
-        gate = min(1.0, max(0.0, (-p.y-0.035)/0.040))
-        if '--flat-face-mutant' in args: depth = 0.0
-        return Vector((x, p.y-depth*gate, z))
-    n = 68; zs = [1.548 + (1.794 - 1.548) * k / 68 for k in range(69)]
-    bm = bmesh.new(); rows = []
-    for z in zs:
-        cy, rx, ry = ring(z); rows.append([bm.verts.new(disp(Vector((rx * math.cos(2 * math.pi * k / n), cy + ry * math.sin(2 * math.pi * k / n), z)))) for k in range(n)])
-    for a, b in zip(rows, rows[1:]):
-        for k in range(n): bm.faces.new((a[k], a[(k + 1) % n], b[(k + 1) % n], b[k]))
-    bm.faces.new(rows[0][::-1]); bm.faces.new(rows[-1])
-    return finish('head', bm, 'skin', True, 0)
-head_surface = sculpt_head(); part(head_surface, ['head'])
+# -- the head: sculpted as signed distance fields (head.py; the measurements are character_spec.py's): the skull, the face's
+# planes, real eyeballs in sockets under thick lids, the nose, the lips, the ears and the neck, as one surface. It is meshed with
+# surface nets, decimated to its budget and shaded with the field's own normals. docs/CHARACTER.md says why it looks the way it does.
+import numpy as np
+import sdf, head as headmod
+from character_spec import FACE, TARGETS
+HEAD_CELL = 0.0018
+def field_part(name, f, lo, hi, cell, material, tris, relax=2, symmetric=False):
+    if symmetric:      # x = 0 on a grid line: the mesh is its own mirror image (and so is the decimation)
+        k = math.ceil(max(abs(lo[0]), abs(hi[0])) / cell); lo = (-k * cell, lo[1], lo[2]); hi = (k * cell, hi[1], hi[2])
+    V, Q, _ = sdf.mesh(f, lo, hi, cell)
+    if relax: V, _ = sdf.relax(f, V, Q, relax)
+    bm = bmesh.new(); vs = [bm.verts.new(v) for v in V.tolist()]
+    for q in Q.tolist():
+        try: bm.faces.new([vs[i] for i in q])
+        except ValueError: pass      # (a duplicate face at a grid pinch)
+    ob = finish(name, bm, material); me = ob.data
+    if tris and len(me.polygons) * 2 > tris:      # down to the budget; the shape is kept by collapsing the flattest edges first
+        m = ob.modifiers.new('D', 'DECIMATE'); m.ratio = tris / (2.0 * len(me.polygons))
+        if symmetric: m.use_symmetry = True; m.symmetry_axis = 'X'      # the same cuts on both sides of a face
+        dg = bpy.context.evaluated_depsgraph_get(); ev = ob.evaluated_get(dg); me2 = bpy.data.meshes.new_from_object(ev); ob.modifiers.clear(); old = ob.data; ob.data = me2; bpy.data.meshes.remove(old); me = ob.data
+    bm = bmesh.new(); bm.from_mesh(me); bmesh.ops.dissolve_degenerate(bm, dist=1e-5, edges=bm.edges[:]); bm.to_mesh(me); bm.free()      # (slivers left by the decimation sample unbaked texels)
+    # The decimation folds a few thin triangles over their neighbours (they become specks after the bake): relax every vertex toward
+    # its neighbours' mean along the surface and put it back on the field, three times.
+    nb = [[] for _ in me.vertices]
+    for e in me.edges: a_, b_ = e.vertices; nb[a_].append(b_); nb[b_].append(a_)
+    P = np.array([v.co[:] for v in me.vertices]); nbs = [np.array(x, int) for x in nb]
+    for _ in range(3):
+        avg = np.array([P[x].mean(axis=0) if len(x) else P[i] for i, x in enumerate(nbs)]); P = P + 0.5 * (avg - P)
+        for _ in range(2): g = sdf.gradient(f, P); P = P - f(P)[:, None] * g
+    me.vertices.foreach_set('co', P.reshape(-1)); me.update()
+    P = np.array([v.co[:] for v in me.vertices]); me.normals_split_custom_set_from_vertices(sdf.gradient(f, P).tolist())
+    FIELDS[ob.name] = f
+    print('REPORT %s: %d triangles from the field' % (name, sum(len(p.vertices) - 2 for p in me.polygons)))
+    return ob
+FIELDS = {}
+def paint(ob, mask, material):      # faces whose centre the mask selects take the material and its appearance label, on vertices of their own
+    me = ob.data; me.materials.append(mat(material)); k = len(me.materials) - 1
+    cs = np.array([p.center[:] for p in me.polygons]); sel = mask(cs) if len(cs) else np.zeros(0, bool)
+    for p, s_ in zip(me.polygons, sel):
+        if s_: p.material_index = k
+    bm = bmesh.new(); bm.from_mesh(me)
+    seam = [e for e in bm.edges if len(e.link_faces) == 2 and (e.link_faces[0].material_index == k) != (e.link_faces[1].material_index == k)]
+    bmesh.ops.split_edges(bm, edges=seam); bm.to_mesh(me); bm.free()
+    label = me.attributes['_APPEARANCE']; g = material_group(material)
+    for p in me.polygons:
+        if p.material_index == k:
+            for vi in p.vertices: label.data[vi].value = g
+    if ob.name in FIELDS:      # the split vertices need the field's normals again
+        P = np.array([v.co[:] for v in me.vertices]); me.normals_split_custom_set_from_vertices(sdf.gradient(FIELDS[ob.name], P).tolist())
+    return int(np.sum(sel))
+head_field = sdf.intersect(headmod.skull_and_face(), sdf.plane((0, 0, -1), 1.425))      # closed under the scarf
+head_surface = field_part('head', head_field, (-0.13, -0.16, 1.40), (0.13, 0.13, 1.84), HEAD_CELL, 'skin', 16000, 2, True)
+mz = FACE['mouth_z']
+paint(head_surface, headmod.lip_mask, 'lips')
+paint(head_surface, headmod.mouth_mask, 'mouth_dark')      # the walls of the mouth's line (its own field, so nothing beside it)
+# the lower lip and the skin under it follow the lip bone (the proxy drops it while the player speaks): a smooth falloff from the lip to the chin and the corners
+B['lip_lower'] = (V(0, -0.104, mz - 0.004), V(0, -0.104, mz - 0.014), 'head')
+def head_weights(i, co=None):
+    p = head_surface.data.vertices[i].co
+    dx = abs(p.x) / (FACE['mouth_w'] * 0.62); dz = (mz - 0.0006 - p.z) / 0.016
+    lip = 0.0
+    if p.y < -0.085 and p.z < mz - 0.0006 and dx < 1 and dz < 1: lip = (1 - dx * dx) ** 2 * (1 - max(0.0, dz) ** 2) ** 2
+    raw = {b: math.exp(-(seg_dist(p, B[b][0], B[b][1]) / SIGMA) ** 2) * mult for b, mult in (('head', 1.0), ('neck', 0.7), ('chest', 0.6))}
+    tot = sum(raw.values()) or 1.0; ws = {b: w / tot * (1 - lip) for b, w in raw.items()}
+    if p.z > 1.58: ws = {'head': 1 - lip}      # the face itself is rigid on the skull
+    ws['lip_lower'] = lip; return ws
+part(head_surface, ['head', 'neck', 'chest', 'lip_lower'], head_weights)
 from mathutils.bvhtree import BVHTree
 head_bvh = BVHTree.FromObject(head_surface, bpy.context.evaluated_depsgraph_get())
 def face_y(x, z):
     hit, _, _, _ = head_bvh.ray_cast(Vector((x, -0.4, z)), Vector((0, 1, 0)))
     if hit is None: raise ValueError('facial detail misses head at %.4f, %.4f' % (x, z))
     return hit.y
-# Depth relationships sampled from the actual evaluated mesh, in metres.
-# These reject a smooth oval even if it has the same resolution and materials.
-face_depths = dict(
-    nose=face_y(0.025, 1.643)-face_y(0, 1.643),
-    bridge=face_y(0.020, 1.668)-face_y(0, 1.668),
-    philtrum=face_y(0, 1.620)-face_y(0.007, 1.620),
-    chin=face_y(0, 1.587)-face_y(0, 1.574))
-print('REPORT facial depth', face_depths)
-if not (0.017 < face_depths['nose'] < 0.040 and
-        0.008 < face_depths['bridge'] < 0.025 and
-        face_depths['philtrum'] > 0.0001 and face_depths['chin'] > 0.001):
-    raise ValueError('facial anatomy depth relationships failed')
 def face_finish(name, bm, material, smooth=True, subsurf=0, bevel=0.0, solid=0.0):
     return finish(name, bm, material, smooth, subsurf, bevel, solid, front_facing=True)
-def eye_limits(t):
-    middle = 1.6755 + 0.0020*t; opening = max(0.0, math.sin(math.pi*t)) ** 0.72
-    return middle - 0.0039*opening, middle + 0.0056*opening
-def eye_surface(x, z, offset):
-    t = max(0.0, min(1.0, (abs(x)-0.020)/0.037))
-    corner = 0.0018 if '--eye-recess-mutant' in args else -0.00025
-    return face_y(x, z) - offset + corner*abs(2*t-1)**3
-def eye_disc(name, sx, rx, rz, material, offset, bones=('head',)):
-    bm = bmesh.new(); cx, cz = sx*0.039, 1.6766
-    centre = bm.verts.new((cx, eye_surface(cx, cz, offset), cz)); rings = []
-    for j in range(1, 6):
-        row = []
-        for i in range(40):
-            a = 2*math.pi*i/40; xx = cx + rx*(j/5)*math.cos(a); zz = cz + rz*(j/5)*math.sin(a)
-            t = max(0.0, min(1.0, (abs(xx)-0.020)/0.037)); lo, hi = eye_limits(t)
-            zz = max(lo + 0.00008, min(hi - 0.00008, zz))
-            row.append(bm.verts.new((xx, eye_surface(xx, zz, offset), zz)))
-        rings.append(row)
-    for i in range(40): bm.faces.new((centre, rings[0][i], rings[0][(i+1)%40]))
-    for a, b in zip(rings, rings[1:]):
-        for i in range(40): bm.faces.new((a[i], b[i], b[(i+1)%40], a[(i+1)%40]))
-    ob = face_finish(name, bm, material)
-    if '--eye-mutant' in args: ob.data.transform(Matrix.Translation((0, -0.008, 0)))
-    part(ob, list(bones))
+def cap(name, centre, r, angle, material, bones, segs=48, rings=10):
+    """A spherical cap of radius r round the forward (-y) axis, `angle` radians from its middle to its rim: the eyeball's parts."""
+    bm = bmesh.new(); c = Vector(centre); pole = bm.verts.new(c + V(0, -r, 0)); prev = None
+    for j in range(1, rings + 1):
+        a = angle * j / rings
+        row = [bm.verts.new(c + V(r * math.sin(a) * math.cos(2 * math.pi * i / segs), -r * math.cos(a), r * math.sin(a) * math.sin(2 * math.pi * i / segs))) for i in range(segs)]
+        for i in range(segs):
+            if prev is None: bm.faces.new((pole, row[(i + 1) % segs], row[i]))
+            else: bm.faces.new((prev[i], prev[(i + 1) % segs], row[(i + 1) % segs], row[i]))
+        prev = row
+    part(face_finish(name, bm, material), bones)
+# Eyes: a ball in each socket. The eye bone turns the iris, pupil and their ring about the ball's centre (the white is a sphere: turning it changes nothing).
+# Lids: the upper lid is a shell round the ball (head.upper_lids) on a bone at the ball's centre; a blink turns it down over the ball (lid_rotate in the
+# .glb.txt; the proxy's life layer turns the bone about its local x). Its rim is the lash line.
+LID_ROTATE = 0.98 if '--lid-sign-mutant' in args else -0.98      # (negative: the bone's local x points to the character's right in the exported rig; tools/check_character.py proves the lid closes)
 for s, x in (('L', 1), ('R', -1)):
-    bm = bmesh.new(); rows = []
-    for i in range(33):
-        t = i/32; lo, hi = eye_limits(t); row = []
-        for j in range(9):
-            z = lo+(hi-lo)*j/8; xx = x*(0.020+0.037*t)
-            row.append(bm.verts.new((xx, eye_surface(xx, z, 0.00065), z)))
-        rows.append(row)
-    for a, b in zip(rows, rows[1:]):
-        for j in range(8): bm.faces.new((a[j], b[j], b[j+1], a[j+1]))
-    white = face_finish('eye_white.'+s, bm, 'white')
-    if any(p.normal.y > 0.01 for p in white.data.polygons): raise ValueError('eye white faces away from the camera')
-    if '--eye-mutant' in args: white.data.transform(Matrix.Translation((0, -0.008, 0)))
-    for v in white.data.vertices:
-        clearance = face_y(v.co.x, v.co.z)-v.co.y
-        if clearance < 0.00005: raise ValueError('eye white is buried in its socket')
-        if not -0.002 <= clearance <= 0.0025: raise ValueError('eye white does not fit its socket')
-    part(white, ['head'])
-    iris_rz = 0.0051 if '--iris-mutant' in args else 0.0036
-    lo, hi = eye_limits((0.039-0.020)/0.037)
-    if 2*iris_rz > 0.78*(hi-lo): raise ValueError('iris covers the eye white')
-    # The eyeball centre sits EYE_DEPTH behind the iris: the eye bone turns the iris, pupil and glint about it (a look sweeps them across the white, the
-    # recession at the limit of the look is EYE_DEPTH * (1 - cos) = 0.2 mm, less than the iris stands off the white). The lid bone starts at the top
-    # of the upper lid and points down and a little forward; the blink scales it along its length, so the lid skin unrolls down over the eye.
-    EYE_DEPTH = 0.007
-    iris_y = eye_surface(x*0.039, 1.6766, 0.00110)
-    B['eye.'+s] = (V(x*0.039, iris_y + EYE_DEPTH, 1.6766), V(x*0.039, iris_y + EYE_DEPTH - 0.012, 1.6766), 'head')
-    eye_disc('iris.'+s, x, 0.0052, iris_rz, 'iris', 0.00130, ('eye.'+s,))
-    eye_disc('pupil.'+s, x, 0.00180, 0.00185, 'eye', 0.00170, ('eye.'+s,))
-    part(ellipsoid('eye_glint.'+s, (x*0.0375, eye_surface(x*0.0375, 1.6782, 0.0020), 1.6782), (0.00055, 0.00018, 0.00055), 'white', 8, 6), ['eye.'+s])
-    bm = bmesh.new(); rows = []      # the lower lid: a thin strip under the opening, part of the face
-    for i in range(33):
-        t = i/32; lo, hi = eye_limits(t); width = 0.0014*math.sin(math.pi*t)**0.7
-        row = []
-        for j in range(3):
-            z = lo - width*j/2; xx = x*(0.020+0.037*t)
-            row.append(bm.verts.new((xx, face_y(xx, z)-0.00020, z)))
-        rows.append(row)
-    for a, b in zip(rows, rows[1:]):
-        for j in range(2): bm.faces.new((a[j], b[j], b[j+1], a[j+1]))
-    part(face_finish('lid_lower.'+s, bm, 'skin'), ['head'])
-    # The upper lid: a shell from LID_TOP above the opening's edge to LID_OVER below it (resting on the eye). A blink scales the lid bone along its
-    # length by LID_BLINK; the lid's vertices are weighted so that its top row stays put, its edge lands on the lower lid in every column and the
-    # corners do not move (a uniform stretch about one point cannot do that: the corners sit far below the bone's head). The bone points from
-    # 2 cm above the centre of the opening along the edge's path (down the face and out to where the lower lid is), so the lid never sinks into the cheek.
-    LID_TOP, LID_OVER, LID_REACH = 0.0023, 0.0014, 0.020
-    t_c = (0.039-0.020)/0.037; lo_c, hi_c = eye_limits(t_c); x_c = x*0.039
-    def lid_y(xx, z, v, profile):      # the lid's depth: on the face above the edge, LID_LIFT in front of the eye white over it
-        over = max(0.0, (v - LID_TOP/(LID_TOP + LID_OVER)) / (LID_OVER/(LID_TOP + LID_OVER)))
-        return face_y(xx, z) - 0.00020 - 0.0016*over - 0.0004*profile*(1 - abs(2*v - 1))
-    v_edge = LID_TOP/(LID_TOP + LID_OVER); profile_c = math.sin(math.pi*t_c)**0.7
-    edge0 = V(x_c, lid_y(x_c, hi_c, v_edge, profile_c), hi_c)                                   # the edge at rest (centre column)
-    edge1 = V(x_c, face_y(x_c, lo_c) - 0.0014, lo_c - 0.0004)                                   # the edge of a closed lid: just in front of the lower lid
-    lid_dir = (edge1 - edge0).normalized(); lid_head = edge0 - lid_dir*LID_REACH
-    B['lid.'+s] = (lid_head, lid_head + lid_dir*0.030, 'head')
-    LID_BLINK = 1 + (edge1 - edge0).length / LID_REACH
-    bm = bmesh.new(); rows = []; lid_w = []
-    for i in range(33):
-        t = i/32; lo, hi = eye_limits(t); profile = math.sin(math.pi*t)**0.7; xx = x*(0.020+0.037*t)
-        row = []
-        for j in range(5):
-            v = j/4; z = hi + LID_TOP*profile - (LID_TOP + LID_OVER)*profile*v
-            p = V(xx, lid_y(xx, z, v, profile), z); row.append(bm.verts.new(p))
-            along = (p - lid_head).dot(lid_dir)                                                # how far down the bone this vertex is: the stretch moves it by (LID_BLINK - 1) * along * weight
-            need = (V(xx, face_y(xx, lo) - 0.0014, lo - 0.0004) - V(xx, lid_y(xx, hi, v_edge, profile), hi)).dot(lid_dir)      # what the edge of this column must travel
-            w_edge = max(0.0, min(1.0, need / ((LID_BLINK - 1) * along))) if along > 1e-6 else 0.0
-            lid_w.append(w_edge * min(1.0, v / v_edge))
-        rows.append(row)
-    for a, b in zip(rows, rows[1:]):
-        for j in range(4): bm.faces.new((a[j], b[j], b[j+1], a[j+1]))
-    lid = face_finish('lid.'+s, bm, 'skin')
-    if len(lid.data.vertices) != len(lid_w): raise ValueError('lid vertex order changed')
-    print('REPORT lid %s: opening %.1f mm, blink scale %.3f, edge weight at the centre %.2f' % (s, (hi_c-lo_c)*1000, LID_BLINK, lid_w[16*5 + 4]))
-    if not 1.2 < LID_BLINK < 2.5: raise ValueError('eyelid stretch out of range: %.3f' % LID_BLINK)
-    if '--lid-mutant' in args: lid_w = [w*0.4 for w in lid_w]      # test: a lid that does not reach the lower lid
-    part(lid, ['lid.'+s, 'head'], (lambda ws, name: (lambda i: {name: ws[i], 'head': 1 - ws[i]}))(lid_w, 'lid.'+s))
-    bm = bmesh.new(); rows = []
-    for i in range(25):
-        t = i/24; xx = x*(0.018 + 0.046*t); z = 1.696 + 0.003*math.sin(math.pi*t) + 0.001*t
-        width = 0.0002 + 0.00145*math.sin(math.pi*t)**0.8
-        rows.append([bm.verts.new((xx, face_y(xx, zz)-0.00045, zz)) for zz in (z-width, z+width)])
-    for a, b in zip(rows, rows[1:]): bm.faces.new((a[0], b[0], b[1], a[1]))
-    # the brow bone runs from the inner end to the outer, 3 mm in front of the face: the proxy lifts the brow (translation), lowers it, or tilts it about its middle
-    b0, b1 = V(x*0.018, face_y(x*0.018, 1.696) - 0.003, 1.696), V(x*0.064, face_y(x*0.064, 1.700) - 0.003, 1.700)
-    B['brow.'+s] = ((b0 + b1) * 0.5, (b0 + b1) * 0.5 + (b1 - b0) * 0.5, 'head')
-    part(face_finish('brow.'+s, bm, 'hair', True), ['brow.'+s])
-    part(ellipsoid('ear.'+s, (0.098*x, 0.006, 1.657), (0.011, 0.017, 0.027), 'skin', 20, 12), ['head'])
-    part(ellipsoid('ear_inner.'+s, (0.104*x, 0.002, 1.657), (0.0025, 0.009, 0.016), 'skin_dark', 16, 10), ['head'])
-for upper in (False, True):
-    bm = bmesh.new(); rows = []
-    for i in range(33):
-        t = i/32; xx = -0.024+0.048*t; profile = math.sin(math.pi*t)**0.7
-        seam = 1.603 + 0.0005*math.sin(math.pi*t)
-        edge = seam + (0.0045*profile if upper else -0.0036*profile)
-        if upper: edge += 0.0007*math.exp(-((abs(xx)-0.007)/0.003)**2)*profile
-        row = []
-        for j in range(5):
-            v = j/4; z = seam+(edge-seam)*v
-            row.append(bm.verts.new((xx, face_y(xx, z)-0.00012-0.00035*math.sin(math.pi*v)*profile, z)))
-        rows.append(row)
-    for a, b in zip(rows, rows[1:]):
-        for j in range(4): bm.faces.new((a[j], b[j], b[j+1], a[j+1]))
-    if upper: part(face_finish('lip.'+str(upper), bm, 'lips'), ['head'])
-    else:      # the lower lip hangs from a bone of its own: the proxy drops it while the player speaks
-        B['lip_lower'] = (V(0, face_y(0, 1.600) - 0.003, 1.6000), V(0, face_y(0, 1.600) - 0.003, 1.5900), 'head')
-        part(face_finish('lip.'+str(upper), bm, 'lips'), ['lip_lower'])
-# the inside of the mouth: a dark patch just in front of the face, under the lips (a hairline at the seam when shut, the opening when the lower lip drops)
-bm = bmesh.new(); rows = []
-for i in range(25):
-    t = i/24; xx = -0.023+0.046*t; profile = math.sin(math.pi*t)**0.6
-    rows.append([bm.verts.new((xx, face_y(xx, zz) - 0.00018, zz)) for zz in (1.6035 - 0.0065*profile, 1.6035 + 0.0030*profile)])
-for a, b in zip(rows, rows[1:]): bm.faces.new((a[0], b[0], b[1], a[1]))
-part(face_finish('mouth_inner', bm, 'mouth_dark'), ['head'])
-for sx in (-1, 1):
-    xx, zz = sx*0.010, 1.634
-    part(ellipsoid('nostril.'+str(sx), (xx, face_y(xx, zz)-0.00045, zz), (0.0024, 0.0004, 0.0011), 'mouth_dark', 12, 8), ['head'])
-def scalp_point(angle, z, offset=0.0035):
-    radial = V(math.cos(angle), math.sin(angle), 0)
-    hit, _, _, _ = head_bvh.ray_cast(V(0.16*radial.x, 0.008+0.16*radial.y, z), -radial)
-    if hit is None: raise ValueError('hair misses head')
-    return hit + radial*offset
-bm = bmesh.new(); rows = []; hair_n = 44
-for j in range(17):
-    t = j/16; row = []
-    for i in range(hair_n):
-        angle = 2*math.pi*i/hair_n; low = 1.660-0.035*math.sin(angle)+0.055*max(0, -math.sin(angle)); z = low+(1.793-low)*t
-        p = scalp_point(angle, z, 0.0030+0.0010*math.sin(angle*14+z*70))
-        row.append(bm.verts.new(p))
-    rows.append(row)
-for a, b in zip(rows, rows[1:]):
-    for i in range(hair_n): bm.faces.new((a[i], a[(i+1)%hair_n], b[(i+1)%hair_n], b[i]))
-part(face_finish('hair_scalp', bm, 'hair', True), ['head'])
-for i, angle in enumerate((0.0, 0.65, 1.30, 1.95, 2.60, 3.10)):
-    low = 1.660-0.035*math.sin(angle)+0.005
-    top = scalp_point(angle, 1.735, 0.006); mid = scalp_point(angle, (1.735+low)*0.5, 0.008); tip = scalp_point(angle, low, 0.004)
-    part(loft('hair_lock.'+str(i), [(top.z, top.x, top.y, 0.008, 0.006), (mid.z, mid.x, mid.y, 0.010, 0.007), (tip.z, tip.x, tip.y, 0.002, 0.003)], 'hair', 8), ['head'])
+    c = headmod.eye_centre(x); r = FACE['eye_r']
+    if '--eye-mutant' in args: c = c + np.array([0, -0.006, 0])      # test: an eyeball standing out of its socket
+    B['eye.' + s] = (V(*c), V(*(c + np.array([0, -0.012, 0]))), 'head')
+    B['lid.' + s] = (V(*c), V(*(c + np.array([0, -0.020, 0]))), 'head')
+    cap('eye_white.' + s, c, r, math.radians(88), 'white', ['head'])
+    ia = math.asin(min(0.95, (FACE['iris_r'] * (1.6 if '--iris-mutant' in args else 1.0)) / r))
+    cap('iris_ring.' + s, c, r + 0.00020, ia, 'iris_ring', ['eye.' + s])
+    cap('iris.' + s, c, r + 0.00035, ia * 0.86, 'iris', ['eye.' + s])
+    cap('pupil.' + s, c, r + 0.00050, math.asin(FACE['pupil_r'] / r), 'eye', ['eye.' + s])
+    glint = c + np.array([-0.0028 * x * 0 - 0.0030, 0, 0.0036])
+    cap('eye_glint.' + s, glint, r + 0.0008, 0.085, 'white', ['head'], 12, 3)
+    lid = field_part('lid.' + s, headmod.upper_lids()[x], c - 0.022, c + 0.022, HEAD_CELL * 0.4, 'skin', 1600, 1)
+    paint(lid, lambda q, x=x: headmod.lash(x, q), 'lash')
+    part(lid, ['lid.' + s])
+    brow = field_part('brow.' + s, headmod.brows()[x], c + np.array([0, -0.02, 0.032]) - 0.04, c + np.array([0, -0.02, 0.032]) + 0.04, HEAD_CELL * 0.5, 'hair', 1000, 1)
+    b0, b1 = V(x * 0.013, -0.1000, 1.7050), V(x * 0.061, -0.0855, 1.7075)
+    B['brow.' + s] = ((b0 + b1) * 0.5, (b0 + b1) * 0.5 + (b1 - b0) * 0.5, 'head')
+    part(brow, ['brow.' + s])
+# -- the hands: sculpted (hands.py): a solid palm, tapered fingers in a relaxed curl, a thumb with mass, the fingerless glove over
+# the palm and the knuckles. The wrist blends into the forearm over 3 cm.
+import hands as handmod
+for s, x in (('L', 1), ('R', -1)):
+    lo, hi = handmod.bounds(x)
+    for kind, field, material, budget in (('hand', handmod.skin(x), 'skin', 4200), ('glove', handmod.glove(x), 'leather', 2600)):
+        ob = field_part(kind + '.' + s, field, lo, hi, 0.0012, material, budget, 1)
+        def hand_weights(i, ob=ob, s=s):
+            z = ob.data.vertices[i].co.z; w = max(0.0, min(1.0, (z - (handmod.WRIST[2] - 0.012)) / 0.030))
+            return {'hand.' + s: 1 - w, 'forearm.' + s: w}
+        part(ob, ['hand.' + s, 'forearm.' + s], hand_weights)
+# -- hair: a sculpted crop (head.hair): a shell with a designed hairline and soft clumps along its edge, clear of the ears, thin under the hat
+hair_ob = field_part('hair', headmod.hair(headmod.skull_and_face()), (-0.13, -0.16, 1.52), (0.13, 0.15, 1.84), HEAD_CELL * 1.2, 'hair', 7000, 1, True)
+part(hair_ob, ['head'])
 HAT0 = len(parts)
 # -- weathered felt hat, with an asymmetric brim, a pinched crown and a feather vane
 # The opening is an oval the size of the head at the brow line (plus the hair), so the hat sits on the head instead of above it
@@ -491,8 +358,19 @@ part(face_finish('feather_vane', bm, 'feather', True, 0, 0, 0.001), ['head'])
 part(tube('feather_shaft', f0, f1, 0.0018, 'bedroll', 6), ['head'])
 def tilt(ob, rx, pivot=(0, -0.02, 1.74)):
     p = Vector(pivot); ob.data.transform(Matrix.Translation(p) @ Matrix.Rotation(rx, 4, 'X') @ Matrix.Translation(-p))
-HAT_DROP = 0.010 if '--hat-mutant' in args else 0.040      # the opening lands at the brow line, about 4 cm above the eyes
-for o, _, _ in parts[HAT0:]: tilt(o, -0.07); o.data.transform(Matrix.Translation((0, 0, -HAT_DROP)))
+HAT_DROP = 0.010 if '--hat-mutant' in args else 0.026      # the opening sits above the brows: the face stays open to a camera at eye height
+# The hat is made for an opening of HAT_OPEN; it is scaled (in plan) to the head that was actually built: the head plus 4 mm of hair plus
+# 3 mm of ease, measured where the opening lands.
+def head_reach(direction, z):
+    d = V(direction[0], direction[1], 0).normalized(); hit = head_bvh.ray_cast(V(0, 0.006, z) + d * 0.3, -d)[0]
+    return (hit - V(0, 0.006, z)).length if hit is not None else None
+z_open = 1.768 - HAT_DROP
+want = [head_reach(d, z_open) for d in ((1, 0), (-1, 0), (0, 1), (0, -1))]
+if '--hat-mutant' not in args and None not in want:
+    hsx = (max(want[0], want[1]) + 0.0105) / HAT_OPEN[0]; hsy = (max(want[2], want[3]) + 0.0105) / HAT_OPEN[1]
+    print('REPORT hat scaled to the head: x %.3f y %.3f' % (hsx, hsy))
+    for o, _, _ in parts[HAT0:]: o.data.transform(Matrix.Translation((0, 0.006, 0)) @ Matrix.Diagonal((hsx, hsy, 1, 1)) @ Matrix.Translation((0, -0.006, 0)))
+for o, _, _ in parts[HAT0:]: tilt(o, -0.12); o.data.transform(Matrix.Translation((0, 0, -HAT_DROP)))      # tipped back a little
 # Fit check: the rim of the hat's opening (the crown's lowest vertex in each direction) must sit just outside the head and hair there.
 rim = {}; low = {}
 def _bin(co): return int(((math.atan2(co.y - 0.006, co.x) + 2 * math.pi) % (2 * math.pi)) / (2 * math.pi) * 36) % 36
@@ -728,12 +606,12 @@ def paint_materials():
         elif name in ('scarf', 'scarf_dark'): noise_mul(45, 0.09, (1, 4, 1), 0, 0.0, 2); noise_mul(8, 0.22, (1, 1, 1), 1, 0.9); weave(180, 0.10); noise_mul(40, 0.0, (1, 4, 1), 3, 0.3, 2)
         elif name == 'skin':
             noise_mul(30, 0.03, (1, 1, 1), 0, 0.0, 2)
-            for sx in (1, -1): spot((0.058*sx, -0.098, 1.620), 0.030, (0.62, 0.25, 0.18), 0.12)
-            spot((0, -0.121, 1.644), 0.015, (0.65, 0.25, 0.18), 0.20)
-            spot((0, -0.111, 1.603), 0.019, (0.38, 0.11, 0.085), 0.48, (1, 0.25, 3.2))
-            spot((0, -0.112, 1.6025), 0.019, (0.11, 0.030, 0.024), 0.62, (1, 0.25, 11))
-            spot((0, -0.070, 1.580), 0.073, (0.075, 0.045, 0.028), 0.22, (1.25, 0.65, 0.80))
-            spot((0, -0.109, 1.617), 0.023, (0.065, 0.038, 0.024), 0.20, (1, 0.25, 2.4))
+            for sx in (1, -1): spot((0.044*sx, -0.094, 1.630), 0.028, (0.66, 0.26, 0.19), 0.16)      # cheeks: warm, soft
+            spot((0, -0.127, 1.630), 0.013, (0.66, 0.26, 0.19), 0.20)      # the nose tip
+            for sx in (1, -1): spot((0.093*sx, 0.012, 1.664), 0.022, (0.62, 0.22, 0.16), 0.18)      # the ears (light through them)
+            for sx in (1, -1): spot((0.0365*sx, -0.088, 1.683), 0.020, (0.30, 0.16, 0.14), 0.16, (1.2, 1, 0.6))      # the lids: a little darker and warmer than the cheek
+            spot((0, -0.075, 1.575), 0.070, (0.075, 0.045, 0.028), 0.16, (1.25, 0.65, 0.80))      # the jaw's shadow
+            spot((0, -0.111, 1.611), 0.010, (0.065, 0.038, 0.024), 0.16, (1, 0.25, 2.4))      # the philtrum
             for sx in (1, -1): spot((0.084*sx, -0.025, 1.630), 0.042, (0.070, 0.042, 0.026), 0.38, (0.75, 1.0, 1.4))
             noise_mul(70, 0.035, (1, 1, 1), 2, 0.0, 2); noise_mul(16, 0.0, (1, 1, 1), 3, 0.15, 2)
         elif name == 'hair': noise_mul(60, 0.18, (1, 1, 5), 0, 0.3, 3); noise_mul(12, 0.15, (1, 1, 1), 1, 0.5); noise_mul(90, 0.08, (1, 1, 8), 2, 0.0, 2); noise_mul(30, 0.0, (1, 1, 6), 3, 0.4, 2)
@@ -747,14 +625,14 @@ def paint_materials():
         bsdf.inputs['Metallic'].default_value = metal
 
 # roughness and metalness per material (the material map), and how strong each one's relief is (the normal map)
-SURFACE = dict(skin=(0.62, 0.0), nail=(0.45, 0.0), lips=(0.50, 0.0), skin_dark=(0.65, 0.0), mouth=(0.45, 0.0), mouth_dark=(0.5, 0.0), hair=(0.55, 0.0), eye=(0.12, 0.0), white=(0.18, 0.0), iris=(0.14, 0.0),
+SURFACE = dict(skin=(0.62, 0.0), nail=(0.45, 0.0), lips=(0.50, 0.0), skin_dark=(0.65, 0.0), mouth=(0.45, 0.0), mouth_dark=(0.5, 0.0), hair=(0.55, 0.0), eye=(0.12, 0.0), white=(0.18, 0.0), iris=(0.14, 0.0), iris_ring=(0.2, 0.0), lash=(0.6, 0.0),
                coat=(0.92, 0.0), coat_dark=(0.90, 0.0), vest=(0.88, 0.0), shirt=(0.80, 0.0), trousers=(0.90, 0.0), scarf=(0.95, 0.0), scarf_dark=(0.95, 0.0), hat=(0.90, 0.0), band=(0.65, 0.0), feather=(0.55, 0.0), bedroll=(0.92, 0.0), thread=(0.8, 0.0), stitching=(0.8, 0.0),
                boots=(0.42, 0.0), boots_cuff=(0.50, 0.0), sole=(0.70, 0.0), leather=(0.52, 0.0), strap=(0.55, 0.0), brass=(0.32, 1.0), metal=(0.38, 1.0))
-BUMP = dict(coat=0.55, coat_dark=0.55, vest=0.5, shirt=0.4, trousers=0.5, scarf=0.8, scarf_dark=0.8, hat=0.45, band=0.3, boots=0.5, boots_cuff=0.5, leather=0.6, strap=0.5, sole=0.4, skin=0.05, hair=0.5, bedroll=0.5, brass=0.1, metal=0.15, nail=0.05, lips=0.05, skin_dark=0.05)
+BUMP = dict(white=0.0, iris=0.0, iris_ring=0.0, eye=0.0, lash=0.0, coat=0.55, coat_dark=0.55, vest=0.5, shirt=0.4, trousers=0.5, scarf=0.8, scarf_dark=0.8, hat=0.45, band=0.3, boots=0.5, boots_cuff=0.5, leather=0.6, strap=0.5, sole=0.4, skin=0.05, hair=0.5, bedroll=0.5, brass=0.1, metal=0.15, nail=0.05, lips=0.05, skin_dark=0.05)
 def bake_texture(body, size, outdir):
     if not FLAT_MATERIALS: paint_materials()
     bpy.ops.object.select_all(action='DESELECT'); body.select_set(True); bpy.context.view_layer.objects.active = body
-    bpy.ops.object.mode_set(mode='EDIT'); bpy.ops.mesh.select_all(action='SELECT'); bpy.ops.uv.smart_project(angle_limit=math.radians(70), island_margin=0.0025); bpy.ops.object.mode_set(mode='OBJECT')
+    bpy.ops.object.mode_set(mode='EDIT'); bpy.ops.mesh.select_all(action='SELECT'); bpy.ops.uv.smart_project(angle_limit=math.radians(70), island_margin=0.0065); bpy.ops.object.mode_set(mode='OBJECT')      # (the island margin is wider than the bake's 10 px: no colour bleeds between islands)
     scene.render.engine = 'CYCLES'; scene.cycles.device = 'CPU'; scene.cycles.samples = 24; scene.cycles.use_denoising = False
     if scene.world is None: scene.world = bpy.data.worlds.new('w')
     scene.world.light_settings.distance = 0.09
@@ -777,6 +655,20 @@ def bake_texture(body, size, outdir):
             for n in [n for n in m.node_tree.nodes if n.type == 'TEX_IMAGE']: m.node_tree.nodes.remove(n)
     import numpy as np
     a = np.empty(size * size * 4, dtype=np.float32); b = np.empty(size * size * 4, dtype=np.float32); imgs['DIFFUSE'].pixels.foreach_get(a); imgs['AO'].pixels.foreach_get(b)
+    # The eyes are not occluded: a ball in a socket bakes nearly black ambient occlusion, which greys the whites and lets the iris swallow the eye.
+    # Their texels (rasterized from their UV triangles) keep full light.
+    EYE_MATS = {'white', 'iris', 'iris_ring', 'eye'}
+    if '--eye-ao-mutant' not in args:
+        uvl = body.data.uv_layers.active.data; eyemask = np.zeros((size, size), bool); names = [m_.name for m_ in body.data.materials]
+        for poly in body.data.polygons:
+            if names[poly.material_index] not in EYE_MATS: continue
+            uv = [uvl[li].uv for li in poly.loop_indices]
+            for t in range(1, len(uv) - 1):
+                tri = [(uv[0].x * size, uv[0].y * size), (uv[t].x * size, uv[t].y * size), (uv[t + 1].x * size, uv[t + 1].y * size)]
+                x0 = max(0, int(min(q[0] for q in tri)) - 2); x1 = min(size - 1, int(max(q[0] for q in tri)) + 2); y0 = max(0, int(min(q[1] for q in tri)) - 2); y1 = min(size - 1, int(max(q[1] for q in tri)) + 2)
+                eyemask[y0:y1 + 1, x0:x1 + 1] = True      # (the triangle's box, with the bake margin: eye islands are tiny)
+        b4 = b.reshape(size * size, 4); b4[eyemask.reshape(-1), :3] = 1.0
+        print('REPORT eyes kept out of the occlusion: %d texels' % int(eyemask.sum()))
     a = a.reshape(-1, 4); b = b.reshape(-1, 4)
     # Sample the interior of coat faces in the colour-only bake. This measures
     # material variation independently of the AO pass and avoids island edges.
@@ -812,6 +704,8 @@ def bake_texture(body, size, outdir):
     r4 = np.empty(size * size * 4, dtype=np.float32); imgs['ROUGHNESS'].pixels.foreach_get(r4); r4 = shrink(r4.reshape(size, size, 4), 2)
     m4 = np.empty(size * size * 4, dtype=np.float32); imgs['METAL'].pixels.foreach_get(m4); m4 = shrink(m4.reshape(size, size, 4), 2)
     orm = np.empty_like(r4); orm[:, :, 0] = shrink(np.clip(b[:, :1], 0, 1).reshape(size, size, 1).repeat(4, axis=2), 2)[:, :, 0]; orm[:, :, 1] = np.clip(r4[:, :, 0], 0, 1); orm[:, :, 2] = np.clip(m4[:, :, 0], 0, 1); orm[:, :, 3] = 1
+    empty = (orm[:, :, 1] < 0.02) & (orm[:, :, 2] < 0.02)      # texels between the islands (the bake leaves them at zero): neutral cloth, not mirror-smooth
+    orm[:, :, 1] = np.where(empty, 0.85, orm[:, :, 1]); orm[:, :, 0] = np.where(empty, 1.0, orm[:, :, 0])
     print('REPORT material map roughness %.2f..%.2f metal fraction %.3f' % (float(orm[:, :, 1].min()), float(orm[:, :, 1].max()), float((orm[:, :, 2] > 0.5).mean())))
     half = size // 2; paths = {}
     for key, arr, fmt in (('nrm', nm, 'PNG'), ('orm', orm, 'PNG')):
@@ -1043,7 +937,7 @@ bpy.ops.export_scene.gltf(filepath=OUT, export_format='GLB', use_selection=True,
 print('REPORT exported', OUT, os.path.getsize(OUT), 'bytes')
 run_made_for = RUN_SPEED
 with open(OUT + '.txt', 'w', newline='\n') as f:      # the loader's keys: the eyes decide the size (the camera is 1.71 m above the feet), the speeds the clips were made for
-    f.write('eye_joint=eye\nspeed=%.2f\nrun_speed=%.2f\nlid_close=%.3f\n' % (WALK_SPEED, run_made_for, LID_BLINK))
+    f.write('eye_joint=eye\nspeed=%.2f\nrun_speed=%.2f\nlid_rotate=%.3f\n' % (WALK_SPEED, run_made_for, LID_ROTATE))
 print('REPORT wrote', OUT + '.txt', 'run_speed=%.2f' % run_made_for)
 
 # ---- previews (the game is not needed to see what was made)
@@ -1069,13 +963,13 @@ if PREVIEW:
         apply('idle', 0.0, 0); pose(); update(); cam_d.lens = 90; a = math.radians(az); cam.location = Vector((math.sin(a) * 0.78, -math.cos(a) * 0.78, 1.665 + 0.12)); d = Vector((0, 0, 1.665)) - cam.location
         cam.rotation_euler = d.to_track_quat('-Z', 'Y').to_euler(); scene.render.filepath = os.path.join(PREVIEW, name + '.png'); bpy.ops.render.render(write_still=True)
     def blink():
-        for sd in ('L', 'R'): pb['lid.' + sd].scale = (1, LID_BLINK, 1)
+        for sd in ('L', 'R'): pb['lid.' + sd].rotation_euler = (LID_ROTATE, 0, 0)
     def half_blink():
-        for sd in ('L', 'R'): pb['lid.' + sd].scale = (1, 1 + (LID_BLINK - 1) * 0.5, 1)
+        for sd in ('L', 'R'): pb['lid.' + sd].rotation_euler = (LID_ROTATE * 0.5, 0, 0)
     def look():
         for sd in ('L', 'R'): pb['eye.' + sd].rotation_euler = (math.radians(-6), math.radians(14), 0)
     face_shot('blink_front', 0, blink); face_shot('blink_threequarter', 38, blink); face_shot('halfblink_front', 0, half_blink); face_shot('look_front', 0, look)
-    for sd in ('L', 'R'): pb['lid.' + sd].scale = (1, 1, 1); pb['eye.' + sd].rotation_euler = (0, 0, 0)
+    for sd in ('L', 'R'): pb['lid.' + sd].rotation_euler = (0, 0, 0); pb['eye.' + sd].rotation_euler = (0, 0, 0)
     def brows(lift, tilt):      # lift: metres up; tilt: radians, inner end up when positive (the bone points outward: a roll about the face normal)
         for sd, x in (('L', 1), ('R', -1)):
             pb['brow.' + sd].location = (0, lift, 0); pb['brow.' + sd].rotation_euler = (0, 0, -tilt * SIDE['brow.' + sd] * x)      # (the proxy's own sign comes from a probe at load time; this is only the preview)

@@ -6,7 +6,7 @@ duration 5
 loop 1.0 5.0
 drag 0.04
 touch hand.R head 0.03 1.2 5.0
-pose think hips=3,-1,0 pelvis=0,6,-4 spine=2,0,3 chest=2,-6,2 neck=-2,0,0 head=-8,6,-8 arm.R=52,-38,13 fore.R=123 hand.R=-10,-55,0 arm.L=60,-46,24 fore.L=74 hand.L=10,0,0
+pose think hips=3,-1,0 pelvis=0,6,-4 spine=2,0,3 chest=2,-6,2 neck=-2,0,0 head=-8,6,-8 arm.R=56,-34,16 fore.R=121 hand.R=-10,-55,0 arm.L=60,-46,24 fore.L=74 hand.L=10,0,0
 key 0.00 rest
 key 0.45 hips=1,0,0 arm.R=30,-30,6 fore.R=110 arm.L=26,-36,10 fore.L=70 head=-2
 key 1.00 @think

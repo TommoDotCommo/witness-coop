@@ -5,7 +5,7 @@ emote 23 Puzzle spark
 duration 4
 drag 0.035
 key 0.00 rest
-key 0.45 arm.R=55,-40,12 fore.R=125 hand.R=-10 head=4,6,-8 chest=2 hips=1,-1,0
+key 0.45 arm.R=57,-38,14 fore.R=120 hand.R=-10 head=4,6,-8 chest=2 hips=1,-1,0
 key 1.00 head=6,8,-10 hand.R=-14
 key 1.18 head=-2,0,-4
 key 1.22 arm.R=74,0,62 fore.R=70 hand.R=-6 head=0,0,-2

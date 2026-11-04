@@ -7,7 +7,7 @@ Geometry remains shared: no proportions or clothing seams change with a palette.
 NAMES = ('skin', 'hair', 'eyes', 'coat', 'scarf', 'trousers', 'boots', 'gear')
 GROUPS = (
     ('skin', 'skin_dark', 'nail', 'lips', 'mouth'),
-    ('hair',), ('iris',), ('coat', 'coat_dark'), ('scarf', 'scarf_dark'),
+    ('hair',), ('iris', 'iris_ring'), ('coat', 'coat_dark'), ('scarf', 'scarf_dark'),
     ('trousers',), ('boots', 'boots_cuff'), ('leather', 'strap', 'bedroll'),
 )
 TINTS = (

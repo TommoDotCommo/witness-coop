@@ -24,7 +24,8 @@ Chat, pings, emotes, drawing, voice (with channels: proximity, radio, an open li
   hook on the Direct3D 11 `Present` call. It stands at the other player's feet, faces where they look, plays a walk clip at a rate
   matched to their measured speed (and an idle or run clip when the model has one), and is hidden by walls and doors: the proxy reads
   the game's own depth buffer (4x MSAA, reversed depth stored as `0.0597 / distance`, found by watching which depth view the game
-  binds) and discards the model's pixels that are behind it. The original adventurer is the only character, with idle, walk and run clips and four fidgets.
+  binds) and discards the model's pixels that are behind it. The adventurer is the only character, with idle, walk and run clips and four fidgets. Its head, face, eyes,
+  hair and hands are sculpted from signed distance fields in a stylized direction and held to a measured design by a character gate: [the art bible and pipeline](docs/CHARACTER.md).
   It blinks, glances at a player who comes near, carries its head where its player looks, breathes (harder after a run), swings its scarf and
   gear and coat as it moves, acts with its brows in the emotes, is lit with a normal map, roughness and metalness and a sun shadow on the ground, and its footsteps are heard where it walks: [the life layer, shading and shadow](docs/LIFE.md).
 

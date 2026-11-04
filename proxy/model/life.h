@@ -26,8 +26,9 @@ struct LifeRig {
     LifeAxis hemSwing[3], hemSway[3], thighSwing[2];            // swing: the hem's bottom toward +z (front); thighSwing: the thigh's foot toward +z
     LifeChain scarfA, scarfB, canteen, satchel;
     float lidClose = 1.0f;          // the lid bone's scale along its length that closes the eye (the model's .glb.txt: lid_close=); 1: no lids
+    float lidRotate = 0.0f;         // or: the turn (radians, about the lid bone's local x) that closes it, for a lid that wraps a round eyeball (lid_rotate=); 0: stretch
     bool ok = false;                // the head was found: the layer does something
-    void Bind(const Model& m, float lidCloseScale);
+    void Bind(const Model& m, float lidCloseScale, float lidRotateAngle = 0.0f);
 };
 
 struct LifeInput {

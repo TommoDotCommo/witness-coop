@@ -121,8 +121,8 @@ duration 2.6
 drag 0.04
 key 0.00 rest
 key 0.32 turn=-28 hips=0,-4,0 chest=0,-10,0 head=0,-14,0 arm.LR=16,0,34 fore.LR=70
-key 0.70 turn=110 hips=0,-1,0 chest=-2,8,0 head=0,30,0 arm.R=30,0,128 fore.R=46 hand.R=0,0,14 arm.L=64,-40,22 fore.L=88
-key 1.10 turn=260 chest=-3,10,0 head=-2,34,0 arm.R=26,0,136 fore.R=40 arm.L=66,-42,22 fore.L=90
+key 0.70 turn=110 hips=0,-1,0 chest=-2,8,0 head=0,30,0 arm.R=30,0,128 fore.R=46 hand.R=0,0,14 arm.L=64,-38,26 fore.L=88
+key 1.10 turn=260 chest=-3,10,0 head=-2,34,0 arm.R=26,0,136 fore.R=40 arm.L=66,-40,26 fore.L=90
 key 1.50 turn=372 chest=-1,2,0 head=0,6,0 arm.R=24,0,110 fore.R=40 arm.L=40,-30,20 fore.L=70
 key 1.82 turn=360 hips=0,-2.5,0 chest=-4,0,0 head=-6,0,0 arm.R=20,0,62 arm.L=24,0,52 fore.LR=12 hand.LR=0,0,-10   # ta-da
 key 2.20 hips=0 chest=-1 head=-1 arm.LR=8,0,30 fore.LR=12 hand.LR=0
@@ -229,7 +229,7 @@ duration 5
 loop 1.0 5.0
 drag 0.04
 touch hand.R head 0.03 1.2 5.0
-pose think hips=3,-1,0 pelvis=0,6,-4 spine=2,0,3 chest=2,-6,2 neck=-2,0,0 head=-8,6,-8 arm.R=52,-38,13 fore.R=123 hand.R=-10,-55,0 arm.L=60,-46,24 fore.L=74 hand.L=10,0,0
+pose think hips=3,-1,0 pelvis=0,6,-4 spine=2,0,3 chest=2,-6,2 neck=-2,0,0 head=-8,6,-8 arm.R=56,-34,16 fore.R=121 hand.R=-10,-55,0 arm.L=60,-46,24 fore.L=74 hand.L=10,0,0
 key 0.00 rest
 key 0.45 hips=1,0,0 arm.R=30,-30,6 fore.R=110 arm.L=26,-36,10 fore.L=70 head=-2
 key 1.00 @think
@@ -300,10 +300,10 @@ stiffness 1.4
 touch hand.R head 0.03 0.6 2.3
 key 0.00 rest
 key 0.22 chest=-3 head=-3 arm.R=8,10,20 fore.R=40
-key 0.48 hit arm.R=23,39,89 fore.R=104 hand.R=0,0,-8 chest=-4 head=-4
-key 0.70 arm.R=23,39,88 fore.R=105
-key 1.60 arm.R=24,40,89 fore.R=104 head=-5
-key 2.30 arm.R=23,39,89 fore.R=104 head=-4
+key 0.48 hit arm.R=25,44,98 fore.R=95 hand.R=0,0,-8 chest=-4 head=-4
+key 0.70 arm.R=25,44,97 fore.R=96
+key 1.60 arm.R=26,45,98 fore.R=95 head=-5
+key 2.30 arm.R=25,44,98 fore.R=95 head=-4
 key 2.52 hit arm.R=6,10,10 fore.R=30 hand.R=0 chest=-2 head=-2
 key 3.18 rest
 
@@ -389,7 +389,7 @@ key 2.02 chest=13 head=13
 key 2.40 pelvis=2 spine=2 chest=-2 head=-6 hips=0,-1,-1 arm.R=40,-20,20 fore.R=110 arm.L=16,-30,6 fore.L=60
 key 2.56 chest=-5 head=-9
 key 2.72 chest=-2 head=-5
-key 3.10 chest=0 head=0 spine=0 pelvis=0 hips=0 arm.R=62,-30,26 fore.R=126 hand.R=-10       # wipes an eye
+key 3.10 chest=0 head=0 spine=0 pelvis=0 hips=0 arm.R=60,-30,27 fore.R=118 hand.R=-10       # wipes an eye
 key 3.50 arm.R=20,-10,10 fore.R=50 hand.R=0 arm.L=6,0,8 fore.L=20
 key 3.95 rest
 
@@ -445,7 +445,7 @@ emote 23 Puzzle spark
 duration 4
 drag 0.035
 key 0.00 rest
-key 0.45 arm.R=55,-40,12 fore.R=125 hand.R=-10 head=4,6,-8 chest=2 hips=1,-1,0
+key 0.45 arm.R=57,-38,14 fore.R=120 hand.R=-10 head=4,6,-8 chest=2 hips=1,-1,0
 key 1.00 head=6,8,-10 hand.R=-14
 key 1.18 head=-2,0,-4
 key 1.22 arm.R=74,0,62 fore.R=70 hand.R=-6 head=0,0,-2

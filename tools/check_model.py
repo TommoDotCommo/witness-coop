@@ -3,7 +3,7 @@
 usage: check_model.py <model.glb> [...]      exit 0: all fine; every problem is printed
   - one skin, at most 255 joints (the loader's and the shader's limit); every vertex has four joints and weights that add up to 1
   - clips named idle, walk and run, each a loop (its last key is its first), 0.4 to 5 seconds long
-  - one to three embedded textures (colour atlas, and optionally a normal map and a metallic-roughness map on the same material); flat colours (a material's base colour) for everything else; at most 24 materials; at most 60 000 vertices
+  - one to three embedded textures (colour atlas, and optionally a normal map and a metallic-roughness map on the same material); flat colours (a material's base colour) for everything else; at most 24 materials; at most 250 000 vertices (a ceiling that catches an accident, not an art budget: the proxy skins on the GPU with 32-bit indices)
   - standing height between 1.5 and 2.1 m, feet at the ground; if the .glb.txt names an eye joint (eye_joint=), that joint exists and is between 1.4 and 1.9 m
   - the speeds in the .glb.txt are numbers the clips can be made for (speed=, run_speed=)"""
 import json, math, os, struct, sys
@@ -40,7 +40,7 @@ def check(path):
             off = [i for i, ws in enumerate(w) if abs(sum(ws) - 1) > 0.01]
             if off: bad('%d vertices whose weights do not add up to 1 (first: %d, sum %.3f)' % (len(off), off[0], sum(w[off[0]])))
             if any(max(row) >= len(joints) for row in jj): bad('a joint index past the skin')
-    if verts > 60000: bad('%d vertices (more than 60000)' % verts)
+    if verts > 250000: bad('%d vertices (more than 250000: an accident? see docs/CHARACTER.md, budgets)' % verts)
     if len(j.get('materials', [])) > 24: bad('%d materials (more than 24)' % len(j['materials']))
     images = j.get('images', [])
     if len(images) > 3: bad('%d textures (the loader takes the colour, normal and material maps)' % len(images))
