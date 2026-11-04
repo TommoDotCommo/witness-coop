@@ -1,0 +1,7 @@
+# expect: catalog
+# The duration disagrees with core/emotes.h (both games must agree on when an emote ends).
+emote 1 Wave
+duration 3.0
+key 0 rest
+key 1 arm.R=16,88,100 fore.R=70
+key 3.0 rest

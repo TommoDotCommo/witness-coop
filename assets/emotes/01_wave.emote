@@ -1,0 +1,17 @@
+# Wave: a friendly hello. The hand gathers low, rises to head height out to the side and the
+# forearm swings three times, each swing smaller; the wrist trails the forearm (drag) and the
+# head tilts toward the hand. Upper body only: it plays while walking.
+emote 1 Wave
+duration 2.6
+drag 0.04
+pose up     arm.R=16,88,100 fore.R=70 hand.R=0,0,12 chest=-2,-5,-4 head=-5,-8,6 neck=0,-4,2
+key 0.00 rest
+key 0.28 arm.R=20,30,42 fore.R=92 hand.R=-12,0,-8 chest=2,3,1 head=2,4,0             # gather: the hand at the chest, out to the side, a small dip
+key 0.56 @up                                                                            # up, a touch past the swing's centre
+key 0.84 fore.R=88 hand.R=0,0,-12 chest=-2,-7,-3 head=-5,-10,8
+key 1.10 fore.R=54 hand.R=0,0,20 chest=-2,-3,-5
+key 1.36 fore.R=86 hand.R=0,0,-12 chest=-2,-6,-3 head=-6,-11,9
+key 1.62 fore.R=58 hand.R=0,0,16 chest=-2,-4,-4
+key 1.86 fore.R=80 hand.R=0,0,-6 head=-4,-8,6
+key 2.20 arm.R=24,46,40 fore.R=96 hand.R=-6,0,0 chest=0,0,-1 head=-1,-3,2              # lowering
+key 2.55 arm.R=6,10,8 fore.R=20 hand.R=0 chest=0 head=0 neck=0

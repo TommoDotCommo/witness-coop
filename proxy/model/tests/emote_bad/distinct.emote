@@ -1,0 +1,16 @@
+# expect: distinct
+# Two emotes that move the same way.
+emote 4 Yes
+duration 2.6
+key 0 rest
+key 0.5 head=20 neck=8
+key 1.0 head=-4
+key 1.5 head=14
+key 2.6 rest
+emote 5 No
+duration 2.6
+key 0 rest
+key 0.5 head=20,1,0 neck=8
+key 1.0 head=-4,1,0
+key 1.5 head=14,1,0
+key 2.6 rest

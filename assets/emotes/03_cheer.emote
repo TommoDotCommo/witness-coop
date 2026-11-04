@@ -1,0 +1,15 @@
+# Cheer: crouch and wind up, then both arms shoot into a V with the chest arched and the chin up;
+# two fist pumps, the left a beat behind the right; the weight lands on the front of the feet.
+emote 3 Cheer
+duration 2.6
+drag 0.03
+key 0.00 rest
+key 0.30 hips=0,-6,-2 spine=10 chest=8 head=6 arm.LR=-28,0,10 fore.LR=50 hand.LR=10      # wind up: down and back
+key 0.52 hit hips=0,-1,1 spine=-6 chest=-10 head=-16 arm.R=8,0,150 arm.L=6,0,146 fore.LR=12 hand.LR=-10
+key 0.80 arm.R=4,0,138 fore.R=36 arm.L=6,0,150 fore.L=14 head=-14,6,0
+key 1.02 hit arm.R=8,0,156 fore.R=10 arm.L=2,0,134 fore.L=38
+key 1.26 hit arm.L=8,0,154 fore.L=10 arm.R=6,0,140 fore.R=28 head=-15,-6,0
+key 1.50 arm.LR=6,0,146 fore.LR=18 head=-12,0,0
+key 1.90 hips=0,-2,0 spine=-2 chest=-4 head=-6 arm.R=56,0,40 fore.R=70 arm.L=50,0,34 fore.L=64
+key 2.30 hips=0 spine=0 chest=0 head=0 arm.LR=4,0,22 fore.LR=26 hand.LR=0
+key 2.58 rest

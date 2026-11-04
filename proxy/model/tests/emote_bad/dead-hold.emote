@@ -1,0 +1,8 @@
+# expect: dead-hold
+# A held pose with nothing moving for two seconds: it reads as frozen.
+emote 16 Salute
+duration 3.2
+key 0 rest
+key 0.5 arm.R=23,39,89 fore.R=104
+key 2.6 arm.R=23,39,89 fore.R=104
+key 3.2 rest

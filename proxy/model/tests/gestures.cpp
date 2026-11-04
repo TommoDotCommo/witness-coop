@@ -1,5 +1,6 @@
 #include "../model.h"
 #include "../gestures.h"
+#include <algorithm>
 #include "../../voice/gesture.h"
 #include <cstdio>
 #include <fstream>
@@ -41,21 +42,17 @@ int main(int argc,char** argv) {
             float t=frame/120.f; st.Step(id,t,0,false,1/120.f);
             for(int b=0;b<GestureBones;++b) {
                 auto& j=st.pose[b]; REQUIRE(j.weight>=0 && j.weight<=1.00001f);
-                for(float a:j.a) REQUIRE(std::isfinite(a) && fabsf(a)<=165);
+                for(float a:j.a) REQUIRE(std::isfinite(a) && fabsf(a)<=180);      // per-bone anatomical ranges: the quality gate
                 if(b==ElbowL || b==ElbowR) REQUIRE(j.a[0]>=0 && j.a[0]<=140);
                 if(b==ShinL || b==ShinR) REQUIRE(j.a[0]<=0 && j.a[0]>=-140);
             }
             JointMatricesBlend(m,-1,0,idle,t,1,mats.data(),&st);
             JointMatrices(m,idle,t,base.data());
-            for(const char* foot:{"foot.L","foot.R"}) {
-                auto p=joint(m,mats,foot),q=joint(m,base,foot);
-                REQUIRE(fabsf(p[1]-q[1])<.025f);
-                if(id!=14 && id!=7) for(int axis=0;axis<3;++axis) REQUIRE(fabsf(p[axis]-q[axis])<.001f);
-            }
+            // Feet: planted soles, ground contact and balance are the quality gate's (tests/emote_quality.cpp).
             if(!prev.empty()) {
                 for(const char* bone:{"hand.L","hand.R","head"}) {
                     auto a=joint(m,mats,bone),b=joint(m,prev,bone);
-                    float d=0; for(int k=0;k<3;++k) d+=(a[k]-b[k])*(a[k]-b[k]); if(d>=.05f*.05f) std::fprintf(stderr,"joint jump id %d frame %d bone %s distance %.4f\n",id,frame,bone,sqrtf(d)); REQUIRE(d<.05f*.05f);
+                    float d=0; for(int k=0;k<3;++k) d+=(a[k]-b[k])*(a[k]-b[k]); if(d>=.075f*.075f) std::fprintf(stderr,"joint jump id %d frame %d bone %s distance %.4f\n",id,frame,bone,sqrtf(d)); REQUIRE(d<.075f*.075f);      // 9 m/s, as the quality gate
                 }
             }
             for(size_t j=0;j<m.joints.size()*16;++j) {
@@ -93,7 +90,8 @@ int main(int argc,char** argv) {
     REQUIRE(walk && run);
     GestureState st;
     for(int n=0;n<120;++n) st.Step(22,n/60.f,0,false,1/60.f);
-    st.Step(22,2,2,false,1/60.f); REQUIRE(st.emote==0);
+    float held=st.pose[Chest].weight; st.Step(22,2,2,false,1/60.f); REQUIRE(st.emote==0);
+    REQUIRE(held>.9f && st.pose[Chest].weight>.5f*held);      // walking off fades the emote out, it does not snap back to the gait
     st.Step(22,2.1f,0,false,1/60.f); REQUIRE(st.emote==0); // never resumes after movement
     st.Step(22,0,0,false,1/60.f); REQUIRE(st.emote==22);
     for(int n=0;n<120;++n) st.Step(0,0,0,true,1/60.f);
@@ -109,11 +107,45 @@ int main(int argc,char** argv) {
     REQUIRE(st.emote==1); REQUIRE(fabsf(st.pose[ArmR].a[0]-prev)<30);
     for(int n=0;n<120;++n) st.Step(0,0,0,false,1/60.f);
     for(auto& j:st.pose) REQUIRE(j.weight<.001f);
-    auto cheer=GestureSample(3,1); REQUIRE(cheer[ArmL].a[1]==-cheer[ArmR].a[1]); REQUIRE(cheer[ArmL].a[2]==-cheer[ArmR].a[2]);
-    for(int a=1;a<=witness::kEmoteCount;++a) for(int b=a+1;b<=witness::kEmoteCount;++b) {
-        auto pa=GestureSample(a,1.f),pb=GestureSample(b,1.f); float diff=0;
-        for(int j=0;j<GestureBones;++j) for(int k=0;k<3;++k) diff+=fabsf(pa[j].a[k]-pb[j].a[k]);
-        REQUIRE(diff>5.f);
+    // ---- the clip format: left bones take anatomical numbers (twist and side mirrored for the rig), .LR sets both
+    {
+        EmoteLibrary lib; std::string e;
+        REQUIRE(lib.Parse("emote 1 T\nduration 2\nkey 0 rest\nkey 1 arm.L=10,20,30 fore.LR=40,0,5\nkey 2 rest\n",&e));
+        const auto& k=lib.clips[0].keys[1];
+        REQUIRE(k.v[ArmL*3]==10 && k.v[ArmL*3+1]==-20 && k.v[ArmL*3+2]==-30);
+        REQUIRE(k.v[ElbowR*3]==40 && k.v[ElbowR*3+2]==5 && k.v[ElbowL*3]==40 && k.v[ElbowL*3+2]==-5);
+        REQUIRE(lib.clips[0].Drives(ArmL) && !lib.clips[0].Drives(ArmR) && !lib.clips[0].Drives(kHipsBit));
+        // a key inherits the one before; rest and @pose start over
+        REQUIRE(lib.Parse("emote 1 T\nduration 2\npose p head=5\nkey 0 rest\nkey 1 chest=3\nkey 1.5 head=2\nkey 2 @p\n",&e));
+        REQUIRE(lib.clips[0].keys[2].v[Chest*3]==3 && lib.clips[0].keys[2].v[Head*3]==2 && lib.clips[0].keys[3].v[Chest*3]==0 && lib.clips[0].keys[3].v[Head*3]==5);
+        // step.R's x is outward, so the right foot's model x is negated; plant defaults from 'feet'
+        REQUIRE(lib.Parse("emote 1 T\nduration 2\nfeet free\nkey 0 rest\nkey 1 step.R=3,1,2\nkey 2 rest\n",&e));
+        REQUIRE(lib.clips[0].keys[1].v[kStepChannel+3]==-3 && lib.clips[0].keys[1].v[kStepChannel+5]==2 && lib.clips[0].keys[1].v[kPlantChannel]==0);
+        // every malformed clip is refused with its line, and a failed reload keeps the library
+        for(const char* bad:{"key 0 rest\n","emote 1 T\nkey 0 rest\nkey 1 rest\n","emote 1 T\nduration 2\nkey 0 rest\nkey 0 rest\n",
+                             "emote 1 T\nduration 2\nkey 0 rest\nkey 1 elbow.R=5\n","emote 1 T\nduration 2\nkey 0 rest\nkey 3 rest\n","emote 1 T\nduration 2\nloop 1 3\nkey 0 rest\nkey 2 rest\n",
+                             "emote 1 T\nduration 2\nkey 0 rest\nkey 1 arm.R=1,2,3,4\n","emote 1 T\nduration 2\nkey 0 rest\nkey 1 plant=2\n","emote 1 T\nduration 2\nkey 0 @nope\nkey 1 rest\n"}) {
+            EmoteLibrary l2; std::string why; REQUIRE(!l2.Parse(bad,&why)); REQUIRE(why.find(':')!=std::string::npos);
+        }
+        size_t before=EmoteClips().clips.size(); std::string why;
+        REQUIRE(!ReloadEmoteClips("emote 1 Wave\nduration 2.6\nkey 0 rest\nkey 1 rest\n",&why));      // ids 2..24 missing
+        REQUIRE(EmoteClips().clips.size()==before && EmoteClips().ById(24));
+    }
+    // ---- overlap: a hand samples its curve drag * 4.5 seconds after the shoulder does
+    {
+        EmoteLibrary lib; std::string e;
+        REQUIRE(lib.Parse("emote 1 T\nduration 3\ndrag 0.04\nkey 0 rest\nkey 1 arm.R=60 hand.R=60\nkey 3 rest\n",&e));
+        float v[kClipChannels], w[kClipChannels]; SampleClip(lib.clips[0],.7f,v); SampleClip(lib.clips[0],.7f-.04f*(4.5f-2),w);
+        REQUIRE(fabsf(v[HandR*3]-w[ArmR*3])<1e-3f && v[HandR*3]<v[ArmR*3]-1);
+    }
+    // ---- follow-through: after a fast move the hand overshoots a little and settles (a spring, not a filter)
+    {
+        float x=0,v=0,peak=0; for(int n=0;n<240;++n) { GestureState::SpringTo(x,v,90,kSpringHz[ElbowR],kSpringZeta[ElbowR],1/60.f); peak=std::max(peak,x); }
+        std::printf("elbow spring: a 90 deg step peaks at %.1f and settles at %.2f\n",peak,x);
+        REQUIRE(peak>90*1.02f && peak<90*1.15f && fabsf(x-90)<.5f);      // carries on 2-15 % past the pose, then comes back
+        float y=0,w=0; for(int n=0;n<6;++n) GestureState::SpringTo(y,w,90,kSpringHz[ElbowR],kSpringZeta[ElbowR],.1f);
+        float z=0,u=0; for(int n=0;n<36;++n) GestureState::SpringTo(z,u,90,kSpringHz[ElbowR],kSpringZeta[ElbowR],1/60.f);
+        REQUIRE(fabsf(y-z)<1.f);      // the same motion at 10 and 60 frames a second
     }
     wvoice::GestureActivity vad;
     REQUIRE(!vad.Feed(1000,true,0,.02f)); // no single-frame flash

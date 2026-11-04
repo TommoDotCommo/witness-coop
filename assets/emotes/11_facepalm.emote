@@ -1,0 +1,16 @@
+# Facepalm: a look up in disbelief, then the hand comes up and the head drops into it (the head
+# arrives after the hand); a slow shake inside the hand; the hand slides off and the shoulders sag.
+emote 11 Facepalm
+duration 3.6
+drag 0.045
+touch hand.R head 0.03 0.7 2.95       # on the face, then sliding off it
+key 0.00 rest
+key 0.35 head=-12,0,0 neck=-4 chest=-3
+key 0.75 hit arm.R=77,-13,29 fore.R=101 hand.R=-10,0,0 head=8,0,-4 neck=4
+key 1.00 head=15,0,-6 neck=6 chest=3 spine=2 hips=0,-2,-1 pelvis=0,0,3
+key 1.40 head=14,-6,-7 hand.R=-10,0,4
+key 1.80 head=14,5,-4 hand.R=-10,0,-4
+key 2.20 head=14,-5,-6 hand.R=-12,0,2
+key 2.60 head=14,2,-5
+key 3.00 arm.R=24,-10,10 fore.R=40 hand.R=0 head=12,0,0 neck=4 chest=10 spine=6 hips=0,-1,0 pelvis=0
+key 3.55 rest

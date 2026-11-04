@@ -1,0 +1,9 @@
+# expect: loop-seam
+# The loop ends somewhere else than it starts: a jump every lap.
+emote 22 Sway
+duration 4
+loop 1.0 4.0
+key 0 rest
+key 1.0 hips=3,-1,0 chest=0,-6,0
+key 2.5 hips=-3,-1,0 chest=0,6,0
+key 4.0 hips=-3,-1,0 chest=0,12,0

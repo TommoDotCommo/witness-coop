@@ -1,0 +1,16 @@
+# Stretch: a big morning stretch. Arms come up in front and overhead, the back arches and the hips
+# push forward; lean left, lean right; then the arms open wide and float down with an exhale.
+emote 15 Stretch
+duration 4.8
+drag 0.05
+stiffness 0.8
+key 0.00 rest
+key 0.50 arm.LR=60,-10,10 fore.LR=70 chest=4 head=4
+key 0.80 arm.R=60,0,90 arm.L=56,0,86 fore.LR=30 chest=-2 head=-4
+key 1.10 arm.R=10,0,168 arm.L=10,0,166 fore.LR=4 hand.LR=-20 chest=-10 spine=-6 head=-14 hips=0,-1,2
+key 1.60 arm.R=8,0,172 arm.L=8,0,170 chest=-12 spine=-8 head=-16
+key 2.30 spine=-4,0,-10 chest=-8,0,-10 head=-10,0,-6 arm.R=8,0,172 arm.L=8,0,160 hips=-2,-1.5,1
+key 3.00 spine=-4,0,10 chest=-8,0,10 head=-10,0,6 arm.R=8,0,160 arm.L=8,0,172 hips=2,-1.5,1
+key 3.60 spine=0 chest=-2 head=-4 arm.LR=40,0,95 fore.LR=6 hand.LR=0 hips=0
+key 4.20 chest=2 head=2 arm.LR=4,0,30 fore.LR=10
+key 4.75 rest

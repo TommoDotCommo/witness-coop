@@ -1,0 +1,15 @@
+# Sad: a deep breath in, then everything sinks: the head drops, the back rounds, the shoulders
+# fall forward, the hips settle back; the left hand comes across to hold the right arm; a slow
+# small head shake. Slow springs (stiffness 0.7) make it heavy.
+emote 19 Sad
+duration 4.8
+drag 0.06
+stiffness 0.7
+key 0.00 rest
+key 0.70 chest=-6 head=-8 neck=-2 hips=0,-0.5,0 arm.LR=-4,0,10
+key 1.50 chest=12 spine=10 neck=6 head=18 hips=0,-3,-3 pelvis=4 arm.R=10,-20,4 fore.R=20 arm.L=46,-42,22 fore.L=88 hand.L=10
+key 2.30 head=19,-6,4 chest=13
+key 3.00 head=19,5,-3 chest=13 spine=11
+key 3.60 head=18,0,2 chest=12 hips=0,-3,-3
+key 4.20 chest=6 spine=4 head=12 neck=3 hips=0,-1,-1 pelvis=2 arm.L=14,-20,6 fore.L=40 hand.L=0 arm.R=4,0,6 fore.R=10
+key 4.75 rest

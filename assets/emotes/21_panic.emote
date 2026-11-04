@@ -1,0 +1,24 @@
+# Panic: a startle (a hop back of the chest, the arms flinch up), then both hands grab the sides of
+# the head under the brim, the head darts left and right, the knees bounce nervously; then the
+# arms flail and settle.
+emote 21 Panic
+duration 4
+drag 0.03
+touch hand.R head 0.04 0.5 2.5
+touch hand.L head 0.04 0.5 2.5
+pose grab arm.R=2,67,80 fore.R=131 arm.L=-5,84,84 fore.L=131 hand.LR=0
+key 0.00 rest
+key 0.22 hit chest=-10 head=-12 hips=0,-2,-2 arm.LR=30,0,40 fore.LR=90
+key 0.62 @grab chest=-4 head=-4 hips=0,-4,0
+key 0.90 head=-4,30,0 chest=-4,6,0 hips=0,-2,0
+key 1.08 hit head=-4,-30,2 chest=-4,-6,0 hips=0,-5,0
+key 1.30 head=-4,26,-2 hips=0,-2,0
+key 1.46 hit head=-4,-28,2 hips=0,-5,0
+key 1.70 head=-6,24,0 hips=0,-2,0 chest=-5,5,0
+key 1.88 hit head=-6,-26,0 hips=0,-5,0 chest=-5,-5,0
+key 2.30 head=-4,0,0 hips=0,-3,0 chest=-3,0,0
+key 2.60 arm.R=40,0,70 fore.R=60 arm.L=10,0,100 fore.L=40 head=0,10,0 hips=0,-1,0
+key 2.86 arm.R=10,0,100 fore.R=40 arm.L=40,0,70 fore.L=60 head=0,-10,0
+key 3.12 arm.R=40,0,66 fore.R=60 arm.L=12,0,92 fore.L=44 head=0,6,0
+key 3.50 arm.LR=10,0,24 fore.LR=30 head=0 chest=0 hips=0
+key 3.95 rest

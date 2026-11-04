@@ -17,6 +17,7 @@ for d in "${dirs[@]}"; do
     mv "$d/AnselSDK64.dll" "$d/AnselSDK64_real.dll"
   fi
   cp "$ROOT/proxy/AnselSDK64.dll" "$d/AnselSDK64.dll"
-  mkdir -p "$d/witness_models" && rm -f "$d/witness_models/"* && cp -f "$ROOT"/assets/models/*.glb "$ROOT"/assets/models/*.txt "$d/witness_models/"
+  mkdir -p "$d/witness_models/emotes" && find "$d/witness_models" -type f -delete && cp -f "$ROOT"/assets/models/*.glb "$ROOT"/assets/models/*.txt "$d/witness_models/"
+  cp -f "$ROOT"/assets/emotes/*.emote "$d/witness_models/emotes/"      # for `emotes reload` (the proxy carries its own copy)
   echo "installed into $d"
 done

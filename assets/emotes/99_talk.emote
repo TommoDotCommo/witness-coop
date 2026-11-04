@@ -1,0 +1,18 @@
+# Talk: the proximity-speech hand (not on the wire; plays while the player talks near others).
+# The right hand is up in front of the chest and makes small beat gestures: lifts, turns open,
+# a little chop, never the same twice in a row.
+emote 100 Talk
+duration 4.2
+loop 0.6 4.2
+drag 0.04
+pose base arm.R=50,0,62 fore.R=122 hand.R=-14,-20,0
+key 0.00 rest
+key 0.60 @base
+key 1.05 arm.R=52,6,64 fore.R=116 hand.R=-6,10,4
+key 1.40 hit arm.R=48,-2,60 fore.R=126 hand.R=-20,-24,0
+key 1.90 arm.R=54,8,66 fore.R=114 hand.R=-4,20,6
+key 2.35 arm.R=50,2,62 fore.R=120 hand.R=-12,0,0
+key 2.70 hit arm.R=47,-4,60 fore.R=128 hand.R=-22,-26,0
+key 3.30 arm.R=53,4,64 fore.R=118 hand.R=-8,12,2
+key 3.80 arm.R=51,0,63 fore.R=121 hand.R=-12,-10,0
+key 4.20 @base

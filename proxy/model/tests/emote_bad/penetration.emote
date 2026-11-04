@@ -1,0 +1,7 @@
+# expect: penetration
+# The right forearm swings straight through the chest.
+emote 9 Point
+duration 3.2
+key 0 rest
+key 1 arm.R=30,-95,10 fore.R=125
+key 3.2 rest

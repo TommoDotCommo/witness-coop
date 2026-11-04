@@ -1,0 +1,12 @@
+# expect: eye-drop
+# A seat that is too high: the seated player would float above the stool.
+emote 14 Sit
+duration 6
+loop 2.0 6.0
+eyedrop 0.44 0.50
+pose seated hips=0,-20,0 step.LR=2,0,20 thigh.LR=1
+key 0 rest thigh.LR=1
+key 1.2 @seated
+key 2.0 @seated head=2
+key 4.0 @seated head=-2,6,0
+key 6.0 @seated head=2

@@ -1,0 +1,7 @@
+# expect: mobile
+# Wave plays while walking, so it must leave the hips and legs to the gait.
+emote 1 Wave
+duration 2.6
+key 0 rest
+key 1 arm.R=16,88,100 fore.R=70 hips=3,-2,0
+key 2.6 rest

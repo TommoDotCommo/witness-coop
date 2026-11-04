@@ -156,6 +156,7 @@ static DWORD WINAPI CmdThread(LPVOID) {
             else if (!strncmp(line, "depthdump", 9)) ModelGpuRequestDepthDump();
             else if (!strncmp(line, "probe", 5)) ModelGpuRequestProbe();
             else if (!strncmp(line, "depthview ", 10)) ModelGpuDepthView(!strncmp(line + 10, "on", 2));
+            else if (!strncmp(line, "emotes reload", 13)) ModelGpuReloadEmotes();      // edit assets/emotes, copy them beside the game, see them at once
             else if (!strncmp(line, "lifeblink", 9)) ModelGpuForceBlink();      // every drawn figure blinks now (pictures and tests)
             else if (!strncmp(line, "fakepose off", 12)) CoopSetFakeRemote(false, nullptr, 0);
             else if (!strncmp(line, "fakepose ", 9)) { float f[4]; if (sscanf(line, "fakepose %f %f %f %f", &f[0], &f[1], &f[2], &f[3]) == 4) CoopSetFakeRemote(true, f, f[3]); }

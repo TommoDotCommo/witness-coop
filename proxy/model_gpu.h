@@ -32,5 +32,6 @@ void ModelGpuRequestProbeGrid(float x0 = 0.2f, float y0 = 0.2f, float x1 = 0.8f,
 void ModelGpuRequestDepthDump();  // the next frame writes witness_depth.bin: the scene depth as a small picture with its camera (witness_cmd.txt: depthdump)
 void ModelGpuRequestProbe();      // the next frame logs the scene depth at a few pixels (witness_cmd.txt: probe)
 void ModelGpuLogStats();               // witness_cmd.txt: modelstat -> one log line: pixels of the model that survived the depth test (GPU occlusion query), clip, speed
+void ModelGpuReloadEmotes();             // witness_cmd.txt: emotes reload -> re-read witness_models/emotes/*.emote at the next frame (a bad file keeps the old clips)
 void ModelGpuForceBlink();                // witness_cmd.txt: lifeblink -> every drawn figure starts a blink at the next frame
 void ModelGpuDepthView(bool on);          // witness_cmd.txt: depthview on|off (diagnostic: draw the game's depth buffer instead of the model)

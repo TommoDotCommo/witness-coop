@@ -1,0 +1,7 @@
+# expect: parse
+# A bone that does not exist.
+emote 1 Wave
+duration 2.6
+key 0 rest
+key 1 elbow.R=60
+key 2.6 rest

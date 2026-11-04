@@ -1,0 +1,19 @@
+# Puzzle spark: "Eureka!" A moment of puzzling (hand to chin, head tilted), then the idea hits:
+# the head snaps up, the index hand shoots up overhead, the body rises; then a decisive point
+# forward at the panel.
+emote 23 Puzzle spark
+duration 4
+drag 0.035
+key 0.00 rest
+key 0.45 arm.R=55,-40,12 fore.R=125 hand.R=-10 head=4,6,-8 chest=2 hips=1,-1,0
+key 1.00 head=6,8,-10 hand.R=-14
+key 1.18 head=-2,0,-4
+key 1.22 arm.R=74,0,62 fore.R=70 hand.R=-6 head=0,0,-2
+key 1.38 hit arm.R=20,0,150 fore.R=24 hand.R=-6 head=-14,0,0 neck=-4 chest=-8 spine=-2 hips=0,-1,1
+key 1.55 arm.R=16,0,156 fore.R=18 head=-12
+key 2.10 arm.R=20,0,150 fore.R=22 head=-10,-4,0 chest=-6
+key 2.45 arm.R=40,0,12 fore.R=96 hand.R=-10 chest=0,6,0 head=0,4,0 hips=0
+key 2.70 hit arm.R=86,0,14 fore.R=6 hand.R=8 chest=-2,-10,0 head=-4,-10,0 neck=0
+key 3.20 arm.R=84,0,14 fore.R=10 hand.R=4 chest=-2,-9,0 head=-3,-9,0
+key 3.60 arm.R=20,0,10 fore.R=30 hand.R=0 chest=0 head=0
+key 3.95 rest

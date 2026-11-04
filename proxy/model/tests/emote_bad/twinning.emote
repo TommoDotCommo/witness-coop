@@ -1,0 +1,8 @@
+# expect: twinning
+# Both arms in perfect mirror the whole time.
+emote 3 Cheer
+duration 2.6
+key 0 rest
+key 0.6 arm.LR=8,0,150 fore.LR=12
+key 1.2 arm.LR=8,0,140 fore.LR=30
+key 2.6 rest

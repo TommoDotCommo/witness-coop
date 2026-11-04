@@ -1,0 +1,25 @@
+# Laugh: the head goes back with a burst, the chest bounces quickly in time with the "ha ha",
+# then the body doubles over and the right hand slaps the thigh; the bounces fade as it
+# straightens and wipes an eye.
+emote 20 Laugh
+touch hand.R head 0.05 2.9 3.4
+duration 4
+drag 0.035
+key 0.00 rest
+key 0.25 hit head=-22 neck=-6 chest=-8 spine=-2 arm.L=22,-32,14 fore.L=78 hand.L=0
+key 0.42 chest=-3 head=-16
+key 0.56 chest=-8 head=-21
+key 0.70 chest=-3 head=-15
+key 0.84 chest=-7 head=-19
+key 1.10 pelvis=8 spine=10 chest=10 head=10 neck=4 hips=0,-3,-3 arm.L=40,-40,16 fore.L=86 arm.R=30,0,20 fore.R=60
+key 1.32 hit chest=14 head=14 arm.R=10,0,12 fore.R=20 hand.R=10
+key 1.50 chest=9 head=9 arm.R=24,0,16 fore.R=50
+key 1.66 hit chest=14 head=14 arm.R=10,0,12 fore.R=20
+key 1.84 chest=10 head=10
+key 2.02 chest=13 head=13
+key 2.40 pelvis=2 spine=2 chest=-2 head=-6 hips=0,-1,-1 arm.R=40,-20,20 fore.R=110 arm.L=16,-30,6 fore.L=60
+key 2.56 chest=-5 head=-9
+key 2.72 chest=-2 head=-5
+key 3.10 chest=0 head=0 spine=0 pelvis=0 hips=0 arm.R=62,-30,26 fore.R=126 hand.R=-10       # wipes an eye
+key 3.50 arm.R=20,-10,10 fore.R=50 hand.R=0 arm.L=6,0,8 fore.L=20
+key 3.95 rest

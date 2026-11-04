@@ -1,0 +1,9 @@
+# expect: readable
+# A nod so small nobody across a room will see it.
+emote 4 Yes
+duration 2.6
+key 0 rest
+key 0.5 head=3
+key 1.0 head=-1
+key 1.5 head=2
+key 2.6 rest

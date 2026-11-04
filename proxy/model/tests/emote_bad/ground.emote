@@ -1,0 +1,8 @@
+# expect: ground
+# Feet free, hips dropped: the soles go into the ground.
+emote 6 Bow
+duration 2.6
+feet free
+key 0 rest
+key 1 hips=0,-12,0 chest=10
+key 2.6 rest

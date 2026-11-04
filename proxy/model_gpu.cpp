@@ -12,6 +12,7 @@
 #include <cstring>
 #include <strings.h>
 #include <vector>
+#include <algorithm>
 #include <cstddef>
 #include "model_gpu.h"
 #include "model/gestures.h"
@@ -181,6 +182,22 @@ bool ModelGpuReady() { return g_ready; }
 void ModelGpuDepthView(bool on) { InterlockedExchange(&g_depthViewCmd, on); }
 static volatile LONG g_forceBlink;
 void ModelGpuForceBlink() { InterlockedExchange(&g_forceBlink, 1); }
+static volatile LONG g_emoteReload = 0;
+void ModelGpuReloadEmotes() { InterlockedExchange(&g_emoteReload, 1); }
+// The render thread owns the clip library: read every witness_models/emotes/*.emote (in name order) and swap it in when it parses.
+static void ReloadEmotesNow() {
+    wchar_t d[MAX_PATH]; GetModuleFileNameW(g_selfModule(), d, MAX_PATH); wchar_t* sl = wcsrchr(d, L'\\'); if (sl) *(sl + 1) = 0;
+    std::wstring dir = std::wstring(d) + L"witness_models\\emotes\\"; std::vector<std::wstring> names;
+    WIN32_FIND_DATAW fd; HANDLE h = FindFirstFileW((dir + L"*.emote").c_str(), &fd);
+    if (h != INVALID_HANDLE_VALUE) { do names.push_back(fd.cFileName); while (FindNextFileW(h, &fd)); FindClose(h); }
+    std::sort(names.begin(), names.end()); std::string text;
+    for (auto& n : names) { FILE* f = _wfopen((dir + n).c_str(), L"rb"); if (!f) continue; char buf[4096]; size_t k; while ((k = fread(buf, 1, sizeof buf, f)) > 0) text.append(buf, k); text += "\n"; fclose(f); }
+    std::string err; char m[300];
+    if (names.empty()) snprintf(m, sizeof m, "emotes: no witness_models/emotes/*.emote beside the proxy; kept the built-in clips");
+    else if (wm::ReloadEmoteClips(text, &err)) snprintf(m, sizeof m, "emotes: reloaded %zu clips from %zu files", wm::EmoteClips().clips.size(), names.size());
+    else snprintf(m, sizeof m, "emotes: reload refused, kept the old clips: %s", err.c_str());
+    Log(m);
+}
 void ModelGpuRequestProbe() { InterlockedExchange(&g_probeReq, 1); }
 void ModelGpuRequestProbeGrid(float x0, float y0, float x1, float y1) { g_gridBox[0] = x0; g_gridBox[1] = y0; g_gridBox[2] = x1; g_gridBox[3] = y1; InterlockedExchange(&g_gridReq, 1); }
 ModelDrawStats ModelGpuStats() { return g_stats; }
@@ -408,6 +425,7 @@ static void RunDepthDump(UINT w, UINT h, ID3D11ShaderResourceView* sceneSrv, boo
 bool ModelGpuDraw(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Cam& cam, bool valid, unsigned seq, const float pos[3], float yaw, unsigned playerId, bool first, const ModelExtra* extra) {
     if (!g_ready) return false;
     InterlockedExchange(&g_modelRenderThread, (LONG)GetCurrentThreadId());
+    if (first && InterlockedExchange(&g_emoteReload, 0)) ReloadEmotesNow();
     if (first && InterlockedExchange(&g_centerReq, 0)) AnswerCenterDepth(w, h);
     if (first && (g_probeReq || g_gridReq || g_dumpReq)) {      // answered here, before anything returns early: with no other player to draw they were never answered
         ID3D11ShaderResourceView* srv = nullptr; bool ms = false; bool have = !GetCfg().noModelDepth && DepthScene(&srv, &ms);
