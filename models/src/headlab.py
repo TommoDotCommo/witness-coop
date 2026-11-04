@@ -43,15 +43,16 @@ def cap(name, centre, r, angle, mat, segs=48):
     for p in me.polygons: p.use_smooth = True
     return ob
 
-skin = material('skin', '#d8b4a0', 0.62); lashm = material('lash', '#2a1e18', 0.5); white = material('white', '#ece6da', 0.25); iris = material('iris', '#5d7148', 0.3); ring = material('ring', '#2b3326', 0.35)
+skin = material('skin', '#e2b496', 0.7); lashm = material('lash', '#2a1e18', 0.5); white = material('white', '#ece6da', 0.25); iris = material('iris', '#5d7148', 0.3); ring = material('ring', '#2b3326', 0.35)
 pupil = material('pupil', '#0d0e0e', 0.2); hair = material('hair', '#5a4030', 0.75); lip = material('lips', '#b87566', 0.55)
 def paint(ob, mask, mat):      # faces whose centre the mask selects get the material
     ob.data.materials.append(mat); k = len(ob.data.materials) - 1
     cs = np.array([p.center[:] for p in ob.data.polygons]); sel = mask(cs)
     for p, s_ in zip(ob.data.polygons, sel):
         if s_: p.material_index = k
-hd = from_field('head', head.skull_and_face(), (-0.13, -0.16, 1.40), (0.13, 0.13, 1.84), CELL, skin)
-paint(hd, head.lip_mask, lip)
+FACE_FIELD = head.island_face() if '--style' in args and args[args.index('--style') + 1] == 'island' else head.skull_and_face()
+hd = from_field('head', FACE_FIELD, (-0.13, -0.16, 1.40), (0.13, 0.13, 1.84), CELL, skin)
+if '--style' not in args: paint(hd, head.lip_mask, lip)
 from_field('hair', head.hair(head.skull_and_face()), (-0.13, -0.16, 1.52), (0.13, 0.15, 1.84), CELL * 1.2, hair, 1)
 for side, f in head.upper_lids().items():
     c = head.eye_centre(side); ob = from_field('lid_upper.%d' % side, f, c - 0.022, c + 0.022, CELL * 0.4, skin, relax=1)

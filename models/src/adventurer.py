@@ -24,7 +24,7 @@ def srgb(h, material=None):      # '#rrggbb' -> linear rgba
     rgb = [(v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4) for v in c]
     return tuple(tint_colour(rgb, material, APPEARANCE) + [1.0])
 COLOURS = dict(panel='#203a57', panel_line='#f3e7c8', nail='#bd967f', coat='#2f857d', coat_dark='#1d5753', trousers='#a8946b', boots='#563826', scarf='#df9d34', hat='#cfb58a', band='#a3442e', skin='#d3a180', hair='#43362c',
-               leather='#8a5634', brass='#aa8a4b', mouth_dark='#6d3930', skin_dark='#ae775e', vest='#725138', shirt='#c9bda5', sole='#211914', iris='#5a4a33', iris_ring='#231d16', lash='#2a1f19', lips='#9f766a', boots_cuff='#584031', scarf_dark='#b8742a', white='#e2dccf', mouth='#8e5549', bedroll='#a99b7c', feather='#e48aa2', strap='#49301f', metal='#9c9688', eye='#17191a', thread='#a99b78', stitching='#b49a70')
+               leather='#8a5634', brass='#aa8a4b', mouth_dark='#6d3930', skin_dark='#ae775e', vest='#725138', shirt='#c9bda5', sole='#211914', iris='#8c6a3a', iris_ring='#33241a', lash='#2a1f19', lips='#9f766a', boots_cuff='#584031', scarf_dark='#b8742a', white='#e2dccf', mouth='#8e5549', bedroll='#a99b7c', feather='#e48aa2', strap='#49301f', metal='#9c9688', eye='#17191a', thread='#a99b78', stitching='#b49a70')
 MATS = {}
 def mat(name):
     if name not in MATS:
@@ -131,8 +131,8 @@ TORSO = ['pelvis', 'spine', 'chest']
 part(loft('hips', [(0.84, 0, 0.005, 0.178, 0.122), (0.94, 0, 0, 0.185, 0.126), (1.02, 0, 0, 0.174, 0.120)], 'trousers', 20), ['pelvis', 'thigh.L', 'thigh.R'])
 part(loft('vest', [(0.98, 0, 0, 0.176, 0.122), (1.10, 0, -0.002, 0.164, 0.115), (1.24, 0, 0, 0.188, 0.128), (1.36, 0, 0.005, 0.211, 0.137), (1.43, 0, 0.010, 0.190, 0.116)], 'vest', 24, folds=0.012), TORSO)
 part(loft('shirt_collar', [(1.42, 0, 0.005, 0.112, 0.096), (1.50, 0, 0.008, 0.092, 0.082)], 'shirt', 20), ['chest', 'neck'])
-COAT = [(0.57, 0, 0.018, 0.275, 0.192, 0.13), (0.70, 0, 0.012, 0.253, 0.177, 0.11), (0.87, 0, 0.004, 0.220, 0.151, 0.08), (1.04, 0, 0, 0.194, 0.137, 0.055), (1.18, 0, 0, 0.207, 0.141, 0.18),
-        (1.31, 0, 0.003, 0.232, 0.150, 0.45), (1.40, 0, 0.008, 0.232, 0.145, 0.62), (1.455, 0, 0.012, 0.200, 0.122, 0.74)]
+COAT = [(0.57, 0, 0.018, 0.292, 0.200, 0.13), (0.70, 0, 0.012, 0.264, 0.182, 0.11), (0.87, 0, 0.004, 0.224, 0.152, 0.08), (1.04, 0, 0, 0.188, 0.135, 0.055), (1.18, 0, 0, 0.207, 0.142, 0.18),
+        (1.31, 0, 0.003, 0.239, 0.152, 0.45), (1.40, 0, 0.008, 0.237, 0.146, 0.62), (1.455, 0, 0.012, 0.200, 0.122, 0.74)]
 def coat_drape(co):
     p = Vector(co); angle = math.atan2(p.x, -(p.y-0.010))
     hang = max(0.0, min(1.0, (1.04-p.z)/0.47)); waist = math.exp(-((p.z-1.045)/0.095)**2)
@@ -185,7 +185,7 @@ part(box('buckle_tongue', (0, -0.174, 1.044), (0.035, 0.006, 0.007), 'brass', 0.
 # -- articulated sleeves, fingerless gloves and layered leather wrist guards
 for s, x in (('L', 1), ('R', -1)):
     arms = ['chest', 'upper_arm.' + s, 'forearm.' + s]
-    part(ellipsoid('shoulder.' + s, (0.211 * x, 0.004, 1.397), (0.070, 0.068, 0.064), 'coat'), ['chest', 'upper_arm.' + s])
+    part(ellipsoid('shoulder.' + s, (0.213 * x, 0.004, 1.394), (0.063, 0.061, 0.058), 'coat'), ['chest', 'upper_arm.' + s])
     sleeve = loft('sleeve.'+s, [(1.035, 0.263*x, 0.002, 0.046, 0.050), (1.085, 0.260*x, 0.002, 0.052, 0.056), (1.17, 0.256*x, -0.002, 0.058, 0.064), (1.23, 0.249*x, 0.006, 0.065, 0.072), (1.32, 0.236*x, 0.002, 0.071, 0.076), (1.415, 0.214*x, 0.006, 0.074, 0.077)], 'coat', 28, folds=0.0)
     for v in sleeve.data.vertices:
         p = v.co; angle = math.atan2(p.x, -p.y); elbow = math.exp(-((p.z-1.16)/0.085)**2)
@@ -203,8 +203,8 @@ for s, x in (('L', 1), ('R', -1)):
     part(loft('trousers.' + s, [(0.46, 0.10 * x, 0, 0.082, 0.084), (0.58, 0.10 * x, 0, 0.092, 0.094), (0.72, 0.10 * x, 0, 0.106, 0.108), (0.88, 0.10 * x, 0, 0.116, 0.118), (0.98, 0.10 * x, 0, 0.122, 0.122)], 'trousers', 14, folds=0.05), ['pelvis', 'thigh.' + s, 'shin.' + s])
     part(loft('knee_strap.' + s, [(0.50, 0.10 * x, 0, 0.078, 0.080), (0.535, 0.10 * x, 0, 0.078, 0.080)], 'strap', 12, 0), ['thigh.' + s, 'shin.' + s])
     part(loft('boot_shaft.' + s, [(0.07, 0.10 * x, 0.004, 0.066, 0.075), (0.16, 0.10 * x, 0.004, 0.064, 0.072), (0.30, 0.10 * x, 0.004, 0.072, 0.078), (0.42, 0.10 * x, 0.004, 0.082, 0.084), (0.470, 0.10 * x, 0.004, 0.088, 0.088)], 'boots', 14), ['shin.' + s, 'foot.' + s])
-    part(loft('boot_cuff.' + s, [(0.44, 0.10 * x, 0.004, 0.092, 0.092), (0.50, 0.10 * x, 0.004, 0.096, 0.096)], 'boots_cuff', 14, 0), ['shin.' + s])
-    part(ellipsoid('boot_toe.' + s, (0.10 * x, -0.052, 0.062), (0.074, 0.168, 0.066), 'boots', 14, 9), ['foot.' + s])
+    part(loft('boot_cuff.' + s, [(0.44, 0.10 * x, 0.004, 0.093, 0.093), (0.505, 0.10 * x, 0.004, 0.106, 0.106)], 'boots_cuff', 14, 0), ['shin.' + s])
+    part(ellipsoid('boot_toe.' + s, (0.10 * x, -0.056, 0.064), (0.080, 0.174, 0.071), 'boots', 14, 9), ['foot.' + s])
     part(box('boot_sole.' + s, (0.10 * x, -0.066, 0.020), (0.140, 0.300, 0.034), 'sole', 0.016), ['foot.' + s])
     part(box('boot_heel.' + s, (0.10 * x, 0.048, 0.033), (0.112, 0.080, 0.050), 'sole', 0.010), ['foot.' + s, 'shin.' + s])
     part(box('boot_lace.' + s, (0.10 * x, -0.095, 0.112), (0.034, 0.100, 0.014), 'boots_cuff', 0.004, Matrix.Rotation(-0.55, 3, 'X')), ['foot.' + s])
@@ -263,7 +263,7 @@ head_field = sdf.intersect(headmod.skull_and_face(), sdf.plane((0, 0, -1), 1.425
 head_surface = field_part('head', head_field, (-0.13, -0.16, 1.40), (0.13, 0.13, 1.84), HEAD_CELL, 'skin', 16000, 2, True)
 mz = FACE['mouth_z']
 paint(head_surface, headmod.lip_mask, 'lips')
-paint(head_surface, headmod.mouth_mask, 'mouth_dark')      # the walls of the mouth's line (its own field, so nothing beside it)
+paint(head_surface, headmod.mouth_mask, 'mouth')      # the walls of the mouth's line (its own field, so nothing beside it)
 # the lower lip and the skin under it follow the lip bone (the proxy drops it while the player speaks): a smooth falloff from the lip to the chin and the corners
 B['lip_lower'] = (V(0, -0.104, mz - 0.004), V(0, -0.104, mz - 0.014), 'head')
 def head_weights(i, co=None):
@@ -308,9 +308,9 @@ for s, x in (('L', 1), ('R', -1)):
     ia = math.asin(min(0.95, (FACE['iris_r'] * (1.6 if '--iris-mutant' in args else 1.0)) / r))
     cap('iris_ring.' + s, c, r + 0.00020, ia, 'iris_ring', ['eye.' + s])
     cap('iris.' + s, c, r + 0.00035, ia * 0.86, 'iris', ['eye.' + s])
-    cap('pupil.' + s, c, r + 0.00050, math.asin(FACE['pupil_r'] / r), 'eye', ['eye.' + s])
+    cap('pupil.' + s, c, r + 0.00050, math.asin(FACE['pupil_r'] * 1.12 / r), 'eye', ['eye.' + s])
     glint = c + np.array([-0.0028 * x * 0 - 0.0030, 0, 0.0036])
-    cap('eye_glint.' + s, glint, r + 0.0008, 0.085, 'white', ['head'], 12, 3)
+    cap('eye_glint.' + s, glint, r + 0.0008, 0.13, 'white', ['head'], 12, 3)      # a big catchlight, high and to one side
     lid = field_part('lid.' + s, headmod.upper_lids()[x], c - 0.022, c + 0.022, HEAD_CELL * 0.4, 'skin', 1600, 1)
     paint(lid, lambda q, x=x: headmod.lash(x, q), 'lash')
     part(lid, ['lid.' + s])
@@ -663,6 +663,12 @@ def paint_materials():
             for sx in (1, -1): spot((0.0365*sx, -0.088, 1.683), 0.020, (0.30, 0.16, 0.14), 0.16, (1.2, 1, 0.6))      # the lids: a little darker and warmer than the cheek
             spot((0, -0.075, 1.575), 0.070, (0.075, 0.045, 0.028), 0.16, (1.25, 0.65, 0.80))      # the jaw's shadow
             spot((0, -0.111, 1.611), 0.010, (0.065, 0.038, 0.024), 0.16, (1, 0.25, 2.4))      # the philtrum
+            if STYLE == 'witness' and '--freckles' in args:      # (off: at the atlas's density a freckle is a texel or two and reads as dirt)      # freckles over the nose and the cheeks: someone who lives outdoors
+                import random; rnd = random.Random(7)
+                for _ in range(34):
+                    u = rnd.uniform(-1, 1); x = 0.052 * u; z = 1.640 + 0.008 * (1 - u * u) + rnd.uniform(-0.007, 0.007)
+                    if abs(x) < 0.006 and z > 1.646: continue
+                    spot((x, -0.118 + 0.040 * abs(u) ** 1.6, z), rnd.uniform(0.0012, 0.0022), (0.36, 0.17, 0.10), rnd.uniform(0.35, 0.6))
             for sx in (1, -1): spot((0.084*sx, -0.025, 1.630), 0.042, (0.070, 0.042, 0.026), 0.38, (0.75, 1.0, 1.4))
             if STYLE != 'witness': noise_mul(70, 0.035, (1, 1, 1), 2, 0.0, 2)
             noise_mul(16, 0.0, (1, 1, 1), 3, 0.15, 2)
@@ -742,7 +748,8 @@ def bake_texture(body, size, outdir):
         for dx in range(-2, 3):
             acc[max(0, dy):size + min(0, dy), max(0, dx):size + min(0, dx)] += ao_img[max(0, -dy):size + min(0, -dy), max(0, -dx):size + min(0, -dx)]; cnt[max(0, dy):size + min(0, dy), max(0, dx):size + min(0, dx)] += 1
     ao_img = acc / cnt; b[:, 0] = ao_img.reshape(-1)
-    ao = np.clip(b[:, :1], 0, 1) ** 1.25; lin = np.clip(a[:, :3] * (0.50 + 0.50 * ao), 0, 1); a[:, :3] = np.where(lin <= 0.0031308, lin * 12.92, 1.055 * np.power(lin, 1 / 2.4) - 0.055); a[:, 3] = 1.0      # (the image holds display values: the linear colour is encoded here)
+    ao = np.clip(b[:, :1], 0, 1) ** 1.25; ao_mix = 0.32 if STYLE == 'witness' else 0.50      # (painterly: occlusion lighter, so deep creases do not go black)
+    lin = np.clip(a[:, :3] * ((1 - ao_mix) + ao_mix * ao), 0, 1); a[:, :3] = np.where(lin <= 0.0031308, lin * 12.92, 1.055 * np.power(lin, 1 / 2.4) - 0.055); a[:, 3] = 1.0      # (the image holds display values: the linear colour is encoded here)
     final = bpy.data.images.new('adventurer_tex', size, size, alpha=False); final.colorspace_settings.name = 'sRGB'; final.pixels.foreach_set(a.reshape(-1))
     os.makedirs(outdir, exist_ok=True); path = os.path.join(outdir, 'adventurer_tex.jpg'); final.filepath_raw = path; final.file_format = 'JPEG'; scene.render.image_settings.quality = 93; final.save()
     img = bpy.data.images.load(path); img.name = 'adventurer_tex_file'; img.pack()

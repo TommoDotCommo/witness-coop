@@ -23,7 +23,8 @@ FACE = dict(
     iris_r=0.0073,         # iris radius on the ball (about 40 % of the opening's width)
     pupil_r=0.0030,
     nose_tip_z=1.6290,
-    mouth_z=1.5960, mouth_w=0.046,
+    mouth_z=1.5960, mouth_w=0.047,
+    smile=0.0026,          # the mouth's corners sit this much above its middle: a friendly resting face
     chin_z=1.5470,         # the underside of the chin
     crown_z=1.8130,        # the top of the skull (under the hat)
     lash_band=0.16,        # the upper lid's lash line: this share of the opening's size above its edge is dark

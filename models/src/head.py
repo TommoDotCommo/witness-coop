@@ -42,15 +42,16 @@ def skull_and_face():
     base = s.ellipsoid((0, 0.010, F['crown_z'] - 0.096), (0.097, 0.105, 0.096))            # the cranium
     strokes = [
         (s.ellipsoid((0, -0.030, 1.655), (0.077, 0.070, 0.080)), 0.032, 'add'),             # the face's mass: widest at the cheekbones
-        (s.ellipsoid((0, -0.040, 1.600), (0.058, 0.060, 0.050)), 0.030, 'add'),             # tapering to the jaw
-        (m(s.ellipsoid((0.040, -0.072, 1.631), (0.026, 0.020, 0.020))), 0.025, 'add'),       # round cheeks under the eyes
+        (s.ellipsoid((0, -0.040, 1.602), (0.054, 0.058, 0.048)), 0.030, 'add'),             # tapering to the jaw
+        (m(s.ellipsoid((0.039, -0.073, 1.640), (0.026, 0.021, 0.019))), 0.026, 'add'),       # apple cheeks, high under the eyes
         (s.ellipsoid((0, -0.052, F['chin_z'] + 0.030), (0.039, 0.044, 0.031)), 0.028, 'add'),  # jaw and chin
         (m(s.ellipsoid((0.050, 0.004, 1.618), (0.015, 0.028, 0.022))), 0.026, 'add'),        # jaw angles, high and back
         (m(s.capsule((0.010, -0.094, 1.704), (0.054, -0.082, 1.708), 0.0090)), 0.020, 'add'),  # brow ridge
+        (s.ellipsoid((0, -0.0985, 1.703), (0.016, 0.008, 0.012)), 0.014, 'add'),             # the glabella filled: no frown line between the brows
         (m(s.ellipsoid((0.088, -0.050, 1.705), (0.020, 0.030, 0.026))), 0.024, 'cut'),       # temples: a plane, not a bulge
         (s.ellipsoid((0, -0.086, 1.601), (0.027, 0.024, 0.026)), 0.032, 'add'),              # the muzzle
-        (s.sphere((0, -0.091, F['chin_z'] + 0.017), 0.0155), 0.016, 'add'),                  # the chin pad, forward: a chin that does not recede
-        (s.capsule((0, 0.028, 1.440), (0, 0.012, 1.600), 0.047), 0.035, 'add'),              # the neck, into the jaw's underside
+        (s.round_box((0, -0.088, F['chin_z'] + 0.016), (0.0165, 0.013, 0.012), 0.010), 0.014, 'add'),  # a defined chin, a little square: an adventurer's
+        (s.capsule((0, 0.028, 1.440), (0, 0.014, 1.598), 0.0435), 0.035, 'add'),             # the neck, into the jaw's underside
     ]
     face = s.blend(base, strokes)
     # eye sockets: a bowl round each eyeball
@@ -64,8 +65,8 @@ def skull_and_face():
         face = s.subtract(face, tunnel, 0.0025)
     # the nose: bridge, tip, wings, nostrils
     nose = s.union(0.009,
-                   s.capsule((0, -0.097, 1.690), (0, -0.113, F['nose_tip_z'] + 0.007), 0.0085, 0.0100),
-                   s.sphere((0, -0.116, F['nose_tip_z']), 0.0115),
+                   s.capsule((0, -0.099, 1.684), (0, -0.114, F['nose_tip_z'] + 0.007), 0.0078, 0.0102),
+                   s.sphere((0, -0.1165, F['nose_tip_z'] + 0.001), 0.0128),
                    m(s.sphere((0.0115, -0.104, F['nose_tip_z'] - 0.0055), 0.0076)))
     face = s.blend(face, [(nose, 0.010, 'add')])
     face = s.blend(face, [(m(s.ellipsoid((0.0080, -0.110, F['nose_tip_z'] - 0.0105), (0.0032, 0.0045, 0.0019))), 0.003, 'cut')])
@@ -76,10 +77,12 @@ def skull_and_face():
                    m(s.capsule((0.0, -0.1076, mz - 0.0056), (mw * 0.80, -0.1008, mz - 0.0016), 0.0066, 0.0026)))
     face = s.blend(face, [(lips, 0.0045, 'add')])
     global LIPS; LIPS = lips
-    slit = s.round_box((0, -0.112, mz), (mw, 0.014, 0.0011), 0.0010)
+    def smile_z(x): return mz + F['smile'] * (np.abs(x) / mw) ** 2      # the mouth's line rises toward the corners
+    def slit(p):
+        q = p.copy(); q[:, 2] = p[:, 2] - (smile_z(p[:, 0]) - mz); return s.round_box((0, -0.112, mz), (mw, 0.014, 0.0011), 0.0010)(q)
     global SLIT; SLIT = slit
     face = s.blend(face, [(slit, 0.0012, 'cut'),
-                          (m(s.sphere((mw + 0.0015, -0.100, mz + 0.0015), 0.0028)), 0.003, 'cut'),       # the corners, a touch of a smile
+                          (m(s.sphere((mw + 0.0012, -0.100, mz + F['smile'] + 0.0012), 0.0026)), 0.003, 'cut'),       # the corners, lifted: a smile
                           (s.ellipsoid((0, -0.106, mz + 0.0135), (0.0045, 0.003, 0.0060)), 0.003, 'cut')])  # the philtrum
     # the lids belong to the face (the upper lid's moving part is meshed apart: lids() below)
     for side in (1, -1):
@@ -107,7 +110,7 @@ def mouth_mask(p):
 def lip_mask(p):
     """True on the lips' red (the lips' own field, a little outside its surface)."""
     u = np.clip(np.abs(p[:, 0]) / (F['mouth_w'] * 0.5), 0, 1.5); taper = np.clip(1 - u * u, 0, 1) ** 0.6
-    dz = p[:, 2] - F['mouth_z']
+    dz = p[:, 2] - F['mouth_z'] - F['smile'] * np.clip(np.abs(p[:, 0]) / (F['mouth_w'] * 0.5), 0, 1) ** 2
     bow = 0.0007 * np.exp(-((np.abs(p[:, 0]) - 0.0065) / 0.0035) ** 2)      # the upper lip's two peaks
     upper = (dz >= 0) & (dz < (0.0040 + bow) * taper)
     lower = (dz < 0) & (dz > -0.0058 * taper)
@@ -126,8 +129,8 @@ def brows():
     """Soft brows on the brow ridge (hair): thick at the inner end, arched, tapering out. One field per side."""
     out = {}
     for side in (1, -1):
-        pts = [np.array([side * x, y, z]) for x, y, z in ((0.013, -0.1000, 1.7050), (0.030, -0.0985, 1.7115), (0.047, -0.0935, 1.7125), (0.061, -0.0855, 1.7075))]
-        radii = (0.0036, 0.0033, 0.0026, 0.0015)
+        pts = [np.array([side * x, y, z]) for x, y, z in ((0.013, -0.1005, 1.7095), (0.029, -0.0990, 1.7165), (0.047, -0.0940, 1.7160), (0.062, -0.0855, 1.7085))]
+        radii = (0.0044, 0.0041, 0.0032, 0.0017)
         segs = [sdf.capsule(pts[i], pts[i + 1], radii[i], radii[i + 1]) for i in range(3)]
         flat = lambda p, f=sdf.union(0.004, *segs): f(p * np.array([1, 1, 0.75]) + np.array([0, 0, 0]))      # flatter than round
         out[side] = sdf.union(0.004, *segs)
@@ -170,3 +173,30 @@ def hair(skull):
     for side in (1, -1):
         f = s.subtract(f, s.ellipsoid((side * 0.094, 0.012, 1.664), (0.030, 0.026, 0.036)), 0.003)
     return f
+
+# ---- the island figure: the same skull and living eyes, the face carved in big simple planes (a prototype: headlab --style island)
+def island_face():
+    s = sdf; m = lambda f: s.mirror_x(f)
+    base = s.ellipsoid((0, 0.010, F['crown_z'] - 0.096), (0.097, 0.105, 0.096))
+    face = s.blend(base, [
+        (s.ellipsoid((0, -0.034, 1.650), (0.075, 0.072, 0.086)), 0.040, 'add'),          # one egg-shaped face mass
+        (s.ellipsoid((0, -0.052, F['chin_z'] + 0.030), (0.040, 0.044, 0.030)), 0.040, 'add'),  # a soft, small chin
+        (m(s.capsule((0.012, -0.092, 1.704), (0.054, -0.080, 1.708), 0.0085)), 0.030, 'add'),  # the brow, one soft shelf
+        (s.capsule((0, 0.028, 1.440), (0, 0.012, 1.600), 0.045), 0.040, 'add'),          # the neck
+    ])
+    for side in (1, -1):
+        c = eye_centre(side)
+        bowl = s.intersect(s.sphere(c, F['eye_r'] + F['socket_gap']), s.plane((0, 1, 0), -(c[1] + 0.2 * F['eye_r'])))
+        face = s.subtract(face, bowl, 0.008)
+        def tunnel(p, side=side, c=c):
+            return np.maximum((aperture(side, p) - 1.0) * F['aperture_w'] * 0.6, p[:, 1] - (c[1] - 0.2 * F['eye_r']))
+        face = s.subtract(face, tunnel, 0.003)
+        face = s.blend(face, [(lid_shell(side, upper_only=False), 0.004, 'add')])
+    # the nose: one carved wedge, no nostrils; the mouth: a single soft line over a small swell
+    face = s.blend(face, [(s.union(0.012, s.capsule((0, -0.097, 1.690), (0, -0.111, 1.636), 0.0072, 0.0090), s.sphere((0, -0.112, 1.632), 0.0092)), 0.014, 'add')])
+    mz = F['mouth_z']
+    face = s.blend(face, [(s.ellipsoid((0, -0.096, mz - 0.004), (0.018, 0.010, 0.008)), 0.012, 'add'),
+                          (s.round_box((0, -0.115, mz), (0.0150, 0.016, 0.0006), 0.0005), 0.0022, 'cut')])
+    # the ears: smooth discs, set back
+    face = s.blend(face, [(m(s.ellipsoid((0.090, 0.014, 1.664), (0.009, 0.017, 0.028), s.rot_x(-0.22))), 0.012, 'add')])
+    return face

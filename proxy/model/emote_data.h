@@ -194,7 +194,7 @@ drag 0.045
 touch hand.R head 0.03 0.7 2.95       # on the face, then sliding off it
 key 0.00 rest
 key 0.35 head=-12,0,0 neck=-4 chest=-3
-key 0.75 hit arm.R=77,-13,29 fore.R=101 hand.R=-10,0,0 head=8,0,-4 neck=4
+key 0.75 hit arm.R=78,-12,22 fore.R=89 hand.R=-10,0,0 head=8,0,-4 neck=4
 key 1.00 head=15,0,-6 neck=6 chest=3 spine=2 hips=0,-2,-1 pelvis=0,0,3
 key 1.40 head=14,-6,-7 hand.R=-10,0,4
 key 1.80 head=14,5,-4 hand.R=-10,0,-4
@@ -258,8 +258,8 @@ key 0.00 rest thigh.LR=1
 key 0.40 hips=0,-14,-3 pelvis=14 spine=12 chest=4 arm.LR=24,0,6 fore.LR=20
 key 0.85 hips=0,-38,-6 pelvis=26 spine=14 chest=6 head=-4 arm.LR=40,0,8 fore.LR=30
 key 1.10 hips=0,-46.7,-2 pelvis=14 step.LR=1,0,10
-key 1.50 @se)EMOTE"
-R"EMOTE(ated spine=8 chest=1
+key 1.50 @sea)EMOTE"
+R"EMOTE(ted spine=8 chest=1
 key 2.00 @seated
 key 2.80 head=2,16,2 chest=-2,6,0
 key 3.40 head=4,18,3 hand.R=4 fore.R=30
