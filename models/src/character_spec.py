@@ -9,19 +9,19 @@ model so the eyes are at the player's eye height).
 
 FACE = dict(
     eye_z=1.6766,          # the eye line (fixed: the proxy scales the model to put it at the camera)
-    eye_x=0.0338,          # eyeball centres either side of the midline
-    eye_y=-0.0743,         # eyeball centre depth
-    eye_r=0.0155,         # (stylized: larger than life's 12 mm, so the open almond is all eye)          # eyeball radius
+    eye_x=0.0370,          # eyeball centres either side of the midline
+    eye_y=-0.0720,         # eyeball centre depth
+    eye_r=0.0180,         # (stylized: larger than life's 12 mm, so the open almond is all eye)          # eyeball radius
     socket_gap=0.0016,     # the socket's bowl clears the ball by this
     lid_gap=0.0004,        # the lids ride this far off the ball
     lid_thick=0.0045,      # and are this thick at the rim
-    aperture_w=0.0168,     # half the lid opening's width
-    aperture_up=0.0069,    # the opening above the centre
-    aperture_down=0.0070,  # and below it
+    aperture_w=0.0185,     # half the lid opening's width
+    aperture_up=0.0080,    # the opening above the centre
+    aperture_down=0.0075,  # and below it
     aperture_skew=-0.10,   # taller toward the inner corner
     corner_lift=0.0018,    # the outer corner sits this much higher
-    iris_r=0.0073,         # iris radius on the ball (about 40 % of the opening's width)
-    pupil_r=0.0030,
+    iris_r=0.0082,         # iris radius on the ball (about 40 % of the opening's width)
+    pupil_r=0.0033,
     nose_tip_z=1.6290,
     mouth_z=1.5960, mouth_w=0.047,
     smile=0.0026,          # the mouth's corners sit this much above its middle: a friendly resting face

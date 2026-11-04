@@ -23,8 +23,9 @@ def srgb(h, material=None):      # '#rrggbb' -> linear rgba
     c = [int(h[i:i + 2], 16) / 255.0 for i in (1, 3, 5)]
     rgb = [(v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4) for v in c]
     return tuple(tint_colour(rgb, material, APPEARANCE) + [1.0])
-COLOURS = dict(panel='#203a57', panel_line='#f3e7c8', nail='#bd967f', coat='#2f857d', coat_dark='#1d5753', trousers='#a8946b', boots='#563826', scarf='#df9d34', hat='#cfb58a', band='#a3442e', skin='#d3a180', hair='#43362c',
-               leather='#8a5634', brass='#aa8a4b', mouth_dark='#6d3930', skin_dark='#ae775e', vest='#725138', shirt='#c9bda5', sole='#211914', iris='#8c6a3a', iris_ring='#33241a', lash='#2a1f19', lips='#9f766a', boots_cuff='#584031', scarf_dark='#b8742a', white='#e2dccf', mouth='#8e5549', bedroll='#a99b7c', feather='#e48aa2', strap='#49301f', metal='#9c9688', eye='#17191a', thread='#a99b78', stitching='#b49a70')
+COLOURS = dict(panel='#203a57', panel_line='#f3e7c8', nail='#bd967f', coat='#2f857d', coat_dark='#1d5753', trousers='#a8946b', boots='#563826', scarf='#df9d34', hat='#cfb58a', band='#a3442e', skin='#ddb397', hair='#4a3227',
+               leather='#8a5634', brass='#aa8a4b', mouth_dark='#6d3930', skin_dark='#ae775e', vest='#725138', shirt='#c9bda5', sole='#211914', iris='#8c6a3a', iris_ring='#33241a', lash='#2a1f19', lips='#b87868', boots_cuff='#584031', scarf_dark='#b8742a', white='#f0e9d9', mouth='#8e5549', bedroll='#a99b7c', feather='#e48aa2', strap='#49301f', metal='#b99c68', eye='#17191a', thread='#a99b78', stitching='#b49a70')
+COLOURS.update(hand_skin=COLOURS['skin'],lid_skin=COLOURS['skin'],glove_leather=COLOURS['leather'])
 MATS = {}
 def mat(name):
     if name not in MATS:
@@ -131,19 +132,18 @@ TORSO = ['pelvis', 'spine', 'chest']
 part(loft('hips', [(0.84, 0, 0.005, 0.178, 0.122), (0.94, 0, 0, 0.185, 0.126), (1.02, 0, 0, 0.174, 0.120)], 'trousers', 20), ['pelvis', 'thigh.L', 'thigh.R'])
 part(loft('vest', [(0.98, 0, 0, 0.176, 0.122), (1.10, 0, -0.002, 0.164, 0.115), (1.24, 0, 0, 0.188, 0.128), (1.36, 0, 0.005, 0.211, 0.137), (1.43, 0, 0.010, 0.190, 0.116)], 'vest', 24, folds=0.012), TORSO)
 part(loft('shirt_collar', [(1.42, 0, 0.005, 0.112, 0.096), (1.50, 0, 0.008, 0.092, 0.082)], 'shirt', 20), ['chest', 'neck'])
-COAT = [(0.57, 0, 0.018, 0.292, 0.200, 0.13), (0.70, 0, 0.012, 0.264, 0.182, 0.11), (0.87, 0, 0.004, 0.224, 0.152, 0.08), (1.04, 0, 0, 0.188, 0.135, 0.055), (1.18, 0, 0, 0.207, 0.142, 0.18),
+COAT = [(0.57, 0, 0.018, 0.265, 0.183, 0.23), (0.70, 0, 0.012, 0.250, 0.175, 0.18), (0.87, 0, 0.004, 0.225, 0.155, 0.12), (1.04, 0, 0, 0.188, 0.135, 0.055), (1.18, 0, 0, 0.207, 0.142, 0.18),
         (1.31, 0, 0.003, 0.239, 0.152, 0.45), (1.40, 0, 0.008, 0.237, 0.146, 0.62), (1.455, 0, 0.012, 0.200, 0.122, 0.74)]
 def coat_drape(co):
     p = Vector(co); angle = math.atan2(p.x, -(p.y-0.010))
-    hang = max(0.0, min(1.0, (1.04-p.z)/0.47)); waist = math.exp(-((p.z-1.045)/0.095)**2)
-    compression = math.exp(-((p.z-1.12)/0.11)**2); side = 0.35+0.65*abs(math.sin(angle))
-    fold = side * (0.008*hang**0.7*math.sin(7*angle+0.6*math.sin(2*angle)) + 0.0035*hang*math.sin(13*angle-2*hang))
-    fold += 0.0035*compression*math.sin(58*(p.z-1.04)+4*math.sin(angle))
-    p.x = p.x*(1-0.018*waist) + math.sin(angle)*fold
-    p.y = 0.010+(p.y-0.010)*(1-0.018*waist) - math.cos(angle)*fold
-    p.z += hang**2*(0.006*math.sin(3*angle+0.4)+0.003*math.cos(7*angle)) + 0.003*waist*math.cos(4*angle)
+    hang = max(0.0, min(1.0, (1.04-p.z)/0.47))
+    # Four broad hanging folds, growing from the belt. No all-over sinusoidal crumpling.
+    fold = 0.006 * hang**0.8 * math.cos(4*angle) + 0.003 * hang * math.cos(6*angle)
+    p.x += math.sin(angle)*fold; p.y -= math.cos(angle)*fold
+    p.z += hang**2 * 0.004 * math.cos(2*angle)
+    p.z -= 0.026 * max(0.0,min(1.0,(p.z-1.34)/0.115))**2 * math.sin(angle)**2
     return p
-coat_body = loft('coat', COAT, 'coat', 32, 1, False, 0.012, 0.010)
+coat_body = loft('coat', COAT, 'coat', 48, 2, False, 0.009, 0.0)
 for v in coat_body.data.vertices: v.co = coat_drape(v.co)
 # The coat's skirt hangs from three hem bones at the waist (front left, front right, back). The proxy swings each with the leg on its side
 # (so a leg never comes through the cloth) and lets it lag and sway; in the clips themselves they stay still. Above the waist the coat
@@ -166,7 +166,7 @@ def coat_weights(ob, base):      # base: the torso/thigh bones with their multip
     return w
 COAT_BASE = ['pelvis', 'spine', 'chest', ('thigh.L', 0.55), ('thigh.R', 0.55)]
 part(coat_body, COAT_BASE + HEM_BONES, coat_weights(coat_body, COAT_BASE))
-coat_facing = loft('coat_facing', [(0.57, 0, 0.018, 0.277, 0.194, 0.13), (0.68, 0, 0.012, 0.258, 0.182, 0.12)], 'coat_dark', 36, 0, False, 0.014)
+coat_facing = loft('coat_facing', [(0.571, 0, 0.018, 0.265, 0.185, 0.23), (0.600, 0, 0.017, 0.263, 0.184, 0.22)], 'coat_dark', 36, 0, False, 0.014)
 for v in coat_facing.data.vertices: v.co = coat_drape(v.co)
 part(coat_facing, COAT_BASE + HEM_BONES, coat_weights(coat_facing, COAT_BASE))
 coat_collar = loft('collar', [(1.43, 0, 0.016, 0.112, 0.095, 0.52), (1.48, 0, 0.018, 0.098, 0.083, 0.58), (1.535, 0, 0.020, 0.070, 0.060, 0.64)], 'coat_dark', 28, 1, False, 0.010)
@@ -185,12 +185,13 @@ part(box('buckle_tongue', (0, -0.174, 1.044), (0.035, 0.006, 0.007), 'brass', 0.
 # -- articulated sleeves, fingerless gloves and layered leather wrist guards
 for s, x in (('L', 1), ('R', -1)):
     arms = ['chest', 'upper_arm.' + s, 'forearm.' + s]
-    part(ellipsoid('shoulder.' + s, (0.213 * x, 0.004, 1.394), (0.063, 0.061, 0.058), 'coat'), ['chest', 'upper_arm.' + s])
     sleeve = loft('sleeve.'+s, [(1.035, 0.263*x, 0.002, 0.046, 0.050), (1.085, 0.260*x, 0.002, 0.052, 0.056), (1.17, 0.256*x, -0.002, 0.058, 0.064), (1.23, 0.249*x, 0.006, 0.065, 0.072), (1.32, 0.236*x, 0.002, 0.071, 0.076), (1.415, 0.214*x, 0.006, 0.074, 0.077)], 'coat', 28, folds=0.0)
     for v in sleeve.data.vertices:
-        p = v.co; angle = math.atan2(p.x, -p.y); elbow = math.exp(-((p.z-1.16)/0.085)**2)
-        radial = 1 + 0.045*elbow*math.sin(48*(p.z-1.16)+1.4*math.sin(angle)) + 0.012*math.sin(7*angle+3*p.z)
-        p.x *= radial; p.y *= radial
+        p = v.co; cx = x*(0.263 - 0.049*max(0.0, min(1.0, (p.z-1.035)/0.380)))
+        angle = math.atan2(p.x-cx, -p.y); elbow = math.exp(-((p.z-1.16)/0.055)**2)
+        # Compression lives at the elbow, and is measured about the sleeve's axis.
+        radial = 1 + 0.028*elbow*math.cos(65*(p.z-1.16)+1.2*math.sin(angle))
+        p.x = cx + (p.x-cx)*radial; p.y *= radial
     part(sleeve, arms)
     part(loft('cuff.'+s, [(1.024, 0.263*x, 0.002, 0.049, 0.054), (1.074, 0.261*x, 0.002, 0.052, 0.058)], 'coat_dark', 28, 0, False, 0.005), ['forearm.'+s, 'upper_arm.'+s])
     part(loft('forearm.' + s, [(0.94, 0.265*x, 0, 0.033, 0.037), (0.96, 0.265*x, 0, 0.038, 0.043), (1.04, 0.263*x, 0, 0.043, 0.049), (1.12, 0.259*x, 0, 0.048, 0.052)], 'skin', 18), ['upper_arm.' + s, 'forearm.' + s, 'hand.' + s])
@@ -200,7 +201,7 @@ for s, x in (('L', 1), ('R', -1)):
         part(box('bracer_buckle.' + s, (0.314*x, -0.005, z), (0.008, 0.025, 0.023), 'brass', 0.002), ['forearm.' + s])
 # -- legs: breeches, a knee strap, tall boots with a turned cuff, a sole and a heel
 for s, x in (('L', 1), ('R', -1)):
-    part(loft('trousers.' + s, [(0.46, 0.10 * x, 0, 0.084, 0.086), (0.525, 0.10 * x, 0, 0.100, 0.102), (0.60, 0.10 * x, 0, 0.097, 0.099), (0.72, 0.10 * x, 0, 0.106, 0.108), (0.88, 0.10 * x, 0, 0.116, 0.118), (0.98, 0.10 * x, 0, 0.122, 0.122)], 'trousers', 18, folds=0.06), ['pelvis', 'thigh.' + s, 'shin.' + s])      # bloused over the boot tops
+    part(loft('trousers.' + s, [(0.46, 0.10 * x, 0, 0.084, 0.086), (0.525, 0.10 * x, 0, 0.100, 0.102), (0.60, 0.10 * x, 0, 0.097, 0.099), (0.72, 0.10 * x, 0, 0.106, 0.108), (0.88, 0.10 * x, 0, 0.086, 0.098), (0.98, 0.10 * x, 0, 0.074, 0.094)], 'trousers', 24, folds=0.025), ['pelvis', 'thigh.' + s, 'shin.' + s])      # bloused over the boot tops
     part(loft('knee_strap.' + s, [(0.50, 0.10 * x, 0, 0.078, 0.080), (0.535, 0.10 * x, 0, 0.078, 0.080)], 'strap', 12, 0), ['thigh.' + s, 'shin.' + s])
     part(loft('boot_shaft.' + s, [(0.07, 0.10 * x, 0.004, 0.066, 0.075), (0.13, 0.10 * x, 0.004, 0.057, 0.065), (0.22, 0.10 * x, 0.006, 0.066, 0.072), (0.32, 0.10 * x, 0.008, 0.077, 0.081), (0.42, 0.10 * x, 0.004, 0.082, 0.084), (0.470, 0.10 * x, 0.004, 0.088, 0.088)], 'boots', 18), ['shin.' + s, 'foot.' + s])      # a shaped boot: a slim ankle, a full calf
     part(loft('boot_cuff.' + s, [(0.44, 0.10 * x, 0.004, 0.093, 0.093), (0.505, 0.10 * x, 0.004, 0.106, 0.106)], 'boots_cuff', 14, 0), ['shin.' + s])
@@ -260,9 +261,9 @@ def paint(ob, mask, material):      # faces whose centre the mask selects take t
         P = np.array([v.co[:] for v in me.vertices]); me.normals_split_custom_set_from_vertices(sdf.gradient(FIELDS[ob.name], P).tolist())
     return int(np.sum(sel))
 head_field = sdf.intersect(headmod.skull_and_face(), sdf.plane((0, 0, -1), 1.425))      # closed under the scarf
-head_surface = field_part('head', head_field, (-0.13, -0.16, 1.40), (0.13, 0.13, 1.84), HEAD_CELL, 'skin', 16000, 2, True)
+head_surface = field_part('head', head_field, (-0.13, -0.16, 1.40), (0.13, 0.13, 1.84), HEAD_CELL, 'skin', 26000, 2, True)
 mz = FACE['mouth_z']
-paint(head_surface, headmod.lip_mask, 'lips')
+# Lips are painted in object space; polygon material borders made a jagged mouth.
 pass      # (the mouth's line is painted on the skin along the smile: paint_materials)
 # the lower lip and the skin under it follow the lip bone (the proxy drops it while the player speaks): a smooth falloff from the lip to the chin and the corners
 B['lip_lower'] = (V(0, -0.104, mz - 0.004), V(0, -0.104, mz - 0.014), 'head')
@@ -297,6 +298,23 @@ def cap(name, centre, r, angle, material, bones, segs=48, rings=10):
             else: bm.faces.new((prev[i], prev[(i + 1) % segs], row[(i + 1) % segs], row[i]))
         prev = row
     part(face_finish(name, bm, material), bones)
+# A clean smile drawn onto the actual face surface. Submillimetre offset avoids both a floating strip
+# and the triangle-sized material boundaries of the old painted lips.
+def smile_ribbon(name, half_height, z_offset, material, bone):
+    bm = bmesh.new(); rows = []
+    for i in range(49):
+        u = -1 + 2*i/48; x = u*FACE['mouth_w']*0.47
+        z = FACE['mouth_z'] + FACE['smile']*u*u + z_offset
+        h = half_height * max(0.08, 1-u*u)**0.65
+        row = []
+        for dz in (-h, h):
+            row.append(bm.verts.new((x, face_y(x, z+dz)-0.00065, z+dz)))
+        rows.append(row)
+    for a,b in zip(rows, rows[1:]): bm.faces.new((a[0],b[0],b[1],a[1]))
+    part(face_finish(name,bm,material),[bone])
+smile_ribbon('lower_lip_colour',0.0018,-0.0020,'lips','lip_lower')
+smile_ribbon('smile',0.00085,0.0,'mouth_dark','head')
+
 # Eyes: a ball in each socket. The eye bone turns the iris, pupil and their ring about the ball's centre (the white is a sphere: turning it changes nothing).
 # Lids: the upper lid is a shell round the ball (head.upper_lids) on a bone at the ball's centre; a blink turns it down over the ball (lid_rotate in the
 # .glb.txt; the proxy's life layer turns the bone about its local x). Its rim is the lash line.
@@ -313,9 +331,21 @@ for s, x in (('L', 1), ('R', -1)):
     cap('pupil.' + s, c, r + 0.00050, math.asin(FACE['pupil_r'] * 1.12 / r), 'eye', ['eye.' + s])
     glint = c + np.array([-0.0028 * x * 0 - 0.0030, 0, 0.0036])
     cap('eye_glint.' + s, glint, r + 0.0008, 0.13, 'white', ['head'], 12, 3)      # a big catchlight, high and to one side
-    lid = field_part('lid.' + s, headmod.upper_lids()[x], c - 0.022, c + 0.022, HEAD_CELL * 0.4, 'skin', 1600, 1)
-    paint(lid, lambda q, x=x: headmod.lash(x, q), 'lash')
+    lid = field_part('lid.' + s, headmod.upper_lids()[x], c - 0.026, c + 0.026, HEAD_CELL * 0.4, 'lid_skin', 1600, 1)
+    # The upper rim is shaded by its thickness; no triangle-sized lash flecks.
     part(lid, ['lid.' + s])
+    bm=bmesh.new(); rows=[]
+    for i in range(49):
+        t=math.pi*i/48;row=[]
+        for scale in (1.005,1.065):
+            dx=FACE['aperture_w']*math.cos(t)*scale
+            dz=(FACE['aperture_up']*math.sin(t)*(1+FACE['aperture_skew']*math.cos(t))+FACE['corner_lift']*math.cos(t))*scale
+            yy=c[1]-math.sqrt(max(1e-8,(r+FACE['lid_thick'])**2-dx*dx-dz*dz))-0.0003
+            row.append(bm.verts.new((c[0]+x*dx,yy,c[2]+dz)))
+        rows.append(row)
+    for a,b in zip(rows,rows[1:]):bm.faces.new((a[0],b[0],b[1],a[1]))
+    part(face_finish('upper_lash.'+s,bm,'lash'),['lid.'+s])
+
     brow = field_part('brow.' + s, headmod.brows()[x], c + np.array([0, -0.02, 0.032]) - 0.04, c + np.array([0, -0.02, 0.032]) + 0.04, HEAD_CELL * 0.5, 'hair', 1000, 1)
     b0, b1 = V(x * 0.013, -0.1000, 1.7050), V(x * 0.061, -0.0855, 1.7075)
     B['brow.' + s] = ((b0 + b1) * 0.5, (b0 + b1) * 0.5 + (b1 - b0) * 0.5, 'head')
@@ -325,14 +355,14 @@ for s, x in (('L', 1), ('R', -1)):
 import hands as handmod
 for s, x in (('L', 1), ('R', -1)):
     lo, hi = handmod.bounds(x)
-    for kind, field, material, budget in (('hand', handmod.skin(x), 'skin', 4200), ('glove', handmod.glove(x), 'leather', 2600)):
+    for kind, field, material, budget in (('hand', handmod.skin(x), 'hand_skin', 4200), ('glove', handmod.glove(x), 'glove_leather', 2600)):
         ob = field_part(kind + '.' + s, field, lo, hi, 0.0012, material, budget, 1)
         def hand_weights(i, ob=ob, s=s):
             z = ob.data.vertices[i].co.z; w = max(0.0, min(1.0, (z - (handmod.WRIST[2] - 0.012)) / 0.030))
             return {'hand.' + s: 1 - w, 'forearm.' + s: w}
         part(ob, ['hand.' + s, 'forearm.' + s], hand_weights)
 # -- hair: a sculpted crop (head.hair): a shell with a designed hairline and soft clumps along its edge, clear of the ears, thin under the hat
-hair_ob = field_part('hair', headmod.hair(headmod.skull_and_face()), (-0.13, -0.16, 1.52), (0.13, 0.15, 1.84), HEAD_CELL * 1.2, 'hair', 7000, 1, True)
+hair_ob = field_part('hair', headmod.hair(headmod.skull_and_face()), (-0.13, -0.16, 1.52), (0.13, 0.15, 1.84), HEAD_CELL * 1.2, 'hair', 7000, 1, False)
 part(hair_ob, ['head'])
 # Storybook proportions: the whole head (skull, face, eyes, lids, brows, hair, their bones and the face's paint) is HEAD_SCALE times the
 # sculpt, about the base of the neck. The hat is fitted to it below; the proxy's eye-height fit absorbs the rest.
@@ -341,7 +371,7 @@ def head_scaled(p): return HEAD_PIVOT + (Vector(p) - HEAD_PIVOT) * HEAD_SCALE
 if HEAD_SCALE != 1.0:
     hx = Matrix.Translation(HEAD_PIVOT) @ Matrix.Scale(HEAD_SCALE, 4) @ Matrix.Translation(-HEAD_PIVOT)
     for o, _, _ in parts:
-        if o.name.split('.')[0] in ('head', 'eye_white', 'iris_ring', 'iris', 'pupil', 'eye_glint', 'lid', 'brow', 'hair'): o.data.transform(hx)
+        if o.name.split('.')[0] in ('head', 'eye_white', 'iris_ring', 'iris', 'pupil', 'eye_glint', 'lid', 'brow', 'hair', 'lower_lip_colour', 'smile', 'upper_lash'): o.data.transform(hx)
     for bn in ('eye.L', 'eye.R', 'lid.L', 'lid.R', 'brow.L', 'brow.R', 'lip_lower'):
         h, t, par = B[bn]; B[bn] = (head_scaled(h), head_scaled(t), par)
     head_bvh = BVHTree.FromObject(head_surface, bpy.context.evaluated_depsgraph_get())
@@ -351,9 +381,9 @@ HAT0 = len(parts)
 # The opening is an oval the size of the head at the brow line (plus the hair), so the hat sits on the head instead of above it
 # (the check below measures the result).
 HAT_OPEN = (0.128, 0.128) if '--hat-mutant' in args else (0.110, 0.122)      # (the mutant: the earlier round opening, which floated above the head)
-brim = loft('hat_brim', [(1.768, 0, 0.006, *HAT_OPEN), (1.758, 0, 0.004, 0.176, 0.178), (1.748, 0, 0, 0.222, 0.216), (1.750, 0, -0.004, 0.252, 0.244), (1.762, 0, -0.006, 0.264, 0.254)], 'hat', 48, 1, False, 0.007)
+brim = loft('hat_brim', [(1.768, 0, 0.006, *HAT_OPEN), (1.758, 0, 0.004, 0.176, 0.178), (1.748, 0, 0, 0.222, 0.216), (1.750, 0, -0.004, 0.252, 0.244), (1.762, 0, -0.006, 0.264, 0.254)], 'hat', 64, 2, False, 0.012)
 for v in brim.data.vertices:
-    v.co.z += 0.014 * (abs(v.co.x) / 0.264) ** 2 + 0.004 * math.sin(v.co.y * 15)
+    v.co.z += 0.034 * (abs(v.co.x) / 0.264) ** 3 + 0.006 * math.sin(v.co.y * 12)
 part(brim, ['head'])
 crown = loft('hat_crown', [(1.756, 0, 0.006, HAT_OPEN[0] - 0.001, HAT_OPEN[1] - 0.001), (1.768, 0, 0.006, *HAT_OPEN),      # (a support ring: the wall stays straight down under the brim)
      (1.806, 0, 0.006, 0.115, 0.127), (1.844, 0.004, 0.008, 0.115, 0.125), (1.877, 0.006, 0.010, 0.106, 0.114), (1.895, 0.004, 0.012, 0.078, 0.094), (1.899, 0, 0.014, 0.038, 0.046)], 'hat', 32, 1)
@@ -363,14 +393,16 @@ for v in crown.data.vertices:
 part(crown, ['head'])
 part(loft('hat_band', [(1.776, 0, 0.006, 0.116, 0.128), (1.803, 0, 0.006, 0.119, 0.131)], 'band', 40, 0, False, 0.002), ['head'])
 part(ellipsoid('hat_knot', (0.095, -0.078, 1.790), (0.015, 0.012, 0.013), 'band', 14, 8), ['head'])
-f0, f1 = V(0.097, -0.060, 1.798), V(0.150, 0.078, 1.900)
-bm = bmesh.new(); rows = []
-for i in range(17):
-    t = i / 16; c = f0.lerp(f1, t); w = 0.020 * math.sin(math.pi*t) ** 0.75 * (1 + 0.08*math.sin(i*2.7))
-    rows.append([bm.verts.new(c + V(-w, 0, 0)), bm.verts.new(c + V(w, 0, 0))])
-for a, b in zip(rows, rows[1:]): bm.faces.new((a[0], b[0], b[1], a[1]))
-part(face_finish('feather_vane', bm, 'feather', True, 0, 0, 0.001), ['head'])
-part(tube('feather_shaft', f0, f1, 0.0018, 'bedroll', 6), ['head'])
+f0,f1=V(0.097,-0.060,1.798),V(0.160,0.047,1.973)
+bm=bmesh.new();rows=[];shaft=[]
+for i in range(25):
+    t=i/24;c=f0.lerp(f1,t)+V(0.013*math.sin(math.pi*t),-0.007*math.sin(math.pi*t),0)
+    w=0.026*math.sin(math.pi*t)**0.85;shaft.append(c)
+    rows.append([bm.verts.new(c+V(-w,0,0)),bm.verts.new(c+V(0,-0.004,0)),bm.verts.new(c+V(w*0.8,0,0))])
+for a,b in zip(rows,rows[1:]):
+    for k in range(2):bm.faces.new((a[k],b[k],b[k+1],a[k+1]))
+part(face_finish('feather_vane',bm,'feather',True,0,0,0.0015),['head'])
+for a,b in zip(shaft,shaft[1:]):part(tube('feather_shaft',a,b,0.0015,'bedroll',8),['head'])
 def tilt(ob, rx, pivot=(0, -0.02, 1.74)):
     p = Vector(pivot); ob.data.transform(Matrix.Translation(p) @ Matrix.Rotation(rx, 4, 'X') @ Matrix.Translation(-p))
 HAT_DROP = 0.010 if '--hat-mutant' in args else 0.026      # the opening sits above the brows: the face stays open to a camera at eye height
@@ -508,7 +540,7 @@ decal('motif_rucksack', rucksack, (0.050, 0.30, 0.960), (-1, 0, 0), (0, 0, 1), 0
 part(tube('bedroll', (-0.165, 0.205, 1.305), (0.165, 0.205, 1.305), 0.058, 'bedroll', 24), ['chest', 'spine'])
 for bx in (-0.09, 0.09): part(loft('bedroll_strap', [(1.244, bx, 0.205, 0.014, 0.065), (1.366, bx, 0.205, 0.014, 0.065)], 'strap', 16, 0), ['chest', 'spine'])
 B['canteen'] = (V(0.185, 0.215, 1.125), V(0.185, 0.215, 0.94), 'spine')
-part(ellipsoid('canteen', (0.185, 0.215, 1.02), (0.058, 0.037, 0.078), 'metal', 24, 14), ['canteen'])
+part(ellipsoid('canteen', (0.185, 0.215, 1.02), (0.052, 0.034, 0.073), 'leather', 24, 14), ['canteen'])
 part(tube('canteen_cap', (0.185, 0.215, 1.092), (0.185, 0.215, 1.120), 0.015, 'leather', 16), ['canteen'])
 
 # -- construction details: folded lapels, topstitching, shoulder seams and real boot laces
@@ -547,7 +579,6 @@ for sd, sx in (('L', 1), ('R', -1)):
     stitches('lapel_stitch.'+sd, stitch_a, stitch_b, 16, ['spine', 'chest'], 'thread')
     stitches('pocket_stitch.'+sd, (sx*0.080, -0.187, 0.827), (sx*0.170, -0.187, 0.827), 9, ['pelvis'], on_coat=True)
     shoulder = [V(sx*(0.213+0.069*math.sin(a)), 0.071*math.cos(a), 1.393) for a in [2*math.pi*i/24 for i in range(25)]]
-    cord('shoulder_seam.'+sd, shoulder, 0.0016, 'coat_dark', ['chest', 'upper_arm.'+sd])
     for i in range(5):
         z = 0.155 + i*0.047
         for side in (-1, 1):
@@ -557,9 +588,24 @@ for sd, sx in (('L', 1), ('R', -1)):
             cord('boot_lacing.'+sd, [(sx*0.10+0.022, -0.079, z), (sx*0.10-0.022, -0.079, z+0.047)], 0.0020, 'boots_cuff', ['shin.'+sd])
     welt = [V(sx*0.10+0.069*math.cos(a), -0.052+0.134*math.sin(a), 0.039) for a in [2*math.pi*i/24 for i in range(25)]]
     cord('boot_welt.'+sd, welt, 0.0018, 'boots_cuff', ['foot.'+sd], 4)
-for i in range(36):
-    a0, a1 = 0.20+i*(2*math.pi-0.40)/36, 0.20+(i+0.52)*(2*math.pi-0.40)/36
-    cord('hem_stitch', [coat_point(0.598, a0, 0.005), coat_point(0.598, a1, 0.005)], 0.0011, 'thread', ['pelvis', 'thigh.L', 'thigh.R'], 5)
+# Project the edge trim onto the finished cloth, including subdivision and drape.
+coat_bvh = SurfaceBVH.FromObject(coat_body, bpy.context.evaluated_depsgraph_get())
+def cloth_point(z, angle, lift=0.0028):
+    origin = V(0,0.010,z); direction=V(math.sin(angle),-math.cos(angle),0)
+    hit, normal, _, _ = coat_bvh.ray_cast(origin+direction*0.5,-direction)
+    return hit + normal*lift if hit is not None else coat_point(z,angle,lift)
+for sd,sx in (('L',1),('R',-1)):
+    points=[]
+    for i in range(49):
+        z=0.583+(1.44-0.583)*i/48; gap=coat_ring(z)[4]
+        points.append(cloth_point(z,sx*(gap+0.024)))
+    for a,b in zip(points,points[1:]):
+        ob=tube('coat_edge.'+sd,a,b,0.0034,'coat_dark',8)
+        part(ob,COAT_BASE+HEM_BONES,coat_weights(ob,COAT_BASE))
+for i in range(72):
+    a0,a1=0.26+i*(2*math.pi-0.52)/72,0.26+(i+1)*(2*math.pi-0.52)/72
+    ob=tube('hem_binding',cloth_point(0.589,a0),cloth_point(0.589,a1),0.003,'coat_dark',8)
+    part(ob,COAT_BASE+HEM_BONES,coat_weights(ob,COAT_BASE))
 cord('back_seam', [coat_point(z, math.pi, 0.004) for z in (0.60, 0.75, 0.90, 1.05, 1.20, 1.35, 1.43)], 0.0018, 'coat_dark', TORSO)
 stitches('satchel_stitch', (-0.371, -0.085, 0.775), (-0.371, -0.085, 0.945), 15, ['pelvis', 'spine'])
 stitches('satchel_stitch', (-0.371, 0.165, 0.775), (-0.371, 0.165, 0.945), 15, ['pelvis', 'spine'])
@@ -592,6 +638,8 @@ for ob, bones, custom in parts:
             ws = [(b, w / tot) for b, w in raw] if tot > 1e-6 else [(min(allowed, key=lambda b: seg_dist(v.co, B[b][0], B[b][1])), 1.0)]
         for b, w in ws:
             if w > 0.01: groups[b].add([v.index], w, 'REPLACE')
+head_chart = head_surface.data.attributes.new('_HEAD_CHART', 'INT', 'POINT')
+for value in head_chart.data: value.value = 1
 bpy.ops.object.select_all(action='DESELECT')
 for ob, _, _ in parts: ob.select_set(True)
 bpy.context.view_layer.objects.active = parts[0][0]; bpy.ops.object.join(); body = bpy.context.view_layer.objects.active; body.name = 'Adventurer_mesh'
@@ -661,12 +709,12 @@ def paint_materials():
             # The island's look: large clean colour fields, light painted in (sunlit above, cooler in the folds below), almost no grain.
             c = base; cool = tuple(max(0.0, c[k] * f) for k, f in enumerate((0.62, 0.70, 0.86))); warm = tuple(min(1.0, c[k] * f) for k, f in enumerate((1.22, 1.16, 1.04)))
             noise_mul(2.4, 0.07, (1, 1, 1), 0, 0.0, 1)      # a painter's unevenness, very broad
-            if name in ('coat', 'coat_dark'): grad(0.55, 1.05, cool, 0.42); grad(1.48, 1.28, warm, 0.28); noise_mul(9, 0.0, (1, 1, 3), 1, 0.25, 1)
+            if name in ('coat', 'coat_dark'): grad(0.55, 1.05, cool, 0.42); grad(1.48, 1.28, warm, 0.28); noise_mul(9, 0.0, (1, 1, 3), 1, 0.025, 1)
             elif name in ('trousers', 'vest', 'shirt', 'bedroll'): grad(0.45, 0.95, cool, 0.35); noise_mul(9, 0.0, (1, 1, 1), 1, 0.2, 1)
-            elif name in ('hat', 'band'): grad(1.70, 1.80, cool, 0.30); grad(1.92, 1.82, warm, 0.25); noise_mul(8, 0.0, (1, 1, 1), 1, 0.25, 1)
+            elif name in ('hat', 'band'): grad(1.70, 1.80, cool, 0.30); grad(1.92, 1.82, warm, 0.25); noise_mul(8, 0.0, (1, 1, 1), 1, 0.025, 1)
             elif name in ('boots', 'boots_cuff', 'leather', 'strap', 'sole'): grad(0.0, 0.25, cool, 0.30); noise_mul(14, 0.03, (1, 1, 1), 1, 0.45, 2)
-            elif name in ('scarf', 'scarf_dark'): grad(1.20, 1.50, cool, 0.30); weave(120, 0.05, 0.4)      # the knit stays: the one texture you can read
-            elif name == 'hair': grad(1.58, 1.72, cool, 0.35); noise_mul(40, 0.10, (1, 1, 6), 2, 0.35, 2)      # strand direction, soft
+            elif name in ('scarf', 'scarf_dark'): grad(1.20, 1.50, cool, 0.30); weave(160, 0.025, 0.035)      # the knit stays: the one texture you can read
+            elif name == 'hair': grad(1.58, 1.72, cool, 0.35); noise_mul(8, 0.025, (1, 1, 2), 2, 0.015, 1)      # strand direction, soft
         elif name in ('coat', 'coat_dark'): noise_mul(45, 0.09, (1, 1, 4), 0, 0.0, 2); noise_mul(7, 0.28, (1, 1, 1.6), 1, 1.0); weave(260, 0.07); noise_mul(22, 0.0, (1, 1, 2.5), 3, 0.2, 2); blend_to((0.02, 0.05, 0.04), z_mask(0.45, 0.85), 0.36)
         elif name in ('trousers', 'vest', 'bedroll', 'shirt'): noise_mul(40, 0.08, (4, 1, 1), 0, 0.0, 2); noise_mul(7, 0.24, (1, 1, 1), 1, 1.0); weave(240, 0.06); noise_mul(20, 0.0, (1, 1, 1), 3, 0.15, 2); blend_to((0.05, 0.035, 0.02), z_mask(0.50, 1.10), 0.35)
         elif name in ('hat', 'band'): noise_mul(40, 0.08, (1, 1, 1), 0, 0.0, 2); noise_mul(6, 0.24, (1, 1, 1), 1, 0.8); weave(220, 0.05); noise_mul(24, 0.0, (1, 1, 1), 3, 0.12, 2)
@@ -678,21 +726,23 @@ def paint_materials():
             spot((0, -0.127, 1.630), 0.013, (0.66, 0.26, 0.19), 0.20)      # the nose tip
             for sx in (1, -1): spot((0.093*sx, 0.012, 1.664), 0.022, (0.62, 0.22, 0.16), 0.18)      # the ears (light through them)
             for sx in (1, -1): spot((0.0365*sx, -0.088, 1.683), 0.020, (0.30, 0.16, 0.14), 0.16, (1.2, 1, 0.6))      # the lids: a little darker and warmer than the cheek
-            spot((0, -0.075, 1.575), 0.070, (0.075, 0.045, 0.028), 0.16, (1.25, 0.65, 0.80))      # the jaw's shadow
-            spot((0, -0.111, 1.611), 0.010, (0.065, 0.038, 0.024), 0.16, (1, 0.25, 2.4))      # the philtrum
+            spot((0, -0.075, 1.575), 0.070, (0.075, 0.045, 0.028), 0.04, (1.25, 0.65, 0.80))      # the jaw's shadow
+            spot((0, -0.111, 1.611), 0.010, (0.065, 0.038, 0.024), 0.03, (1, 0.25, 2.4))      # the philtrum
             mw_ = FACE['mouth_w'] * 0.5
-            for i in range(17):      # the mouth's line: soft dark red along the smile, fading at the corners
-                u = -1 + 2 * i / 16; x = u * mw_ * 0.96; z = FACE['mouth_z'] + FACE['smile'] * u * u
-                spot((x, -0.112 + 0.012 * u * u, z), 0.0016, (0.28, 0.09, 0.08), 0.55 * (1 - 0.6 * u ** 4), (1, 0.4, 1.6))
+            for i in range(25):
+                u = -1 + 2 * i / 24; x = u * mw_ * 0.94; z = FACE['mouth_z'] + FACE['smile'] * u * u
+                # A warm lip field and one confident, softly tapered smile line.
+                spot((x, -0.098, z - 0.0014), 0.0042, (0.49, 0.22, 0.17), 0.18*(1-u**4), (1, 0.12, 1.4))
+                spot((x, -0.098, z), 0.0020, (0.20, 0.065, 0.045), 0.30*(1-0.8*u**4), (1, 0.06, 1.7))
             if STYLE == 'witness' and '--freckles' in args:      # (off: at the atlas's density a freckle is a texel or two and reads as dirt)      # freckles over the nose and the cheeks: someone who lives outdoors
                 import random; rnd = random.Random(7)
                 for _ in range(34):
                     u = rnd.uniform(-1, 1); x = 0.052 * u; z = 1.640 + 0.008 * (1 - u * u) + rnd.uniform(-0.007, 0.007)
                     if abs(x) < 0.006 and z > 1.646: continue
                     spot((x, -0.118 + 0.040 * abs(u) ** 1.6, z), rnd.uniform(0.0012, 0.0022), (0.36, 0.17, 0.10), rnd.uniform(0.35, 0.6))
-            for sx in (1, -1): spot((0.084*sx, -0.025, 1.630), 0.042, (0.070, 0.042, 0.026), 0.38, (0.75, 1.0, 1.4))
+            for sx in (1, -1): spot((0.084*sx, -0.025, 1.630), 0.042, (0.070, 0.042, 0.026), 0.05, (0.75, 1.0, 1.4))
             if STYLE != 'witness': noise_mul(70, 0.035, (1, 1, 1), 2, 0.0, 2)
-            noise_mul(16, 0.0, (1, 1, 1), 3, 0.15, 2)
+            noise_mul(16, 0.0, (1, 1, 1), 3, 0.0, 2)
         elif name == 'hair': noise_mul(60, 0.18, (1, 1, 5), 0, 0.3, 3); noise_mul(12, 0.15, (1, 1, 1), 1, 0.5); noise_mul(90, 0.08, (1, 1, 8), 2, 0.0, 2); noise_mul(30, 0.0, (1, 1, 6), 3, 0.4, 2)
         else: noise_mul(30, 0.05, (1, 1, 1), 0, 0.1, 2)
         nt.links.new(out, bsdf.inputs['Base Color'])
@@ -704,7 +754,7 @@ def paint_materials():
         bsdf.inputs['Metallic'].default_value = metal
 
 # roughness and metalness per material (the material map), and how strong each one's relief is (the normal map)
-SURFACE = dict(skin=(0.62, 0.0), nail=(0.45, 0.0), lips=(0.50, 0.0), skin_dark=(0.65, 0.0), mouth=(0.45, 0.0), mouth_dark=(0.5, 0.0), hair=(0.55, 0.0), eye=(0.12, 0.0), white=(0.18, 0.0), iris=(0.14, 0.0), iris_ring=(0.2, 0.0), lash=(0.6, 0.0), panel=(0.55, 0.0), panel_line=(0.6, 0.0),
+SURFACE = dict(hand_skin=(0.64,0.0),lid_skin=(0.64,0.0),glove_leather=(0.62,0.0),skin=(0.62, 0.0), nail=(0.45, 0.0), lips=(0.50, 0.0), skin_dark=(0.65, 0.0), mouth=(0.45, 0.0), mouth_dark=(0.5, 0.0), hair=(0.55, 0.0), eye=(0.12, 0.0), white=(0.18, 0.0), iris=(0.14, 0.0), iris_ring=(0.2, 0.0), lash=(0.6, 0.0), panel=(0.55, 0.0), panel_line=(0.6, 0.0),
                coat=(0.92, 0.0), coat_dark=(0.90, 0.0), vest=(0.88, 0.0), shirt=(0.80, 0.0), trousers=(0.90, 0.0), scarf=(0.95, 0.0), scarf_dark=(0.95, 0.0), hat=(0.90, 0.0), band=(0.65, 0.0), feather=(0.55, 0.0), bedroll=(0.92, 0.0), thread=(0.8, 0.0), stitching=(0.8, 0.0),
                boots=(0.42, 0.0), boots_cuff=(0.50, 0.0), sole=(0.70, 0.0), leather=(0.52, 0.0), strap=(0.55, 0.0), brass=(0.32, 1.0), metal=(0.38, 1.0))
 BUMP = dict(white=0.0, iris=0.0, iris_ring=0.0, eye=0.0, lash=0.0, panel=0.1, panel_line=0.3, coat=0.55, coat_dark=0.55, vest=0.5, shirt=0.4, trousers=0.5, scarf=0.8, scarf_dark=0.8, hat=0.45, band=0.3, boots=0.5, boots_cuff=0.5, leather=0.6, strap=0.5, sole=0.4, skin=0.05, hair=0.5, bedroll=0.5, brass=0.1, metal=0.15, nail=0.05, lips=0.05, skin_dark=0.05)
@@ -712,6 +762,21 @@ def bake_texture(body, size, outdir):
     if not FLAT_MATERIALS: paint_materials()
     bpy.ops.object.select_all(action='DESELECT'); body.select_set(True); bpy.context.view_layer.objects.active = body
     bpy.ops.object.mode_set(mode='EDIT'); bpy.ops.mesh.select_all(action='SELECT'); bpy.ops.uv.smart_project(angle_limit=math.radians(70), island_margin=0.0065); bpy.ops.object.mode_set(mode='OBJECT')      # (the island margin is wider than the bake's 10 px: no colour bleeds between islands)
+    # One cylindrical chart for the continuous head, with its seam at the nape. Smart projection
+    # split the sculpt's decimated slivers into subpixel islands (black specks, broken painted lips).
+    chart=body.data.attributes['_HEAD_CHART'];uv=body.data.uv_layers.active.data;head_faces=[]
+    for poly in body.data.polygons:
+        if not all(chart.data[vi].value for vi in poly.vertices): continue
+        head_faces.append(poly.index)
+        coords=[]
+        for vi in poly.vertices:
+            p=body.data.vertices[vi].co
+            coords.append([math.atan2(p.x,-(p.y-0.012))*0.10,p.z])
+        if max(c[0] for c in coords)-min(c[0] for c in coords)>math.pi*0.10:
+            for c in coords:
+                if c[0]<0:c[0]+=2*math.pi*0.10
+        for li,c in zip(poly.loop_indices,coords):uv[li].uv=c
+    body.data.attributes.remove(chart)
     # The face and the hands are where a player looks: their islands get 2.2 times the texel density of the clothes, then the atlas is repacked.
     if '--even-texels' not in args:
         names = [m_.name for m_ in body.data.materials]; FOCUS = {'skin', 'lips', 'mouth', 'mouth_dark', 'lash', 'white', 'iris', 'iris_ring', 'eye', 'hair', 'nail'}
@@ -723,6 +788,15 @@ def bake_texture(body, size, outdir):
         scene.tool_settings.use_uv_select_sync = True
         bpy.ops.object.mode_set(mode='EDIT'); bpy.ops.mesh.select_all(action='SELECT'); bpy.ops.uv.pack_islands(rotate=True, scale=True, margin=0.0065); bpy.ops.object.mode_set(mode='OBJECT')
         print('REPORT face and hands at 2.2x texel density: %d faces' % k)
+    # Small graphic features each sample one deliberately painted, mip-safe colour swatch. They
+    # still use the shared atlas and material; their colour never depends on a subpixel UV triangle.
+    detail_names=('white','iris','iris_ring','eye','lips','mouth_dark','lash','hair','hand_skin','lid_skin','glove_leather')
+    names=[m.name for m in body.data.materials];uv=body.data.uv_layers.active.data
+    for poly in body.data.polygons:
+        name=names[poly.material_index]
+        for li in poly.loop_indices:
+            if name in detail_names:uv[li].uv=((detail_names.index(name)+0.5)/len(detail_names),0.020)
+            else:uv[li].uv.y=0.05+0.95*uv[li].uv.y
     scene.render.engine = 'CYCLES'; scene.cycles.device = 'CPU'; scene.cycles.samples = 24; scene.cycles.use_denoising = False
     if scene.world is None: scene.world = bpy.data.worlds.new('w')
     scene.world.light_settings.distance = 0.09
@@ -745,6 +819,72 @@ def bake_texture(body, size, outdir):
             for n in [n for n in m.node_tree.nodes if n.type == 'TEX_IMAGE']: m.node_tree.nodes.remove(n)
     import numpy as np
     a = np.empty(size * size * 4, dtype=np.float32); b = np.empty(size * size * 4, dtype=np.float32); imgs['DIFFUSE'].pixels.foreach_get(a); imgs['AO'].pixels.foreach_get(b)
+    # A collapsed UV sliver can miss every bake sample and export as a black triangle.
+    # Extend valid neighbouring samples into those holes before any filtering/compression.
+    raw_colour = a.reshape(size,size,4); valid = raw_colour[:,:,:3].max(axis=2)>1e-6
+    gap = ~valid
+    maps = [raw_colour,b.reshape(size,size,4)]
+    other_maps = {}
+    for kind in ('NORMAL','ROUGHNESS','METAL'):
+        pixels=np.empty(size*size*4,dtype=np.float32);imgs[kind].pixels.foreach_get(pixels)
+        other_maps[kind]=pixels.reshape(size,size,4);maps.append(other_maps[kind])
+    for k,name in enumerate(detail_names):
+        x0=int(size*k/len(detail_names));x1=int(size*(k+1)/len(detail_names));y1=int(size*0.04)
+        raw_colour[:y1,x0:x1,:3]=srgb(COLOURS[name],name)[:3];raw_colour[:y1,x0:x1,3]=1
+        maps[1][:y1,x0:x1,:]=1
+        other_maps['NORMAL'][:y1,x0:x1,:]=(0.5,0.5,1,1)
+        rough,metal=SURFACE.get(name,(0.68,0.0))
+        other_maps['ROUGHNESS'][:y1,x0:x1,:]=(rough,rough,rough,1)
+        other_maps['METAL'][:y1,x0:x1,:]=(metal,metal,metal,1)
+        valid[:y1,x0:x1]=True
+    # Paint the head directly on its continuous chart. In concave sockets, several layers of skin
+    # can share a ray; a Cycles normal/AO bake there produced muddy eye rings. Keep those maps neutral
+    # and let the actual sculpt's normals and the island light describe its planes.
+    skin_base=np.array(srgb(COLOURS['skin'],'skin')[:3]);blush=np.array(srgb('#d28f7b','skin')[:3])
+    headmask=np.zeros((size,size),bool)
+    for pi in head_faces:
+        poly=body.data.polygons[pi];loops=list(poly.loop_indices)
+        for k in range(1,len(loops)-1):
+            lis=[loops[0],loops[k],loops[k+1]]
+            tri=np.array([uv[li].uv[:] for li in lis])*size
+            p3=np.array([body.data.vertices[body.data.loops[li].vertex_index].co[:] for li in lis])
+            x0=max(0,int(tri[:,0].min())-1);x1=min(size,int(tri[:,0].max())+2)
+            y0=max(0,int(tri[:,1].min())-1);y1=min(size,int(tri[:,1].max())+2)
+            if x0>=x1 or y0>=y1:continue
+            xx,yy=np.meshgrid(np.arange(x0,x1)+0.5,np.arange(y0,y1)+0.5)
+            aa,bb,cc=tri;den=(bb[1]-cc[1])*(aa[0]-cc[0])+(cc[0]-bb[0])*(aa[1]-cc[1])
+            if abs(den)<1e-8:continue
+            wa=((bb[1]-cc[1])*(xx-cc[0])+(cc[0]-bb[0])*(yy-cc[1]))/den
+            wb=((cc[1]-aa[1])*(xx-cc[0])+(aa[0]-cc[0])*(yy-cc[1]))/den;wc=1-wa-wb
+            hit=(wa>=-0.03)&(wb>=-0.03)&(wc>=-0.03)
+            if not hit.any():continue
+            pos=wa[:,:,None]*p3[0]+wb[:,:,None]*p3[1]+wc[:,:,None]*p3[2]
+            pos=(pos-np.array(HEAD_PIVOT))/HEAD_SCALE+np.array(HEAD_PIVOT)
+            warm=np.zeros_like(xx)
+            for sx in (-1,1):
+                warm+=0.20*np.exp(-(((pos-np.array([sx*0.045,-0.085,1.642]))/np.array([0.031,0.044,0.026]))**2).sum(axis=2))
+            warm+=0.20*np.exp(-(((pos-np.array([0,-0.123,1.632]))/np.array([0.015,0.025,0.018]))**2).sum(axis=2))
+            colour=skin_base+(blush-skin_base)*warm[:,:,None]
+            raw_colour[y0:y1,x0:x1,:3][hit]=colour[hit];maps[1][y0:y1,x0:x1,:][hit]=1
+            other_maps['NORMAL'][y0:y1,x0:x1,:][hit]=(0.5,0.5,1,1)
+            other_maps['ROUGHNESS'][y0:y1,x0:x1,:][hit]=(0.64,0.64,0.64,1)
+            other_maps['METAL'][y0:y1,x0:x1,:][hit]=(0,0,0,1)
+            valid[y0:y1,x0:x1][hit]=True;headmask[y0:y1,x0:x1][hit]=True
+    print('REPORT clean head paint: %d texels' % int(headmask.sum()))
+    repaired=0
+    for _ in range(12):
+        counts=np.zeros((size,size),np.float32)
+        sums=[np.zeros_like(q) for q in maps]
+        for dy,dx in ((-1,0),(1,0),(0,-1),(0,1)):
+            dst=(slice(max(0,dy),size+min(0,dy)),slice(max(0,dx),size+min(0,dx)))
+            src=(slice(max(0,-dy),size+min(0,-dy)),slice(max(0,-dx),size+min(0,-dx)))
+            weights=valid[src].astype(np.float32); counts[dst]+=weights
+            for out_,map_ in zip(sums,maps): out_[dst]+=map_[src]*weights[:,:,None]
+        fill=(~valid)&(counts>0);repaired+=int(fill.sum())
+        for map_,sum_ in zip(maps,sums): map_[fill]=sum_[fill]/counts[fill,None]
+        valid|=fill
+    for kind,pixels in other_maps.items(): imgs[kind].pixels.foreach_set(pixels.reshape(-1))
+    print('REPORT bake sliver padding: %d texels' % repaired)
     # The eyes are not occluded: a ball in a socket bakes nearly black ambient occlusion, which greys the whites and lets the iris swallow the eye.
     # Their texels (rasterized from their UV triangles) keep full light.
     EYE_MATS = {'white', 'iris', 'iris_ring', 'eye'}
@@ -780,7 +920,7 @@ def bake_texture(body, size, outdir):
         for dx in range(-2, 3):
             acc[max(0, dy):size + min(0, dy), max(0, dx):size + min(0, dx)] += ao_img[max(0, -dy):size + min(0, -dy), max(0, -dx):size + min(0, -dx)]; cnt[max(0, dy):size + min(0, dy), max(0, dx):size + min(0, dx)] += 1
     ao_img = acc / cnt; b[:, 0] = ao_img.reshape(-1)
-    ao = np.clip(b[:, :1], 0, 1) ** 1.25; ao_mix = 0.32 if STYLE == 'witness' else 0.50      # (painterly: occlusion lighter, so deep creases do not go black)
+    ao = np.clip(b[:, :1], 0, 1) ** 1.25; ao_mix = 0.20 if STYLE == 'witness' else 0.50      # (painterly: occlusion lighter, so deep creases do not go black)
     lin = np.clip(a[:, :3] * ((1 - ao_mix) + ao_mix * ao), 0, 1); a[:, :3] = np.where(lin <= 0.0031308, lin * 12.92, 1.055 * np.power(lin, 1 / 2.4) - 0.055); a[:, 3] = 1.0      # (the image holds display values: the linear colour is encoded here)
     final = bpy.data.images.new('adventurer_tex', size, size, alpha=False); final.colorspace_settings.name = 'sRGB'; final.pixels.foreach_set(a.reshape(-1))
     os.makedirs(outdir, exist_ok=True); path = os.path.join(outdir, 'adventurer_tex.jpg'); final.filepath_raw = path; final.file_format = 'JPEG'; scene.render.image_settings.quality = 93; final.save()
@@ -813,8 +953,8 @@ def bake_texture(body, size, outdir):
     tnn = nm.node_tree.nodes.new('ShaderNodeTexImage'); tnn.image = img_n; nmap = nm.node_tree.nodes.new('ShaderNodeNormalMap'); nm.node_tree.links.new(tnn.outputs['Color'], nmap.inputs['Color']); nm.node_tree.links.new(nmap.outputs['Normal'], bs.inputs['Normal'])
     tnm = nm.node_tree.nodes.new('ShaderNodeTexImage'); tnm.image = img_m; sep = nm.node_tree.nodes.new('ShaderNodeSeparateColor'); nm.node_tree.links.new(tnm.outputs['Color'], sep.inputs['Color'])
     nm.node_tree.links.new(sep.outputs['Green'], bs.inputs['Roughness']); nm.node_tree.links.new(sep.outputs['Blue'], bs.inputs['Metallic'])
-    body.data.materials.clear(); body.data.materials.append(nm)
-    for poly in body.data.polygons: poly.material_index = 0
+    body.data.materials.clear();body.data.materials.append(nm)
+    for poly in body.data.polygons:poly.material_index=0
     for k in ('bake_DIFFUSE', 'bake_AO', 'bake_NORMAL', 'bake_ROUGHNESS', 'bake_METAL'): bpy.data.images.remove(bpy.data.images[k])
     print('REPORT texture', size, 'x', size, os.path.getsize(path), 'bytes')
     scene.render.engine = 'BLENDER_WORKBENCH'

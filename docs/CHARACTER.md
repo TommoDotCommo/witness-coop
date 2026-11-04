@@ -42,6 +42,19 @@ The adventurer belongs to the island, so it borrows the island's look rather tha
 - **Judged in the island's light.** `tools/char_lookdev --light island` lights the model with a warm high sun, the sky's blue from
   above and the sandstone's bounce from below, on sky and sand; the review page uses it.
 
+## Clean forms and readable detail
+
+The face uses three broad masses rather than separate cheek, jowl and muzzle bumps. The neck tapers into the jaw; the nose
+has a single bridge-to-tip transition, with nostrils abstracted at this scale. Larger eye openings and a smooth brow arc
+carry the expression. A narrow smile ribbon is projected onto the face, so its edge stays continuous when seen close up.
+The mouth and eyes sample deliberately painted colour swatches in the shared atlas rather than relying on subpixel UV islands.
+
+The head has one cylindrical texture chart with the seam at the nape. Automatic projection of the decimated sculpt made
+small isolated islands that baked as black pinpricks. Cloth uses broad hanging folds, shallow material relief and a clean
+bound edge. Sleeve compression is measured about each sleeve's own axis. The breeches taper inside the coat at the hip,
+so the trousers do not emerge as tan patches through its sides. The hat has a substantial, upswept brim, and the canteen
+has a warm leather cover that reads alongside the other gear.
+
 ## How the organic parts are built
 
 The head (skull, face, ears, neck), the moving upper lids, the brows, the hair and the hands are **signed distance fields**
