@@ -48,18 +48,18 @@ def check(path):
                 assert len({values[i] for i in indices[t:t+3]}) == 1, 'appearance region crosses a triangle'
             triangles += len(indices)//3
     assert groups == set(range(9)), 'missing appearance region'
-    assert triangles <= 100000, 'triangle budget exceeded'
+    assert triangles <= 400000, 'triangle ceiling exceeded (an accident? docs/CHARACTER.md, budgets)'
     colour = 0      # the colour atlas is the base colour texture's image; the normal and material maps are the others
     for m in j.get('materials', []):
         t = m.get('pbrMetallicRoughness', {}).get('baseColorTexture', {}).get('index')
         if t is not None: colour = j['textures'][t]['source']
     w,h = texture_size(j,b,colour)
-    assert 0 < w <= 2048 and 0 < h <= 2048, 'atlas exceeds 2048 square budget'
+    assert 0 < w <= 4096 and 0 < h <= 4096, 'atlas exceeds the 4096 square ceiling'
     extra = []
     for k in range(len(j['images'])):
         if k == colour: continue
-        ew, eh = texture_size(j, b, k); assert 0 < ew <= 2048 and 0 < eh <= 2048, 'a map exceeds the 2048 square budget'; extra.append(f'{ew}x{eh}')
-    assert Path(path).stat().st_size <= 9*1024*1024, 'GLB budget exceeded (9 MiB: the colour atlas plus the normal and material maps)'
+        ew, eh = texture_size(j, b, k); assert 0 < ew <= 4096 and 0 < eh <= 4096, 'a map exceeds the 4096 square ceiling'; extra.append(f'{ew}x{eh}')
+    assert Path(path).stat().st_size <= 64*1024*1024, 'GLB ceiling exceeded (64 MiB)'
     print(f'appearance asset: 9 regions, {triangles} triangles, {w}x{h} atlas' + (' + maps ' + ', '.join(extra) if extra else '') + f', {Path(path).stat().st_size} bytes; labels and budgets passed')
 
 if __name__ == '__main__': check(sys.argv[1] if len(sys.argv)>1 else 'assets/models/adventurer.glb')

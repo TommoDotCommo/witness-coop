@@ -1,0 +1,15 @@
+# Horizon: the right hand shades the eyes under the brim, the left hand on the hip, the weight on
+# the front foot; the gaze sweeps slowly from left to right across the horizon with the chest
+# following a third of the way, pauses, and comes back to centre.
+emote 24 Horizon
+duration 4.8
+drag 0.045
+key 0.00 rest
+key 0.50 arm.R=60,-8,10 fore.R=80 arm.L=4,-50,30 fore.L=60 head=-2
+key 0.95 arm.R=77,-7,7 fore.R=86 hand.R=0,0,-20 arm.L=5,-80,53 fore.L=90 head=-6,22,0 chest=-2,8,0 hips=1,-1.5,1.5 pelvis=2
+key 1.40 head=-6,26,2 chest=-2,9,0
+key 2.40 head=-7,-22,-2 chest=-2,-7,0 hips=-1,-1.5,1.5
+key 2.90 head=-7,-26,-3 chest=-2,-9,0
+key 3.30 head=-6,-20,-2
+key 3.90 head=-2,0,0 chest=0 arm.R=40,-6,10 fore.R=60 hand.R=0 arm.L=4,-30,20 fore.L=40 hips=0 pelvis=0
+key 4.75 rest

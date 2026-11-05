@@ -26,9 +26,10 @@ int main(int argc, char** argv) {
     std::ifstream f(argv[1], std::ios::binary); std::vector<uint8_t> file((std::istreambuf_iterator<char>(f)), {});
     wm::Model m; std::string err;
     if (!wm::LoadGlb(file.data(), file.size(), &m, &err)) { printf("load: %s\n", err.c_str()); return 1; }
-    float lidClose = 0; { std::ifstream sc(std::string(argv[1]) + ".txt"); std::string line; while (std::getline(sc, line)) sscanf(line.c_str(), "lid_close=%f", &lidClose); }
-    CHECK(lidClose > 1.2f && lidClose < 2.5f, "lid_close=%.3f in the sidecar", lidClose);
-    wm::LifeRig rig; rig.Bind(m, lidClose);
+    float lidClose = 0, lidRotate = 0; { std::ifstream sc(std::string(argv[1]) + ".txt"); std::string line; while (std::getline(sc, line)) { sscanf(line.c_str(), "lid_close=%f", &lidClose); sscanf(line.c_str(), "lid_rotate=%f", &lidRotate); } }
+    const bool turning = lidRotate != 0;      // a lid that turns down over a round eyeball (lid_rotate=), or one that stretches (lid_close=)
+    CHECK(turning ? fabsf(lidRotate) > 0.5f && fabsf(lidRotate) < 1.6f : lidClose > 1.2f && lidClose < 2.5f, "the sidecar's lid: lid_close=%.3f lid_rotate=%.3f", lidClose, lidRotate);
+    wm::LifeRig rig; rig.Bind(m, lidClose, lidRotate);
     CHECK(rig.ok && rig.neck >= 0 && rig.chest >= 0 && rig.eye[0] >= 0 && rig.eye[1] >= 0 && rig.lid[0] >= 0 && rig.lid[1] >= 0, "rig: head %d neck %d chest %d eyes %d %d lids %d %d", rig.head, rig.neck, rig.chest, rig.eye[0], rig.eye[1], rig.lid[0], rig.lid[1]);
     CHECK(rig.scarfA.count == 3 && rig.scarfB.count == 2 && rig.canteen.count == 1 && rig.satchel.count == 1, "chains: scarf %d %d canteen %d satchel %d", rig.scarfA.count, rig.scarfB.count, rig.canteen.count, rig.satchel.count);
     CHECK(rig.headYaw.axis >= 0 && rig.headPitch.axis >= 0 && rig.headYaw.axis != rig.headPitch.axis && rig.eyeYaw[0].axis >= 0 && rig.eyePitch[0].axis >= 0, "axes: head yaw %d pitch %d, eye yaw %d pitch %d", rig.headYaw.axis, rig.headPitch.axis, rig.eyeYaw[0].axis, rig.eyePitch[0].axis);
@@ -39,18 +40,24 @@ int main(int argc, char** argv) {
     wm::JointMatrices(m, idle, 0.0f, bind.data());
     auto pose = [&](const wm::LifeState& L, float t = 0.0f) { wm::PoseLayers pl; pl.life = &L; pl.rig = &rig; wm::JointMatricesBlendEx(m, -1, 0, idle, t, 1, posed.data(), pl); };
 
-    // ---- the lids: closing stretches the lid's edge down over the eye by about the opening; its top row and the eye corners stay
+    // ---- the lids: a stretching lid's edge comes down by about the opening while its top row and the eye corners stay; a turning lid
+    // swings down over the ball by more than the opening and stays on the ball (its distance to the ball's centre does not change)
     {
         int lidNode = rig.lid[0], lidJ = JointOf(m, lidNode); std::vector<size_t> edge, top;
         for (size_t i = 0; i < m.verts.size(); i++) for (int k = 0; k < 4; k++) if (m.verts[i].joints[k] == lidJ) { if (m.verts[i].weights[k] > 0.8f) edge.push_back(i); else if (m.verts[i].weights[k] < 0.05f) top.push_back(i); }
-        CHECK(edge.size() > 10 && top.size() >= 8, "lid vertices: %zu edge, %zu top", edge.size(), top.size());
+        CHECK(edge.size() > 10 && (turning || top.size() >= 8), "lid vertices: %zu edge, %zu top", edge.size(), top.size());
         wm::LifeState L; L.blink = 1; pose(L);
-        float maxDrop = 0, minDrop = 1e9f, topMove = 0, edgeFront = 0;
-        for (size_t i : edge) { float a[3], b[3]; wm::SkinPosition(m, bind.data(), m.verts[i], a); wm::SkinPosition(m, posed.data(), m.verts[i], b); float drop = a[1] - b[1]; maxDrop = fmaxf(maxDrop, drop); minDrop = fminf(minDrop, drop); edgeFront = fmaxf(edgeFront, b[2] - a[2]); }
+        float maxDrop = 0, topMove = 0, edgeFront = 0, offBall = 0, centre[3]; JointPos(m, bind.data(), lidNode, centre);
+        for (size_t i : edge) { float a[3], b[3]; wm::SkinPosition(m, bind.data(), m.verts[i], a); wm::SkinPosition(m, posed.data(), m.verts[i], b); maxDrop = fmaxf(maxDrop, a[1] - b[1]); edgeFront = fmaxf(edgeFront, b[2] - a[2]); offBall = fmaxf(offBall, fabsf(Dist(a, centre) - Dist(b, centre))); }
         for (size_t i : top) { float a[3], b[3]; wm::SkinPosition(m, bind.data(), m.verts[i], a); wm::SkinPosition(m, posed.data(), m.verts[i], b); topMove = fmaxf(topMove, Dist(a, b)); }
-        CHECK(maxDrop > 0.007f && maxDrop < 0.013f, "a closed lid's edge drops %.1f mm at most (the opening is 9.5 mm)", maxDrop * 1000);
-        CHECK(topMove < 0.0006f, "the lid's top row moved %.2f mm", topMove * 1000);
-        CHECK(edgeFront < 0.004f, "the closed lid stands %.1f mm further forward", edgeFront * 1000);
+        if (turning) {
+            CHECK(maxDrop > 0.012f && maxDrop < 0.040f, "a closed turning lid comes down %.1f mm at most (the opening is about 14 mm)", maxDrop * 1000);
+            CHECK(offBall < 0.0003f, "the turning lid left the ball by %.2f mm", offBall * 1000);
+        } else {
+            CHECK(maxDrop > 0.007f && maxDrop < 0.013f, "a closed lid's edge drops %.1f mm at most (the opening is 9.5 mm)", maxDrop * 1000);
+            CHECK(topMove < 0.0006f, "the lid's top row moved %.2f mm", topMove * 1000);
+            CHECK(edgeFront < 0.004f, "the closed lid stands %.1f mm further forward", edgeFront * 1000);
+        }
         L.blink = 0; pose(L); float still = 0; for (size_t i : edge) { float a[3], b[3]; wm::SkinPosition(m, bind.data(), m.verts[i], a); wm::SkinPosition(m, posed.data(), m.verts[i], b); still = fmaxf(still, Dist(a, b)); }
         CHECK(still < 1e-4f, "an open eye's lid moved %.2f mm", still * 1000);
     }

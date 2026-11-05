@@ -1,5 +1,6 @@
 // Software preview of the production skin palette. No graphics API or game.
 #include "../proxy/model/model.h"
+#include "../proxy/model/gestures.h"
 #include <fstream>
 #include <iterator>
 #include <algorithm>

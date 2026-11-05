@@ -1,0 +1,14 @@
+# Bow: a courteous bow from the hips. Stand tall first, the right hand comes to the belly and the
+# left drifts back as the body folds; the hips go back to keep the weight over the feet; the head
+# arrives last and comes up last.
+emote 6 Bow
+duration 2.6
+drag 0.04
+touch hand.R chest 0.04 0.7 1.9
+key 0.00 rest
+key 0.25 chest=-4 head=-4 arm.R=14,-40,14 fore.R=60
+key 0.70 pelvis=24 spine=12 chest=8 neck=-4 head=10 hips=0,-2,-6 arm.R=16,-56,24 fore.R=76 hand.R=0,0,-10 arm.L=-22,0,12 fore.L=18
+key 1.25 pelvis=26 spine=14 chest=9 neck=-2 head=14 hips=0,-2,-7                      # the held bow keeps sinking a little
+key 1.70 pelvis=6 spine=2 chest=-2 neck=-2 head=-4 hips=0,0,-2 arm.L=-8,0,10 fore.L=14
+key 2.05 pelvis=0 spine=0 chest=-3 neck=0 head=-2 hips=0 arm.R=8,-20,8 fore.R=40 hand.R=0
+key 2.58 rest

@@ -1,0 +1,15 @@
+# Yes: three nods, each smaller, the head leading the neck; the chest gives a little with the
+# first. A small lift first (anticipation) makes the first nod read.
+emote 4 Yes
+duration 2.6
+drag 0.03
+key 0.00 rest
+key 0.22 head=-7 neck=-3
+key 0.46 hit head=20 neck=8 chest=3
+key 0.72 head=-4 neck=-1 chest=0
+key 0.96 hit head=16 neck=6 chest=2
+key 1.22 head=-2 neck=0 chest=0
+key 1.46 head=10 neck=4
+key 1.80 head=1,3,2 neck=1
+key 2.30 head=0 neck=0
+key 2.58 rest

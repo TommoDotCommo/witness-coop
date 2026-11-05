@@ -21,16 +21,16 @@ and V in a game, with the twin `key_repeat_toggle=1`.
 The brows act with the emotes (Sad, Thinking, Laugh, Celebrate, Cheer, Panic, Facepalm, No and Shrug move them; see [the life layer](LIFE.md)).
 Thinking, Sit and Sway loop until cancelled or interrupted. Other gestures finish
 in 2.6–4.8 seconds. Wave, Yes, No, Shrug, Point, Clap, Thumbs up, Salute and Beckon
-retain control of the upper body while walking. Movement above 0.35 m/s cancels
+play while walking and leave the hips and legs to the gait. Movement above 0.35 m/s cancels
 other gestures; they stay cancelled when the player stops. Starting another
 emote replaces the previous one through the same pose filter. Player movement is
-never locked by an emote. The procedural poses blend over the current idle,
-walk or run. Run selection has 10% release hysteresis to avoid restarting a
-walk/run fade on packet-timing jitter. The pose layer has quintic entry/exit envelopes and a 90 ms joint response.
-Sit and Stretch enter more slowly. The seated pelvis follows the leg-chain
-height. Spin turns about the feet; the other standing gestures keep the gait's
-foot transforms. Torso counter-motion, wrist motion and offset arm rhythms add
-motion beyond a rigid whole-character effect.
+never locked by an emote. Run selection has 10% release hysteresis to avoid restarting a
+walk/run fade on packet-timing jitter.
+
+Each emote is a keyframed clip in `assets/emotes/`, played with overlap down the
+joint chains, a spring per joint for follow-through, hips and foot IK for weight
+shifts with planted feet, and a quintic entry/exit envelope. [ANIMATION.md](ANIMATION.md)
+describes the format, the runtime layer, the quality gate and the work loop.
 
 Proximity speech uses the existing microphone capture and VAD pipeline. The
 animation gate additionally requires RMS of at least 700 PCM units for 60 ms,
@@ -55,35 +55,30 @@ alignment across a delayed or lossy link is not guaranteed.
 ## Game-free verification
 
 ```sh
-python3 tools/test_gestures.py
+make -C proxy/model emotes            # the animation quality gate, its bad clips and mutants
+python3 tools/test_gestures.py        # wheel, cancellation, speech, parser, overlap, springs, wire
 make -C proxy/core test HUB=<playbook-checkout>
 make -C proxy
-python3 tools/preview_gestures.py <output.png>
+python3 tools/emote_review.py         # dailies: local/emote_review/index.html
 ```
 
-The focused script loads the actual bundled GLB and samples each emote at
-120 Hz. It checks durations, finite transforms, anatomical angle bounds, entry
-and exit continuity, wrist displacement, foot heights, standing foot placement,
-looping, cancellation, pose switching and speech conflict behavior. Activity
-streams cover isolated spikes, flicker, long speech, hysteresis, silence and
-channel switching. The wire tests exercise every ID and hostile byte value,
-atomic malformed-packet rejection, flood spacing, immediate cancellation,
-reordering, counter wrap and expiry. An eight-player simulator runs 32 loss seeds
-with duplicate and reversed delivery, then verifies convergence after recovery.
-Eighteen deliberately broken variants must fail: blending, movement cancellation,
-channel gating, hysteresis, conflict priority, envelope, limits, loops, receive
-validation, rate limiting, missing skeletal application, seated height, bind-axis
-sign, speech expiry, loop expiry, speech encoding, local API validation and walk/run threshold hysteresis.
+The gate (listed in [ANIMATION.md](ANIMATION.md)) plays every clip on the bundled
+character at 120 Hz and checks limits, pops, planted feet, ground contact, balance,
+clipping into the torso and head, declared contacts, moving holds, twinning,
+readability, distinctness and loop seams. The controller tests cover the wheel,
+movement cancellation, speech gating and conflicts, the clip parser's rejections,
+the safe reload, the overlap lag and the springs. The wire tests exercise every ID
+and hostile byte value, atomic malformed-packet rejection, flood spacing, immediate
+cancellation, reordering, counter wrap and expiry; an eight-player simulator runs 32
+loss seeds with duplicate and reversed delivery. Every protection has a mutant or a
+bad clip that must fail.
 
-The preview uses the production joint palette and CPU skinning, rasterized with
-a depth buffer and the bundled atlas. The 5×5 sheet shows IDs 1–24 at 1.5 seconds,
-left to right, then proximity speech in cell 25. It is a pose preview, not evidence
-of live rendering or complete animation quality.
+The dailies render uses the production joint palette and CPU skinning from three
+views. It is a review aid, not evidence of live rendering.
 
 ## Ordered live verification (not run in the game-free environment)
 
-1. Run the four game-free commands above, substituting the playbook checkout and
-   preview destination. All tests must pass and every mutant must be rejected.
+1. Run the game-free commands above, substituting the playbook checkout. All tests must pass and every mutant must be rejected.
 2. Run `tools/qa.sh emote`. This builds and installs into disposable test clients
    through the existing harness. The clean scenario must print `ALL OK`; each
    of `no_emote_send`, `no_emote_anim`, `no_key_swallow`, `no_speaking_flag` and
@@ -106,12 +101,8 @@ any discovered defect as a pose or process-state assertion before accepting a fi
 
 ## Limits requiring review
 
-The base asset has only rigid hand bones: its authored fingers share the palm's
-skin influence. Wrist and arm poses are animated, but independent pointing,
-thumbs-up and cupping finger shapes are unavailable. Cloth, hair and scarf also
-have no secondary-motion joints. This change does not alter the mesh or add a
-finger/cloth rig. The tests check joint/foot trajectories and numerical continuity;
-they do not prove absence of all mesh intersections or ground clearance on uneven
-terrain. Live appearance, whole-body weight transfer, contact quality, frame cost
-and the requested level of animation polish remain unverified. A rig extension
-and animation review are needed before calling the result world-class.
+The rig has rigid hands (no finger bones), no clavicles and no cloth joints in the
+sleeves: pointing, thumbs-up and fists are wrist poses, and a shrug sinks the neck.
+The gate checks clipping against the torso and head, not arm against arm. Live
+appearance at game frame rates from the other player's camera still needs a person
+to look; a finger and clavicle rig extension is the next step for hand acting.

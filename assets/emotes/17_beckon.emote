@@ -1,0 +1,17 @@
+# Beckon: "come here". The hand goes out palm up and the forearm curls in toward the chest three
+# times, the head tilting and nodding with each; the last is the biggest.
+emote 17 Beckon
+duration 3.6
+drag 0.04
+pose out arm.R=48,30,16 fore.R=56 hand.R=10,70,0
+pose in  arm.R=44,30,14 fore.R=112 hand.R=-30,70,0
+key 0.00 rest
+key 0.40 @out chest=0,-4,0 head=0,-6,4
+key 0.78 @in head=6,-8,8
+key 1.10 @out head=-2,-6,4
+key 1.46 @in head=6,-8,8
+key 1.78 @out head=-2,-6,4
+key 2.20 @in arm.R=38,30,14 fore.R=114 hand.R=-36,70,0 head=8,-10,10 chest=2,-6,0
+key 2.70 @out fore.R=70 head=0,-4,2 chest=0,-2,0
+key 3.15 arm.R=12,10,8 fore.R=30 hand.R=0 head=0 chest=0
+key 3.55 rest

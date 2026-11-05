@@ -1,0 +1,12 @@
+# Shrug: "who knows?" The forearms turn out with the palms up, the neck sinks between the
+# shoulders, the head tilts and the brows lift (life layer). The right side leads.
+emote 8 Shrug
+duration 2.6
+drag 0.035
+key 0.00 rest
+key 0.22 chest=3 head=3 arm.LR=4,-10,10 fore.LR=40
+key 0.52 hit chest=-4 neck=6 head=-6,8,12 arm.R=14,-46,28 fore.R=96 hand.R=0,62,10 arm.L=10,-40,24 fore.L=90 hand.L=0,56,8
+key 0.80 neck=7 head=-7,10,14 arm.R=16,-48,30 fore.R=98 arm.L=12,-44,26
+key 1.50 neck=5 head=-4,6,10 arm.R=14,-44,26 fore.R=94 hand.R=0,58,8 arm.L=10,-38,22 fore.L=88
+key 1.90 chest=0 neck=1 head=0,2,3 arm.LR=8,-16,14 fore.LR=50 hand.LR=0,20,0
+key 2.58 rest

@@ -1,0 +1,27 @@
+# Sit: on a stool (the TV seats). The body leans forward over the feet and the knees bend (foot
+# IK) on the way down; once the seat takes the weight the feet slide forward to rest in front, the
+# back settles upright and the hands rest on the thighs. In the loop the head looks around slowly,
+# a hand drums a knee and a foot taps. The hips drop as much as the old seat did (0.467 m):
+# proxy/tv/tv.h places the seated player from it.
+emote 14 Sit
+duration 6
+loop 2.0 6.0
+drag 0.04
+eyedrop 0.44 0.50
+pose seated hips=0,-46.7,0 step.LR=2,0,34 thigh.LR=1 spine=4 chest=-2 head=2 arm.LR=40,-6,4 fore.LR=26 hand.LR=14
+key 0.00 rest thigh.LR=1
+key 0.40 hips=0,-14,-3 pelvis=14 spine=12 chest=4 arm.LR=24,0,6 fore.LR=20
+key 0.85 hips=0,-38,-6 pelvis=26 spine=14 chest=6 head=-4 arm.LR=40,0,8 fore.LR=30
+key 1.10 hips=0,-46.7,-2 pelvis=14 step.LR=1,0,10
+key 1.50 @seated spine=8 chest=1
+key 2.00 @seated
+key 2.80 head=2,16,2 chest=-2,6,0
+key 3.40 head=4,18,3 hand.R=4 fore.R=30
+key 3.60 hand.R=16
+key 3.80 hand.R=4 step.R=2,4,34
+key 4.00 hand.R=16 step.R=2,0,34
+key 4.20 step.R=2,4,34
+key 4.40 step.R=2,0,34
+key 4.70 head=2,-12,-2 chest=-2,-4,0 hand.R=14 fore.R=26
+key 5.30 head=3,-8,-1
+key 6.00 @seated

@@ -18,7 +18,8 @@ def prepare(c, config):
     gs.install_proxy(d)
     if (Path(ROOT) / 'launcher/build/witness_launcher.exe').exists(): gs.replace_copy(Path(ROOT) / 'launcher/build/witness_launcher.exe', d / 'witness_launcher.exe')
     models = d / 'witness_models'; models.mkdir(exist_ok=True)
-    for f in models.iterdir(): f.unlink()
+    for f in models.iterdir():
+        if f.is_file(): f.unlink()      # (witness_models/emotes/ is a folder: install.sh puts the clips there for `emotes reload`)
     for name in ('adventurer.glb', 'adventurer.glb.txt'):
         gs.replace_copy(Path(ROOT) / 'assets/models' / name, models / name)
     config += 'name=%s\nforce_active=1\ncap_fps=30\ndev_menu=1\nvoice_mute_output=1\n' % (NAMES[(c.id - 1) % len(NAMES)],)

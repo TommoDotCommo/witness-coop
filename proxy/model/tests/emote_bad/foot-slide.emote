@@ -1,0 +1,7 @@
+# expect: foot-slide
+# The hips go further forward than straight legs reach: the planted feet are dragged.
+emote 6 Bow
+duration 2.6
+key 0 rest
+key 1 hips=0,0,28 chest=10
+key 2.6 rest

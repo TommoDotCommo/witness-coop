@@ -111,7 +111,7 @@ python3 tools/check_appearance_asset.py assets/models/adventurer.glb
 ```
 
 With Blender available, also run `models/build.sh adventurer`,
-`tools/test_face_fit.sh`, `tools/test_cloth_fit.sh`, `tools/test_strap_fit.sh`,
+`tools/test_character.sh`, `tools/test_cloth_fit.sh`, `tools/test_strap_fit.sh`,
 `tools/test_material_bake.sh` and `tools/test_gait_contact.sh`. Inspect the default
 and each of the 24 nondefault feature choices in previews. Compare default/variant
 positions, normals, weights and animation accessors; only colours may change.

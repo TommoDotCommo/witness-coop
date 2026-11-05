@@ -1,0 +1,7 @@
+# expect: limits
+# The elbow bends backwards past its range.
+emote 9 Point
+duration 3.2
+key 0 rest
+key 1 arm.R=40 fore.R=175
+key 3.2 rest

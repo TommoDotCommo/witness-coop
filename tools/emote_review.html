@@ -1,0 +1,206 @@
+<title>Adventurer Emote Dailies</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a dailies room. A sticky control strip, then a grid of players (one per emote); choosing one opens it large
+   with its dope-sheet timeline, the gate's verdict and the clip source. Colours: the adventurer's coat teal and scarf ochre. */
+:root {
+  --bg: #e6ebea; --panel: #f4f7f6; --sunk: #dbe2e0; --fg: #17201f; --muted: #56625f; --line: #c3cdca;
+  --teal: #23675f; --ochre: #b5801f; --good: #2f7d4a; --bad: #b23a2c; --stage: #e9eceb;
+  --display: "Barlow Condensed", "Arial Narrow", sans-serif; --body: "IBM Plex Sans", system-ui, sans-serif; --mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #111716; --panel: #19211f; --sunk: #0c1110; --fg: #e3ebe8; --muted: #93a29e; --line: #2c3835;
+  --teal: #5fb3a7; --ochre: #e0ad4c; --good: #6cc489; --bad: #ef7a6a; --stage: #e9eceb; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #111716; --panel: #19211f; --sunk: #0c1110; --fg: #e3ebe8; --muted: #93a29e; --line: #2c3835;
+  --teal: #5fb3a7; --ochre: #e0ad4c; --good: #6cc489; --bad: #ef7a6a; --stage: #e9eceb; color-scheme: dark }
+* { box-sizing: border-box }
+body { background: var(--bg); color: var(--fg); font: 15px/1.5 var(--body); padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 20px 48px }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg) }
+.wrap { max-width: 1240px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px }
+header { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px 32px; align-items: end }
+h1 { font: 700 clamp(30px, 5vw, 46px)/1 var(--display); letter-spacing: .01em; margin: 0; text-wrap: balance }
+.lede { color: var(--muted); max-width: 62ch; margin: 6px 0 0 }
+.verdict { display: flex; gap: 18px; font-family: var(--mono); font-size: 13px; color: var(--muted); flex-wrap: wrap }
+.verdict b { display: block; font: 600 30px/1 var(--display); color: var(--fg); font-variant-numeric: tabular-nums }
+.verdict .ok b { color: var(--good) } .verdict .no b { color: var(--bad) }
+.strip { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--bg); padding-block: 10px; border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 10px 22px; align-items: center }
+.group { display: flex; gap: 4px; align-items: center; flex-wrap: wrap }
+.group > span { font: 600 13px var(--display); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-right: 4px }
+button.chip { font: 500 13px var(--body); color: var(--fg); background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 4px 11px; cursor: pointer }
+button.chip[aria-pressed="true"] { background: var(--teal); border-color: var(--teal); color: var(--panel) }
+button.chip:focus-visible, .card:focus-visible, input:focus-visible { outline: 2px solid var(--ochre); outline-offset: 2px }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); gap: 14px }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 8px; display: flex; flex-direction: column; gap: 6px; cursor: pointer; text-align: left; color: inherit; font: inherit }
+.card.fail { border-color: var(--bad) }
+.card canvas { width: 100%; height: auto; background: var(--stage); border-radius: 3px; display: block }
+.card .name { display: flex; justify-content: space-between; gap: 8px; align-items: baseline }
+.card .name strong { font: 600 19px/1.1 var(--display); letter-spacing: .02em }
+.card .name small, .tags { font: 12px var(--mono); color: var(--muted) }
+.tags { display: flex; gap: 6px; flex-wrap: wrap }
+.tag { border: 1px solid var(--line); border-radius: 3px; padding: 0 5px }
+.tag.ok { color: var(--good); border-color: currentColor } .tag.no { color: var(--bad); border-color: currentColor }
+dialog { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--fg); padding: 0; width: min(1120px, calc(100vw - 32px)); max-height: calc(100vh - 32px) }
+dialog::backdrop { background: rgba(10, 16, 15, .55) }
+.focus { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 0 }
+.focus .stagebox { padding: 16px; display: flex; flex-direction: column; gap: 10px; min-width: 0 }
+.focus canvas { width: 100%; height: auto; background: var(--stage); border-radius: 4px }
+.focus aside { border-left: 1px solid var(--line); padding: 16px; display: flex; flex-direction: column; gap: 12px; min-width: 0; overflow: auto; max-height: calc(100vh - 34px) }
+.focus h2 { font: 700 32px/1 var(--display); margin: 0 }
+.timeline { position: relative; height: 34px; background: var(--sunk); border-radius: 4px; cursor: pointer; touch-action: none }
+.timeline .key { position: absolute; top: 4px; bottom: 14px; width: 2px; background: var(--muted); transform: translateX(-1px) }
+.timeline .key.hit { background: var(--ochre); width: 3px }
+.timeline .loop { position: absolute; bottom: 4px; height: 6px; background: var(--teal); opacity: .5; border-radius: 3px }
+.timeline .head { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--fg) }
+.readout { display: flex; justify-content: space-between; gap: 10px; font: 13px var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; flex-wrap: wrap }
+.metrics { display: grid; grid-template-columns: auto 1fr; gap: 3px 14px; font-size: 13px; margin: 0 }
+.metrics dt { color: var(--muted) } .metrics dd { margin: 0; font-family: var(--mono); font-variant-numeric: tabular-nums }
+.fails { margin: 0; padding-left: 18px; color: var(--bad); font-size: 13px }
+pre { margin: 0; font: 12px/1.5 var(--mono); background: var(--sunk); border-radius: 4px; padding: 10px; overflow: auto; max-height: 340px; white-space: pre }
+.legend { display: flex; gap: 14px; font-size: 12px; color: var(--muted); flex-wrap: wrap }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: -1px }
+.close { align-self: flex-end }
+.note { color: var(--muted); font-size: 13px; max-width: 70ch }
+@media (max-width: 760px) { .focus { grid-template-columns: 1fr } .focus aside { border-left: 0; border-top: 1px solid var(--line); max-height: none } header { grid-template-columns: 1fr } }
+@media (prefers-reduced-motion: reduce) { .card canvas { animation: none } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Adventurer Emote Dailies</h1>
+      <p class="lede">Every emote as the game plays it: keyframed clips through the production pose code (springs, overlap, foot IK), rendered on the real character. The verdict is the quality gate's, from the same run.</p>
+    </div>
+    <div class="verdict" id="verdict"></div>
+  </header>
+  <div class="strip" role="toolbar" aria-label="Playback">
+    <div class="group"><span>View</span><button class="chip" data-view="0">Front</button><button class="chip" data-view="1">Side</button><button class="chip" data-view="2">Rear</button></div>
+    <div class="group"><span>Speed</span><button class="chip" data-speed="0.25">¼</button><button class="chip" data-speed="0.5">½</button><button class="chip" data-speed="1">1×</button></div>
+    <div class="group"><span>Spacing</span><button class="chip" id="trails" aria-pressed="true">Wrist trails</button></div>
+    <div class="group"><span>Show</span><button class="chip" data-filter="all">All</button><button class="chip" data-filter="walk">Plays while walking</button><button class="chip" data-filter="loop">Loops</button><button class="chip" data-filter="fail">Failing</button></div>
+  </div>
+  <div class="grid" id="grid"></div>
+  <p class="note">Trails show the wrists over the last eight frames (right hand ochre, left hand teal): even dots are even spacing, bunched dots an ease, wide gaps a fast move. On the timeline, grey ticks are keys and ochre ticks are hits (impacts); the teal bar is the loop. The rig has no finger bones, so hand shapes cannot change.</p>
+</div>
+
+<dialog id="focus" aria-label="Emote detail">
+  <div class="focus">
+    <div class="stagebox">
+      <canvas id="big" width="960" height="416"></canvas>
+      <div class="timeline" id="timeline" aria-label="Scrub"></div>
+      <div class="readout"><span id="frame"></span><button class="chip" id="playpause">Pause</button><span id="time"></span></div>
+      <div class="legend"><span><i style="background:var(--ochre)"></i>right wrist</span><span><i style="background:var(--teal)"></i>left wrist</span></div>
+    </div>
+    <aside>
+      <button class="chip close" id="close">Close</button>
+      <h2 id="ftitle"></h2>
+      <div class="tags" id="ftags"></div>
+      <dl class="metrics" id="fmetrics"></dl>
+      <ul class="fails" id="ffails"></ul>
+      <pre id="fsource"></pre>
+    </aside>
+  </div>
+</dialog>
+
+<script>
+const DATA = /*DATA*/null;
+const state = { view: 0, speed: 1, trails: true, filter: 'all' };
+try { Object.assign(state, JSON.parse(localStorage.getItem('emote-dailies') || '{}')); } catch (e) {}
+const save = () => { try { localStorage.setItem('emote-dailies', JSON.stringify(state)); } catch (e) {} };
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const players = [];
+const report = Object.fromEntries((DATA.report.clips || []).map(c => [c.id, c]));
+const slot = id => id > 99 ? 'not on the wheel' : 'page ' + (Math.floor((id - 1) / 8) + 1) + ', slot ' + ((id - 1) % 8 + 1);
+
+function keysOf(src) {      // key times and hits from the clip text, for the dope-sheet ticks
+  return src.split('\n').map(l => l.replace(/#.*/, '').trim()).filter(l => l.startsWith('key ')).map(l => { const w = l.split(/\s+/); return { t: parseFloat(w[1]), hit: w.includes('hit') }; });
+}
+function draw(ctx, e, frame, views, scale) {
+  const [tw, th] = e.tile, col = frame % e.cols, row = Math.floor(frame / e.cols);
+  ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+  views.forEach((v, i) => {
+    if (e.img.complete && e.img.naturalWidth) ctx.drawImage(e.img, (col * 3 + v) * tw, row * th, tw, th, i * tw * scale, 0, tw * scale, th * scale);
+    if (!state.trails) return;
+    for (let k = 7; k >= 0; k--) {
+      const f = frame - k; if (f < 0) continue; const p = e.track[f][v], a = 1 - k / 9;
+      [[0, css('--ochre')], [2, css('--teal')]].forEach(([o, c]) => { ctx.globalAlpha = a; ctx.fillStyle = c; ctx.beginPath(); ctx.arc(i * tw * scale + p[o] * scale, p[o + 1] * scale, (k ? 2 : 3.2) * scale, 0, 7); ctx.fill(); });
+    }
+    ctx.globalAlpha = 1;
+  });
+}
+function card(e) {
+  const r = report[e.id] || { fails: [] }, b = document.createElement('button');
+  b.className = 'card' + (r.fails.length ? ' fail' : ''); b.type = 'button';
+  const cv = document.createElement('canvas'); cv.width = e.tile[0]; cv.height = e.tile[1];
+  b.append(cv);
+  b.insertAdjacentHTML('beforeend', `<div class="name"><strong>${e.name}</strong><small>#${e.id}</small></div>
+    <div class="tags"><span class="tag ${r.fails.length ? 'no' : 'ok'}">${r.fails.length ? r.fails.length + ' failing' : 'passes'}</span>${e.loop ? '<span class="tag">loops</span>' : ''}${e.mobile ? '<span class="tag">walkable</span>' : ''}<span class="tag">${e.duration.toFixed(1)} s</span></div>`);
+  b.addEventListener('click', () => openFocus(e));
+  const p = { e, el: b, ctx: cv.getContext('2d'), t: Math.random() * e.frames / e.fps };
+  players.push(p); return b;
+}
+let focus = null;
+function openFocus(e) {
+  const r = report[e.id] || { fails: [] }, dlg = document.getElementById('focus');
+  focus = { e, t: 0, playing: true, ctx: document.getElementById('big').getContext('2d') };
+  const big = document.getElementById('big'); big.width = e.tile[0] * 3; big.height = e.tile[1];
+  document.getElementById('ftitle').textContent = e.name;
+  document.getElementById('ftags').innerHTML = `<span class="tag">#${e.id}</span><span class="tag">${slot(e.id)}</span><span class="tag">${e.duration.toFixed(2)} s · ${Math.round(e.duration * e.fps)} frames at ${e.fps} fps</span>${e.loop ? `<span class="tag">loops ${e.loop[0]}–${e.loop[1]} s</span>` : ''}${e.mobile ? '<span class="tag">plays while walking</span>' : ''}`;
+  const m = [['Gate', r.fails.length ? 'fails' : 'passes every check'], ['Biggest hand or face move', r.peak.toFixed(2) + ' m'], ['Peak acceleration', r.accel.toFixed(0) + ' m/s²'], ['Planted foot slide', r.slide_cm.toFixed(1) + ' cm'], ['Deepest clipping', r.penetration_cm.toFixed(1) + ' cm'], ['Centre of mass past the feet', r.balance_cm.toFixed(1) + ' cm'], ['Left/right difference', r.twin_deg.toFixed(0) + '°']];
+  document.getElementById('fmetrics').innerHTML = m.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
+  document.getElementById('ffails').innerHTML = r.fails.map(f => `<li><b>${f.check}</b>: ${f.detail}</li>`).join('');
+  document.getElementById('fsource').textContent = e.source.trim();
+  const tl = document.getElementById('timeline'), span = e.frames / e.fps;
+  tl.innerHTML = (e.loop ? `<div class="loop" style="left:${(e.lead + e.loop[0]) / span * 100}%;width:${(e.loop[1] - e.loop[0]) / span * 100}%"></div>` : '') +
+    keysOf(e.source).map(k => `<div class="key${k.hit ? ' hit' : ''}" style="left:${(e.lead + k.t) / span * 100}%"></div>`).join('') + '<div class="head" id="head"></div>';
+  document.getElementById('playpause').textContent = 'Pause';
+  dlg.showModal();
+}
+function scrub(ev) {
+  if (!focus) return; const tl = document.getElementById('timeline'), r = tl.getBoundingClientRect();
+  focus.t = Math.max(0, Math.min(1, (ev.clientX - r.left) / r.width)) * focus.e.frames / focus.e.fps; focus.playing = false;
+  document.getElementById('playpause').textContent = 'Play';
+}
+document.getElementById('timeline').addEventListener('pointerdown', ev => { scrub(ev); ev.target.setPointerCapture?.(ev.pointerId); });
+document.getElementById('timeline').addEventListener('pointermove', ev => { if (ev.buttons) scrub(ev); });
+document.getElementById('playpause').addEventListener('click', () => { if (!focus) return; focus.playing = !focus.playing; document.getElementById('playpause').textContent = focus.playing ? 'Pause' : 'Play'; });
+document.getElementById('close').addEventListener('click', () => document.getElementById('focus').close());
+document.getElementById('focus').addEventListener('close', () => { focus = null; });
+
+function sync() {
+  document.querySelectorAll('[data-view]').forEach(b => b.setAttribute('aria-pressed', +b.dataset.view === state.view));
+  document.querySelectorAll('[data-speed]').forEach(b => b.setAttribute('aria-pressed', +b.dataset.speed === state.speed));
+  document.querySelectorAll('[data-filter]').forEach(b => b.setAttribute('aria-pressed', b.dataset.filter === state.filter));
+  document.getElementById('trails').setAttribute('aria-pressed', state.trails);
+  players.forEach(p => { const r = report[p.e.id] || { fails: [] }; p.el.hidden = !(state.filter === 'all' || (state.filter === 'walk' && p.e.mobile) || (state.filter === 'loop' && p.e.loop) || (state.filter === 'fail' && r.fails.length)); });
+  save();
+}
+document.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click', () => { state.view = +b.dataset.view; sync(); }));
+document.querySelectorAll('[data-speed]').forEach(b => b.addEventListener('click', () => { state.speed = +b.dataset.speed; sync(); }));
+document.querySelectorAll('[data-filter]').forEach(b => b.addEventListener('click', () => { state.filter = b.dataset.filter; sync(); }));
+document.getElementById('trails').addEventListener('click', () => { state.trails = !state.trails; sync(); });
+
+const fails = DATA.report.clips.filter(c => c.fails.length).length, total = DATA.report.clips.length;
+document.getElementById('verdict').innerHTML = `<div class="${fails ? 'no' : 'ok'}"><b>${total - fails}/${total}</b>clips pass</div><div><b>${DATA.checks}</b>checks each</div><div><b>${DATA.built}</b>rendered</div>`;
+const grid = document.getElementById('grid');
+DATA.emotes.forEach(e => { e.img = new Image(); e.img.src = e.sheet; grid.append(card(e)); });
+sync();
+let last = performance.now();
+const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+function tick(now) {
+  const dt = Math.min(.1, (now - last) / 1000) * state.speed; last = now;
+  players.forEach(p => { if (p.el.hidden) return; if (!reduce) p.t = (p.t + dt) % (p.e.frames / p.e.fps); draw(p.ctx, p.e, Math.min(p.e.frames - 1, Math.floor(p.t * p.e.fps)), [state.view], 1); });
+  if (focus) {
+    const e = focus.e; if (focus.playing) focus.t = (focus.t + dt) % (e.frames / e.fps);
+    const f = Math.min(e.frames - 1, Math.floor(focus.t * e.fps)); draw(focus.ctx, e, f, [0, 1, 2], 1);
+    const head = document.getElementById('head'); if (head) head.style.left = (f / e.frames * 100) + '%';
+    const t = f / e.fps - e.lead;
+    document.getElementById('frame').textContent = `frame ${String(f).padStart(3, '0')} / ${e.frames}`;
+    document.getElementById('time').textContent = t < 0 ? 'idle before the emote' : `t = ${t.toFixed(2)} s`;
+  }
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+</script>

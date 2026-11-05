@@ -1,0 +1,16 @@
+# No: the head shakes, quick and decaying, chin slightly down; the chest counter-turns a little
+# and the head tips with each turn so it is not a turntable.
+emote 5 No
+duration 2.6
+drag 0.025
+key 0.00 rest
+key 0.20 head=6,4,0 neck=2
+key 0.42 head=8,-31,-4 neck=3,-8,0 chest=0,4,0
+key 0.66 head=8,31,4 neck=3,8,0 chest=0,-4,0
+key 0.90 head=8,-26,-3 neck=3,-6,0 chest=0,3,0
+key 1.13 head=8,23,3 neck=3,6,0 chest=0,-3,0
+key 1.36 head=7,-13,-2 neck=2,-4,0 chest=0,2,0
+key 1.60 head=7,8,1 neck=2,2,0 chest=0
+key 1.95 head=6,0,0 neck=1,0,0
+key 2.30 head=2 neck=0
+key 2.58 rest

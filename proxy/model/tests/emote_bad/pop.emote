@@ -1,0 +1,10 @@
+# expect: pop
+# The arm is thrown overhead in two hundredths of a second.
+emote 3 Cheer
+duration 2.6
+stiffness 4
+drag 0
+key 0 rest
+key 0.50 arm.R=0 arm.L=10,0,20
+key 0.52 hit arm.R=10,0,170 fore.R=0
+key 2.6 rest

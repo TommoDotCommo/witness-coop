@@ -275,7 +275,7 @@ static void BindChain(const Model& m, LifeChain& c, const char* prefix, int coun
         c.length[i] = len > 0.01f ? len : 0.1f;
     }
 }
-void LifeRig::Bind(const Model& m, float lidCloseScale) {
+void LifeRig::Bind(const Model& m, float lidCloseScale, float lidRotateAngle) {
     const float fwd[3] = {0, 0, 1}, left[3] = {1, 0, 0}, up[3] = {0, 1, 0};
     head = NodeNamed(m, "head"); neck = NodeNamed(m, "neck"); chest = NodeNamed(m, "chest"); eye[0] = NodeNamed(m, "eye.L"); eye[1] = NodeNamed(m, "eye.R"); lid[0] = NodeNamed(m, "lid.L"); lid[1] = NodeNamed(m, "lid.R");
     brow[0] = NodeNamed(m, "brow.L"); brow[1] = NodeNamed(m, "brow.R"); lip = NodeNamed(m, "lip_lower");
@@ -284,6 +284,7 @@ void LifeRig::Bind(const Model& m, float lidCloseScale) {
         float best = 0; for (int k = 0; k < 3; k++) { float e3[3] = {0, 0, 0}; e3[k] = 1; float d[3]; Rot3(GP, e3, d); float l = sqrtf(d[0]*d[0] + d[1]*d[1] + d[2]*d[2]); if (l > 1e-9f && fabsf(d[1] / l) > fabsf(best)) { best = d[1] / l; lipUp = k; lipUpSign = (d[1] > 0 ? 1.0f : -1.0f) / l; } }
     }
     lidClose = lidCloseScale > 1.0f && lidCloseScale < 4.0f ? lidCloseScale : 1.0f; ok = head >= 0;
+    lidRotate = std::isfinite(lidRotateAngle) && fabsf(lidRotateAngle) > 0.05f && fabsf(lidRotateAngle) < 2.5f ? lidRotateAngle : 0.0f;
     float G[16];
     if (head >= 0) { BindGlobal(m, head, G); headYaw = ProbeAxis(G, fwd, left); headPitch = ProbeAxis(G, fwd, up); }
     if (neck >= 0) { BindGlobal(m, neck, G); neckYaw = ProbeAxis(G, fwd, left); neckPitch = ProbeAxis(G, fwd, up); }
@@ -337,10 +338,71 @@ static void ApplyLife(const Model& m, const LifeRig& rig, const LifeState& L, fl
     if (rig.chest >= 0) RotLocal(&R[rig.chest * 4], rig.chestPitch, 0.012f * L.breath);      // breathing in lifts the chest
     for (int e = 0; e < 2; e++) {
         if (rig.eye[e] >= 0) { RotLocal(&R[rig.eye[e] * 4], rig.eyeYaw[e], L.eyeYaw); RotLocal(&R[rig.eye[e] * 4], rig.eyePitch[e], L.eyePitch); }
-        if (rig.lid[e] >= 0) S[rig.lid[e] * 3 + 1] *= 1 + (rig.lidClose - 1) * L.blink;      // the lid bone stretches along its length (local Y)
+        if (rig.lid[e] >= 0 && rig.lidRotate != 0) {      // the lid turns down over the round eyeball, about the ball's centre (the bone's head)
+#ifndef WM_MUT_NO_LID_TURN
+            LifeAxis x; x.axis = 0; x.sign = 1; RotLocal(&R[rig.lid[e] * 4], x, rig.lidRotate * L.blink);
+#endif
+        }
+        else if (rig.lid[e] >= 0) S[rig.lid[e] * 3 + 1] *= 1 + (rig.lidClose - 1) * L.blink;      // the lid bone stretches along its length (local Y)
     }
     auto chain = [&](const LifeChain& c, const LifePendulum* p) { for (int i = 0; i < c.count; i++) { RotLocal(&R[c.node[i] * 4], c.swing[i], p[i].a); RotLocal(&R[c.node[i] * 4], c.sway[i], p[i].b); } };
     chain(rig.scarfA, L.scarfA); chain(rig.scarfB, L.scarfB); chain(rig.canteen, &L.canteen); chain(rig.satchel, &L.satchel);
+}
+
+
+// ---- the emotes' foot IK. Leg chains carry no scale, so a node's global is its parents' rotations and offsets.
+static void QRot(const float* q, const float* v, float* o) {
+    float tx=2*(q[1]*v[2]-q[2]*v[1]), ty=2*(q[2]*v[0]-q[0]*v[2]), tz=2*(q[0]*v[1]-q[1]*v[0]);
+    o[0]=v[0]+q[3]*tx+q[1]*tz-q[2]*ty; o[1]=v[1]+q[3]*ty+q[2]*tx-q[0]*tz; o[2]=v[2]+q[3]*tz+q[0]*ty-q[1]*tx;
+}
+static void QMulP(const float* a, const float* b, float* o) {
+    float r[4]={a[3]*b[0]+a[0]*b[3]+a[1]*b[2]-a[2]*b[1],a[3]*b[1]-a[0]*b[2]+a[1]*b[3]+a[2]*b[0],a[3]*b[2]+a[0]*b[1]-a[1]*b[0]+a[2]*b[3],a[3]*b[3]-a[0]*b[0]-a[1]*b[1]-a[2]*b[2]}; memcpy(o,r,16);
+}
+static void QAxis(const float* axis, float ang, float* q) { float s=sinf(ang*.5f); q[0]=axis[0]*s; q[1]=axis[1]*s; q[2]=axis[2]*s; q[3]=cosf(ang*.5f); }
+static void QInvMul(const float* a, const float* b, float* o) { float c[4]={-a[0],-a[1],-a[2],a[3]}; QMulP(c,b,o); }      // conj(a) * b
+static void NodeGlobal(const Model& m, const float* T, const float* R, int i, float* q, float* p) {
+    int par=m.nodes[i].parent;
+    if (par<0) { memcpy(q,R+i*4,16); memcpy(p,T+i*3,12); return; }
+    float pq[4], pp[3]; NodeGlobal(m,T,R,par,pq,pp);
+    float o[3]; QRot(pq,T+i*3,o); for(int k=0;k<3;++k) p[k]=pp[k]+o[k];
+    QMulP(pq,R+i*4,q);
+}
+static float Len3(const float* v) { return sqrtf(v[0]*v[0]+v[1]*v[1]+v[2]*v[2]); }
+// Two-bone IK: bend the knee so hip-to-ankle is the planted distance, swing the thigh onto the
+// planted ankle, and give the foot back its planted orientation. `w` blends from the posed leg.
+static void SolveLeg(const Model& m, float* T, float* R, const int leg[3], const float target[3], const float footQ[4], float w) {
+    float tq[4], hip[3], sq[4], knee[3], fq[4], ankle[3];
+    NodeGlobal(m,T,R,leg[0],tq,hip); NodeGlobal(m,T,R,leg[1],sq,knee); NodeGlobal(m,T,R,leg[2],fq,ankle);
+    float a[3], b[3], h[3]; for(int k=0;k<3;++k) { a[k]=hip[k]-knee[k]; b[k]=ankle[k]-knee[k]; h[k]=target[k]-hip[k]; }
+    float L1=Len3(a), L2=Len3(b), d=Len3(h); if (L1<1e-4f || L2<1e-4f) return;
+    d=std::max(fabsf(L1-L2)+1e-4f, std::min(d,(L1+L2)*.9995f));
+    float cosc=(a[0]*b[0]+a[1]*b[1]+a[2]*b[2])/(L1*L2), cosd=(L1*L1+L2*L2-d*d)/(2*L1*L2);
+    float delta=acosf(std::max(-1.f,std::min(1.f,cosd)))-acosf(std::max(-1.f,std::min(1.f,cosc)));
+    float n[3]={a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]}; float nl=Len3(n);
+    if (nl<1e-5f) {      // a straight leg: bend the knee forward (the pelvis' front is its +Z)
+        int par=m.nodes[leg[0]].parent; float pq[4]={0,0,0,1}, pp[3]; if(par>=0) NodeGlobal(m,T,R,par,pq,pp);
+        float x[3]={-1,0,0}; QRot(pq,x,n); nl=1;
+    }
+    for(int k=0;k<3;++k) n[k]/=nl;
+    float qk[4]; QAxis(n,delta,qk);
+    float sq2[4]; QMulP(qk,sq,sq2); float bk[3]; QRot(qk,b,bk);
+    float an[3]; for(int k=0;k<3;++k) an[k]=knee[k]+bk[k]-hip[k];
+    // the swing taking the new ankle onto the target, about the hip
+    float u[3]={an[0],an[1],an[2]}, v[3]={h[0],h[1],h[2]}; float lu=Len3(u), lv=Len3(v);
+    float qs[4]={0,0,0,1};
+    if (lu>1e-5f && lv>1e-5f) {
+        for(int k=0;k<3;++k) { u[k]/=lu; v[k]/=lv; }
+        float c[3]={u[1]*v[2]-u[2]*v[1], u[2]*v[0]-u[0]*v[2], u[0]*v[1]-u[1]*v[0]}, dot=u[0]*v[0]+u[1]*v[1]+u[2]*v[2];
+        qs[0]=c[0]; qs[1]=c[1]; qs[2]=c[2]; qs[3]=1+dot; float l=sqrtf(qs[0]*qs[0]+qs[1]*qs[1]+qs[2]*qs[2]+qs[3]*qs[3]);
+        if (l>1e-6f) for(int k=0;k<4;++k) qs[k]/=l; else { qs[0]=0; qs[1]=0; qs[2]=0; qs[3]=1; }
+    }
+    float tq2[4]; QMulP(qs,tq,tq2); float sq3[4]; QMulP(qs,sq2,sq3);
+    int par=m.nodes[leg[0]].parent; float pq[4]={0,0,0,1}, pp[3]; if(par>=0) NodeGlobal(m,T,R,par,pq,pp);
+    float lt[4], ls[4], lf[4]; QInvMul(pq,tq2,lt); QInvMul(tq2,sq3,ls); QInvMul(sq3,footQ,lf);
+    float out[4];
+    Slerp(R+leg[0]*4,lt,w,out); memcpy(R+leg[0]*4,out,16);
+    Slerp(R+leg[1]*4,ls,w,out); memcpy(R+leg[1]*4,out,16);
+    Slerp(R+leg[2]*4,lf,w,out); memcpy(R+leg[2]*4,out,16);
 }
 
 void JointMatricesBlend(const Model& m, int from, float tFrom, int to, float tTo, float w, float* out, const GestureState* gesture, float radioRaise, float* radioHand) {
@@ -363,6 +425,16 @@ void JointMatricesBlendEx(const Model& m, int from, float tFrom, int to, float t
         auto qmul=[](const float* a,const float* b,float* o) {
             float r[4]={a[3]*b[0]+a[0]*b[3]+a[1]*b[2]-a[2]*b[1],a[3]*b[1]-a[0]*b[2]+a[1]*b[3]+a[2]*b[0],a[3]*b[2]+a[0]*b[1]-a[1]*b[0]+a[2]*b[3],a[3]*b[3]-a[0]*b[0]-a[1]*b[1]-a[2]*b[2]}; memcpy(o,r,16);
         };
+        int node[GestureBones]; for(int b=0;b<GestureBones;++b) node[b]=-1;
+        for(size_t i=0;i<nn && i<m.gestureBone.size();++i) if(m.gestureBone[i]>=0) node[m.gestureBone[i]]=int(i);
+        // Planted feet: where the gait (or idle) put each sole before the emote moved the body.
+        const int legs[2][3]={{node[ThighL],node[ShinL],node[FootL]},{node[ThighR],node[ShinR],node[FootR]}};
+        bool ik=gesture->plant>.001f && (gesture->hipsWeight>1e-4f || fabsf(gesture->turn)>1e-5f || (node[Pelvis]>=0 && gesture->pose[Pelvis].weight>1e-4f)) && legs[0][2]>=0 && legs[1][2]>=0 && legs[0][0]>=0 && legs[1][0]>=0;
+#ifdef WM_MUT_NO_IK
+        ik=false;
+#endif
+        float footQ[2][4], footP[2][3];
+        if (ik) for(int l=0;l<2;++l) NodeGlobal(m,T.data(),R.data(),legs[l][2],footQ[l],footP[l]);
         for(size_t i=0;i<nn;++i) if (i<m.gestureBone.size() && m.gestureBone[i]>=0) {
             int b=m.gestureBone[i];
             const auto& j=gesture->pose[b]; if(j.weight <= .00001f) continue;
@@ -374,14 +446,27 @@ void JointMatricesBlendEx(const Model& m, int from, float tFrom, int to, float t
         }
         for(size_t i=0;i<nn;++i) if(m.nodes[i].name=="root") {
             float q[4]={0,sinf(gesture->turn*.5f),0,cosf(gesture->turn*.5f)};
+            if (ik) {      // planted feet pivot with the turn (the soles turn in place under the body), then take their steps
+                float rq[4], rp[3]; NodeGlobal(m,T.data(),R.data(),int(i),rq,rp);
+                float w[4], c[4]={-rq[0],-rq[1],-rq[2],rq[3]}; QMulP(rq,q,w); QMulP(w,c,w);      // the turn in model space
+                for(int l=0;l<2;++l) {
+                    float d[3]={footP[l][0]-rp[0],footP[l][1]-rp[1],footP[l][2]-rp[2]}, o[3]; QRot(w,d,o); QMulP(w,footQ[l],footQ[l]);
+                    float st[3]={gesture->steps[l*3]*.01f*gesture->hipsWeight,gesture->steps[l*3+1]*.01f*gesture->hipsWeight,gesture->steps[l*3+2]*.01f*gesture->hipsWeight}, so[3]; QRot(w,st,so);
+#ifdef WM_MUT_NO_STEP
+                    so[0]=so[1]=so[2]=0;
+#endif
+                    for(int k=0;k<3;++k) footP[l][k]=rp[k]+o[k]+so[k];
+                }
+            }
             qmul(R.data()+i*4,q,R.data()+i*4);
         }
-        // Seated pelvis height follows the leg chain rather than a fixed drop.
-        // The knee folds while the hip lowers; soles stay above the floor.
-        float hip=gesture->pose[ThighL].a[0]*gesture->pose[ThighL].weight*.01745329252f;
-        float knee=gesture->pose[ShinL].a[0]*gesture->pose[ShinL].weight*.01745329252f;
-        float drop=.43f*(1-cosf(hip))+.41f*(1-cosf(hip+knee));
-        for(size_t i=0;i<nn;++i) if(m.nodes[i].name=="pelvis") T[i*3+1]-=drop;
+        // The hips' offset (centimetres; x to the character's left, y up, z forward): weight shifts, bounces, the seat.
+        if (node[Pelvis]>=0 && gesture->hipsWeight>0) {
+#ifndef WM_MUT_NO_HIPS
+            for(int k=0;k<3;++k) T[node[Pelvis]*3+k]+=gesture->hips[k]*.01f*gesture->hipsWeight;
+#endif
+        }
+        if (ik) for(int l=0;l<2;++l) SolveLeg(m,T.data(),R.data(),legs[l],footP[l],footQ[l],gesture->plant);
     }
     // Independent right-arm overlay. The other arm and all lower-body animation
     // retain their sampled pose; a proximity talking overlay can share this slot.

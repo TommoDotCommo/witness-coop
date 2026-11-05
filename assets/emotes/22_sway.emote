@@ -1,0 +1,16 @@
+# Sway: a relaxed sway to music, about 80 bpm. The hips shift side to side with the pelvis tilting
+# under them, the chest counters, the head lags behind and tilts, the loose arms swing from the
+# shoulders (drag does the hands).
+emote 22 Sway
+duration 4
+loop 1.0 4.0
+drag 0.06
+pose L hips=4,-1.5,0 pelvis=0,4,-6 spine=0,0,3 chest=0,-6,4 head=0,6,-6 arm.R=10,0,14 fore.R=30 arm.L=-6,0,8 fore.L=16 hand.LR=0
+pose R hips=-4,-1.5,0 pelvis=0,-4,6 spine=0,0,-3 chest=0,6,-4 head=0,-6,6 arm.L=10,0,14 fore.L=30 arm.R=-6,0,8 fore.R=16 hand.LR=0
+key 0.00 rest
+key 0.50 hips=2,-1,0 pelvis=0,2,-3 chest=0,-3,2 arm.LR=2,0,10 fore.LR=20
+key 1.00 @L
+key 1.75 @R head=2,-5,7
+key 2.50 @L head=-2,7,-5
+key 3.25 @R
+key 4.00 @L

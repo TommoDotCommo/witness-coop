@@ -1,0 +1,24 @@
+# Clap: applause in front of the chest. Hands meet on the beat (hit keys) and part between; the
+# claps speed up a little, the head bobs with them, the left hand meets the right a touch lower.
+emote 10 Clap
+duration 3.6
+drag 0.02
+stiffness 1.3
+touch hand.R hand.L 0.03
+pose meet  arm.R=29,-17,-2 fore.R=80 arm.L=39,-11,-3 fore.L=80 hand.R=0,-20,0 hand.L=0,-20,0
+pose apart arm.R=16,-8,-2 fore.R=98 arm.L=25,-2,-2 fore.L=97 hand.R=0,-10,0 hand.L=0,-10,0
+key 0.00 rest
+key 0.40 @apart head=-3 chest=-2
+key 0.62 hit @meet head=3 chest=1
+key 0.86 @apart head=-2 chest=-1
+key 1.08 hit @meet head=3 chest=1
+key 1.30 @apart head=-2
+key 1.50 hit @meet head=3 chest=1
+key 1.70 @apart head=-2
+key 1.89 hit @meet head=3
+key 2.08 @apart head=-1
+key 2.26 hit @meet head=2
+key 2.45 @apart
+key 2.63 hit @meet head=2
+key 2.90 arm.R=14,-10,4 fore.R=80 arm.L=18,-6,4 fore.L=76 hand.LR=0 head=0 chest=0
+key 3.55 rest

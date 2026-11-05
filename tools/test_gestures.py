@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""T0 production pose and presence contracts; each broken protection must fail."""
+"""T0 production pose and presence contracts; each broken protection must fail.
+The emotes' animation quality (feet, contacts, clipping, balance, holds) is the gate in `make -C proxy/model emotes`."""
 from pathlib import Path
 import subprocess, tempfile
 root=Path(__file__).resolve().parent.parent
@@ -8,7 +9,7 @@ with tempfile.TemporaryDirectory(prefix='witness-gestures-') as tmp:
     # Model implementation is immutable across header-only controller mutants.
     obj=tmp/'model.o'
     subprocess.run(['g++','-std=c++17','-O2','-c',str(root/'proxy/model/model.cpp'),'-o',str(obj)],check=True)
-    for variant in ('clean','BLEND','MOVE','CHANNEL','HYSTERESIS','CONFLICT','ENVELOPE','LIMIT','LOOP'):
+    for variant in ('clean','BLEND','MOVE','CHANNEL','HYSTERESIS','CONFLICT','ENVELOPE','LIMIT','LOOP','NO_SPRING','NO_DRAG'):
         exe=tmp/variant
         cmd=['g++','-std=c++17','-O2',str(root/'proxy/model/tests/gestures.cpp'),str(obj),'-o',str(exe)]
         if variant!='clean': cmd.insert(1,'-DWE_MUT_'+variant)
@@ -29,7 +30,6 @@ with tempfile.TemporaryDirectory(prefix='witness-gestures-') as tmp:
     source=(root/'proxy/model/model.cpp').read_text()
     for name,old,new in (
         ('no-layer','if (gesture) {','if (false && gesture) {'),
-        ('no-seat-drop','T[i*3+1]-=drop','T[i*3+1]-=0*drop'),
         ('wrong-axis','float fwd=m.gestureForward[i]','float fwd=-m.gestureForward[i]'),
         ('gait-hysteresis','(last_.kind == 2 ? .9f : 1.f)','1.f')):
         assert old in source
@@ -39,7 +39,7 @@ with tempfile.TemporaryDirectory(prefix='witness-gestures-') as tmp:
         for folder in ('third_party','core'):
             target=tmp/'proxy'/folder
             if not target.exists(): shutil.copytree(root/'proxy'/folder,target,ignore=shutil.ignore_patterns('build'))
-        for header in ('model.h','gestures.h','life.h'): shutil.copyfile(root/'proxy/model'/header,model/header)
+        for header in ('model.h','gestures.h','life.h','emote_clip.h','emote_data.h'): shutil.copyfile(root/'proxy/model'/header,model/header)
         (model/'model.cpp').write_text(source.replace(old,new))
         exe=tmp/name
         subprocess.run(['g++','-std=c++17','-O2',str(root/'proxy/model/tests/gestures.cpp'),str(model/'model.cpp'),'-o',str(exe)],check=True)

@@ -12,6 +12,7 @@
 #include <cstring>
 #include <strings.h>
 #include <vector>
+#include <algorithm>
 #include <cstddef>
 #include "model_gpu.h"
 #include "model/gestures.h"
@@ -23,6 +24,7 @@ void VoiceFootstep(unsigned id, const float pos[3], float speed, bool run);     
 static_assert(offsetof(wm::Vertex, appearanceGroup) == 56, "appearance input layout must match Vertex");
 #include "config.h"
 #include "near_fade_runtime.h"
+#include "model/lighting.h"
 #include "depth.h"
 HMODULE g_selfModule();
 #include "devmenu.h"
@@ -69,7 +71,7 @@ static ModelDrawStats g_stats; static ID3D11Query* g_query; static bool g_queryP
 
 struct FrameCB { float viewProj[16], model[16]; float light[4]; float tint[4]; float depthp[4]; float screen[4]; float appearance[9][4]; float camPos[4], camRight[4], camUp[4], camFwd[4], look[4], shadow[4]; };       // 432 bytes
 
-static const char* kHlsl = R"(
+static const char* kHlslBody = R"(
 cbuffer Frame : register(b0) { float4x4 viewProj; float4x4 model; float4 light; float4 tint; float4 depthp; float4 screen; float4 appearance[9]; float4 camPos; float4 camRight; float4 camUp; float4 camFwd; float4 look; float4 shadow; };
 // screen: width, height. depthp: x mode (0 none, 1 plain, 2 multisampled), y samples, z relative bias, w the game's near plane (its depth is near / distance, reversed)
 // camRight.w, camUp.w: tan of half the field of view (horizontal, vertical). look: x the sun, y the sky and ground (linear light), z shading (0 the old flat shading, 1 lit), w how dark the shadow is.
@@ -86,6 +88,7 @@ VOut VS(VIn v) {
   VOut o; float4 wp = mul(model, lp); o.pos = mul(viewProj, wp); o.dist = o.pos.w; o.n = mul((float3x3)model, ln); o.uv = v.uv; o.c = v.c; o.wp = wp.xyz; o.group = v.group;
   o.appearance = appearance[min(8u, (uint)(max(0.0, v.group) + 0.5))].rgb; return o; }
 float3 ToLin(float3 c) { return lerp(c / 12.92, pow(max(c, 0.0) + 0.055, 2.4) / pow(1.055, 2.4), step(0.04045, c)); }
+float3 Shoulder(float3 x) { float r = 1.0 - SHOULDER_KNEE; return lerp(x, SHOULDER_KNEE + r * (1.0 - exp(-(max(x, SHOULDER_KNEE) - SHOULDER_KNEE) / r)), step(SHOULDER_KNEE, x)); }      // linear light rolls off smoothly toward 1 above the knee instead of clipping
 float3 ToSrgb(float3 l) { return lerp(l * 12.92, 1.055 * pow(max(l, 0.0), 1.0 / 2.4) - 0.055, step(0.0031308, l)); }
 // how much of this pixel the game's own geometry leaves free: the fraction of the scene's depth samples behind the given view depth (the game stores near / distance)
 float SceneVis(float2 pos, float dist, float extra) {
@@ -125,13 +128,13 @@ float4 PS(VOut i) : SV_TARGET {
     float3 F0 = lerp(float3(0.04, 0.04, 0.04), lin, metal); float3 F = F0 + (1 - F0) * pow(1 - VdotH, 5);
     float3 spec = D * G * F / (4 * NdotV * max(nl, 1e-3)) * nl;
     float3 kd = (1 - F) * (1 - metal);
-    float3 sunCol = float3(1.0, 0.96, 0.88) * look.x;
-    float3 sky = float3(0.50, 0.58, 0.70), ground = float3(0.34, 0.30, 0.24);
-    float3 hemi = lerp(ground, sky, n.z * 0.5 + 0.5) * look.y * ao;
+    float3 sunCol = SUN_COLOUR * look.x;      // the light's constants come from model/lighting.h (the game-free test checks the same maths)
+    float3 hemi = lerp(GROUND_COLOUR, SKY_COLOUR, n.z * 0.5 + 0.5) * look.y * ao;
+    float3 rim = lin * SKY_COLOUR * (pow(1 - NdotV, 3) * RIM_STRENGTH * saturate(0.4 + n.z * 0.6) * look.y * ao);      // a cool edge light off the sky: it lifts the silhouette off the scene
     float sheen = (g == 4 || g == 5 || g == 6) ? pow(1 - NdotV, 3) * 0.22 * rough : 0;      // wool and knit catch the light along their edges
     float3 scatter = g == 1 ? lin * float3(1.0, 0.45, 0.35) * 0.10 * (1 - abs(NdotL)) * look.x : 0;      // skin: a warm band at the terminator
-    c = lin * kd * (diff * sunCol + hemi) + spec * sunCol + sheen * (sunCol * 0.5 + hemi) + scatter + metal * lin * hemi * 0.6;
-    c = ToSrgb(c) * tint.rgb;
+    c = lin * kd * (diff * sunCol + hemi) + spec * sunCol + sheen * (sunCol * 0.5 + hemi) + scatter + metal * lin * hemi * 0.6 + rim;
+    c = ToSrgb(Shoulder(c)) * tint.rgb;
   }
   float vis = 1;
   if (depthp.x > 0.5) { vis = SceneVis(i.pos.xy, i.dist, 0); if (vis <= 0) discard; }
@@ -176,6 +179,9 @@ float4 PSDepth(FS i) : SV_TARGET {
   int2 px = int2(i.pos.xy); float z = depthp.x < 1.5 ? scene1.Load(int3(px, 0)) : sceneMS.Load(px, 0);
   return float4(saturate((1 - z) * 10), saturate(z * 10), z >= 0.99999 ? 1 : 0, 1); }
 )";
+static const std::string g_hlslFull = wl::HlslDefs() + kHlslBody;      // the light's constants (model/lighting.h) in front of the shader
+#define kHlsl (g_hlslFull.c_str())
+
 
 static bool Fail(const char* m) { Log(m); return false; }
 
@@ -183,6 +189,22 @@ bool ModelGpuReady() { return g_ready; }
 void ModelGpuDepthView(bool on) { InterlockedExchange(&g_depthViewCmd, on); }
 static volatile LONG g_forceBlink;
 void ModelGpuForceBlink() { InterlockedExchange(&g_forceBlink, 1); }
+static volatile LONG g_emoteReload = 0;
+void ModelGpuReloadEmotes() { InterlockedExchange(&g_emoteReload, 1); }
+// The render thread owns the clip library: read every witness_models/emotes/*.emote (in name order) and swap it in when it parses.
+static void ReloadEmotesNow() {
+    wchar_t d[MAX_PATH]; GetModuleFileNameW(g_selfModule(), d, MAX_PATH); wchar_t* sl = wcsrchr(d, L'\\'); if (sl) *(sl + 1) = 0;
+    std::wstring dir = std::wstring(d) + L"witness_models\\emotes\\"; std::vector<std::wstring> names;
+    WIN32_FIND_DATAW fd; HANDLE h = FindFirstFileW((dir + L"*.emote").c_str(), &fd);
+    if (h != INVALID_HANDLE_VALUE) { do names.push_back(fd.cFileName); while (FindNextFileW(h, &fd)); FindClose(h); }
+    std::sort(names.begin(), names.end()); std::string text;
+    for (auto& n : names) { FILE* f = _wfopen((dir + n).c_str(), L"rb"); if (!f) continue; char buf[4096]; size_t k; while ((k = fread(buf, 1, sizeof buf, f)) > 0) text.append(buf, k); text += "\n"; fclose(f); }
+    std::string err; char m[300];
+    if (names.empty()) snprintf(m, sizeof m, "emotes: no witness_models/emotes/*.emote beside the proxy; kept the built-in clips");
+    else if (wm::ReloadEmoteClips(text, &err)) snprintf(m, sizeof m, "emotes: reloaded %zu clips from %zu files", wm::EmoteClips().clips.size(), names.size());
+    else snprintf(m, sizeof m, "emotes: reload refused, kept the old clips: %s", err.c_str());
+    Log(m);
+}
 void ModelGpuRequestProbe() { InterlockedExchange(&g_probeReq, 1); }
 void ModelGpuRequestProbeGrid(float x0, float y0, float x1, float y1) { g_gridBox[0] = x0; g_gridBox[1] = y0; g_gridBox[2] = x1; g_gridBox[3] = y1; InterlockedExchange(&g_gridReq, 1); }
 ModelDrawStats ModelGpuStats() { return g_stats; }
@@ -197,12 +219,12 @@ static bool LoadAdventurer() {
     wm::Model nm; std::string err;
     if (!LoadFile(path, &nm, &err)) { char m[240]; snprintf(m, sizeof m, "model: cannot load %s: %s", "adventurer", err.c_str()); return Fail(m); }
     g_L->model = std::move(nm);
-    float height = 1.8f, speed = 1.6f, yaw = cfg.modelYaw, runSpeed = 0, eye = wm::kCameraEye, lidClose = 1.0f; char eyeJoint[80] = "";
+    float height = 1.8f, speed = 1.6f, yaw = cfg.modelYaw, runSpeed = 0, eye = wm::kCameraEye, lidClose = 1.0f, lidRotate = 0.0f; char eyeJoint[80] = "";
     // the model's own <file>.glb.txt sets its size, walking speed and facing; witness_coop.cfg overrides it. eye_joint=<part of a joint name> sizes the model so that
     // those joints (its eyes) are at the camera's height above the feet (eye=<metres> asks for another height); run_speed=<m/s> is what the run clip was made for.
     if (FILE* sc = _wfopen((path + L".txt").c_str(), L"r")) {
         char l[200]; float v; while (fgets(l, sizeof l, sc)) { if (sscanf(l, "height=%f", &v) == 1) height = v; else if (sscanf(l, "speed=%f", &v) == 1) speed = v; else if (sscanf(l, "yaw=%f", &v) == 1) yaw += v;
-            else if (sscanf(l, "run_speed=%f", &v) == 1) runSpeed = v; else if (sscanf(l, "eye=%f", &v) == 1) eye = v; else if (sscanf(l, "lid_close=%f", &v) == 1) lidClose = v; else if (sscanf(l, "eye_joint=%79s", eyeJoint) == 1) {} }
+            else if (sscanf(l, "run_speed=%f", &v) == 1) runSpeed = v; else if (sscanf(l, "eye=%f", &v) == 1) eye = v; else if (sscanf(l, "lid_close=%f", &v) == 1) lidClose = v; else if (sscanf(l, "lid_rotate=%f", &v) == 1) lidRotate = v; else if (sscanf(l, "eye_joint=%79s", eyeJoint) == 1) {} }
         fclose(sc);
     }
     if (cfg.modelHeight > 0) height = cfg.modelHeight; if (cfg.modelStride > 0) speed = cfg.modelStride;
@@ -213,7 +235,7 @@ static bool LoadAdventurer() {
     g_L->height = (g_L->model.bmax[1] - g_L->model.bmin[1]) * g_L->fit.scale;
     if (eyeJoint[0]) { char m[200]; snprintf(m, sizeof m, "model: eyes (%s) %s: %.3f m above the feet, camera %.3f m, model %.3f m high", eyeJoint, eyeAt > wm::kNoEye * 0.5f ? "found" : "NOT found", eyeAt > wm::kNoEye * 0.5f ? (eyeAt - g_L->model.bmin[1]) * g_L->fit.scale : -1.0f, wm::kCameraEye, g_L->height); Log(m); }
     wm::GaitCfg gc; gc.refSpeed = speed; gc.runRef = runSpeed; if (cfg.noModelGait) gc.idleBelow = 1e9f; g_L->gait = gc;
-    g_L->rig.Bind(g_L->model, lidClose);
+    g_L->rig.Bind(g_L->model, lidClose, lidRotate);
     { char m[240]; snprintf(m, sizeof m, "model: life rig %s: lids %s (close %.2f), eyes %s, scarf chain %d+%d, gear %d+%d, maps normal %dx%d material %dx%d", g_L->rig.ok ? "bound" : "NOT bound (no head)", g_L->rig.lid[0] >= 0 ? "found" : "none", g_L->rig.lidClose, g_L->rig.eye[0] >= 0 ? "found" : "none", g_L->rig.scarfA.count, g_L->rig.scarfB.count, g_L->rig.canteen.count, g_L->rig.satchel.count, g_L->model.nrmW, g_L->model.nrmH, g_L->model.mrW, g_L->model.mrH); Log(m); }
     if (std::none_of(g_L->model.verts.begin(), g_L->model.verts.end(), [](const wm::Vertex& v) { return v.appearanceGroup > 0; }))
         Log("model: appearance regions absent; regenerate the bundled adventurer to enable palettes");
@@ -434,6 +456,7 @@ bool ModelGpuDraw(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Cam& ca
     if (!g_ready) return false;
     DepthBackBuffer(w, h);      // follow a resized or full-screen swap chain: the scene depth buffer has the back buffer's size
     InterlockedExchange(&g_modelRenderThread, (LONG)GetCurrentThreadId());
+    if (first && InterlockedExchange(&g_emoteReload, 0)) ReloadEmotesNow();
     if (first && InterlockedExchange(&g_centerReq, 0)) AnswerCenterDepth(w, h);
     if (first && InterlockedExchange(&g_ptsReq, 0)) AnswerDepthPoints(w, h);
     if (first && (g_probeReq || g_gridReq || g_dumpReq)) {      // answered here, before anything returns early: with no other player to draw they were never answered

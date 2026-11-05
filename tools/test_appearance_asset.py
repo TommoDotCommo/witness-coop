@@ -27,14 +27,14 @@ def missinggroup(j,b):
 def count(j,b): j['accessors'][label]['count']=26
 def vectype(j,b): j['accessors'][label]['type']='VEC2'
 def images(j,b): j['images'].extend([j['images'][0]]*3)      # four images: more than the colour atlas plus a normal and a material map
-def huge(j,b): b.extend(bytes(9*1024*1024))      # past the 9 MiB budget
-def triangles(j,b):
-    off=len(b); rows=list(range(27))*11112; b.extend(struct.pack('<%dI'%len(rows),*rows))
+def huge(j,b): b.extend(bytes(65*1024*1024))      # past the 64 MiB ceiling (check_appearance_asset.py)
+def triangles(j,b):      # past the 400 000 triangle ceiling
+    off=len(b); rows=list(range(27))*44446; b.extend(struct.pack('<%dI'%len(rows),*rows))
     j['bufferViews'][j['accessors'][indices]['bufferView']].update(byteOffset=off,byteLength=len(rows)*4)
     j['accessors'][indices]['count']=len(rows)
 def atlas(j,b):
-    # Replace only the test fixture image with a PNG header declaring an oversized image.
-    off=len(b); png=b'\x89PNG\r\n\x1a\n'+bytes(8)+struct.pack('>II',4096,2048); b.extend(png)
+    # Replace only the test fixture image with a PNG header declaring an image past the 4096 ceiling.
+    off=len(b); png=b'\x89PNG\r\n\x1a\n'+bytes(8)+struct.pack('>II',8192,4096); b.extend(png)
     j['bufferViews'][j['images'][0]['bufferView']].update(byteOffset=off,byteLength=len(png))
 variants={'clean':None,'missing':missing,'missing-region':missinggroup,'count':count,'type':vectype,
           'nan':lambda j,b:scalar(j,b,float('nan')),'fraction':lambda j,b:scalar(j,b,.5),

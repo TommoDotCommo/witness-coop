@@ -2,13 +2,13 @@
 
 | File | Model | Author | Licence |
 |---|---|---|---|
-| `adventurer.glb` | The adventurer: a traveller with a coat, scarf, hat and handmade leather gear | original work made for this mod: `models/src/adventurer.py` (Blender, `models/build.sh`), nothing taken from elsewhere | CC0 1.0 (public domain): use it for anything |
+| `adventurer.glb` | The adventurer: a traveller with a coat, scarf, hat and handmade leather gear | original work made for this mod: `models/src/adventurer.py` with the sculpted head, hair and hands of `models/src/head.py`, `hands.py` and `sdf.py` (Blender, `models/build.sh`), nothing taken from elsewhere | CC0 1.0 (public domain): use it for anything |
 
 CC0 1.0: https://creativecommons.org/publicdomain/zero/1.0/legalcode
 
 The former Cesium Man, Rigged Figure and Fox sample assets were removed; no other code or asset uses them. The proxy still uses the independently licensed cgltf and stb_image libraries, whose own notices remain in `proxy/third_party/`.
 
-`adventurer.glb.txt` records the model's fit: `eye_joint=eye`, `speed=1.20` and `run_speed=2.80` metres per second, and `lid_close=1.495`, the stretch of the eyelid bones that closes the eyes. Animation clips are named idle, walk, run, fidget_shift, fidget_look, fidget_hat and fidget_neck; the proxy cross-fades between them over 200 ms. The skeleton has 35 joints: the body, the eyes, eyelids, brows and lower lip, the scarf tails, the hanging gear and the coat's three hem panels.
+`adventurer.glb.txt` records the model's fit: `eye_joint=eye`, `speed=1.20` and `run_speed=2.80` metres per second, and `lid_rotate=-0.980`, the turn (radians, about the lid bone's local x) that brings each upper eyelid down over its eyeball. Animation clips are named idle, walk, run, fidget_shift, fidget_look, fidget_hat and fidget_neck; the proxy cross-fades between them over 200 ms. The skeleton has 35 joints: the body, the eyes, eyelids, brows and lower lip, the scarf tails, the hanging gear and the coat's three hem panels.
 
 The model carries three textures baked from the same procedural materials: the colour atlas (2048, JPEG), a tangent-space normal map and a material map (occlusion, roughness, metalness; both 1024, PNG), all original work, CC0 1.0.
 

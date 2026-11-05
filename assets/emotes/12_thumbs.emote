@@ -1,0 +1,15 @@
+# Thumbs up: the hand closes into a fist with the thumb up (fingers.R curls the four fingers, thumb.R the thumb), pulls in, then pushes out in front of the right chest and gives a small extra
+# push; the head nods along; a little bounce in the hold.
+emote 12 Thumbs up
+duration 3.2
+drag 0.03
+key 0.00 rest
+key 0.28 arm.R=24,0,10 fore.R=100 hand.R=0,0,0 fingers.R=0,0,-100 thumb.R=40,0,10 chest=0,4,0      # gather: the fist closes, the thumb comes up
+key 0.50 hit arm.R=47,10,10 fore.R=70 hand.R=0,0,-8 chest=-2,-4,0 head=6,-4,0                     # out in front of the right chest, thumb up
+key 0.66 arm.R=45,10,10 fore.R=74 hand.R=0,0,-4 head=-2,-4,0
+key 0.86 hit arm.R=49,10,10 fore.R=68 hand.R=0,0,-10 head=6,-5,2                                 # the small extra push
+key 1.20 arm.R=47,10,10 fore.R=71 hand.R=0,0,-6 head=1,-4,2
+key 1.70 arm.R=46,10,10 fore.R=72 hand.R=0,0,-7 head=3,-3,1
+key 2.30 arm.R=47,10,10 fore.R=71 hand.R=0,0,-6 head=1,-2,1
+key 2.75 arm.R=20,-10,12 fore.R=50 hand.R=0,-20,0 fingers.R=0 thumb.R=0 chest=0 head=0
+key 3.18 rest

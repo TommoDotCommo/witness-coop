@@ -1,0 +1,7 @@
+# expect: balance
+# Folded forward with no hips back to counter: the weight is ahead of the toes.
+emote 6 Bow
+duration 2.6
+key 0 rest
+key 1 pelvis=40 spine=44 chest=38 hips=0,-12,16 arm.R=130,0,10 arm.L=125,0,14
+key 2.6 rest

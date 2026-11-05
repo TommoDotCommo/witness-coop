@@ -67,7 +67,7 @@ def run(name, text, geometry, ownership=resources):
         p = Path(folder)
         (p / 'tv').mkdir(); (p / 'model').mkdir(); (p / 'core').mkdir()
         shutil.copyfile(root/'proxy/core/emotes.h',p/'core/emotes.h')
-        shutil.copyfile(root/'proxy/model/gestures.h',p/'model/gestures.h')
+        for header in ('gestures.h', 'emote_clip.h', 'emote_data.h'): shutil.copyfile(root/'proxy/model'/header, p/'model'/header)
         (p / 'tv/resources.h').write_text(ownership)
         (p / 'tv/tv.h').write_text(text); (p / 'tv/mesh.h').write_text(geometry)
         shutil.copyfile(root / 'proxy/model/model.h', p / 'model/model.h')

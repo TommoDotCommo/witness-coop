@@ -1,0 +1,8 @@
+# expect: contact
+# Declares a hand-to-face touch the pose never makes.
+emote 11 Facepalm
+duration 3.6
+touch hand.R head 0.03
+key 0 rest
+key 1 arm.R=40 fore.R=60 head=10
+key 3.6 rest
