@@ -33,7 +33,7 @@ The adventurer belongs to the island, so it borrows the island's look rather tha
 
 - **Painted colour fields, not grain.** The default `witness` style (`--style classic` keeps the first version's grime) paints each
   material as a broad clean field with light painted in: sunlit above, cooler in the folds below, a very broad painter's unevenness.
-  The knit of the scarf is the one texture kept, because it reads.
+  The scarf uses a clean marigold field with the folds modelled into its wrap; high-frequency knit relief read as pixelation.
 - **The island's palette.** The coat is the sea's teal, the scarf the autumn trees' marigold, the hat sunlit sandstone with an
   autumn-red band, the leather warm, and the hat's feather the pink of the cherry trees.
 - **The puzzle line as the character's sign.** A start circle, a path through a four-by-four grid and a rounded end, embroidered in
@@ -44,7 +44,7 @@ The adventurer belongs to the island, so it borrows the island's look rather tha
 
 ## Clean forms and readable detail
 
-The face uses three broad masses rather than separate cheek, jowl and muzzle bumps. The neck tapers into the jaw; the nose
+The face uses three broad masses and a shorter lower face rather than separate cheek, jowl and muzzle bumps. The neck tapers into the jaw; the nose
 has a single bridge-to-tip transition, with nostrils abstracted at this scale. Larger eye openings and a smooth brow arc
 carry the expression. A narrow smile ribbon is projected onto the face, so its edge stays continuous when seen close up.
 The mouth and eyes sample deliberately painted colour swatches in the shared atlas rather than relying on subpixel UV islands.
@@ -53,7 +53,7 @@ The head has one cylindrical texture chart with the seam at the nape. Automatic 
 small isolated islands that baked as black pinpricks. Cloth uses broad hanging folds, shallow material relief and a clean
 bound edge. Sleeve compression is measured about each sleeve's own axis. The breeches taper inside the coat at the hip,
 so the trousers do not emerge as tan patches through its sides. The hat has a substantial, upswept brim, and the canteen
-has a warm leather cover that reads alongside the other gear.
+has a warm leather cover that reads alongside the other gear. A curved wrap-over flap softens the rucksack, and the boots turn out slightly in the standing pose.
 
 ## How the organic parts are built
 
@@ -120,12 +120,12 @@ where they read: the face, the lids, the hands, the silhouette.
 
 ## What is not done yet
 
-- The body still has the first version's proportions and construction (a long torso, tube limbs, a boxy coat): the stylized head
-  sits on a realistic body. The next pass resizes the figure as a whole and sculpts the coat, sleeves and boots.
+- The body keeps the existing rig and long travelling coat. A stronger whole-body gesture and more deliberately shaped
+  knees, elbows and shoulders would give it more personality.
 - In the game the figure renders a little darker than the island around it: match the proxy's shading to the game's light.
 
-- The coat, sleeves, trousers and boots are still the lofted shapes of the first version: tubes without folds or weight.
-  They are the next pass, with the same method (fields for the soft forms, folds from the joints).
+- The garments are lofted surfaces with broad folds and bound edges. Pose-specific compression at the joints and more
+  articulated leather bags would improve their sense of construction and weight.
 - The atlas is still 2048 for the whole body; a 4096 build works but its normal-map flatness check needs re-tuning.
 - No finger or clavicle bones yet, so hand acting and shrugs are limited (docs/ANIMATION.md).
 - Skin shading is the game's standard material: no subsurface tint at the ears and nose beyond what is painted.

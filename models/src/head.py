@@ -44,7 +44,7 @@ def skull_and_face():
     # Small additive cheek/jaw strokes made separate islands of curvature in three-quarter view.
     strokes = [
         (s.ellipsoid((0, -0.022, 1.659), (0.076, 0.077, 0.086)), 0.040, 'add'),
-        (s.ellipsoid((0, -0.028, 1.594), (0.048, 0.060, 0.043)), 0.036, 'add'),
+        (s.ellipsoid((0, -0.028, 1.600), (0.050, 0.060, 0.039)), 0.036, 'add'),
         (s.ellipsoid((0, -0.048, F['chin_z'] + 0.021), (0.031, 0.037, 0.025)), 0.026, 'add'),
         (s.capsule((0, 0.025, 1.440), (0, 0.018, 1.602), 0.034), 0.030, 'add'),
     ]
@@ -127,7 +127,7 @@ def hair(skull):
     def f(p):
         theta = np.arctan2(p[:, 0], -(p[:, 1] - 0.010))
         # A very broad sweep in the front hairline; the back ends on one calm curve.
-        line = _hairline(theta) + 0.003 * np.sin(theta * 2)
+        line = _hairline(theta) + 0.003 * np.sin(theta * 2) - 0.012*np.exp(-((theta-0.60)/0.40)**2)
         d = np.maximum(cap(p), line - p[:, 2])
         return d
     locks = []
@@ -137,7 +137,8 @@ def hair(skull):
     forelock=sdf.union(0.010,
         sdf.capsule((-0.027,-0.083,1.754),(0.021,-0.097,1.744),0.015,0.013),
         sdf.capsule((0.021,-0.097,1.744),(0.065,-0.077,1.724),0.013,0.0045))
-    out = sdf.union(0.009, f, forelock, *locks)
+    forelock=sdf.intersect(forelock,sdf.ellipsoid((0,0.016,1.715),(0.106,0.114,0.107)),0.003)
+    out = sdf.union(0.007, f, forelock, *locks)
     for side in (1, -1):
         out = sdf.subtract(out, sdf.ellipsoid((side * 0.094, 0.016, 1.663), (0.024, 0.022, 0.030)), 0.005)
     return out
