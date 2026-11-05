@@ -248,7 +248,7 @@ static void DrawMarkers(IDXGISwapChain* sc) {
         std::vector<LineVert> lv; unsigned nl = 0; if (!GetCfg().noLineDraw) nl = BuildLineVerts(wc.pos, lv);
         nl += SocialInkVerts(wc.pos, lv, 60000);
         ModelGpuDrawLines(rtv, td.Width, td.Height, wc, lv.data(), lv.size(), nl);
-        if (GetCfg().radioEnabled && !GetCfg().noRadioView) {
+        if (GetCfg().radioEnabled && GetCfg().radioVisible && !GetCfg().noRadioView) {
             static wradio::Raise raise; static uint64_t last; uint64_t now=GetTickCount64();
             raise.Step(VoiceRadioTx(), last ? (now-last)/1000.0f : 0); last=now;
             std::vector<LineVert> radio; float tv=std::tan(wc.vfovDeg*.00872664626f);

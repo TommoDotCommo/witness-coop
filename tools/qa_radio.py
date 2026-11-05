@@ -8,8 +8,8 @@ from witness import ROOT, TOOLS, DIR1, DIR2, PYW, pid, win, real_saves
 import qa_sweep
 
 def run(a='', b='', mode='enabled'):
-    qa_sweep.restart('voice_mode=ptt\nvoice_test_tone=120,1000,5500\nvoice_mute_output=1\nkey_radio=R\nradio_enabled=1\n' + a,
-                     'voice_mode=off\nvoice_mute_output=1\nradio_enabled=1\n' + b)
+    qa_sweep.restart('voice_mode=ptt\nvoice_test_tone=120,1000,5500\nvoice_mute_output=1\nkey_radio=R\nradio_enabled=1\nradio_visible=1\n' + a,
+                     'voice_mode=off\nvoice_mute_output=1\nradio_enabled=1\nradio_visible=1\n' + b)
     result = subprocess.run([PYW, '-I', win(os.path.join(TOOLS, 'win', 'wradio.py')), str(pid('A')), win(DIR1), str(pid('B')), win(DIR2), mode],
                             capture_output=True, text=True, timeout=180)
     print(result.stdout, end='')

@@ -6,6 +6,8 @@ configured bindings. The launcher Controls page, configuration parser and guide
 share `proxy/bindings.h`. Set `key_radio=` to rebind, `radio_enabled=0` to disable
 the prop and dedicated hold key, or `voice_mode=off` to disable capture. The
 launcher Sound and voice page exposes the handheld option.
+The prop itself is hidden by default (in your own view and in other players' hands,
+with its arm raise): `radio_visible=1` shows it. The radio channel works either way.
 
 Radio transmissions use the existing 16 kHz / 20 ms ADPCM voice transport. The
 radio channel is audible at any session distance, including beside its sender.

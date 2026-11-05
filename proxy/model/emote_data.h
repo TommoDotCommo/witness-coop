@@ -9,7 +9,7 @@ R"EMOTE(# ---- 01_wave.emote
 emote 1 Wave
 duration 2.6
 drag 0.04
-pose up     arm.R=16,88,100 fore.R=70 hand.R=0,0,12 chest=-2,-5,-4 head=-5,-8,6 neck=0,-4,2
+pose up     arm.R=16,88,95 fore.R=70 hand.R=0,0,12 chest=-2,-5,-4 head=-5,-8,6 neck=0,-4,2
 key 0.00 rest
 key 0.28 arm.R=20,30,42 fore.R=92 hand.R=-12,0,-8 chest=2,3,1 head=2,4,0             # gather: the hand at the chest, out to the side, a small dip
 key 0.56 @up                                                                            # up, a touch past the swing's centre
@@ -167,7 +167,7 @@ duration 3.6
 drag 0.02
 stiffness 1.3
 touch hand.R hand.L 0.03
-pose meet  arm.R=29,-19,-2 fore.R=80 arm.L=39,-13,-3 fore.L=80 hand.R=0,-20,0 hand.L=0,-20,0
+pose meet  arm.R=29,-17,-2 fore.R=80 arm.L=39,-11,-3 fore.L=80 hand.R=0,-20,0 hand.L=0,-20,0
 pose apart arm.R=16,-8,-2 fore.R=98 arm.L=25,-2,-2 fore.L=97 hand.R=0,-10,0 hand.L=0,-10,0
 key 0.00 rest
 key 0.40 @apart head=-3 chest=-2
@@ -229,7 +229,7 @@ duration 5
 loop 1.0 5.0
 drag 0.04
 touch hand.R head 0.03 1.2 5.0
-pose think hips=3,-1,0 pelvis=0,6,-4 spine=2,0,3 chest=2,-6,2 neck=-2,0,0 head=-8,6,-8 arm.R=56,-34,16 fore.R=121 hand.R=-10,-55,0 arm.L=60,-46,24 fore.L=74 hand.L=10,0,0
+pose think hips=3,-1,0 pelvis=0,6,-4 spine=2,0,3 chest=2,-6,2 neck=-2,0,0 head=-8,6,-8 arm.R=56,-34,16 fore.R=121 hand.R=-10,-55,0 arm.L=60,-42,24 fore.L=74 hand.L=10,0,0
 key 0.00 rest
 key 0.45 hips=1,0,0 arm.R=30,-30,6 fore.R=110 arm.L=26,-36,10 fore.L=70 head=-2
 key 1.00 @think
@@ -258,8 +258,8 @@ key 0.00 rest thigh.LR=1
 key 0.40 hips=0,-14,-3 pelvis=14 spine=12 chest=4 arm.LR=24,0,6 fore.LR=20
 key 0.85 hips=0,-38,-6 pelvis=26 spine=14 chest=6 head=-4 arm.LR=40,0,8 fore.LR=30
 key 1.10 hips=0,-46.7,-2 pelvis=14 step.LR=1,0,10
-key 1.50 @seat)EMOTE"
-R"EMOTE(ed spine=8 chest=1
+key 1.50 @seate)EMOTE"
+R"EMOTE(d spine=8 chest=1
 key 2.00 @seated
 key 2.80 head=2,16,2 chest=-2,6,0
 key 3.40 head=4,18,3 hand.R=4 fore.R=30

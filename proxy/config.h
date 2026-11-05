@@ -54,6 +54,7 @@ struct Cfg {
     bool runUnfocused = false;      // run_unfocused=1: the game keeps running at full speed (not the ~10 fps of a background window) when its window is not active; the keyboard and mouse still only reach the window that has the focus
     bool noSeeThrough = false; float ghostAlpha = 0.22f;      // see_through=0: players stay solid when they are in the way of a puzzle; ghost_alpha=: how see-through they become (ghost/ghost.h)
     bool radioEnabled = true; // radio_enabled=0: hide and disable the handheld radio
+    bool radioVisible = false; // radio_visible=1: draw the handheld radio (own view, other players' hands) and raise the arm with it; off for now: the radio channel works without the prop (owner, 2026-11-05)
     bool noRadioView = false, noRadioPose = false; // test mutants: omit the view model / right-arm overlay
     std::string voiceChannel = "proximity";      // voice_channel=proximity|radio|global|direct:<player id>: who hears this player and how (voice/voice.h)
     std::string voiceTestTone;   // voice_test_tone=120,1000,5500: the transmitted voice is a sum of these tones instead of the microphone (tests)

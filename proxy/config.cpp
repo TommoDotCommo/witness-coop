@@ -69,6 +69,7 @@ const Cfg& GetCfg() {
             else if (sscanf(line, "no_radio_view=%d", &v) == 1) r.noRadioView = v != 0;
             else if (sscanf(line, "no_radio_pose=%d", &v) == 1) r.noRadioPose = v != 0;
             else if (sscanf(line, "radio_enabled=%d", &v) == 1) r.radioEnabled = v != 0;
+            else if (sscanf(line, "radio_visible=%d", &v) == 1) r.radioVisible = v != 0;
             else if (sscanf(line, "voice_mode=%15s", s) == 1) r.voiceMode = !strcmp(s, "off") ? 0 : (!strcmp(s, "open") ? 1 : 2);
             else if (sscanf(line, "voice_volume=%d", &v) == 1) r.voiceVolume = std::max(0, std::min(100, v));
             else if (sscanf(line, "mic_volume=%d", &v) == 1) r.micVolume = std::max(0, std::min(100, v));

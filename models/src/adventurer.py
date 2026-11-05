@@ -132,11 +132,11 @@ TORSO = ['pelvis', 'spine', 'chest']
 part(loft('hips', [(0.84, 0, 0.005, 0.178, 0.122), (0.94, 0, 0, 0.185, 0.126), (1.02, 0, 0, 0.174, 0.120)], 'trousers', 20), ['pelvis', 'thigh.L', 'thigh.R'])
 part(loft('vest', [(0.98, 0, 0, 0.176, 0.122), (1.10, 0, -0.002, 0.164, 0.115), (1.24, 0, 0, 0.188, 0.128), (1.36, 0, 0.005, 0.211, 0.137), (1.43, 0, 0.010, 0.190, 0.116)], 'vest', 24, folds=0.012), TORSO)
 part(loft('shirt_collar', [(1.42, 0, 0.005, 0.112, 0.096), (1.50, 0, 0.008, 0.092, 0.082)], 'shirt', 20), ['chest', 'neck'])
-COAT = [(0.57, 0, 0.018, 0.252, 0.174, 0.29), (0.585, 0, 0.018, 0.253, 0.175, 0.28),
-        (0.70, 0, 0.012, 0.247, 0.173, 0.23), (0.86, 0, 0.004, 0.232, 0.158, 0.16),
-        (0.97, 0, 0, 0.199, 0.141, 0.08), (1.04, 0, 0, 0.186, 0.132, 0.055),
+COAT = [(0.57, 0, 0.018, 0.252, 0.174, 0.11), (0.585, 0, 0.018, 0.253, 0.175, 0.105),      # (the skirt's fronts nearly meet: a wide inverted V showed the breeches between the legs)
+        (0.70, 0, 0.012, 0.247, 0.173, 0.085), (0.86, 0, 0.004, 0.232, 0.158, 0.065),
+        (0.97, 0, 0, 0.199, 0.141, 0.055), (1.04, 0, 0, 0.186, 0.132, 0.055),
         (1.12, 0, 0, 0.191, 0.135, 0.12), (1.23, 0, 0.002, 0.219, 0.146, 0.27),
-        (1.34, 0, 0.006, 0.241, 0.151, 0.49), (1.41, 0, 0.010, 0.234, 0.141, 0.63),
+        (1.34, 0, 0.006, 0.233, 0.151, 0.49), (1.41, 0, 0.010, 0.222, 0.141, 0.63),
         (1.455, 0, 0.012, 0.200, 0.122, 0.74)]
 def coat_drape(co):
     p = Vector(co); angle = math.atan2(p.x, -(p.y-0.010))
@@ -146,7 +146,7 @@ def coat_drape(co):
     fold = hang**0.8 * (0.009*math.cos(4*angle) - 0.003*math.cos(2*angle))
     p.x += math.sin(angle)*fold + 0.008*hang*hang
     p.y -= math.cos(angle)*fold
-    p.z += hang**3 * (0.033*max(0.0, math.cos(angle))**4 + 0.006*math.sin(angle))
+    p.z += hang**3 * (0.010*max(0.0, math.cos(angle))**4 + 0.006*math.sin(angle))
     # Broad diagonal shoulder-to-waist tension, restricted to the side panels.
     side = math.sin(angle)**4
     pinch = 0.004*side*math.exp(-((p.z-1.105-0.025*math.cos(angle))/0.026)**2)
@@ -161,13 +161,13 @@ for v in coat_body.data.vertices: v.co = coat_drape(v.co)
 B['hem_front.L'] = (V(0.11, -0.125, 1.00), V(0.15, -0.19, 0.57), 'pelvis'); B['hem_front.R'] = (V(-0.11, -0.125, 1.00), V(-0.15, -0.19, 0.57), 'pelvis'); B['hem_back'] = (V(0, 0.135, 1.00), V(0, 0.19, 0.57), 'pelvis')
 HEM_BONES = ['hem_front.L', 'hem_front.R', 'hem_back']
 def coat_weights(ob, base):      # base: the torso/thigh bones with their multipliers, as the distance weighting takes them
-    cos = [v.co.copy() for v in ob.data.vertices]; mult = {(b[0] if isinstance(b, tuple) else b): (b[1] if isinstance(b, tuple) else 1.0) for b in base}
+    mult = {(b[0] if isinstance(b, tuple) else b): (b[1] if isinstance(b, tuple) else 1.0) for b in base}
     def smooth(t): t = max(0.0, min(1.0, t)); return t * t * (3 - 2 * t)
     def seg(p, a, b):
         ab = b - a; t = max(0.0, min(1.0, (p - a).dot(ab) / max(ab.length_squared, 1e-9))); return (p - (a + ab * t)).length
     def w(i):
-        p = cos[i]; h = smooth((1.0 - p.z) / 0.25); angle = math.atan2(p.x, -(p.y - 0.01))
-        back = smooth((abs(angle) - 1.5) / 0.9); left = smooth((angle + 0.12) / 0.24)
+        p = ob.data.vertices[i].co.copy(); h = smooth((1.0 - p.z) / 0.25); angle = math.atan2(p.x, -(p.y - 0.01))      # (read when weighted: after the shoulders are narrowed)
+        back = smooth((abs(angle) - 1.5) / 0.9); left = smooth((angle + 0.012) / 0.024)      # (a sharp split: with the fronts now meeting, a blend across the middle left that cloth to neither leg)
         out = {'hem_front.L': h * (1 - back) * left, 'hem_front.R': h * (1 - back) * (1 - left), 'hem_back': h * back}
         raw = [(b, mult[b] * math.exp(-(seg(p, B[b][0], B[b][1]) / SIGMA) ** 2)) for b in mult]; raw.sort(key=lambda r: -r[1]); raw = raw[:4]; tot = sum(x for _, x in raw)
         if tot > 1e-6:
@@ -215,9 +215,9 @@ for s, x in (('L', 1), ('R', -1)):
     arms = ['chest', 'upper_arm.' + s, 'forearm.' + s]
     sleeve = loft('sleeve.'+s, [(1.035, 0.263*x, 0.002, 0.044, 0.049), (1.075, 0.260*x, 0.002, 0.047, 0.053),
         (1.13, 0.258*x, -0.002, 0.050, 0.056), (1.18, 0.253*x, 0.006, 0.057, 0.064),
-        (1.22, 0.248*x, 0.009, 0.061, 0.068), (1.31, 0.235*x, 0.006, 0.070, 0.075),
-        (1.39, 0.219*x, 0.005, 0.075, 0.076), (1.435, 0.210*x, 0.008, 0.066, 0.065),
-        (1.455, 0.204*x, 0.008, 0.048, 0.055)], 'coat', 40, 2, folds=0.00001)
+        (1.22, 0.248*x, 0.009, 0.061, 0.068), (1.31, 0.233*x, 0.006, 0.068, 0.074),
+        (1.39, 0.208*x, 0.005, 0.068, 0.071), (1.435, 0.196*x, 0.008, 0.056, 0.059),      # (a slimmer sleeve head set in toward the neck: the puffed caps widened the shoulders)
+        (1.455, 0.190*x, 0.008, 0.042, 0.048)], 'coat', 40, 2, folds=0.00001)
     for v in sleeve.data.vertices:
         p = v.co; cx = x*(0.263 - 0.049*max(0.0, min(1.0, (p.z-1.035)/0.380)))
         angle = math.atan2(p.x-cx, -(p.y-0.004))
@@ -229,8 +229,8 @@ for s, x in (('L', 1), ('R', -1)):
     part(sleeve, arms)
     part(loft('cuff.'+s, [(1.024, 0.263*x, 0.002, 0.049, 0.054), (1.074, 0.261*x, 0.002, 0.052, 0.058)], 'coat_dark', 28, 0, False, 0.005), ['forearm.'+s, 'upper_arm.'+s])
     part(loft('forearm.' + s, [(0.94, 0.265*x, 0, 0.033, 0.037), (0.96, 0.265*x, 0, 0.038, 0.043), (1.04, 0.263*x, 0, 0.043, 0.049), (1.12, 0.259*x, 0, 0.048, 0.052)], 'skin', 18), ['upper_arm.' + s, 'forearm.' + s, 'hand.' + s])
-    part(loft('bracer.' + s, [(0.928, 0.265*x, 0, 0.044, 0.049), (0.970, 0.264*x, 0, 0.047, 0.052), (1.035, 0.263*x, 0, 0.050, 0.055)], 'leather', 24, 0, False, 0.004), ['forearm.' + s])
-    for z in (0.955, 1.012):
+    part(loft('bracer.' + s, [(0.928, 0.265*x, 0, 0.044, 0.049), (0.970, 0.264*x, 0, 0.046, 0.051), (1.016, 0.263*x, 0, 0.0465, 0.0515)], 'leather', 24, 0, False, 0.004), ['forearm.' + s])      # (ends under the coat's cuff, inside it)
+    for z in (0.952, 0.993):
         part(loft('bracer_strap.' + s, [(z-0.010, 0.265*x, 0, 0.049, 0.055), (z+0.010, 0.265*x, 0, 0.049, 0.055)], 'strap', 20, 0, False, 0.003), ['forearm.' + s])
         part(box('bracer_buckle.' + s, (0.314*x, -0.005, z), (0.008, 0.025, 0.023), 'brass', 0.002), ['forearm.' + s])
 # -- tailored breeches and riding boots: knee, calf, ankle, vamp and a welted sole.
@@ -517,6 +517,7 @@ for v in scarf_wrap.data.vertices:
     fold=0.003*math.sin(math.pi*u)*math.sin(4*math.pi*u+0.9*math.sin(angle))
     p.x+=math.sin(angle)*fold;p.y-=math.cos(angle)*fold
     p.z+=0.005*math.sin(angle)*u*u
+    p.z+=0.034*(0.5-0.5*math.cos(angle))*u**1.5      # higher at the back and sides: less bare neck between the hair and the scarf
 if '--scarf-mutant' in args:
     for v in scarf_wrap.data.vertices: v.co.x *= 0.85; v.co.y *= 0.85
 part(scarf_wrap, ['neck', 'chest'])
@@ -529,7 +530,7 @@ for zi in range(23):
         collar_hit = collar_bvh.ray_cast(origin, radial)[0]; scarf_hit = scarf_bvh.ray_cast(origin, radial)[0]
         if collar_hit is not None and scarf_hit is not None and (scarf_hit-origin).length < (collar_hit-origin).length + 0.002:
             raise ValueError('scarf intersects the coat collar (z %.3f angle %.1f collar %.5f scarf %.5f)' % (z, math.degrees(angle), (collar_hit-origin).length, (scarf_hit-origin).length))
-part(ellipsoid('scarf_knot', (0.038, -0.116, 1.457), (0.034, 0.023, 0.027), 'scarf', 20, 12), ['neck', 'chest'])
+part(ellipsoid('scarf_knot', (0.036, -0.110, 1.452), (0.027, 0.019, 0.022), 'scarf', 20, 12), ['neck', 'chest'])      # (smaller: the big ball under the chin met every hand-to-chin emote once the shoulders came in)
 # The scarf tails hang from chains of bones (the proxy swings them as pendulums when the player moves or the wind blows); the satchel and the
 # canteen hang from one bone each. A chain bone starts at a ring's centre and ends at the next ring's.
 TAIL_A = [(1.45, 0.064, -0.145, 0.027, 0.006), (1.36, 0.072, -0.151, 0.031, 0.007), (1.25, 0.077, -0.158, 0.033, 0.007), (1.16, 0.085, -0.161, 0.027, 0.006)]
@@ -553,32 +554,81 @@ def strap_surface(x, z):
     hits = [p.y for p in hits if p is not None]
     if not hits: raise ValueError('satchel strap misses body at %.3f, %.3f' % (x, z))
     return min(hits) - 0.003
+# The satchel's strap: one band over the left shoulder, across the chest and the back to the bag on the right hip, lying on the coat (a
+# straight tube through the body poked out of the back, and the front half hid under the lapels). Each point is cast onto the outermost of
+# the coat, its collar, the scarf and the waistcoat, then the dips are filled so the band runs taut over the opening instead of into it.
+strap_targets = [SurfaceBVH.FromObject(ob, bpy.context.evaluated_depsgraph_get()) for ob in [coat_body, coat_collar] + [o for o, _, _ in parts if o.name.startswith('sleeve.L')]] + strap_surfaces      # (not the scarf: over it the band stood up in a loop)
+def strap_cast(o, n):
+    best = None
+    for tree in strap_targets:
+        hit = tree.ray_cast(o + n * 0.6, -n)[0]
+        if hit is not None:
+            d = (hit - o).dot(n)
+            if best is None or d > best: best = d
+    if best is None: raise ValueError('the strap misses the body at %s' % (tuple(round(c, 3) for c in o),))
+    return best
+guide = []      # (origin, outward direction) along the band, from the bag's front up to the shoulder, over it and down the back to the bag
+FRONT_TOP, BACK_TOP, LOW = 0.80, math.pi - 0.70, 1.03
+for i in range(40):      # the front: from the right side up to the left shoulder
+    t = i / 39; th = -1.42 + (FRONT_TOP + 1.42) * t; z = LOW + (1.365 - LOW) * t ** 1.1
+    guide.append((V(0, 0.010, z), V(math.sin(th), -math.cos(th), 0)))
+SH = V(0.150, 0.010, 1.300)
+for i in range(1, 24):      # over the shoulder
+    a = math.radians(-62 + 124 * i / 24); guide.append((SH, V(0, math.sin(a), math.cos(a))))
+for i in range(40):      # the back: from the left shoulder round the back to the right side
+    t = i / 39; th = BACK_TOP + (math.pi + 1.42 - BACK_TOP) * t; z = 1.365 + (LOW - 1.365) * t ** 0.9
+    guide.append((V(0, 0.010, z), V(math.sin(th), -math.cos(th), 0)))
+dist = [strap_cast(o, n) for o, n in guide]
+over = set(range(40, 63))      # over the shoulder the band lies on the cloth (bridging the dip between collar and sleeve head, it floated in a hoop)
+for _ in range(80):      # taut across the chest and back: no point sits below the straight line between its neighbours
+    dist = [dist[0]] + [dist[k] if k in over else max(dist[k], 0.5 * (dist[k - 1] + dist[k + 1])) for k in range(1, len(dist) - 1)] + [dist[-1]]
+centre = [o + n * (d + 0.0045) for (o, n), d in zip(guide, dist)]
+for _ in range(6):      # a smooth centre line (the shoulder arc and the chest and back runs meet without a kink)
+    centre = [centre[0]] + [centre[k] * 0.5 + (centre[k - 1] + centre[k + 1]) * 0.25 for k in range(1, len(centre) - 1)] + [centre[-1]]
+    centre = [c_ + n_ * max(0.0, strap_cast(o_, n_) + 0.0040 - (c_ - o_).dot(n_)) for c_, (o_, n_) in zip(centre, guide)]      # never into the cloth
+centre = [V(0.312 * -1 + 0.03, -0.045, 0.985)] + centre + [V(-0.282, 0.125, 0.985)]      # down to the bag's front and back corners
+normals = [guide[0][1]] + [n for _, n in guide] + [guide[-1][1]]
 bm = bmesh.new(); rows = []
-for i in range(33):
-    t = i / 32; x, z = 0.105 - 0.240*t, 1.390 - 0.250*t
-    row = []
-    for side in (-1, 0, 1):
-        xx, zz = x + side*0.015, z - side*0.015
-        row.append(bm.verts.new((xx, strap_surface(xx, zz), zz)))
-    rows.append(row)
-for a, b in zip(rows, rows[1:]):
-    for i in range(2): bm.faces.new((a[i], b[i], b[i+1], a[i+1]))
-front_strap = finish('satchel_front_strap', bm, 'strap', True, 0, 0, 0.002)
-for vertex in front_strap.data.vertices:
-    target = strap_surface(vertex.co.x, vertex.co.z)
-    if not abs(vertex.co.y - target) < 0.002: raise ValueError('satchel strap clearance outside tolerance')
-part(front_strap, TORSO)
-for i in range(3):
-    t = 0.44 + i*0.12; xx, zz = 0.105 - 0.240*t, 1.390 - 0.250*t
-    part(ellipsoid('strap_hole.'+str(i), (xx, strap_surface(xx, zz)-0.0016, zz), (0.0025, 0.0009, 0.0025), 'eye', 8, 6), TORSO)
-part(tube('strap_back', (0.150, 0.080, 1.455), (-0.300, 0.040, 0.96), 0.016, 'strap'), ['chest', 'spine'])
+for k, (c, n) in enumerate(zip(centre, normals)):
+    a = centre[max(0, k - 1)]; b = centre[min(len(centre) - 1, k + 1)]; tang = (b - a).normalized(); side = tang.cross(n).normalized() * 0.016
+    rows.append([bm.verts.new(c - side), bm.verts.new(c + side)])
+for r0, r1 in zip(rows, rows[1:]): bm.faces.new((r0[0], r0[1], r1[1], r1[0]))
+satchel_strap = finish('satchel_strap', bm, 'strap', True, 0, 0, 0.003)
+def strap_weights(i, ob=satchel_strap):      # the band rides the torso; where it leaves the coat for the bag it follows the bag
+    p = ob.data.vertices[i].co; w = max(0.0, min(1.0, (1.07 - p.z) / 0.06)) * max(0.0, min(1.0, (-p.x - 0.16) / 0.05))
+    out = {'satchel': w} if w > 0.01 else {}
+    rest = 1 - w; out.update({b: rest / 3 for b in TORSO}) if rest > 0.01 else None
+    return out
+part(satchel_strap, TORSO + ['satchel'], strap_weights)
+for t in (0.30, 0.38, 0.46):      # three punched holes near the front buckle
+    k = int(t * 40); c = centre[k + 1] + normals[k + 1] * 0.0012
+    part(ellipsoid('strap_hole.%d' % k, (c.x, c.y, c.z), (0.0028, 0.0028, 0.0028), 'eye', 8, 6), TORSO)
 def pack_drape(ob):
     for v in ob.data.vertices:
         p = v.co; bulge = math.exp(-((p.x/0.12)**4+((p.z-1.065)/0.16)**4))
         p.y += 0.008*bulge; p.z += 0.004*math.cos(p.x*18)*math.exp(-((p.z-0.91)/0.06)**2)
         p.x *= 1+0.025*math.sin((p.z-1.06)*9)
     return ob
-rucksack = pack_drape(box('rucksack', (0, 0.205, 1.06), (0.250, 0.115, 0.310), 'leather', 0.028, None, 1)); part(rucksack, ['spine', 'pelvis', 'chest'])
+def soft_bag(name, rings, material, n=32, power=3.2, subsurf=1):
+    """A closed bag from rounded-rectangle rings (z, cx, cy, half width, half depth): a superellipse section reads as sewn canvas or leather,
+    softer than a bevelled box."""
+    bm = bmesh.new(); rows = []
+    for z, cx, cy, hx, hy in rings:
+        row = []
+        for k in range(n):
+            a = 2 * math.pi * k / n; c_, s_ = math.cos(a), math.sin(a)
+            row.append(bm.verts.new((cx + hx * math.copysign(abs(s_) ** (2 / power), s_), cy - hy * math.copysign(abs(c_) ** (2 / power), c_), z)))
+        rows.append(row)
+    for r0, r1 in zip(rows, rows[1:]):
+        for k in range(n): bm.faces.new((r0[k], r0[(k + 1) % n], r1[(k + 1) % n], r1[k]))
+    bm.faces.new(rows[0][::-1]); bm.faces.new(rows[-1])
+    return finish(name, bm, material, True, subsurf)
+rucksack = pack_drape(soft_bag('rucksack', [(0.905, 0, 0.203, 0.100, 0.040), (0.918, 0, 0.205, 0.118, 0.053), (0.960, 0, 0.206, 0.126, 0.058),
+    (1.060, 0, 0.207, 0.128, 0.060), (1.160, 0, 0.206, 0.124, 0.058), (1.200, 0, 0.204, 0.114, 0.052), (1.222, 0, 0.202, 0.090, 0.040)], 'leather'))      # (the box read as a crate)
+part(rucksack, ['spine', 'pelvis', 'chest'])
+for sx in (1, -1):      # side pockets with their own little flaps
+    part(soft_bag('pack_pocket', [(0.930, sx * 0.136, 0.212, 0.016, 0.040), (0.945, sx * 0.142, 0.212, 0.022, 0.046), (1.040, sx * 0.143, 0.212, 0.023, 0.047), (1.060, sx * 0.138, 0.212, 0.016, 0.040)], 'leather', 24), ['spine', 'pelvis'])
+    part(soft_bag('pack_pocket_flap', [(1.030, sx * 0.146, 0.212, 0.022, 0.049), (1.064, sx * 0.144, 0.212, 0.020, 0.048)], 'strap', 24, 4.0, 0), ['spine', 'pelvis'])
 bm=bmesh.new();rows=[]
 for j,(y,z) in enumerate(((0.154,1.212),(0.167,1.230),(0.251,1.235),(0.275,1.207),(0.277,1.150))):
     row=[]
@@ -632,8 +682,12 @@ decal('motif_rucksack', rucksack, (0.050, 0.30, 0.960), (-1, 0, 0), (0, 0, 1), 0
 part(tube('bedroll', (-0.165, 0.205, 1.305), (0.165, 0.205, 1.305), 0.058, 'bedroll', 24), ['chest', 'spine'])
 for bx in (-0.09, 0.09): part(loft('bedroll_strap', [(1.244, bx, 0.205, 0.014, 0.065), (1.366, bx, 0.205, 0.014, 0.065)], 'strap', 16, 0), ['chest', 'spine'])
 B['canteen'] = (V(0.185, 0.215, 1.125), V(0.185, 0.215, 0.94), 'spine')
-part(ellipsoid('canteen', (0.185, 0.215, 1.02), (0.052, 0.034, 0.073), 'leather', 24, 14), ['canteen'])
-part(tube('canteen_cap', (0.185, 0.215, 1.092), (0.185, 0.215, 1.120), 0.015, 'leather', 16), ['canteen'])
+CANTEEN = V(0.185, 0.215, 1.02)      # a round, flat flask in a canvas cover with a brass rim (the plain blob read as a gourd)
+part(ellipsoid('canteen', tuple(CANTEEN), (0.060, 0.030, 0.062), 'bedroll', 32, 18), ['canteen'])
+part(tube('canteen_rim', tuple(CANTEEN + V(0, -0.0065, 0)), tuple(CANTEEN + V(0, 0.0065, 0)), 0.0605, 'brass', 40), ['canteen'])
+part(tube('canteen_neck', tuple(CANTEEN + V(0, 0, 0.055)), tuple(CANTEEN + V(0, 0, 0.079)), 0.0115, 'brass', 20, 0.0095), ['canteen'])
+part(tube('canteen_cork', tuple(CANTEEN + V(0, 0, 0.077)), tuple(CANTEEN + V(0, 0, 0.093)), 0.0095, 'leather', 16, 0.0110), ['canteen'])
+part(tube('canteen_tab', tuple(CANTEEN + V(0, -0.012, 0.066)), (0.175, 0.150, 1.050), 0.0055, 'strap', 8), ['canteen', 'spine'])
 
 # -- construction details: folded lapels, topstitching, shoulder seams and real boot laces
 def cord(name, points, radius, material, bones, seg=6):
@@ -713,7 +767,7 @@ for sd,sx in (('L',1),('R',-1)):
 # A single fitted facing ribbon gives the hem weight without segmented tubing.
 bm=bmesh.new(); rows=[]
 for z in (0.582,0.585,0.608,0.611):
-    rows.append([bm.verts.new(cloth_point(z,0.33+(2*math.pi-0.66)*i/128,0.0018)) for i in range(129)])
+    g_=coat_ring(z)[4]+0.03; rows.append([bm.verts.new(cloth_point(z,g_+(2*math.pi-2*g_)*i/128,0.0018)) for i in range(129)])
 for a,b in zip(rows,rows[1:]):
     for i in range(128):bm.faces.new((a[i],a[i+1],b[i+1],b[i]))
 ob=finish('hem_facing',bm,'coat_dark',True,0,0,0.0015)
@@ -743,6 +797,20 @@ for s, sx in (('L', 1), ('R', -1)):
         if names & arm_bones: ob.data.transform(xform)
     for name in arm_bones:
         h, t, parent = B[name]; B[name] = (xform @ h, xform @ t, parent)
+
+# Narrower shoulders (the owner, 2026-11-05: "the shoulders are too wide apart"): every part and every bone is moved toward the midline by
+# the same smooth field (nothing above the waist and beyond 10 cm of the midline escapes it, nothing below the hands moves), so layered
+# clothes keep their order and the hands keep their clearance from the coat.
+SHOULDER_IN = 0.0 if '--wide-shoulders' in args else 0.010      # (the joints barely move: 0.034, even 0.018, put the emotes' hands into the chest; the silhouette narrows at the sleeve heads instead)
+def _s01(t): t = max(0.0, min(1.0, t)); return t * t * (3 - 2 * t)
+def narrow(p):
+    d = SHOULDER_IN * _s01((abs(p.x) - 0.10) / 0.10) * _s01((p.z - 0.95) / 0.42)
+    return Vector((p.x - math.copysign(d, p.x), p.y, p.z))
+if SHOULDER_IN:
+    for ob, _, _ in parts:
+        for v in ob.data.vertices: v.co = narrow(v.co)
+    for name in list(B): h, t, parent = B[name]; B[name] = (narrow(h), narrow(t), parent)
+    print('REPORT shoulders narrowed by %.3f m' % SHOULDER_IN)
 
 # ---- weights: by distance to the bones a part may follow, blended near the joints (at most four per vertex)
 def seg_dist(p, a, b):
@@ -1161,8 +1229,18 @@ def bump(u, a, b, c, d):      # 0 before a, eases up to 1 by b, holds, eases bac
     if u < b: return ease((u - a) / (b - a))
     if u > c: return 1 - ease((u - c) / (d - c))
     return 1.0
+# The arms' resting pose while standing (shared by the idle and every fidget, which start and end in it): a little forward, in toward the
+# body, the elbows softly bent. Straight arms hanging from the shoulders read as robotic (the owner, 2026-11-05).
+ARM_FWD0, ARM_IN0, ELBOW0 = (0.0, 0.0, 4.0) if '--stiff-arms' in args else (0.0, 2.5, 12.0)      # (with the bind pose's own lean the hand stays within the life layer's 'hangs' limit)
 HAT_TOUCH = {}      # filled by solve_hat_touch(): the right arm's angles that bring the hand to the hat's brim
-def pose_at(kind, phi, A):      # forward-positive angles in degrees
+FORE_TWIST0 = 0.0 if '--stiff-arms' in args else 24.0      # standing, the forearms turn the palms in toward the thighs (palms facing forward read as a mannequin)
+def pose_at(kind, phi, A):
+    d = _pose_at(kind, phi, A)
+    if kind == 'idle' or kind.startswith('fidget'):
+        for sd, k in (('L', 1), ('R', -1)):
+            if 'forearm.' + sd in d: f_, _, s_ = d['forearm.' + sd]; d['forearm.' + sd] = (f_, math.radians(k * FORE_TWIST0), s_)      # (mirrored: the exported arm frames are mirror images)
+    return d
+def _pose_at(kind, phi, A):      # forward-positive angles in degrees
     d = {}
     def rot(b, fwd=0.0, twist=0.0, side=0.0): d[b] = (math.radians(fwd) * FWD[b], math.radians(twist), math.radians(side) * SIDE[b])
     if kind == 'fidget_shift':      # the weight goes onto the left leg: the pelvis slides left, the right knee relaxes and its heel lifts, the torso counters
@@ -1170,30 +1248,30 @@ def pose_at(kind, phi, A):      # forward-positive angles in degrees
         d['_pelvis_x'] = shift
         rot('pelvis', 0, 2.0 * w, -3.0 * w); rot('spine', 1.0 * w, 2.0 * w, 2.5 * w); rot('chest', 0, 3.0 * w, 1.5 * w); rot('neck', 0, -2.0 * w); rot('head', 1.0 * w, -6.0 * w, -2.0 * w)
         for sd in ('L', 'R'): rot('thigh.' + sd, (6.0 * w if sd == 'R' else 0.5 * w), 0, -lean); rot('shin.' + sd, -(12.0 * w if sd == 'R' else 0)); rot('foot.' + sd, 0)
-        rot('upper_arm.L', 2.0 * w, 0, 1.5 * w); rot('forearm.L', 4 + 3.0 * w); rot('upper_arm.R', 3.0 * w, 0, -1.0 * w); rot('forearm.R', 4 + 6.0 * w)
+        rot('upper_arm.L', ARM_FWD0 + 2.0 * w, 0, -ARM_IN0 + 1.5 * w); rot('forearm.L', ELBOW0 + 3.0 * w); rot('upper_arm.R', ARM_FWD0 + 3.0 * w, 0, ARM_IN0 - 1.0 * w); rot('forearm.R', ELBOW0 + 6.0 * w)
         return d
     if kind == 'fidget_look':       # a look round: left, then right, the shoulders following a little
         u = phi / (2 * math.pi); left = bump(u, 0.04, 0.24, 0.36, 0.50); right = bump(u, 0.50, 0.64, 0.78, 0.96); turn = 32 * left - 26 * right
         rot('head', -3.0 * (left + right), turn * 0.7, 0); rot('neck', 0, turn * 0.3); rot('chest', 0, turn * 0.12); rot('spine', 0, turn * 0.05)
-        for sd in ('L', 'R'): rot('forearm.' + sd, 4 + 2.0 * (left + right))
+        for sd, k in (('L', 1), ('R', -1)): rot('upper_arm.' + sd, ARM_FWD0, 0, -k * ARM_IN0); rot('forearm.' + sd, ELBOW0 + 2.0 * (left + right))
         return d
     if kind == 'fidget_neck':       # the right hand rubs the back of the neck, the head bows and rolls a little
         u = phi / (2 * math.pi); w = bump(u, 0.05, 0.34, 0.66, 0.96); rub = math.sin(6 * math.pi * max(0.0, min(1.0, (u - 0.3) / 0.4))) * w
         fwd, side, elbow, wrist = HAT_TOUCH.get('neck', (60.0, -30.0, 130.0, 0.0))
-        rot('upper_arm.R', fwd * w, 0, side * w + 3.0 * rub); rot('forearm.R', 4 + (elbow - 4) * w + 4.0 * rub); rot('hand.R', -20.0 * w)
-        rot('head', 10.0 * w, 0, 4.0 * w); rot('neck', 5.0 * w, 2.0 * rub); rot('chest', 2.0 * w, -3.0 * w); rot('upper_arm.L', 2.0 * w); rot('forearm.L', 4 + 3.0 * w)
+        rot('upper_arm.R', ARM_FWD0 + (fwd - ARM_FWD0) * w, 0, ARM_IN0 + (side - ARM_IN0) * w + 3.0 * rub); rot('forearm.R', ELBOW0 + (elbow - ELBOW0) * w + 4.0 * rub); rot('hand.R', -20.0 * w)
+        rot('head', 10.0 * w, 0, 4.0 * w); rot('neck', 5.0 * w, 2.0 * rub); rot('chest', 2.0 * w, -3.0 * w); rot('upper_arm.L', ARM_FWD0 + 2.0 * w, 0, -ARM_IN0); rot('forearm.L', ELBOW0 + 3.0 * w)
         return d
     if kind == 'fidget_hat':        # the right hand comes up to the hat's brim, settles it, and drops again
         u = phi / (2 * math.pi); w = bump(u, 0.04, 0.36, 0.62, 0.96); fwd, side, elbow, wrist = HAT_TOUCH.get('angles', (150.0, -20.0, 120.0, 0.0))
-        rot('upper_arm.R', fwd * w, 0, side * w); rot('forearm.R', 4 + (elbow - 4) * w); rot('hand.R', wrist * w)
-        rot('head', -4.0 * w, 0, 3.0 * w); rot('neck', -2.0 * w); rot('chest', -1.5 * w, 2.0 * w); rot('upper_arm.L', 1.5 * w); rot('forearm.L', 4 + 2.0 * w)
+        rot('upper_arm.R', ARM_FWD0 + (fwd - ARM_FWD0) * w, 0, ARM_IN0 + (side - ARM_IN0) * w); rot('forearm.R', ELBOW0 + (elbow - ELBOW0) * w); rot('hand.R', wrist * w)
+        rot('head', -4.0 * w, 0, 3.0 * w); rot('neck', -2.0 * w); rot('chest', -1.5 * w, 2.0 * w); rot('upper_arm.L', ARM_FWD0 + 1.5 * w, 0, -ARM_IN0); rot('forearm.L', ELBOW0 + 2.0 * w)
         return d
     if kind == 'idle':
         s, c = math.sin(phi), math.cos(phi)
         rot('spine', 1.0 * s); rot('chest', 1.4 * s, 1.2 * math.sin(phi)); rot('neck', -0.8 * s); rot('head', 1.0 * math.sin(phi + 0.8), 2.0 * math.sin(phi + 0.3))
-        rot('pelvis', 0, 1.5 * math.sin(phi), 0.8 * math.sin(phi))
-        for sd, k in (('L', 1), ('R', -1)):
-            rot('upper_arm.' + sd, 2.0 * math.sin(phi + (0.3 if k > 0 else 0.9)), 0, 0); rot('forearm.' + sd, 4 + 1.5 * s); rot('thigh.' + sd, 0.5 * s * k); rot('shin.' + sd, 0)
+        if '--idle-slide-mutant' in args: rot('pelvis', 0, 1.5 * math.sin(phi), 0.8 * math.sin(phi))      # test: the old idle, whose pelvis turn slid the feet
+        for sd, k in (('L', 1), ('R', -1)):      # (no pelvis or leg motion: a turn of the pelvis slid the planted feet back and forth, the owner saw them "slowly slide around")
+            rot('upper_arm.' + sd, ARM_FWD0 + 2.0 * math.sin(phi + (0.3 if k > 0 else 0.9)), 0, -k * ARM_IN0); rot('forearm.' + sd, ELBOW0 + 1.5 * s)
         return d
     run = kind == 'run'; K = 45 if run else 34; lean = 9 if run else 2
     arm_sw = 0.8 * A if run else 0.9 * A; elbow = 85 if run else 12
@@ -1298,6 +1376,18 @@ for name in ('fidget_shift', 'fidget_look', 'fidget_hat', 'fidget_neck'):
     for fc in act.fcurves:
         k = fc.keyframe_points; worst = max(worst, abs(k[0].co[1] - k[-1].co[1]))
     if worst > 1e-4: raise ValueError('%s does not return to its first frame (%.5f)' % (name, worst))
+reset(); update(); arm.animation_data.use_nla = True
+# Planted feet: in the idle and the fidgets that do not step, each sole stays where it is (the proxy plays the idle whenever a player stands).
+arm.animation_data.use_nla = False
+for kind, T in (('idle', 3.0), ('fidget_look', 4.4), ('fidget_hat', 3.6), ('fidget_neck', 4.0)):
+    start = None; drift = 0.0
+    for f in range(0, int(T * FPS) + 1, 3):
+        apply(kind, 2 * math.pi * f / (T * FPS), 0.0)
+        pts = sole('foot.L', 'L') + sole('foot.R', 'R')
+        if start is None: start = [p.copy() for p in pts]
+        drift = max(drift, max(math.hypot(p.x - q.x, p.y - q.y) for p, q in zip(pts, start)))
+    print('REPORT %s sole drift %.1f mm' % (kind, drift * 1000))
+    if drift > 0.002: raise ValueError('%s slides the planted feet (%.1f mm)' % (kind, drift * 1000))
 reset(); update(); arm.animation_data.use_nla = True
 
 if '--gait-metrics' in args:

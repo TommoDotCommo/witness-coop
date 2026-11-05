@@ -52,7 +52,7 @@ def skull_and_face():
         (s.ellipsoid((0, -0.022, 1.659), (0.076, 0.077, 0.086)), 0.040, 'add'),
         (s.ellipsoid((0, -0.028, 1.600), (0.050, 0.060, 0.039)), 0.036, 'add'),
         (s.ellipsoid((0, -0.048, F['chin_z'] + 0.021), (0.031, 0.037, 0.025)), 0.026, 'add'),
-        (s.capsule((0, 0.025, 1.440), (0, 0.018, 1.602), 0.034), 0.030, 'add'),
+        (s.capsule((0, 0.025, 1.440), (0, 0.018, 1.602), 0.040), 0.030, 'add'),      # (a thin neck read long above the scarf)
     ]
     face = s.blend(base, strokes)
     global SOLID
@@ -134,7 +134,7 @@ def brows():
     return out
 
 # ---- hair: a shell over the skull with a designed hairline, thin under the hat, chunky locks along its edge, clear of the ears
-HAIRLINE = ((0, 1.751), (35, 1.741), (60, 1.717), (77, 1.683), (88, 1.675), (105, 1.685), (125, 1.659), (155, 1.642), (180, 1.638))
+HAIRLINE = ((0, 1.751), (35, 1.741), (60, 1.717), (77, 1.683), (88, 1.675), (105, 1.685), (125, 1.652), (155, 1.628), (180, 1.622))      # (the nape comes down: less bare neck)
 def _hairline(theta):
     t = np.abs(np.degrees(theta)); a = np.array([h[0] for h in HAIRLINE], float); z = np.array([h[1] for h in HAIRLINE], float)
     return np.interp(t, a, z)

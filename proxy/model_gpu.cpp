@@ -459,7 +459,7 @@ bool ModelGpuDraw(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Cam& ca
     std::vector<float> bones(wm::kMaxJoints * 16, 0.0f);
     static std::map<unsigned, std::pair<wradio::Raise, uint64_t>> radioPose;
     auto& radio = radioPose[playerId]; uint64_t radioNow=GetTickCount64();
-    radio.first.Step(extra && extra->radioTx && !cfg.noRadioPose, radio.second ? (radioNow-radio.second)/1000.0f : 0); radio.second=radioNow;
+    radio.first.Step(extra && extra->radioTx && cfg.radioVisible && !cfg.noRadioPose, radio.second ? (radioNow-radio.second)/1000.0f : 0); radio.second=radioNow;
     float radioHand[16];
     // the life layer: what this player's figure does by itself (model/life.h), fed with the frame time, its speed, where the local camera is and how the body accelerates
     auto& trackp = g_L->life[playerId]; if (!trackp) trackp = std::make_unique<LifeTrack>(playerId + 1); LifeTrack& track = *trackp;
@@ -634,7 +634,7 @@ bool ModelGpuDraw(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Cam& ca
     g_stats.blinks = track.blinks; g_stats.fidgets = track.fidgets; g_stats.glancing = track.state.glancing; g_stats.fidgeting = g_avatar->fidgeting(); g_stats.headYaw = track.state.headYaw; g_stats.headPitch = track.state.headPitch;
     g_stats.breath = track.state.breath; g_stats.exertion = track.state.exertion; g_stats.blink = track.state.blink; g_stats.scarf = 0; for (const auto& pnd : track.state.scarfA) g_stats.scarf = std::max(g_stats.scarf, fabsf(pnd.a) + fabsf(pnd.b));
     { float e = wm::EyeHeightPosed(g_L->model, bones.data(), g_L->eyeJoint); g_stats.eye = e <= wm::kNoEye * 0.5f ? -1.0f : (e - g_L->model.bmin[1]) * g_L->fit.scale; g_stats.yaw = g_avatar->yaw(); } memcpy(g_stats.pos, g_avatar->pos(), 12); memcpy(g_stats.cam, cam.pos, 12);
-    if (extra && extra->radioEquipped) {
+    if (extra && extra->radioEquipped && cfg.radioVisible) {
         std::vector<LineVert> item;
         for (const auto& v : wradio::Mesh(extra->radioTx && (GetTickCount64()/180)%2==0)) {
             // The prop follows the posed wrist, in the model's original units.

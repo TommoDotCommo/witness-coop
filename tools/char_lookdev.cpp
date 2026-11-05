@@ -176,6 +176,7 @@ int main(int argc, char** argv) {
     int S = 2;      // supersampling
     if (sheetKind == "body" || sheetKind == "all") { Row r{{}, int(260 * size), int(400 * size)}; for (int k = 0; k < 8; ++k) r.frames.push_back({k * 45.f - 20, 4, 0, .95f, 2.05f}); rows.push_back(r); }
     if (sheetKind == "mid") { Row r{{}, int(400 * size), int(400 * size)}; for (float yaw : {-25.f, 25.f, 90.f, 160.f, 200.f}) r.frames.push_back({yaw, 4, 0, 1.12f, 1.25f}); rows.push_back(r); }      // torso and hips close up
+    if (sheetKind == "upper") { Row r{{}, int(400 * size), int(400 * size)}; for (float yaw : {-25.f, 30.f, 90.f, 180.f}) r.frames.push_back({yaw, 4, 0, 1.47f, .36f}); rows.push_back(r); }      // neck, scarf, shoulders and straps
     if (sheetKind == "legs") { Row r{{}, int(400 * size), int(400 * size)}; for (float yaw : {-25.f, 35.f, 90.f, 180.f}) r.frames.push_back({yaw, 4, 0, .45f, 1.0f}); rows.push_back(r); }
     if (sheetKind == "face" || sheetKind == "all") { Row r{{}, int(330 * size), int(400 * size)}; for (float yaw : {-35.f, 0.f, 35.f, 90.f, 160.f}) r.frames.push_back({yaw, 2, 0, eyeY - .035f, .34f}); rows.push_back(r); (void)head; }
     if (sheetKind == "hands" || sheetKind == "all") {

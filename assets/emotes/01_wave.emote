@@ -4,7 +4,7 @@
 emote 1 Wave
 duration 2.6
 drag 0.04
-pose up     arm.R=16,88,100 fore.R=70 hand.R=0,0,12 chest=-2,-5,-4 head=-5,-8,6 neck=0,-4,2
+pose up     arm.R=16,88,95 fore.R=70 hand.R=0,0,12 chest=-2,-5,-4 head=-5,-8,6 neck=0,-4,2
 key 0.00 rest
 key 0.28 arm.R=20,30,42 fore.R=92 hand.R=-12,0,-8 chest=2,3,1 head=2,4,0             # gather: the hand at the chest, out to the side, a small dip
 key 0.56 @up                                                                            # up, a touch past the swing's centre
