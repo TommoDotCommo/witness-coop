@@ -25,7 +25,7 @@ def srgb(h, material=None):      # '#rrggbb' -> linear rgba
     return tuple(tint_colour(rgb, material, APPEARANCE) + [1.0])
 COLOURS = dict(panel='#203a57', panel_line='#f3e7c8', nail='#bd967f', coat='#2f857d', coat_dark='#1d5753', trousers='#a8946b', boots='#563826', scarf='#df9d34', hat='#cfb58a', band='#a3442e', skin='#ddb397', hair='#4a3227',
                leather='#8a5634', brass='#aa8a4b', mouth_dark='#6d3930', skin_dark='#ae775e', vest='#725138', shirt='#c9bda5', sole='#211914', iris='#8c6a3a', iris_ring='#33241a', lash='#2a1f19', lips='#b87868', boots_cuff='#584031', scarf_dark='#b8742a', white='#f0e9d9', mouth='#8e5549', bedroll='#a99b7c', feather='#e48aa2', strap='#49301f', metal='#b99c68', eye='#17191a', thread='#a99b78', stitching='#b49a70')
-COLOURS.update(hand_skin=COLOURS['skin'],lid_skin=COLOURS['skin'],glove_leather='#7b5238')      # (the glove: a quieter, deeper tan than the bags, so the hand reads as skin against it)
+COLOURS.update(hand_skin=COLOURS['skin'],lid_skin='#d8a68c',glove_leather='#7b5238')      # (the glove: a quieter, deeper tan than the bags, so the hand reads as skin against it)
 MATS = {}
 def mat(name):
     if name not in MATS:
@@ -285,7 +285,7 @@ for s, x in (('L', 1), ('R', -1)):
 import numpy as np
 import sdf, head as headmod
 from character_spec import FACE, TARGETS
-HEAD_CELL = 0.0018
+HEAD_CELL = 0.0014
 def field_part(name, f, lo, hi, cell, material, tris, relax=2, symmetric=False):
     if symmetric:      # x = 0 on a grid line: the mesh is its own mirror image (and so is the decimation)
         k = math.ceil(max(abs(lo[0]), abs(hi[0])) / cell); lo = (-k * cell, lo[1], lo[2]); hi = (k * cell, hi[1], hi[2])
@@ -331,7 +331,7 @@ def paint(ob, mask, material):      # faces whose centre the mask selects take t
         P = np.array([v.co[:] for v in me.vertices]); me.normals_split_custom_set_from_vertices(sdf.gradient(FIELDS[ob.name], P).tolist())
     return int(np.sum(sel))
 head_field = sdf.intersect(headmod.skull_and_face(), sdf.plane((0, 0, -1), 1.425))      # closed under the scarf
-head_surface = field_part('head', head_field, (-0.13, -0.16, 1.40), (0.13, 0.13, 1.84), HEAD_CELL, 'skin', 26000, 2, True)
+head_surface = field_part('head', head_field, (-0.13, -0.16, 1.40), (0.13, 0.13, 1.84), HEAD_CELL, 'skin', 70000, 2, True)      # (26 000 decimated the eye openings into ragged edges)
 mz = FACE['mouth_z']
 # Lips are painted in object space; polygon material borders made a jagged mouth.
 pass      # (the mouth's line is painted on the skin along the smile: paint_materials)
@@ -382,9 +382,7 @@ def smile_ribbon(name, half_height, z_offset, material, bone):
         rows.append(row)
     for a,b in zip(rows, rows[1:]): bm.faces.new((a[0],b[0],b[1],a[1]))
     part(face_finish(name,bm,material),[bone])
-smile_ribbon('lower_lip_colour',0.0023,-0.0022,'lips','lip_lower')
-smile_ribbon('upper_lip_colour',0.0011,0.0010,'lips','head')
-smile_ribbon('smile',0.00085,0.0,'mouth_dark','head')
+# (the smile and the lips are painted on the head's chart: bake_texture, face_paint. Ribbons of geometry read as stripes.)
 
 # Eyes: a ball in each socket. The eye bone turns the iris, pupil and their ring about the ball's centre (the white is a sphere: turning it changes nothing).
 # Lids: the upper lid is a shell round the ball (head.upper_lids) on a bone at the ball's centre; a blink turns it down over the ball (lid_rotate in the
@@ -407,8 +405,8 @@ for s, x in (('L', 1), ('R', -1)):
     part(lid, ['lid.' + s])
     bm=bmesh.new(); rows=[]
     for i in range(49):
-        t=math.pi*i/48;row=[]
-        for scale in (1.005,1.065):
+        t=math.pi*(0.04+0.92*i/48);row=[]      # (the lash stops short of the corners and tapers to nothing there: its ends ran into the face's skin and flickered)
+        for scale in (1.0,1.0+0.12*math.sin(t)**0.7):
             dx=FACE['aperture_w']*math.cos(t)*scale
             dz=(FACE['aperture_up']*math.sin(t)*(1+FACE['aperture_skew']*math.cos(t))+FACE['corner_lift']*math.cos(t))*scale
             yy=c[1]-math.sqrt(max(1e-8,(r+FACE['lid_thick'])**2-dx*dx-dz*dz))-0.0003
@@ -978,6 +976,25 @@ def bake_texture(body, size, outdir):
     # can share a ray; a Cycles normal/AO bake there produced muddy eye rings. Keep those maps neutral
     # and let the actual sculpt's normals and the island light describe its planes.
     skin_base=np.array(srgb(COLOURS['skin'],'skin')[:3]);blush=np.array(srgb('#d28f7b','skin')[:3])
+    rim_c=np.array(srgb('#b07a63','skin')[:3]);line_c=np.array(srgb('#5b2a23','skin')[:3]);lip_c=np.array(srgb('#c47766','skin')[:3])
+    def face_paint(pos,colour):
+        """The face's graphic marks, painted analytically in the sculpt's own space (crisp at any distance, no geometry
+        strips): a warm shadow round each eye's opening (kills the pale rim of the lower lid), the smile line and the lips."""
+        q=pos.reshape(-1,3);out=colour.reshape(-1,3).copy();front=q[:,1]<-0.06
+        for sd in (1,-1):
+            ap=headmod.aperture(sd,q);c=headmod.eye_centre(sd)
+            below=q[:,2]<c[2]
+            amt=np.where(below,0.35,0.20)*np.exp(-((np.maximum(ap-1.0,0))/0.30)**2)*(ap<2.0)*front
+            out+=(rim_c-out)*amt[:,None]
+        mw=FACE['mouth_w']*0.5;u=q[:,0]/mw;zc=FACE['mouth_z']+FACE['smile']*u*u;dz=q[:,2]-zc
+        inside=np.clip(1-u*u,0,1);mouthfront=front&(q[:,1]<-0.085)
+        h=0.00070*inside**0.45+0.00012
+        line=np.clip((h-np.abs(dz))/0.00030+0.5,0,1)*(np.abs(u)<1.0)*mouthfront
+        lower=np.clip((dz+0.0048*inside**0.5)/0.0012,0,1)*np.clip(-dz/0.0006,0,1)*mouthfront*0.42
+        upper=np.clip((0.0022*inside**0.6-dz)/0.0008,0,1)*np.clip(dz/0.0006,0,1)*mouthfront*0.22
+        out+=(lip_c-out)*np.clip(lower+upper,0,1)[:,None]
+        out+=(line_c-out)*line[:,None]
+        return out.reshape(colour.shape)
     headmask=np.zeros((size,size),bool)
     for pi in head_faces:
         poly=body.data.polygons[pi];loops=list(poly.loop_indices)
@@ -1002,6 +1019,7 @@ def bake_texture(body, size, outdir):
                 warm+=0.20*np.exp(-(((pos-np.array([sx*0.045,-0.085,1.642]))/np.array([0.031,0.044,0.026]))**2).sum(axis=2))
             warm+=0.20*np.exp(-(((pos-np.array([0,-0.123,1.632]))/np.array([0.015,0.025,0.018]))**2).sum(axis=2))
             colour=skin_base+(blush-skin_base)*warm[:,:,None]
+            colour=face_paint(pos,colour)
             raw_colour[y0:y1,x0:x1,:3][hit]=colour[hit];maps[1][y0:y1,x0:x1,:][hit]=1
             other_maps['NORMAL'][y0:y1,x0:x1,:][hit]=(0.5,0.5,1,1)
             other_maps['ROUGHNESS'][y0:y1,x0:x1,:][hit]=(0.64,0.64,0.64,1)

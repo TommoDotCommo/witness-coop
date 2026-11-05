@@ -11,12 +11,12 @@ def eye_centre(side):
     """The eyeball's centre (side +1 left, -1 right)."""
     return np.array([side * F['eye_x'], F['eye_y'], F['eye_z']])
 
-def aperture(side, p):
+def aperture(side, p, wscale=1.0, upscale=1.0):
     """How far a point is outside the lid opening, seen from the front, as an elliptical measure (<1 inside).
     The opening is an almond: a higher, rounder upper arc, a flatter lower arc, the outer corner lifted a little."""
-    c = eye_centre(side); dx = (p[:, 0] - c[0]) * side; dz = p[:, 2] - c[2] - F['corner_lift'] * np.clip(dx / F['aperture_w'], -1, 1)
+    c = eye_centre(side); dx = (p[:, 0] - c[0]) * side / wscale; dz = p[:, 2] - c[2] - F['corner_lift'] * np.clip(dx / F['aperture_w'], -1, 1)
     up = dz > 0
-    hz = np.where(up, F['aperture_up'], F['aperture_down'])
+    hz = np.where(up, F['aperture_up'] * upscale, F['aperture_down'])
     skew = 1 + F['aperture_skew'] * np.clip(dx / F['aperture_w'], -1, 1)      # the opening is taller toward the inner corner
     return np.sqrt((dx / F['aperture_w']) ** 2 + (dz / (hz * skew)) ** 2)
 
@@ -24,12 +24,18 @@ def lid_shell(side, upper_only=None):
     """The lids: a shell round the eyeball with the almond opening cut out. upper_only: True the upper lid (the part
     that blinks), False the rest (the lower lid and the lid fold), None both."""
     c = eye_centre(side); r = F['eye_r']
-    outer = sdf.sphere(c, r + F['lid_thick']); inner = sdf.sphere(c, r + F['lid_gap'])
+    inner = sdf.sphere(c, r + F['lid_gap'])
+    def outer(p):      # the lower lid is less than half as thick as the upper: a thick lower rim catches the sky and reads as a pale halo
+        k = np.clip((p[:, 2] - c[2]) / 0.004 * 0.5 + 0.5, 0, 1); k = k * k * (3 - 2 * k)
+        thick = F['lid_thick'] * (0.40 + 0.60 * k)
+        return np.linalg.norm(p - c, axis=1) - (r + thick)
     def f(p):
         d = np.maximum(outer(p), -inner(p))
         window = (1.0 - aperture(side, p)) * F['aperture_w'] * 0.6      # positive inside the opening: removed
         d = np.maximum(d, window)
         d = np.maximum(d, (p[:, 1] - c[1] - 0.35 * r))                     # the front of the ball and round its sides
+        if upper_only:      # the moving lid ends cleanly at the corners, under the face (its thin corner slivers meshed ragged)
+            d = np.maximum(d, np.abs(p[:, 0] - c[0]) - F['aperture_w'] * 1.04)
         if upper_only is not None:
             lid_line = p[:, 2] - c[2]                                       # above the centre: the moving lid
             d = np.maximum(d, -lid_line if upper_only else lid_line)
@@ -49,30 +55,37 @@ def skull_and_face():
         (s.capsule((0, 0.025, 1.440), (0, 0.018, 1.602), 0.034), 0.030, 'add'),
     ]
     face = s.blend(base, strokes)
+    global SOLID
+    SOLID = face      # the skin before the sockets: the moving lids stay under it
     # eye sockets: a bowl round each eyeball
     for side in (1, -1):
         c = eye_centre(side)      # front half only: the ball's sides stay inside the skull
         bowl = s.intersect(s.sphere(c, F['eye_r'] + F['socket_gap']), s.plane((0, 1, 0), -(c[1] + 0.2 * F['eye_r'])))
         face = s.subtract(face, bowl, 0.006)
         def tunnel(p, side=side, c=c):      # everything in front of the ball inside the lid opening: the face never covers the eye
-            inside = (aperture(side, p) - 1.0) * F['aperture_w'] * 0.6
+            inside = (aperture(side, p, 0.95, 0.90) - 1.0) * F['aperture_w'] * 0.6      # (and a little lower on top: the face's edge covers the lid's upper surface down to the lash)      # a little narrower than the lid: the face tucks over the lid's thin corners
             return np.maximum(inside, p[:, 1] - (c[1] - 0.2 * F['eye_r']))
-        face = s.subtract(face, tunnel, 0.0025)
-    # A clean, small nose with one bridge-to-tip transition. Nostrils are omitted at this scale.
-    nose = s.union(0.012,
-                   s.capsule((0, -0.095, 1.692), (0, -0.114, F['nose_tip_z'] + 0.007), 0.0070, 0.0092),
-                   s.ellipsoid((0, -0.115, F['nose_tip_z'] + 0.002), (0.011, 0.010, 0.009)))
-    face = s.blend(face, [(nose, 0.014, 'add')])
-    # A low, continuous lip cushion. The smile is painted continuously rather than cut into tiny cavities.
+        face = s.subtract(face, tunnel, 0.0040)      # a rounded rim: the face's own edge is the lower lid
+    # A short, soft button nose: a low bridge that fades into the brow, a round tip turned up a little and two small
+    # wings either side of it. No nostril holes (they bake to dark specks); the wings' shading says "nose".
+    nt = F['nose_tip_z']
+    nose = s.union(0.010,
+                   s.capsule((0, -0.088, 1.680), (0, -0.105, nt + 0.008), 0.0045, 0.0078),
+                   s.ellipsoid((0, -0.1085, nt + 0.0015), (0.0095, 0.0095, 0.0088)),
+                   s.mirror_x(s.ellipsoid((0.0068, -0.1015, nt + 0.0006), (0.0040, 0.0046, 0.0038))))
+    face = s.blend(face, [(nose, 0.018, 'add')])
+    # The mouth: a soft muzzle (no lip shelf) with a small lower-lip swell under the painted smile. The line itself is
+    # painted on the skin (adventurer.py, the head chart) so it is crisp at any distance.
     mz = F['mouth_z']; mw = F['mouth_w'] * 0.5
-    lips = s.ellipsoid((0, -0.089, mz - 0.002), (mw * 0.94, 0.006, 0.005))
-    face = s.blend(face, [(lips, 0.008, 'add')])
+    muzzle = s.ellipsoid((0, -0.071, mz + 0.004), (0.032, 0.022, 0.020))
+    lips = s.ellipsoid((0, -0.0905, mz - 0.0045), (mw * 0.70, 0.0042, 0.0034))
+    face = s.blend(face, [(muzzle, 0.026, 'add'), (lips, 0.006, 'add')])
     global LIPS, SLIT
     LIPS = lips
     SLIT = s.round_box((0, -0.104, mz), (mw, 0.010, 0.0008), 0.0005)
     # the lids belong to the face (the upper lid's moving part is meshed apart: lids() below)
-    for side in (1, -1):
-        face = s.blend(face, [(lid_shell(side, upper_only=False), 0.0028, 'add')])
+    # (no separate lower-lid shell: at the head's mesh resolution its thin rim broke into a ragged pale fringe; the rounded
+    #  edge of the tunnel is the lower lid, and the head chart paints a soft dark line round the opening)
     # the ears: a rim and a bowl, set back and tilted with the jaw line
     ear = s.subtract(s.ellipsoid((0.085, 0.018, 1.664), (0.012, 0.016, 0.025), s.rot_x(-0.22)),
                      s.ellipsoid((0.094, 0.014, 1.665), (0.0060, 0.010, 0.016), s.rot_x(-0.22)), 0.003)
@@ -81,6 +94,7 @@ def skull_and_face():
 
 LIPS = None
 SLIT = None
+SOLID = None
 def mouth_mask(p):
     """True on the walls of the mouth's line (its inside: dark)."""
     return SLIT(p) < 0.0006
@@ -95,7 +109,10 @@ def lip_mask(p):
 
 def upper_lids():
     """The two moving upper lids (each rotates about its eyeball's centre to blink)."""
-    return {side: sdf.blend(lid_shell(side, upper_only=True), []) for side in (1, -1)}
+    if SOLID is None: skull_and_face()
+    def clip(f):      # never outside the skin (at the outer corners the face turns back toward the temple and the shell poked through)
+        return lambda p: np.maximum(f(p), SOLID(p) + 0.0005)
+    return {side: sdf.blend(clip(lid_shell(side, upper_only=True)), []) for side in (1, -1)}
 
 def lash(side, p):
     """True where a point of the upper lid is on its lash line (the dark rim along the opening's upper edge)."""

@@ -16,9 +16,11 @@ stays (a traveller with a coat, scarf, hat and handmade gear); the drawing chang
 |---|---|
 | About 6.4 heads tall (storybook), not 7.5 | A slightly large head reads as designed and carries expression at a distance. |
 | Real eyeballs in sockets, under lids with thickness | Eyes painted on the face's surface read as dead. Depth, a lid rim and a catchlight read as alive. |
+| The lower lid is the face's own rounded edge; no thin shells or painted lines at the opening | A thin lower-lid shell meshed into a ragged pale fringe, and a dark line painted on the socket's wall sampled into specks. |
+| A short button nose, a soft muzzle and a painted smile | A long bridge with a bulb read as old; lip shelves and geometry strips for the mouth read as a stripe. The smile and lips are painted on the head's chart (`face_paint`). |
 | An open almond: visible eye height about half its width | The old 0.26 aspect read as a squint. The gate holds 0.36 to 0.60. |
 | The upper lid touches the top of the iris | White above the iris reads as alarm. White all round reads as a stare. |
-| Iris about 0.4 to 0.5 of the opening's width | Smaller loses the gaze; larger becomes a doll's eye. |
+| Iris about 0.55 of the opening's width, its top tucked under the upper lid | A small iris with white all round read as a stare (2026-11-05); a stylized eye reads by its iris. |
 | About one eye's width between the eyes | Wider spacing reads as vacant, narrower as cross. |
 | Widest at the cheekbones, tapering to the chin | A bell-shaped lower face reads as jowly and old. |
 | A dark lash line on the upper lid, a lid crease, soft arched brows | These are the cues that make stylized eyes read. |
@@ -98,11 +100,11 @@ measures again. It measures proportions, the face's mirror symmetry (point to su
 | eye line above the chin / head | 0.45 – 0.53 | 0.52 |
 | visible eye height / width | 0.36 – 0.60 | 0.26 (miss) |
 | gap between the eyes / eye width | 0.95 – 1.40 | 1.53 (miss) |
-| visible iris width / eye width | 0.38 – 0.52 | 0.32 (miss) |
+| visible iris width / eye width | 0.45 – 0.62 | 0.32 (miss) |
 | eye line to nose tip / head | 0.14 – 0.22 | 0.13 (miss) |
 | face symmetry, 99th percentile | ≤ 0.8 mm | 0.13 mm |
 | hand length / chin to brow | 0.75 – 1.00 | 0.99 |
-| head skin triangles | 8 000 – 30 000 | 11 888 |
+| head skin triangles | 8 000 – 90 000 | 11 888 |
 | visible eye after a full blink / open | ≤ 0.08 | 0.08 |
 | brightness of the visible eye white | ≥ 0.70 | 0.60 (miss) |
 | zero-area triangles | ≤ 400 | 122 |
