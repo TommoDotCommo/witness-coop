@@ -183,6 +183,10 @@ int main(int argc, char** argv) {
             float x = h[0] * c - h[2] * s, z = h[0] * s + h[2] * c; return Frame{yaw, pitch, x, (h[1] - .09f) * cp - z * sp, .24f}; };
         r.frames = {at(hr, -60, 10), at(hr, -120, 10), at(hl, 60, 10), at(hl, 120, 10)}; rows.push_back(r);
     }
+    if (sheetKind == "close") {      // material close-ups: the hat's crown and brim, the scarf, the coat's shoulder and the bag, from two sides
+        Row r{{}, int(330 * size), int(400 * size)};
+        r.frames = {{-25, 18, 0, 1.83f, .30f}, {150, 14, 0, 1.83f, .30f}, {-30, 6, 0, 1.55f, .34f}, {120, 6, 0, 1.55f, .34f}, {-40, 4, .05f, 1.12f, .40f}}; rows.push_back(r);
+    }
     int SW = 0, SH = 0; for (auto& r : rows) { SW = std::max(SW, r.w * int(r.frames.size())); SH += r.h; }
     std::vector<uint8_t> sheet(size_t(SW) * SH * 3, 200);
     int oy = 0;

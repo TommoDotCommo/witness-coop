@@ -24,7 +24,7 @@ stays (a traveller with a coat, scarf, hat and handmade gear); the drawing chang
 | A dark lash line on the upper lid, a lid crease, soft arched brows | These are the cues that make stylized eyes read. |
 | No ambient occlusion on the eyes | A ball in a socket bakes nearly black occlusion, which greys the whites. |
 | Hair as a few soft clumps with a designed hairline | Thin spikes and helmet caps read as cheap. |
-| Hands slightly large, with chunky tapered fingers in a relaxed curl | Thin realistic fingers are the second most uncanny thing on a figure. |
+| Hands slightly large (1.12x), with chunky tapered fingers in a relaxed curl | Thin realistic fingers are the second most uncanny thing on a figure. |
 | The hat sits above the brows and tips back | Players look from eye height; a low brim hides the face. |
 
 ## Witness flair
@@ -33,7 +33,7 @@ The adventurer belongs to the island, so it borrows the island's look rather tha
 
 - **Painted colour fields, not grain.** The default `witness` style (`--style classic` keeps the first version's grime) paints each
   material as a broad clean field with light painted in: sunlit above, cooler in the folds below, a very broad painter's unevenness.
-  The scarf uses a clean marigold field with the folds modelled into its wrap; high-frequency knit relief read as pixelation.
+  The scarf is a clean marigold field with the folds modelled into its wrap and a broad, soft knit rib (about 1.5 cm per row, one sine of height, no noise); high-frequency knit relief read as pixelation. The scarf has real atlas islands (not a colour swatch) so the rib is painted.
 - **The island's palette.** The coat is the sea's teal, the scarf the autumn trees' marigold, the hat sunlit sandstone with an
   autumn-red band, the leather warm, and the hat's feather the pink of the cherry trees.
 - **The puzzle line as the character's sign.** A start circle, a path through a four-by-four grid and a rounded end, embroidered in
@@ -122,10 +122,10 @@ where they read: the face, the lids, the hands, the silhouette.
 
 - The body keeps the existing rig and long travelling coat. A stronger whole-body gesture and more deliberately shaped
   knees, elbows and shoulders would give it more personality.
-- In the game the figure renders a little darker than the island around it: match the proxy's shading to the game's light.
+- The proxy's light for the figure is matched to the island (`proxy/model/lighting.h`, T0: `make -C proxy/model lighting`); an in-game lineup beside the sunlit wall now reads at the wall's brightness. Skin has no real subsurface term.
 
 - The garments are lofted surfaces with broad folds and bound edges. Pose-specific compression at the joints and more
   articulated leather bags would improve their sense of construction and weight.
-- The atlas is still 2048 for the whole body; a 4096 build works but its normal-map flatness check needs re-tuning.
+- The colour atlas is 4096 and lossless (PNG; JPEG blocks stepped the hat crown's gradient); the normal and material maps are 2048. The normal-flatness check now measures the cloth's own UV interiors, not the whole atlas.
 - No finger or clavicle bones yet, so hand acting and shrugs are limited (docs/ANIMATION.md).
 - Skin shading is the game's standard material: no subsurface tint at the ears and nose beyond what is painted.

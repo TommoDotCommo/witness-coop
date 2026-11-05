@@ -68,9 +68,10 @@ The puppet is lit in linear light, with the result converted back to the game's 
   unflipped): both read a glTF normal map's +Y as "up the image". Blender bakes OpenGL-style +Y-up maps and its exporter
   leaves the image alone while flipping `v`, so the bundled map follows the glTF convention. The map's strength is 0.75 and it
   fades out at grazing angles, where the screen-space frame degenerates.
-- The sun (`model_sun`, default 0.55, warm white) with wrapped diffuse (skin wraps further and gets a warm band at the
+- The sun (`model_sun`, default 1.30, warm white; the constants live in `proxy/model/lighting.h`, checked by `make -C proxy/model lighting`) with wrapped diffuse (skin wraps further and gets a warm band at the
   terminator), GGX specular with Schlick Fresnel and Smith geometry from the map's roughness and metalness, a sky/ground
-  hemisphere (`model_ambient`, default 0.30) times the baked occlusion, and a sheen on wool and knit (coat, scarf, trousers).
+  hemisphere (`model_ambient`, default 0.90) times the baked occlusion, a cool rim off the sky at grazing angles, and a sheen on wool and knit (coat, scarf, trousers).
+  The result goes through a soft shoulder (linear values above 0.62 roll off toward 1) before the display encoding, so bright felt and skin keep their form instead of clipping. Measured in game (2026-11-05, same spot, luma 0..255): coat 53 -> 87, hat 76 -> 107 beside a sunlit wall at 105.
 - Metal (brass, the canteen) reflects its own colour. Eyes and nails are glossy; cloth is rough.
 - `model_shading=0` restores the old flat shading for comparison; the palette tints still apply in linear light.
 

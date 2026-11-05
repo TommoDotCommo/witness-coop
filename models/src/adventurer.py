@@ -747,7 +747,7 @@ def paint_materials():
             elif name in ('trousers', 'vest', 'shirt', 'bedroll'): grad(0.45, 0.95, cool, 0.35); noise_mul(9, 0.0, (1, 1, 1), 1, 0.2, 1)
             elif name in ('hat', 'band'): grad(1.66, 1.86, cool, 0.26); grad(2.00, 1.80, warm, 0.20)      # felt: two broad smooth ramps, no relief noise
             elif name in ('boots', 'boots_cuff', 'leather', 'strap', 'sole'): grad(0.0, 0.25, cool, 0.30); noise_mul(14, 0.015, (1, 1, 1), 1, 0.045, 2)
-            elif name in ('scarf', 'scarf_dark'): grad(1.20, 1.50, cool, 0.30); rib(430, 0.075, 0.05)      # a broad, clean knit rib (about 1.5 cm per row): a pattern you read at a distance, not noise
+            elif name in ('scarf', 'scarf_dark'): grad(1.20, 1.50, cool, 0.30); rib(430, 0.11, 0.06)      # a broad, clean knit rib (about 1.5 cm per row): a pattern you read at a distance, not noise
             elif name == 'hair': grad(1.58, 1.72, cool, 0.35); noise_mul(8, 0.025, (1, 1, 2), 2, 0.015, 1)      # strand direction, soft
         elif name in ('coat', 'coat_dark'): noise_mul(45, 0.09, (1, 1, 4), 0, 0.0, 2); noise_mul(7, 0.28, (1, 1, 1.6), 1, 1.0); weave(260, 0.07); noise_mul(22, 0.0, (1, 1, 2.5), 3, 0.2, 2); blend_to((0.02, 0.05, 0.04), z_mask(0.45, 0.85), 0.36)
         elif name in ('trousers', 'vest', 'bedroll', 'shirt'): noise_mul(40, 0.08, (4, 1, 1), 0, 0.0, 2); noise_mul(7, 0.24, (1, 1, 1), 1, 1.0); weave(240, 0.06); noise_mul(20, 0.0, (1, 1, 1), 3, 0.15, 2); blend_to((0.05, 0.035, 0.02), z_mask(0.50, 1.10), 0.35)
@@ -796,7 +796,7 @@ BUMP = dict(white=0.0, iris=0.0, iris_ring=0.0, eye=0.0, lash=0.0, panel=0.1, pa
 def bake_texture(body, size, outdir):
     if not FLAT_MATERIALS: paint_materials()
     bpy.ops.object.select_all(action='DESELECT'); body.select_set(True); bpy.context.view_layer.objects.active = body
-    detail_names=('white','iris','iris_ring','eye','lips','mouth_dark','lash','hair','hand_skin','lid_skin','glove_leather','scarf','scarf_dark','band','feather','thread','stitching','panel_line','brass')
+    detail_names=('white','iris','iris_ring','eye','lips','mouth_dark','lash','hair','hand_skin','lid_skin','glove_leather','band','feather','thread','stitching','panel_line','brass')
     bpy.ops.object.mode_set(mode='EDIT');bpy.ops.mesh.select_all(action='SELECT')
     bpy.ops.uv.smart_project(angle_limit=math.radians(70),island_margin=0.0065);bpy.ops.object.mode_set(mode='OBJECT')
     # One cylindrical chart for the continuous head, with its seam at the nape. Smart projection
