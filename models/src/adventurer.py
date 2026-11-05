@@ -132,15 +132,25 @@ TORSO = ['pelvis', 'spine', 'chest']
 part(loft('hips', [(0.84, 0, 0.005, 0.178, 0.122), (0.94, 0, 0, 0.185, 0.126), (1.02, 0, 0, 0.174, 0.120)], 'trousers', 20), ['pelvis', 'thigh.L', 'thigh.R'])
 part(loft('vest', [(0.98, 0, 0, 0.176, 0.122), (1.10, 0, -0.002, 0.164, 0.115), (1.24, 0, 0, 0.188, 0.128), (1.36, 0, 0.005, 0.211, 0.137), (1.43, 0, 0.010, 0.190, 0.116)], 'vest', 24, folds=0.012), TORSO)
 part(loft('shirt_collar', [(1.42, 0, 0.005, 0.112, 0.096), (1.50, 0, 0.008, 0.092, 0.082)], 'shirt', 20), ['chest', 'neck'])
-COAT = [(0.57, 0, 0.018, 0.265, 0.183, 0.23), (0.70, 0, 0.012, 0.250, 0.175, 0.18), (0.87, 0, 0.004, 0.225, 0.155, 0.12), (1.04, 0, 0, 0.188, 0.135, 0.055), (1.18, 0, 0, 0.207, 0.142, 0.18),
-        (1.31, 0, 0.003, 0.239, 0.152, 0.45), (1.40, 0, 0.008, 0.237, 0.146, 0.62), (1.455, 0, 0.012, 0.200, 0.122, 0.74)]
+COAT = [(0.57, 0, 0.018, 0.252, 0.174, 0.29), (0.585, 0, 0.018, 0.253, 0.175, 0.28),
+        (0.70, 0, 0.012, 0.247, 0.173, 0.23), (0.86, 0, 0.004, 0.232, 0.158, 0.16),
+        (0.97, 0, 0, 0.199, 0.141, 0.08), (1.04, 0, 0, 0.186, 0.132, 0.055),
+        (1.12, 0, 0, 0.191, 0.135, 0.12), (1.23, 0, 0.002, 0.219, 0.146, 0.27),
+        (1.34, 0, 0.006, 0.241, 0.151, 0.49), (1.41, 0, 0.010, 0.234, 0.141, 0.63),
+        (1.455, 0, 0.012, 0.200, 0.122, 0.74)]
 def coat_drape(co):
     p = Vector(co); angle = math.atan2(p.x, -(p.y-0.010))
     hang = max(0.0, min(1.0, (1.04-p.z)/0.47))
-    # Four broad hanging folds, growing from the belt. No all-over sinusoidal crumpling.
-    fold = 0.006 * hang**0.8 * math.cos(4*angle) + 0.003 * hang * math.cos(6*angle)
-    p.x += math.sin(angle)*fold; p.y -= math.cos(angle)*fold
-    p.z += hang**2 * 0.004 * math.cos(2*angle)
+    # Tension from the belt releases into four broad skirt pleats. The hem
+    # rises at the open fronts, with a little sweep toward the travelling leg.
+    fold = hang**0.8 * (0.009*math.cos(4*angle) - 0.003*math.cos(2*angle))
+    p.x += math.sin(angle)*fold + 0.008*hang*hang
+    p.y -= math.cos(angle)*fold
+    p.z += hang**3 * (0.033*max(0.0, math.cos(angle))**4 + 0.006*math.sin(angle))
+    # Broad diagonal shoulder-to-waist tension, restricted to the side panels.
+    side = math.sin(angle)**4
+    pinch = 0.004*side*math.exp(-((p.z-1.105-0.025*math.cos(angle))/0.026)**2)
+    p.x -= math.sin(angle)*pinch; p.y += math.cos(angle)*pinch
     p.z -= 0.026 * max(0.0,min(1.0,(p.z-1.34)/0.115))**2 * math.sin(angle)**2
     return p
 coat_body = loft('coat', COAT, 'coat', 48, 2, False, 0.009, 0.0)
@@ -166,32 +176,56 @@ def coat_weights(ob, base):      # base: the torso/thigh bones with their multip
     return w
 COAT_BASE = ['pelvis', 'spine', 'chest', ('thigh.L', 0.55), ('thigh.R', 0.55)]
 part(coat_body, COAT_BASE + HEM_BONES, coat_weights(coat_body, COAT_BASE))
-coat_facing = loft('coat_facing', [(0.571, 0, 0.018, 0.265, 0.185, 0.23), (0.600, 0, 0.017, 0.263, 0.184, 0.22)], 'coat_dark', 36, 0, False, 0.014)
-for v in coat_facing.data.vertices: v.co = coat_drape(v.co)
-part(coat_facing, COAT_BASE + HEM_BONES, coat_weights(coat_facing, COAT_BASE))
 coat_collar = loft('collar', [(1.43, 0, 0.016, 0.112, 0.095, 0.52), (1.48, 0, 0.018, 0.098, 0.083, 0.58), (1.535, 0, 0.020, 0.070, 0.060, 0.64)], 'coat_dark', 28, 1, False, 0.010)
 part(coat_collar, ['chest', 'neck'])
-for sd, x in (('L', 1), ('R', -1)):
-    flap = box('pocket.' + sd, (0.125 * x, -0.174, 0.805), (0.105, 0.018, 0.064), 'coat_dark', 0.005)
-    flap.data.transform(Matrix.Translation((0.125*x, -0.174, 0.805)) @ Matrix.Rotation(x * 0.08, 4, 'Y') @ Matrix.Translation((-0.125*x, 0.174, -0.805)))
-    part(flap, ['pelvis'] + HEM_BONES, coat_weights(flap, ['pelvis']))
-    btn = ellipsoid('pocket_btn.' + sd, (0.125 * x, -0.187, 0.810), (0.008, 0.004, 0.008), 'brass', 10, 6); part(btn, ['pelvis'] + HEM_BONES, coat_weights(btn, ['pelvis']))
+# Fit the pocket welts to the finished skirt, rather than attaching boxes.
+from mathutils.bvhtree import BVHTree
+coat_front_bvh = BVHTree.FromObject(coat_body, bpy.context.evaluated_depsgraph_get())
+def coat_front(x, z, lift=0.0025):
+    hit, n, _, _ = coat_front_bvh.ray_cast(V(x, -0.5, z), V(0, 1, 0))
+    if hit is None: raise ValueError('pocket misses coat at %.3f %.3f' % (x, z))
+    return hit + n*lift
+for sd, sx in (('L', 1), ('R', -1)):
+    bm = bmesh.new(); rows = []
+    for t in (0, 0.12, 0.88, 1):
+        rows.append([bm.verts.new(coat_front(sx*(0.088+i/24*0.090), 0.880+0.022*i/24-0.024*t)) for i in range(25)])
+    for a, b in zip(rows, rows[1:]):
+        for i in range(24): bm.faces.new((a[i], a[i+1], b[i+1], b[i]))
+    welt = finish('pocket_welt.'+sd, bm, 'coat_dark', True, 0, 0, 0.002, front_facing=True)
+    part(welt, COAT_BASE+HEM_BONES, coat_weights(welt, COAT_BASE))
 for z in (1.11, 1.22, 1.33):
     part(ellipsoid('vest_button', (0, -0.127 if z < 1.2 else -0.137, z), (0.008, 0.0045, 0.008), 'brass', 10, 6), TORSO)
-part(loft('belt', [(1.015, 0, 0, 0.205, 0.147), (1.072, 0, 0, 0.205, 0.147)], 'strap', 32, 0, False, 0.005), ['pelvis', 'spine'])
-part(box('buckle', (0, -0.158, 1.044), (0.064, 0.015, 0.054), 'brass', 0.005), ['pelvis', 'spine'])
-part(box('buckle_inset', (0, -0.168, 1.044), (0.043, 0.006, 0.034), 'strap', 0.003), ['pelvis', 'spine'])
-part(box('buckle_tongue', (0, -0.174, 1.044), (0.035, 0.006, 0.007), 'brass', 0.002), ['pelvis', 'spine'])
+bm = bmesh.new(); rows = []
+for z in (1.015, 1.019, 1.068, 1.072):
+    row = []
+    for i in range(128):
+        a = 2*math.pi*i/128; d = V(math.sin(a), -math.cos(a), 0); c = V(0, 0, z)
+        hit, normal, _, _ = coat_front_bvh.ray_cast(c+d*0.5, -d)
+        p = hit+normal*0.0045 if hit is not None and (hit-c).dot(d)>0 else V(0.190*math.sin(a), -0.139*math.cos(a), z)
+        row.append(bm.verts.new(p))
+    rows.append(row)
+for a, b in zip(rows, rows[1:]):
+    for i in range(128): bm.faces.new((a[i], a[(i+1)%128], b[(i+1)%128], b[i]))
+part(finish('belt', bm, 'strap', True, 0, 0, 0.003), ['pelvis', 'spine'])
+part(box('buckle', (0, -0.149, 1.044), (0.064, 0.015, 0.054), 'brass', 0.005), ['pelvis', 'spine'])
+part(box('buckle_inset', (0, -0.159, 1.044), (0.043, 0.006, 0.034), 'strap', 0.003), ['pelvis', 'spine'])
+part(box('buckle_tongue', (0, -0.165, 1.044), (0.035, 0.006, 0.007), 'brass', 0.002), ['pelvis', 'spine'])
 # -- articulated sleeves, fingerless gloves and layered leather wrist guards
 for s, x in (('L', 1), ('R', -1)):
     arms = ['chest', 'upper_arm.' + s, 'forearm.' + s]
-    sleeve = loft('sleeve.'+s, [(1.035, 0.263*x, 0.002, 0.046, 0.050), (1.085, 0.260*x, 0.002, 0.052, 0.056), (1.17, 0.256*x, -0.002, 0.058, 0.064), (1.23, 0.249*x, 0.006, 0.065, 0.072), (1.32, 0.236*x, 0.002, 0.071, 0.076), (1.415, 0.214*x, 0.006, 0.074, 0.077), (1.455, 0.204*x, 0.008, 0.050, 0.059)], 'coat', 28, folds=0.0)
+    sleeve = loft('sleeve.'+s, [(1.035, 0.263*x, 0.002, 0.044, 0.049), (1.075, 0.260*x, 0.002, 0.047, 0.053),
+        (1.13, 0.258*x, -0.002, 0.050, 0.056), (1.18, 0.253*x, 0.006, 0.057, 0.064),
+        (1.22, 0.248*x, 0.009, 0.061, 0.068), (1.31, 0.235*x, 0.006, 0.070, 0.075),
+        (1.39, 0.219*x, 0.005, 0.075, 0.076), (1.435, 0.210*x, 0.008, 0.066, 0.065),
+        (1.455, 0.204*x, 0.008, 0.048, 0.055)], 'coat', 40, 2, folds=0.00001)
     for v in sleeve.data.vertices:
         p = v.co; cx = x*(0.263 - 0.049*max(0.0, min(1.0, (p.z-1.035)/0.380)))
-        angle = math.atan2(p.x-cx, -p.y); elbow = math.exp(-((p.z-1.16)/0.055)**2)
-        # Compression lives at the elbow, and is measured about the sleeve's axis.
-        radial = 1 + 0.028*elbow*math.cos(65*(p.z-1.16)+1.2*math.sin(angle))
-        p.x = cx + (p.x-cx)*radial; p.y *= radial
+        angle = math.atan2(p.x-cx, -(p.y-0.004))
+        # Two large compression folds on the inside of the elbow.
+        inner = max(0.0, -x*math.sin(angle))**2
+        crease = 0.004*inner*(math.exp(-((p.z-1.172-0.018*math.cos(angle))/0.013)**2)
+            + 0.65*math.exp(-((p.z-1.213-0.012*math.cos(angle))/0.012)**2))
+        p.x -= math.sin(angle)*crease; p.y += math.cos(angle)*crease
     part(sleeve, arms)
     part(loft('cuff.'+s, [(1.024, 0.263*x, 0.002, 0.049, 0.054), (1.074, 0.261*x, 0.002, 0.052, 0.058)], 'coat_dark', 28, 0, False, 0.005), ['forearm.'+s, 'upper_arm.'+s])
     part(loft('forearm.' + s, [(0.94, 0.265*x, 0, 0.033, 0.037), (0.96, 0.265*x, 0, 0.038, 0.043), (1.04, 0.263*x, 0, 0.043, 0.049), (1.12, 0.259*x, 0, 0.048, 0.052)], 'skin', 18), ['upper_arm.' + s, 'forearm.' + s, 'hand.' + s])
@@ -199,16 +233,52 @@ for s, x in (('L', 1), ('R', -1)):
     for z in (0.955, 1.012):
         part(loft('bracer_strap.' + s, [(z-0.010, 0.265*x, 0, 0.049, 0.055), (z+0.010, 0.265*x, 0, 0.049, 0.055)], 'strap', 20, 0, False, 0.003), ['forearm.' + s])
         part(box('bracer_buckle.' + s, (0.314*x, -0.005, z), (0.008, 0.025, 0.023), 'brass', 0.002), ['forearm.' + s])
-# -- legs: breeches, a knee strap, tall boots with a turned cuff, a sole and a heel
+# -- tailored breeches and riding boots: knee, calf, ankle, vamp and a welted sole.
+# The gentle asymmetric centre lines suggest a planted left leg and relaxed right
+# knee while preserving the rig's original foot contacts and animation axes.
+def leg_line(s, z):
+    sx = 1 if s == 'L' else -1
+    u = max(0.0, min(1.0, (0.93-z)/0.84))
+    return V(sx*(0.10 + (0.016 if s == 'L' else 0.026)*u),
+             (-0.022 if s == 'R' else 0.004)*math.sin(math.pi*u), z)
+def fit_leg(ob, s):
+    sx = 1 if s == 'L' else -1
+    for v in ob.data.vertices:
+        c = leg_line(s, v.co.z); v.co.x += c.x-sx*0.10; v.co.y += c.y
+    return ob
 for s, x in (('L', 1), ('R', -1)):
-    part(loft('trousers.' + s, [(0.46, 0.10 * x, 0, 0.084, 0.086), (0.525, 0.10 * x, 0, 0.100, 0.102), (0.60, 0.10 * x, 0, 0.097, 0.099), (0.72, 0.10 * x, 0, 0.106, 0.108), (0.88, 0.10 * x, 0, 0.086, 0.098), (0.98, 0.10 * x, 0, 0.074, 0.094)], 'trousers', 24, folds=0.025), ['pelvis', 'thigh.' + s, 'shin.' + s])      # bloused over the boot tops
-    part(loft('knee_strap.' + s, [(0.50, 0.10 * x, 0, 0.078, 0.080), (0.535, 0.10 * x, 0, 0.078, 0.080)], 'strap', 12, 0), ['thigh.' + s, 'shin.' + s])
-    part(loft('boot_shaft.' + s, [(0.07, 0.10 * x, 0.004, 0.066, 0.075), (0.13, 0.10 * x, 0.004, 0.057, 0.065), (0.22, 0.10 * x, 0.006, 0.066, 0.072), (0.32, 0.10 * x, 0.008, 0.077, 0.081), (0.42, 0.10 * x, 0.004, 0.082, 0.084), (0.470, 0.10 * x, 0.004, 0.088, 0.088)], 'boots', 18), ['shin.' + s, 'foot.' + s])      # a shaped boot: a slim ankle, a full calf
-    part(loft('boot_cuff.' + s, [(0.44, 0.10 * x, 0.004, 0.093, 0.093), (0.505, 0.10 * x, 0.004, 0.106, 0.106)], 'boots_cuff', 14, 0), ['shin.' + s])
-    part(ellipsoid('boot_toe.' + s, (0.10 * x, -0.056, 0.064), (0.080, 0.174, 0.071), 'boots', 14, 9), ['foot.' + s])
-    part(box('boot_sole.' + s, (0.10 * x, -0.066, 0.020), (0.140, 0.300, 0.034), 'sole', 0.016), ['foot.' + s])
-    part(box('boot_heel.' + s, (0.10 * x, 0.048, 0.033), (0.112, 0.080, 0.050), 'sole', 0.010), ['foot.' + s, 'shin.' + s])
-    part(box('boot_lace.' + s, (0.10 * x, -0.095, 0.112), (0.034, 0.100, 0.014), 'boots_cuff', 0.004, Matrix.Rotation(-0.55, 3, 'X')), ['foot.' + s])
+    def leg_part(ob, bones): part(fit_leg(ob, s), bones)
+    leg_part(loft('trousers.' + s, [(0.43, 0.10*x, 0.003, 0.064, 0.067), (0.49, 0.10*x, -0.003, 0.070, 0.071),
+        (0.54, 0.10*x, -0.006, 0.078, 0.080), (0.59, 0.10*x, -0.004, 0.083, 0.083),
+        (0.68, 0.10*x, 0.002, 0.096, 0.098), (0.77, 0.10*x, 0.004, 0.100, 0.104),
+        (0.88, 0.10*x, 0, 0.084, 0.098), (0.98, 0.10*x, 0, 0.074, 0.094)], 'trousers', 32, 2), ['pelvis', 'thigh.'+s, 'shin.'+s])
+    leg_part(loft('boot_shaft.'+s, [(0.075, 0.10*x, 0.010, 0.055, 0.066), (0.13, 0.10*x, 0.006, 0.049, 0.058),
+        (0.18, 0.10*x, 0.010, 0.048, 0.057), (0.25, 0.10*x, 0.019, 0.058, 0.067),
+        (0.33, 0.10*x, 0.022, 0.073, 0.079), (0.41, 0.10*x, 0.010, 0.077, 0.078),
+        (0.46, 0.10*x, 0.004, 0.074, 0.073)], 'boots', 32, 2), ['shin.'+s, 'foot.'+s])
+    leg_part(loft('boot_cuff.'+s, [(0.433, 0.10*x, 0.004, 0.078, 0.079), (0.439, 0.10*x, 0.004, 0.085, 0.083),
+        (0.476, 0.10*x, 0.004, 0.088, 0.087), (0.484, 0.10*x, 0.004, 0.085, 0.084)], 'boots_cuff', 32, 1, False, 0.006), ['shin.'+s])
+    # Cross sections along the foot, with a broad toe box, pitched vamp and heel.
+    def foot_form(name, profiles, material):
+        bm = bmesh.new(); rows = []
+        for y, width, bottom, top in profiles:
+            row = []
+            for i in range(32):
+                a=2*math.pi*i/32; sn=math.sin(a); cs=math.cos(a)
+                row.append(bm.verts.new((0.10*x+width*math.copysign(abs(sn)**0.8,sn), y,
+                    (top+bottom)/2+(top-bottom)/2*math.copysign(abs(cs)**0.65,cs))))
+            rows.append(row)
+        for a,b in zip(rows,rows[1:]):
+            for i in range(32): bm.faces.new((a[i],a[(i+1)%32],b[(i+1)%32],b[i]))
+        bm.faces.new(rows[0][::-1]); bm.faces.new(rows[-1])
+        return finish(name,bm,material,True,2)
+    leg_part(foot_form('boot_foot.'+s, [(-0.224,0.020,0.035,0.068),(-0.214,0.058,0.032,0.091),
+        (-0.176,0.073,0.031,0.103),(-0.112,0.068,0.032,0.124),(-0.045,0.058,0.034,0.157),
+        (0.018,0.053,0.036,0.160),(0.064,0.052,0.037,0.119),(0.078,0.032,0.039,0.090)],'boots'), ['foot.'+s])
+    leg_part(foot_form('boot_sole.'+s, [(-0.232,0.025,0.012,0.037),(-0.220,0.061,0.011,0.039),
+        (-0.172,0.077,0.010,0.039),(-0.095,0.071,0.014,0.039),(-0.030,0.059,0.026,0.040),
+        (0.052,0.057,0.015,0.041),(0.082,0.041,0.013,0.040)],'sole'), ['foot.'+s])
+    leg_part(box('boot_heel.'+s,(0.10*x,0.044,0.023),(0.107,0.081,0.041),'sole',0.008), ['foot.'+s])
 # -- the head: sculpted as signed distance fields (head.py; the measurements are character_spec.py's): the skull, the face's
 # planes, real eyeballs in sockets under thick lids, the nose, the lips, the ears and the neck, as one surface. It is meshed with
 # surface nets, decimated to its budget and shaded with the field's own normals. docs/CHARACTER.md says why it looks the way it does.
@@ -389,11 +459,16 @@ part(brim, ['head'])
 crown = loft('hat_crown', [(1.756, 0, 0.006, HAT_OPEN[0] - 0.001, HAT_OPEN[1] - 0.001), (1.768, 0, 0.006, *HAT_OPEN),      # (a support ring: the wall stays straight down under the brim)
      (1.806, 0, 0.006, 0.115, 0.127), (1.844, 0.004, 0.008, 0.115, 0.125), (1.877, 0.006, 0.010, 0.106, 0.114), (1.895, 0.004, 0.012, 0.078, 0.094), (1.899, 0, 0.014, 0.038, 0.046)], 'hat', 32, 1)
 for v in crown.data.vertices:
-    if v.co.z > 1.85:
-        v.co.z -= 0.013 * math.exp(-((v.co.x / 0.045) ** 2 + ((v.co.y - 0.01) / 0.065) ** 2))
+    p=v.co; u=max(0.0,min(1.0,(p.z-1.810)/0.080))
+    # A broad centre dent with two clear high rails, and a front pinch.
+    p.z -= 0.022*u*u*math.exp(-(p.x/0.036)**2)
+    p.x *= 1-0.16*u*math.exp(-((p.y+0.073)/0.045)**2)
+    p.y += 0.009*u*math.exp(-((p.x/0.040)**2+((p.y+0.100)/0.035)**2))
 part(crown, ['head'])
 part(loft('hat_band', [(1.776, 0, 0.006, 0.116, 0.128), (1.803, 0, 0.006, 0.119, 0.131)], 'band', 40, 0, False, 0.002), ['head'])
-part(ellipsoid('hat_knot', (0.095, -0.078, 1.790), (0.015, 0.012, 0.013), 'band', 14, 8), ['head'])
+part(box('hat_knot', (0.095,-0.079,1.790), (0.021,0.014,0.024), 'band', 0.004, Matrix.Rotation(-0.7,3,'Z')), ['head'])
+for side in (-1,1):
+    part(box('hat_band_fold', (0.095+side*0.017,-0.078-side*0.010,1.788), (0.025,0.008,0.016), 'band', 0.003, Matrix.Rotation(-0.55+side*0.25,3,'Z')), ['head'])
 f0,f1=V(0.097,-0.060,1.798),V(0.160,0.047,1.973)
 bm=bmesh.new();rows=[];shaft=[]
 for i in range(25):
@@ -585,30 +660,47 @@ def coat_ring(z):
 def coat_point(z, angle, offset=0.003):
     cx, cy, rx, ry, gap = coat_ring(z)
     return coat_drape(Vector((cx+(rx+offset)*math.sin(angle), cy-(ry+offset)*math.cos(angle), z)))
+# Folded lapels use broad tapered panels on the actual chest surface.
 for sd, sx in (('L', 1), ('R', -1)):
-    bm = bmesh.new(); rows = []
-    for z, width in ((1.17, 0.006), (1.25, 0.025), (1.36, 0.043), (1.445, 0.022)):
-        cx, cy, rx, ry, gap = coat_ring(z)
-        edge = V(cx+sx*(rx+0.005)*math.sin(gap), cy-(ry+0.005)*math.cos(gap), z)
-        outer = edge + V(sx*width, -0.009, 0.002); inner = edge - V(sx*0.004, 0, 0)
-        rows.append([bm.verts.new(inner), bm.verts.new(outer)])
-    for a, b in zip(rows, rows[1:]): bm.faces.new((a[0], b[0], b[1], a[1]))
-    stitch_a, stitch_b = rows[0][1].co.copy(), rows[-1][1].co.copy()
-    part(face_finish('lapel.'+sd, bm, 'coat_dark', True, 0, 0, 0.005), ['spine', 'chest'])
-    stitches('lapel_stitch.'+sd, stitch_a, stitch_b, 16, ['spine', 'chest'], 'thread')
-    stitches('pocket_stitch.'+sd, (sx*0.080, -0.187, 0.827), (sx*0.170, -0.187, 0.827), 9, ['pelvis'], on_coat=True)
-    for i in range(5):
-        z = 0.155 + i*0.047
-        for side in (-1, 1):
-            part(ellipsoid('boot_eyelet.'+sd, (sx*0.10+side*0.025, -0.073, z), (0.004, 0.0025, 0.004), 'brass', 8, 6), ['shin.'+sd])
-        if i < 4:
-            cord('boot_lacing.'+sd, [(sx*0.10-0.022, -0.078, z), (sx*0.10+0.022, -0.078, z+0.047)], 0.0020, 'boots_cuff', ['shin.'+sd])
-            cord('boot_lacing.'+sd, [(sx*0.10+0.022, -0.079, z), (sx*0.10-0.022, -0.079, z+0.047)], 0.0020, 'boots_cuff', ['shin.'+sd])
-    welt = [V(sx*0.10+0.069*math.cos(a), -0.052+0.134*math.sin(a), 0.039) for a in [2*math.pi*i/24 for i in range(25)]]
-    cord('boot_welt.'+sd, welt, 0.0018, 'boots_cuff', ['foot.'+sd], 4)
+    bm=bmesh.new(); rows=[]; edge=[]
+    for z,width in ((1.18,0.003),(1.24,0.018),(1.34,0.037),(1.395,0.029),(1.420,0.010)):
+        cx,cy,rx,ry,gap=coat_ring(z); xx=sx*rx*math.sin(gap)
+        row=[]
+        for i in range(9):
+            t=i/8; p=coat_front(xx+sx*(0.002+width*t),z,0.003)
+            p.y-=0.006*math.sin(math.pi*t)
+            row.append(bm.verts.new(p))
+        rows.append(row); edge.append(row[-1].co.copy())
+    for a,b in zip(rows,rows[1:]):
+        for i in range(8):bm.faces.new((a[i],a[i+1],b[i+1],b[i]))
+    part(face_finish('lapel.'+sd,bm,'coat_dark',True,0,0,0.003),['spine','chest'])
+    cord('lapel_piping.'+sd,edge,0.0014,'coat', ['spine','chest'])
+    # Top edges of the slanted inset pockets.
+    points=[coat_front(sx*(0.088+i/24*0.090),0.880+0.022*i/24,0.004) for i in range(25)]
+    for a,b in zip(points,points[1:]):
+        ob=tube('pocket_piping.'+sd,a,b,0.0016,'coat',6)
+        part(ob,COAT_BASE+HEM_BONES,coat_weights(ob,COAT_BASE))
+    shaft=next(ob for ob,_,_ in parts if ob.name=='boot_shaft.'+sd)
+    boot_bvh=SurfaceBVH.FromObject(shaft,bpy.context.evaluated_depsgraph_get())
+    def boot_front(dx,z,lift=0.002):
+        c=leg_line(sd,z); hit,n,_,_=boot_bvh.ray_cast(V(c.x+dx,-0.4,z),V(0,1,0))
+        if hit is None: raise ValueError('boot seam misses shaft')
+        return hit+n*lift
+    # Fewer, larger construction marks: a long centre tongue and three laces.
+    for side in (-1,1):
+        cord('boot_tongue.'+sd,[boot_front(side*0.022,0.16+i*0.020) for i in range(13)],0.0013,'boots_cuff',['shin.'+sd])
+    for i in range(3):
+        z=0.205+i*0.064
+        for side in (-1,1):
+            part(ellipsoid('boot_eyelet.'+sd,boot_front(side*0.024,z,0.003),(0.0045,0.0025,0.0045),'brass',10,6),['shin.'+sd])
+        cord('boot_lacing.'+sd,[boot_front(-0.023+0.046*j/8,z+0.018*math.sin(math.pi*j/8),0.004) for j in range(9)],0.0023,'boots_cuff',['shin.'+sd])
+    c=leg_line(sd,0.09)
+    welt=[V(c.x+0.071*math.cos(a),-0.071+c.y+0.149*math.sin(a),0.040) for a in [2*math.pi*i/64 for i in range(65)]]
+    cord('boot_welt.'+sd,welt,0.0022,'boots_cuff',['foot.'+sd],6)
 # Project the edge trim onto the finished cloth, including subdivision and drape.
 coat_bvh = SurfaceBVH.FromObject(coat_body, bpy.context.evaluated_depsgraph_get())
 def cloth_point(z, angle, lift=0.0028):
+    z=coat_point(z,angle,0).z
     origin = V(0,0.010,z); direction=V(math.sin(angle),-math.cos(angle),0)
     hit, normal, _, _ = coat_bvh.ray_cast(origin+direction*0.5,-direction)
     return hit + normal*lift if hit is not None else coat_point(z,angle,lift)
@@ -620,19 +712,24 @@ for sd,sx in (('L',1),('R',-1)):
     for a,b in zip(points,points[1:]):
         ob=tube('coat_edge.'+sd,a,b,0.0034,'coat_dark',8)
         part(ob,COAT_BASE+HEM_BONES,coat_weights(ob,COAT_BASE))
-for i in range(72):
-    a0,a1=0.26+i*(2*math.pi-0.52)/72,0.26+(i+1)*(2*math.pi-0.52)/72
-    ob=tube('hem_binding',cloth_point(0.589,a0),cloth_point(0.589,a1),0.003,'coat_dark',8)
+# A single fitted facing ribbon gives the hem weight without segmented tubing.
+bm=bmesh.new(); rows=[]
+for z in (0.582,0.585,0.608,0.611):
+    rows.append([bm.verts.new(cloth_point(z,0.33+(2*math.pi-0.66)*i/128,0.0018)) for i in range(129)])
+for a,b in zip(rows,rows[1:]):
+    for i in range(128):bm.faces.new((a[i],a[i+1],b[i+1],b[i]))
+ob=finish('hem_facing',bm,'coat_dark',True,0,0,0.0015)
+part(ob,COAT_BASE+HEM_BONES,coat_weights(ob,COAT_BASE))
+points=[cloth_point(z,math.pi,0.002) for z in (0.62,0.75,0.90,1.05,1.20,1.35,1.43)]
+for a,b in zip(points,points[1:]):
+    ob=tube('back_seam',a,b,0.0013,'coat_dark',6)
     part(ob,COAT_BASE+HEM_BONES,coat_weights(ob,COAT_BASE))
-cord('back_seam', [coat_point(z, math.pi, 0.004) for z in (0.60, 0.75, 0.90, 1.05, 1.20, 1.35, 1.43)], 0.0018, 'coat_dark', TORSO)
-stitches('satchel_stitch', (-0.371, -0.085, 0.775), (-0.371, -0.085, 0.945), 15, ['pelvis', 'spine'])
-stitches('satchel_stitch', (-0.371, 0.165, 0.775), (-0.371, 0.165, 0.945), 15, ['pelvis', 'spine'])
 
 for sd,sx in (('L',1),('R',-1)):
-    pivot=V(sx*0.10,0,0.09)
+    pivot=leg_line(sd,0.09)
     xform=Matrix.Translation(pivot)@Matrix.Rotation(sx*math.radians(7),4,'Z')@Matrix.Translation(-pivot)
     for ob,bones,_ in parts:
-        if ob.name.startswith(('boot_toe.'+sd,'boot_sole.'+sd,'boot_heel.'+sd,'boot_lace.'+sd,'boot_welt.'+sd)):
+        if ob.name.startswith(('boot_foot.'+sd,'boot_sole.'+sd,'boot_heel.'+sd,'boot_lace.'+sd,'boot_welt.'+sd)):
             ob.data.transform(xform)
 
 # Relax the bind pose without changing the animation's angular authoring. The
