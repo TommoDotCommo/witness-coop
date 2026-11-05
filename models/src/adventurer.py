@@ -130,14 +130,14 @@ def part(ob, bones, weights=None): parts.append((ob, bones, weights))
 TORSO = ['pelvis', 'spine', 'chest']
 # -- layered travelling clothes: a shaped waistcoat, shirt and an open tailored coat
 part(loft('hips', [(0.84, 0, 0.005, 0.178, 0.122), (0.94, 0, 0, 0.185, 0.126), (1.02, 0, 0, 0.174, 0.120)], 'trousers', 20), ['pelvis', 'thigh.L', 'thigh.R'])
-part(loft('vest', [(0.98, 0, 0, 0.176, 0.122), (1.10, 0, -0.002, 0.164, 0.115), (1.24, 0, 0, 0.188, 0.128), (1.36, 0, 0.005, 0.211, 0.137), (1.43, 0, 0.010, 0.190, 0.116)], 'vest', 24, folds=0.012), TORSO)
+part(loft('vest', [(0.98, 0, 0, 0.176, 0.122), (1.10, 0, -0.002, 0.164, 0.115), (1.24, 0, 0, 0.184, 0.128), (1.33, 0, 0.004, 0.192, 0.132), (1.39, 0, 0.007, 0.165, 0.124), (1.43, 0, 0.010, 0.128, 0.110), (1.455, 0, 0.011, 0.110, 0.100)], 'vest', 24, folds=0.012), TORSO)
 part(loft('shirt_collar', [(1.42, 0, 0.005, 0.112, 0.096), (1.50, 0, 0.008, 0.092, 0.082)], 'shirt', 20), ['chest', 'neck'])
 COAT = [(0.57, 0, 0.018, 0.252, 0.174, 0.11), (0.585, 0, 0.018, 0.253, 0.175, 0.105),      # (the skirt's fronts nearly meet: a wide inverted V showed the breeches between the legs)
         (0.70, 0, 0.012, 0.247, 0.173, 0.085), (0.86, 0, 0.004, 0.232, 0.158, 0.065),
         (0.97, 0, 0, 0.199, 0.141, 0.055), (1.04, 0, 0, 0.186, 0.132, 0.055),
-        (1.12, 0, 0, 0.191, 0.135, 0.12), (1.23, 0, 0.002, 0.219, 0.146, 0.27),
-        (1.34, 0, 0.006, 0.233, 0.151, 0.49), (1.41, 0, 0.010, 0.222, 0.141, 0.63),
-        (1.455, 0, 0.012, 0.200, 0.122, 0.74)]
+        (1.12, 0, 0, 0.191, 0.135, 0.12), (1.23, 0, 0.002, 0.212, 0.144, 0.27),      # the shoulders slope up to the neck under the scarf
+        (1.34, 0, 0.006, 0.214, 0.143, 0.42), (1.40, 0, 0.008, 0.190, 0.134, 0.50),      # (a level top out to square shoulders read as a box)
+        (1.44, 0, 0.010, 0.150, 0.123, 0.58), (1.465, 0, 0.012, 0.118, 0.111, 0.66)]
 def coat_drape(co):
     p = Vector(co); angle = math.atan2(p.x, -(p.y-0.010))
     hang = max(0.0, min(1.0, (1.04-p.z)/0.47))
@@ -177,7 +177,7 @@ def coat_weights(ob, base):      # base: the torso/thigh bones with their multip
 COAT_BASE = ['pelvis', 'spine', 'chest', ('thigh.L', 0.55), ('thigh.R', 0.55)]
 part(coat_body, COAT_BASE + HEM_BONES, coat_weights(coat_body, COAT_BASE))
 coat_collar = loft('collar', [(1.43, 0, 0.016, 0.106, 0.090, 0.52), (1.465, 0, 0.018, 0.092, 0.078, 0.58), (1.500, 0, 0.020, 0.070, 0.060, 0.64)], 'coat_dark', 28, 1, False, 0.010)      # (under the slimmer scarf)
-part(coat_collar, ['chest', 'neck'])
+# (the stand collar is not drawn: the scarf covers the neck, and the collar floated round it as a thin shell; it stays as a guide for the scarf's fit)
 # Fit the pocket welts to the finished skirt, rather than attaching boxes.
 from mathutils.bvhtree import BVHTree
 coat_front_bvh = BVHTree.FromObject(coat_body, bpy.context.evaluated_depsgraph_get())
@@ -215,9 +215,9 @@ for s, x in (('L', 1), ('R', -1)):
     arms = ['chest', 'upper_arm.' + s, 'forearm.' + s]
     sleeve = loft('sleeve.'+s, [(1.035, 0.263*x, 0.002, 0.044, 0.049), (1.075, 0.260*x, 0.002, 0.047, 0.053),
         (1.13, 0.258*x, -0.002, 0.050, 0.056), (1.18, 0.253*x, 0.006, 0.057, 0.064),
-        (1.22, 0.248*x, 0.009, 0.061, 0.068), (1.31, 0.233*x, 0.006, 0.068, 0.074),
-        (1.39, 0.208*x, 0.005, 0.068, 0.071), (1.435, 0.196*x, 0.008, 0.056, 0.059),      # (a slimmer sleeve head set in toward the neck: the puffed caps widened the shoulders)
-        (1.455, 0.190*x, 0.008, 0.042, 0.048)], 'coat', 40, 2, folds=0.00001)
+        (1.22, 0.248*x, 0.009, 0.058, 0.064), (1.31, 0.234*x, 0.006, 0.061, 0.066),      # (a slimmer upper sleeve)
+        (1.37, 0.212*x, 0.005, 0.061, 0.065), (1.405, 0.204*x, 0.008, 0.053, 0.057),      # (the sleeve head ends at the shoulder's slope, level with the joint: it stood up beside the scarf like a pad)
+        (1.425, 0.196*x, 0.008, 0.040, 0.046)], 'coat', 40, 2, folds=0.00001)
     for v in sleeve.data.vertices:
         p = v.co; cx = x*(0.263 - 0.049*max(0.0, min(1.0, (p.z-1.035)/0.380)))
         angle = math.atan2(p.x-cx, -(p.y-0.004))
@@ -517,6 +517,8 @@ scarf_wrap = loft('scarf', [(1.425,0,0.008,0.114,0.101),(1.440,0,0.006,0.113,0.1
 for v in scarf_wrap.data.vertices:
     p=v.co;angle=math.atan2(p.x,-(p.y-0.006));u=max(0,min(1,(p.z-1.425)/0.134))
     fold=0.003*math.sin(math.pi*u)*math.sin(4*math.pi*u+0.9*math.sin(angle))
+    turns=0.0075*math.sin(math.pi*min(1.0,u*1.15))*max(0.0,math.sin(2*math.pi*(1.75*u)+0.55*angle))**1.6      # two wrapped turns spiralling round the neck (a smooth cone read as a neck brace)
+    fold+=turns
     p.x+=math.sin(angle)*fold;p.y-=math.cos(angle)*fold
     p.z+=0.005*math.sin(angle)*u*u
     p.z+=0.034*(0.5-0.5*math.cos(angle))*u**1.5      # higher at the back and sides: less bare neck between the hair and the scarf
@@ -543,7 +545,7 @@ KNOT = V(0.034, front_of(0.034, 1.452, [scarf_bvh]) + 0.009, 1.452)
 part(ellipsoid('scarf_knot', tuple(KNOT), (0.027, 0.019, 0.022), 'scarf', 20, 12), ['neck', 'chest'])      # (smaller: the big ball under the chin met every hand-to-chin emote)
 # The scarf tails hang from chains of bones (the proxy swings them as pendulums when the player moves or the wind blows); the satchel and the
 # canteen hang from one bone each. A chain bone starts at a ring's centre and ends at the next ring's.
-def on_chest(rings, lift=0.0085):      # (z, x, _, rx, ry): y from the chest; the first ring starts in the knot
+def on_chest(rings, lift=0.013):      # (over the satchel strap)      # (z, x, _, rx, ry): y from the chest; the first ring starts in the knot
     out = []
     for k, (z, x, _, rx, ry) in enumerate(rings):
         y = KNOT.y - 0.004 if k == 0 else front_of(x, z, chest_bvhs) - ry - lift
@@ -598,15 +600,17 @@ dist = [strap_cast(o, n) for o, n in guide]
 over = set(range(40, 63))      # over the shoulder the band lies on the cloth (bridging the dip between collar and sleeve head, it floated in a hoop)
 for _ in range(80):      # taut across the chest and back: no point sits below the straight line between its neighbours
     dist = [dist[0]] + [dist[k] if k in over else max(dist[k], 0.5 * (dist[k - 1] + dist[k + 1])) for k in range(1, len(dist) - 1)] + [dist[-1]]
-centre = [o + n * (d + 0.0045) for (o, n), d in zip(guide, dist)]
+centre = [o + n * (d + 0.0090) for (o, n), d in zip(guide, dist)]      # (clear of the lapels, which stand 3 to 6 mm off the coat)
 for _ in range(6):      # a smooth centre line (the shoulder arc and the chest and back runs meet without a kink)
     centre = [centre[0]] + [centre[k] * 0.5 + (centre[k - 1] + centre[k + 1]) * 0.25 for k in range(1, len(centre) - 1)] + [centre[-1]]
-    centre = [c_ + n_ * max(0.0, strap_cast(o_, n_) + 0.0040 - (c_ - o_).dot(n_)) for c_, (o_, n_) in zip(centre, guide)]      # never into the cloth
+    centre = [c_ + n_ * max(0.0, strap_cast(o_, n_) + 0.0085 - (c_ - o_).dot(n_)) for c_, (o_, n_) in zip(centre, guide)]      # never into the cloth
 centre = [V(0.312 * -1 + 0.03, -0.045, 0.985)] + centre + [V(-0.282, 0.125, 0.985)]      # down to the bag's front and back corners
 normals = [guide[0][1]] + [n for _, n in guide] + [guide[-1][1]]
-bm = bmesh.new(); rows = []
+bm = bmesh.new(); rows = []; prev_side = None
 for k, (c, n) in enumerate(zip(centre, normals)):
     a = centre[max(0, k - 1)]; b = centre[min(len(centre) - 1, k + 1)]; tang = (b - a).normalized(); side = tang.cross(n).normalized() * 0.016
+    if prev_side is not None and side.dot(prev_side) < 0: side = -side      # (a flipped side twisted the band into a bow tie)
+    prev_side = side
     rows.append([bm.verts.new(c - side), bm.verts.new(c + side)])
 for r0, r1 in zip(rows, rows[1:]): bm.faces.new((r0[0], r0[1], r1[1], r1[0]))
 satchel_strap = finish('satchel_strap', bm, 'strap', True, 0, 0, 0.003)
@@ -830,6 +834,22 @@ for ob, _, _ in parts:
     if ob.name.startswith(('rucksack', 'pack_pocket', 'pack_strap', 'pack_keeper', 'motif_rucksack', 'bedroll')): ob.data.transform(_rk)
     elif ob.name.startswith(('satchel', 'motif_satchel')) and not ob.name.startswith('satchel_strap'): ob.data.transform(_sk)
 h_, t_, p_ = B['satchel']; B['satchel'] = (_sk @ h_, _sk @ t_, p_)
+
+# Sloping shoulders (the owner, 2026-11-05: the top of the torso "doesn't look right at all"): the coat's top ran level out to square
+# shoulders with the sleeve heads standing up beside the scarf like pads. Every garment above the chest comes down with distance from the
+# neck (up to SHOULDER_SLOPE at the shoulder point), so the line falls from the scarf to the arm. The head, the hat, the bags and the bones
+# do not move (the emotes keep their contacts).
+SHOULDER_SLOPE = 0.0      # (the slope is now designed into the coat's, waistcoat's and sleeves' rings; deforming the layers afterwards made them cross)
+_HEADISH = {'head', 'eye.L', 'eye.R', 'lid.L', 'lid.R', 'brow.L', 'brow.R', 'lip_lower'}
+def _sl01(t): t = max(0.0, min(1.0, t)); return t * t * (3 - 2 * t)
+if SHOULDER_SLOPE:
+    for ob, bones, _ in parts:
+        names = {b[0] if isinstance(b, tuple) else b for b in bones}
+        if names & _HEADISH or ob.name.startswith(('rucksack', 'pack_', 'motif_rucksack', 'bedroll', 'hand', 'glove')): continue
+        for v in ob.data.vertices:
+            p = v.co; d = SHOULDER_SLOPE * _sl01((abs(p.x) - 0.065) / 0.15) * _sl01((p.z - 1.29) / 0.12)
+            if d: v.co = Vector((p.x, p.y, p.z - d))
+    print('REPORT shoulders slope %.3f m at the shoulder point' % SHOULDER_SLOPE)
 
 # Narrower shoulders (the owner, 2026-11-05: "the shoulders are too wide apart"): every part and every bone is moved toward the midline by
 # the same smooth field (nothing above the waist and beyond 10 cm of the midline escapes it, nothing below the hands moves), so layered
