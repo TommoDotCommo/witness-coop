@@ -47,10 +47,12 @@ def _skin_raw():
     fingers = []
     for i, (y, lengths, r0) in enumerate(FINGERS):
         f, _ = _finger(y, lengths, r0, (i - 1.5) * 0.050); fingers.append(f)
+    PARTS['palm'] = palm; PARTS['fingers'] = sdf.union(0.0045, *fingers)
     # the thumb: from the heel of the palm, forward and down, curled in toward the index finger
     t0 = np.array([0.2600, -0.0300, 0.8800]); t1 = t0 + np.array([-0.0040, -0.0165, -0.0270]); t2 = t1 + np.array([-0.0070, -0.0060, -0.0200])
     global THUMB_TIP; THUMB_TIP = t2
     thumb = s.union(0.004, s.capsule(t0, t1, 0.0112, 0.0100), s.capsule(t1, t2, 0.0100, 0.0082))
+    PARTS['thumb'] = thumb; PARTS['thumb_line'] = (t0, t2)
     wrist = s.capsule(WRIST + np.array([0, 0, 0.030]), WRIST + np.array([0, 0, -0.022]), 0.0225, 0.0230)  # into the forearm
     hand = s.union(0.006, palm, wrist, thumb)
     hand = s.blend(hand, [(f, 0.0055, 'add') for f in fingers])
@@ -58,6 +60,35 @@ def _skin_raw():
     return hand
 
 THUMB_TIP = np.zeros(3)
+PARTS = {}
+
+def _raw(p, side):      # a built point (world, left or right hand) back to the raw left-hand sculpt's coordinates
+    q = np.array(p, float).reshape(-1, 3).copy()
+    if side < 0: q[:, 0] = -q[:, 0]
+    return WRIST + (q - WRIST) / HAND_SCALE
+
+def bone_points(side=1):
+    """Head and tail of the finger and thumb bones, scaled and mirrored like the hand: the four fingers curl as one about the knuckle
+    row, the thumb about its base (fists, a thumbs up, pointing)."""
+    if not PARTS: _skin_raw()
+    def built(p):
+        q = WRIST + (np.asarray(p, float) - WRIST) * HAND_SCALE
+        return q if side > 0 else q * np.array([-1.0, 1.0, 1.0])
+    kn = np.array([0.2662, 0.0, KNUCKLE_Z]); d = np.array([-np.sin(0.45), 0.0, -np.cos(0.45)])
+    t0, t2 = PARTS['thumb_line']
+    return {'fingers': (built(kn), built(kn + d * 0.050)), 'thumb': (built(t0), built(t2))}
+
+def part_weights(points, side=1):
+    """(finger, thumb) weights for points of the built hand or glove, from the sculpt's own parts: a point nearer a finger than the
+    palm follows the fingers (fading in across the knuckles), one on the thumb beyond its base follows the thumb."""
+    if not PARTS: _skin_raw()
+    q = _raw(points, side)
+    dp, df, dt = PARTS['palm'](q), PARTS['fingers'](q), PARTS['thumb'](q)
+    wf = np.clip((dp - df) / 0.006 + 0.5, 0, 1) * np.clip((KNUCKLE_Z + 0.006 - q[:, 2]) / 0.012, 0, 1)
+    t0, t2 = PARTS['thumb_line']; ax = t2 - t0; u = ((q - t0) @ ax) / (ax @ ax)
+    wt = np.clip((np.minimum(dp, df) - dt) / 0.006 + 0.5, 0, 1) * np.clip((u - 0.05) / 0.30, 0, 1)
+    wt = np.minimum(wt, 1 - wf)
+    return wf, wt
 def glove(side=1):
     """The fingerless glove: the hand's surface lifted 2.2 mm, from a rolled cuff at the wrist to just past the knuckles, with
     smooth rounded edges (no raw cut planes), the fingers and the thumb's tip bare."""

@@ -157,16 +157,17 @@ static void Blit(const Tile& t, std::vector<uint8_t>& sheet, int sw, int ox, int
 
 int main(int argc, char** argv) {
     if (argc < 3) { fprintf(stderr, "usage: char_lookdev <glb> <out.png> [--sheet body|face|hands|all] [--size k] [--time s]\n"); return 2; }
-    std::string sheetKind = "all"; float size = 1, when = .6f;
+    std::string sheetKind = "all", clipName = "idle"; float size = 1, when = .6f;
     for (int i = 3; i + 1 < argc; i += 2) {
         if (!strcmp(argv[i], "--sheet")) sheetKind = argv[i + 1];
         else if (!strcmp(argv[i], "--size")) size = float(atof(argv[i + 1]));
         else if (!strcmp(argv[i], "--time")) when = float(atof(argv[i + 1]));
+        else if (!strcmp(argv[i], "--clip")) clipName = argv[i + 1];      // another baked clip (a fidget) in place of the idle
         else if (!strcmp(argv[i], "--light")) g_island = !strcmp(argv[i + 1], "island");
     }
     std::ifstream f(argv[1], std::ios::binary); std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(f)), {});
     Model m; std::string err; if (!LoadGlb(bytes.data(), bytes.size(), &m, &err)) { fprintf(stderr, "%s\n", err.c_str()); return 3; }
-    std::vector<float> mats(kMaxJoints * 16); JointMatrices(m, when < 0 ? -1 : FindClip(m, "idle"), std::max(0.f, when), mats.data());
+    std::vector<float> mats(kMaxJoints * 16); JointMatrices(m, when < 0 ? -1 : FindClip(m, clipName.c_str()), std::max(0.f, when), mats.data());
     auto bindT = BindTangents(m); Posed p = Pose(m, mats.data(), bindT);
     auto jp = [&](const char* n) { int j = JointOf(m, n); return j >= 0 ? JointPos(m, mats.data(), j) : std::array<float, 3>{0, 1.6f, 0}; };
     auto head = jp("head"); auto eyeL = jp("eye.L"), eyeR = jp("eye.R"); float eyeY = JointOf(m, "eye.L") >= 0 ? (eyeL[1] + eyeR[1]) * .5f : 1.6766f;      // a lab head has no joints: the spec's eye line

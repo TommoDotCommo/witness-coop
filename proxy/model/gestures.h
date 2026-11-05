@@ -47,8 +47,8 @@ inline GesturePose GestureSample(int id, float t) { return GestureSampleFull(id,
 
 // Spring frequency (Hz) and damping ratio per bone: the torso is heavy and damped, the hands
 // are light and settle with a little overshoot. Legs are stiff (the IK does their work).
-inline constexpr float kSpringHz[GestureBones]   = {2.6f, 3.0f, 3.4f, 3.8f, 2.8f, 3.2f, 4.2f, 2.8f, 3.2f, 4.2f, 6, 6, 6, 6, 6, 6, 3.0f};
-inline constexpr float kSpringZeta[GestureBones] = {.90f, .80f, .75f, .70f, .72f, .66f, .58f, .72f, .66f, .58f, 1, 1, 1, 1, 1, 1, .90f};
+inline constexpr float kSpringHz[GestureBones]   = {2.6f, 3.0f, 3.4f, 3.8f, 2.8f, 3.2f, 4.2f, 2.8f, 3.2f, 4.2f, 6, 6, 6, 6, 6, 6, 3.0f, 5.5f, 5.5f, 5.5f, 5.5f};
+inline constexpr float kSpringZeta[GestureBones] = {.90f, .80f, .75f, .70f, .72f, .66f, .58f, .72f, .66f, .58f, 1, 1, 1, 1, 1, 1, .90f, .75f, .75f, .75f, .75f};
 
 // Persistent per avatar: input loss, cancellation, switching and speech conflicts
 // all use the same bounded filter. No frame-time allocations or clock reads.

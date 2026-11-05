@@ -17,22 +17,23 @@
 namespace wm {
 
 // The order is the runtime pose array's order (gestures.h). Pelvis was added for weight shifts.
-enum GestureBone { Spine, Chest, Neck, Head, ArmL, ElbowL, HandL, ArmR, ElbowR, HandR, ThighL, ShinL, FootL, ThighR, ShinR, FootR, Pelvis, GestureBones };
-inline constexpr const char* kGestureBones[] = {"spine","chest","neck","head","upper_arm.L","forearm.L","hand.L","upper_arm.R","forearm.R","hand.R","thigh.L","shin.L","foot.L","thigh.R","shin.R","foot.R","pelvis"};
+enum GestureBone { Spine, Chest, Neck, Head, ArmL, ElbowL, HandL, ArmR, ElbowR, HandR, ThighL, ShinL, FootL, ThighR, ShinR, FootR, Pelvis, FingersL, ThumbL, FingersR, ThumbR, GestureBones };      // fingers/thumb: the four fingers curl as one, the thumb on its own (fists, a thumbs up, pointing)
+inline constexpr const char* kGestureBones[] = {"spine","chest","neck","head","upper_arm.L","forearm.L","hand.L","upper_arm.R","forearm.R","hand.R","thigh.L","shin.L","foot.L","thigh.R","shin.R","foot.R","pelvis","fingers.L","thumb.L","fingers.R","thumb.R"};
 // Short names authors use in clips; the rig names above are accepted too.
-inline constexpr const char* kGestureAlias[] = {"spine","chest","neck","head","arm.L","fore.L","hand.L","arm.R","fore.R","hand.R","thigh.L","knee.L","foot.L","thigh.R","knee.R","foot.R","pelvis"};
+inline constexpr const char* kGestureAlias[] = {"spine","chest","neck","head","arm.L","fore.L","hand.L","arm.R","fore.R","hand.R","thigh.L","knee.L","foot.L","thigh.R","knee.R","foot.R","pelvis","fingers.L","thumb.L","fingers.R","thumb.R"};
 inline constexpr int kHipsChannel = GestureBones * 3, kTurnChannel = kHipsChannel + 3, kPlantChannel = kTurnChannel + 1, kStepChannel = kPlantChannel + 1, kClipChannels = kStepChannel + 6;
 // kStepChannel: where each planted foot goes, as an offset of the IK target in centimetres, model space (left foot xyz, then right foot xyz).
 // Mask bits: one per bone, then the hips' offset and the turn.
 inline constexpr int kHipsBit = GestureBones, kTurnBit = GestureBones + 1;
 // Overlap: how many chain steps each bone sits from the body's core. A bone samples its curve
 // `drag * depth` seconds late, so the hand trails the forearm, which trails the shoulder.
-inline constexpr float kChainDepth[GestureBones] = {0.5f, 1, 2, 3, 2, 3, 4.5f, 2, 3, 4.5f, 0, 0, 0, 0, 0, 0, 0};
+inline constexpr float kChainDepth[GestureBones] = {0.5f, 1, 2, 3, 2, 3, 4.5f, 2, 3, 4.5f, 0, 0, 0, 0, 0, 0, 0, 5.0f, 5.0f, 5.0f, 5.0f};
 inline bool IsLegBone(int b) { return b >= ThighL && b <= FootR; }
-inline bool IsLeftBone(int b) { return b == ArmL || b == ElbowL || b == HandL || b == ThighL || b == ShinL || b == FootL; }
+inline bool IsLeftBone(int b) { return b == ArmL || b == ElbowL || b == HandL || b == ThighL || b == ShinL || b == FootL || b == FingersL || b == ThumbL; }
 inline int MirrorBone(int b) {
     switch (b) { case ArmL: return ArmR; case ArmR: return ArmL; case ElbowL: return ElbowR; case ElbowR: return ElbowL; case HandL: return HandR; case HandR: return HandL;
-    case ThighL: return ThighR; case ThighR: return ThighL; case ShinL: return ShinR; case ShinR: return ShinL; case FootL: return FootR; case FootR: return FootL; default: return b; }
+    case ThighL: return ThighR; case ThighR: return ThighL; case ShinL: return ShinR; case ShinR: return ShinL; case FootL: return FootR; case FootR: return FootL;
+    case FingersL: return FingersR; case FingersR: return FingersL; case ThumbL: return ThumbR; case ThumbR: return ThumbL; default: return b; }
 }
 
 struct ClipKey { float t = 0; bool hit = false; float v[kClipChannels] = {}; };

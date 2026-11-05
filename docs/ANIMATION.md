@@ -125,8 +125,10 @@ chest front z 0.13-0.14, the boots' toes z 0.22.
 
 ## Limits
 
-The rig has rigid hands (no finger bones), no clavicles and no cloth joints in the sleeves, so pointing,
-thumbs-up and fists are wrist poses and a shrug is the neck sinking rather than the shoulders rising. The
+Each hand has two finger bones: `fingers.L/R` curls the four fingers as one about the knuckle row (local z:
+negative closes the right hand, positive the left) and `thumb.L/R` turns the thumb about its base. That is
+enough for a fist, a thumbs-up (12) and pointing; single fingers do not move on their own. There are no
+clavicles and no cloth joints in the sleeves, so a shrug is the neck sinking rather than the shoulders rising. The
 gate measures clipping against the torso and head; arm-against-arm and hand-against-leg clipping are only
 checked where a clip declares a contact. Live appearance at game frame rates, from the other player's
 camera, still needs a person to look (`tools/qa.sh emote` proves the clips play on both clients, not that

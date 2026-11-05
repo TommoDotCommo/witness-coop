@@ -204,20 +204,20 @@ key 3.00 arm.R=24,-10,10 fore.R=40 hand.R=0 head=12,0,0 neck=4 chest=10 spine=6 
 key 3.55 rest
 
 # ---- 12_thumbs.emote
-# Thumbs up: the fist pulls in, then punches forward with the knuckles up and gives a small extra
+# Thumbs up: the hand closes into a fist with the thumb up (fingers.R curls the four fingers, thumb.R the thumb), pulls in, then pushes out in front of the right chest and gives a small extra
 # push; the head nods along; a little bounce in the hold.
 emote 12 Thumbs up
 duration 3.2
 drag 0.03
 key 0.00 rest
-key 0.28 arm.R=20,-10,14 fore.R=120 hand.R=-14,-40,0 chest=0,4,0
-key 0.50 hit arm.R=52,-16,22 fore.R=86 hand.R=6,-70,0 chest=-2,-6,0 head=6,-4,0
-key 0.66 arm.R=50,-16,22 fore.R=90 hand.R=2,-68,0 head=-2,-4,0
-key 0.86 hit arm.R=56,-16,22 fore.R=80 hand.R=8,-70,0 head=6,-5,2
-key 1.20 arm.R=54,-16,22 fore.R=84 hand.R=4,-68,0 head=1,-4,2
-key 1.70 arm.R=52,-16,22 fore.R=86 hand.R=6,-70,0 head=3,-3,1
-key 2.30 arm.R=54,-16,22 fore.R=84 hand.R=4,-66,0 head=1,-2,1
-key 2.75 arm.R=20,-10,12 fore.R=50 hand.R=0,-20,0 chest=0 head=0
+key 0.28 arm.R=24,0,10 fore.R=100 hand.R=0,0,0 fingers.R=0,0,-100 thumb.R=40,0,10 chest=0,4,0      # gather: the fist closes, the thumb comes up
+key 0.50 hit arm.R=47,10,10 fore.R=70 hand.R=0,0,-8 chest=-2,-4,0 head=6,-4,0                     # out in front of the right chest, thumb up
+key 0.66 arm.R=45,10,10 fore.R=74 hand.R=0,0,-4 head=-2,-4,0
+key 0.86 hit arm.R=49,10,10 fore.R=68 hand.R=0,0,-10 head=6,-5,2                                 # the small extra push
+key 1.20 arm.R=47,10,10 fore.R=71 hand.R=0,0,-6 head=1,-4,2
+key 1.70 arm.R=46,10,10 fore.R=72 hand.R=0,0,-7 head=3,-3,1
+key 2.30 arm.R=47,10,10 fore.R=71 hand.R=0,0,-6 head=1,-2,1
+key 2.75 arm.R=20,-10,12 fore.R=50 hand.R=0,-20,0 fingers.R=0 thumb.R=0 chest=0 head=0
 key 3.18 rest
 
 # ---- 13_thinking.emote
@@ -253,13 +253,13 @@ duration 6
 loop 2.0 6.0
 drag 0.04
 eyedrop 0.44 0.50
-pose seated hips=0,-46.7,0 step.LR=2,0,34 thigh.LR=1 spine=4 chest=-2 head=2 arm.LR=40,-6,4 fore.LR=26 hand.LR=14
+pose seated hips=0,-46.7,0 step.LR=2,0,34 thigh.LR=1 spine)EMOTE"
+R"EMOTE(=4 chest=-2 head=2 arm.LR=40,-6,4 fore.LR=26 hand.LR=14
 key 0.00 rest thigh.LR=1
 key 0.40 hips=0,-14,-3 pelvis=14 spine=12 chest=4 arm.LR=24,0,6 fore.LR=20
 key 0.85 hips=0,-38,-6 pelvis=26 spine=14 chest=6 head=-4 arm.LR=40,0,8 fore.LR=30
 key 1.10 hips=0,-46.7,-2 pelvis=14 step.LR=1,0,10
-key 1.50 @seate)EMOTE"
-R"EMOTE(d spine=8 chest=1
+key 1.50 @seated spine=8 chest=1
 key 2.00 @seated
 key 2.80 head=2,16,2 chest=-2,6,0
 key 3.40 head=4,18,3 hand.R=4 fore.R=30

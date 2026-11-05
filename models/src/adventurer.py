@@ -426,10 +426,14 @@ for s, x in (('L', 1), ('R', -1)):
     lo, hi = handmod.bounds(x)
     for kind, field, material, budget in (('hand', handmod.skin(x), 'hand_skin', 4200), ('glove', handmod.glove(x), 'glove_leather', 2600)):
         ob = field_part(kind + '.' + s, field, lo, hi, 0.0012, material, budget, 1)
-        def hand_weights(i, ob=ob, s=s):
-            z = ob.data.vertices[i].co.z; w = max(0.0, min(1.0, (z - (handmod.WRIST[2] - 0.012)) / 0.030))
-            return {'hand.' + s: 1 - w, 'forearm.' + s: w}
-        part(ob, ['hand.' + s, 'forearm.' + s], hand_weights)
+        WF, WT = handmod.part_weights(np.array([v.co[:] for v in ob.data.vertices]), x)      # (as built: the bind pose relax moves them later)
+        def hand_weights(i, ob=ob, s=s, WF=WF, WT=WT, Z=[v.co.z for v in ob.data.vertices]):
+            w = max(0.0, min(1.0, (Z[i] - (handmod.WRIST[2] - 0.012)) / 0.030)); wf, wt = float(WF[i]), float(WT[i]); rest = max(0.0, 1 - wf - wt)
+            return {'hand.' + s: (1 - w) * rest, 'forearm.' + s: w * rest, 'fingers.' + s: wf, 'thumb.' + s: wt}
+        part(ob, ['hand.' + s, 'forearm.' + s, 'fingers.' + s, 'thumb.' + s], hand_weights)
+    bp = handmod.bone_points(x)
+    B['fingers.' + s] = (V(*bp['fingers'][0]), V(*bp['fingers'][1]), 'hand.' + s)
+    B['thumb.' + s] = (V(*bp['thumb'][0]), V(*bp['thumb'][1]), 'hand.' + s)
 # -- hair: a sculpted crop (head.hair): a smooth cap, a broad swept forelock and a quiet nape, clear of the ears
 hair_ob = field_part('hair', headmod.hair(headmod.skull_and_face()), (-0.13, -0.16, 1.52), (0.13, 0.15, 1.84), HEAD_CELL * 1.2, 'hair', 7000, 1, False)
 part(hair_ob, ['head'])
@@ -447,6 +451,7 @@ if HEAD_SCALE != 1.0:
         h, t, par = B[bn]; B[bn] = (head_scaled(h), head_scaled(t), par)
     head_bvh = BVHTree.FromObject(head_surface, bpy.context.evaluated_depsgraph_get())
     print('REPORT head scaled %.2f about the neck' % HEAD_SCALE)
+hair_bvh = BVHTree.FromObject(hair_ob, bpy.context.evaluated_depsgraph_get())      # (the fidgets keep the hand off the hair too)
 HAT0 = len(parts)
 # -- shaped felt hat, with an upswept brim, a pinched crown and a folded feather vane
 # The opening is an oval the size of the head at the brow line (plus the hair), so the hat sits on the head instead of above it
@@ -819,7 +824,7 @@ for s, sx in (('L', 1), ('R', -1)):
     if s == 'L': rotation = Matrix.Rotation(math.radians(-8), 4, 'Y')
     else: rotation = Matrix.Rotation(math.radians(-9), 4, 'X') @ Matrix.Rotation(math.radians(3), 4, 'Y')
     xform = Matrix.Translation(pivot) @ rotation @ Matrix.Translation(-pivot)
-    arm_bones = {'upper_arm.'+s, 'forearm.'+s, 'hand.'+s}
+    arm_bones = {'upper_arm.'+s, 'forearm.'+s, 'hand.'+s, 'fingers.'+s, 'thumb.'+s}
     for ob, bones, _ in parts:
         names = {b[0] if isinstance(b, tuple) else b for b in bones}
         if names & arm_bones: ob.data.transform(xform)
@@ -1271,6 +1276,14 @@ SIDE = {}
 for name in B:
     reset(); pb[name].rotation_euler = (0, 0, 0.3); update(); tip = world(B[name][1], name); SIDE[name] = 1.0 if tip.x > B[name][1].x + 1e-4 else -1.0
 reset(); update()
+for name in ('fingers.L', 'fingers.R', 'thumb.L', 'thumb.R'):      # which local axis curls each toward the palm (the palm faces the body: -x on the left)
+    out = []
+    for ax in range(3):
+        reset(); r = [0.0, 0.0, 0.0]; r[ax] = math.radians(60); pb[name].rotation_euler = r; update()
+        tip = world(B[name][1], name); d = tip - B[name][1]; inward = -d.x if name.endswith('L') else d.x
+        out.append('%s %+.3f in %+.3f up' % ('xyz'[ax], inward, d.z))
+    print('REPORT curl %s: +60 deg about %s' % (name, ', '.join(out)))
+reset(); update()
 # a twist about the bone's own Y (along its length) is a turn about the vertical for the vertical bones
 HEEL, TOE = V(0.10, 0.045, 0.012), V(0.10, -0.195, 0.012)      # the sole under the boot, in the rest pose (left foot; the right is mirrored)
 def sole(foot, s):
@@ -1379,30 +1392,36 @@ def apply(kind, phi, A, lift=0.0):
     update()
 A_WALK, A_RUN = 25.0, 39.0
 print('REPORT walk run use planted-foot trajectory')
-def solve_hat_touch(target=V(-0.165, -0.085, 1.735), key='angles', what='the brim', clearance=0.115):      # the brim, in front of the right ear (the hat sits 4 cm lower than it was built, and tilted)
-    head_centre = V(0, 0.003, 1.690); best = None
-    def hand_at(fwd, side, elbow):
-        reset(); pb['upper_arm.R'].rotation_euler = (math.radians(fwd) * FWD['upper_arm.R'], 0, math.radians(side) * SIDE['upper_arm.R']); pb['forearm.R'].rotation_euler = (math.radians(elbow) * FWD['forearm.R'], 0, 0); update()
-        return world(B['hand.R'][1], 'hand.R')
-    for fwd in range(100, 171, 10):
-        for side in range(-50, 31, 10):
-            for elbow in range(60, 141, 10):
-                h = hand_at(fwd, side, elbow); dist = (h - target).length
-                if (best is None or dist < best[0]) and (h - head_centre).length > clearance: best = (dist, fwd, side, elbow)
+def solve_hat_touch(target=V(-0.165, -0.085, 1.735 - HEAD_DROP), key='angles', what='the brim', gap=0.018, kind='fidget_hat'):      # the brim, in front of the right ear
+    """The right arm's angles that bring the fingertips to `target` while the whole hand (wrist, knuckles, fingertips) stays `gap` off the
+    head, the hair and the scarf as built. (The bone's end alone was kept off a sphere: the sculpted fingers, 8 cm longer, went into the
+    face at the brim and into the scarf at the nape.)"""
+    trees = [head_bvh, hair_bvh, scarf_bvh]; best = None
+    def hand_at(fwd, side, elbow):      # the fidget's own pose at its peak (head, chest, wrist and forearm twist included), with these arm angles
+        HAT_TOUCH[key] = (float(fwd), float(side), float(elbow), -10.0); apply(kind, math.pi, 0.0)
+        h_, t_ = B['hand.R'][0], B['hand.R'][1]; d_ = (t_ - h_).normalized()
+        return [world(p_, 'hand.R') for p_ in (h_, t_, t_ + d_ * 0.04, t_ + d_ * 0.08)]
+    def clear(pts): return min(tr.find_nearest(p_)[3] for tr in trees for p_ in pts) > gap
+    for fwd in range(80, 181, 10):
+        for side in range(-70, 41, 10):
+            for elbow in range(40, 161, 10):
+                pts = hand_at(fwd, side, elbow); dist = (pts[-1] - target).length
+                if (best is None or dist < best[0]) and clear(pts): best = (dist, fwd, side, elbow)
     _, fwd, side, elbow = best
     for step in (5, 2):      # refine
         for dfwd in (-step, 0, step):
             for dside in (-step, 0, step):
                 for delbow in (-step, 0, step):
-                    h = hand_at(fwd + dfwd, side + dside, elbow + delbow); dist = (h - target).length
-                    if dist < best[0] and (h - head_centre).length > clearance: best = (dist, fwd + dfwd, side + dside, elbow + delbow)
+                    pts = hand_at(fwd + dfwd, side + dside, elbow + delbow); dist = (pts[-1] - target).length
+                    if dist < best[0] and clear(pts): best = (dist, fwd + dfwd, side + dside, elbow + delbow)
         _, fwd, side, elbow = best
     reset(); update()
     HAT_TOUCH[key] = (float(fwd), float(side), float(elbow), -10.0)
-    print('REPORT hat touch: hand %.1f cm from %s at fwd %d side %d elbow %d' % (best[0] * 100, what, fwd, side, elbow))
+    print('REPORT hat touch: fingertips %.1f cm from %s at fwd %d side %d elbow %d, the hand %.0f mm or more off head, hair and scarf' % (best[0] * 100, what, fwd, side, elbow, gap * 1000))
     if best[0] > 0.05: raise ValueError('the hand cannot reach %s (%.3f m)' % (what, best[0]))
 solve_hat_touch()
-solve_hat_touch(V(-0.06, 0.075, 1.50), 'neck', 'the back of the neck', 0.09)
+_nape = head_bvh.ray_cast(V(-0.035, 0.5, 1.615), V(0, -1, 0))[0]      # the back of the head above the scarf, on the head as built
+solve_hat_touch(V(-0.035, _nape.y + 0.030, 1.615), 'neck', 'the back of the head', kind='fidget_neck')
 
 # ---- the clips: every frame is posed first (with animation evaluation off, or an earlier clip would re-pose the rig at every update), then the keys are written straight into the action
 arm.animation_data_create(); arm.animation_data.action = None; arm.animation_data.use_nla = False

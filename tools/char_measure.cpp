@@ -128,7 +128,9 @@ int main(int argc, char** argv) {
         const Vertex& v = m.verts[m.idx[t]]; if (int(v.appearanceGroup + .5f) == 1 && jHead >= 0 && Dominant(v) == jHead) headTris++;
     }
     // hands: wrist to the farthest point of the hand
-    auto handLen = [&](int j) { if (j < 0) return 0.f; auto w = jp(j); float best = 0; for (size_t i = 0; i < P.size(); ++i) if (Dominant(m.verts[i]) == j) { float d = 0; for (int c = 0; c < 3; ++c) d += (P[i][c] - w[c]) * (P[i][c] - w[c]); best = std::max(best, d); } return sqrtf(best); };
+    auto handLen = [&](int j) { if (j < 0) return 0.f; auto w = jp(j); float best = 0;
+        const char* sd = j == jHandL ? "L" : "R"; int jf = jid((std::string("fingers.") + sd).c_str()), jt = jid((std::string("thumb.") + sd).c_str());      // (the fingers and thumb have bones of their own)
+        for (size_t i = 0; i < P.size(); ++i) if (int d_ = Dominant(m.verts[i]); d_ == j || (jf >= 0 && d_ == jf) || (jt >= 0 && d_ == jt)) { float d = 0; for (int c = 0; c < 3; ++c) d += (P[i][c] - w[c]) * (P[i][c] - w[c]); best = std::max(best, d); } return sqrtf(best); };
     int jBrowL = jid("brow.L"); float browY = jBrowL >= 0 ? jp(jBrowL)[1] : eyeY + .03f;
     // the eyes, seen from the front; then blinked by the life layer
     int eyeNodeL = jEyeL >= 0 ? jEyeL : -2, eyeNodeR = jEyeR >= 0 ? jEyeR : -2;
