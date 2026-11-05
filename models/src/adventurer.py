@@ -176,7 +176,7 @@ def coat_weights(ob, base):      # base: the torso/thigh bones with their multip
     return w
 COAT_BASE = ['pelvis', 'spine', 'chest', ('thigh.L', 0.55), ('thigh.R', 0.55)]
 part(coat_body, COAT_BASE + HEM_BONES, coat_weights(coat_body, COAT_BASE))
-coat_collar = loft('collar', [(1.43, 0, 0.016, 0.112, 0.095, 0.52), (1.48, 0, 0.018, 0.098, 0.083, 0.58), (1.535, 0, 0.020, 0.070, 0.060, 0.64)], 'coat_dark', 28, 1, False, 0.010)
+coat_collar = loft('collar', [(1.43, 0, 0.016, 0.106, 0.090, 0.52), (1.465, 0, 0.018, 0.092, 0.078, 0.58), (1.500, 0, 0.020, 0.070, 0.060, 0.64)], 'coat_dark', 28, 1, False, 0.010)      # (under the slimmer scarf)
 part(coat_collar, ['chest', 'neck'])
 # Fit the pocket welts to the finished skirt, rather than attaching boxes.
 from mathutils.bvhtree import BVHTree
@@ -339,7 +339,7 @@ pass      # (the mouth's line is painted on the skin along the smile: paint_mate
 B['lip_lower'] = (V(0, -0.104, mz - 0.004), V(0, -0.104, mz - 0.014), 'head')
 def head_weights(i, co=None):
     p = head_surface.data.vertices[i].co
-    if 'HEAD_SCALE' in globals() and HEAD_SCALE != 1.0: p = HEAD_PIVOT + (p - HEAD_PIVOT) / HEAD_SCALE      # (weights are designed on the sculpt's own scale)
+    if 'HEAD_SCALE' in globals() and HEAD_SCALE != 1.0: p = head_unscaled(p)      # (weights are designed on the sculpt's own scale and place)
     dx = abs(p.x) / (FACE['mouth_w'] * 0.62); dz = (mz - 0.0006 - p.z) / 0.016
     lip = 0.0
     if p.y < -0.085 and p.z < mz - 0.0006 and dx < 1 and dz < 1:      # the lower lip moves whole; the skin below it and toward the corners follows less and less
@@ -436,9 +436,11 @@ part(hair_ob, ['head'])
 # Storybook proportions: the whole head (skull, face, eyes, lids, brows, hair, their bones and the face's paint) is HEAD_SCALE times the
 # sculpt, about the base of the neck. The hat is fitted to it below; the proxy's eye-height fit absorbs the rest.
 HEAD_SCALE = 1.0 if '--life-size-head' in args else 1.10; HEAD_PIVOT = V(0, 0.012, 1.50)
-def head_scaled(p): return HEAD_PIVOT + (Vector(p) - HEAD_PIVOT) * HEAD_SCALE
+HEAD_DROP = 0.0 if '--life-size-head' in args else 0.025      # the head sits 2.5 cm lower: a long neck rose out of the scarf (the owner, 2026-11-05)
+def head_scaled(p): return HEAD_PIVOT + (Vector(p) - HEAD_PIVOT) * HEAD_SCALE - V(0, 0, HEAD_DROP)
+def head_unscaled(p): return HEAD_PIVOT + (Vector(p) + V(0, 0, HEAD_DROP) - HEAD_PIVOT) / HEAD_SCALE
 if HEAD_SCALE != 1.0:
-    hx = Matrix.Translation(HEAD_PIVOT) @ Matrix.Scale(HEAD_SCALE, 4) @ Matrix.Translation(-HEAD_PIVOT)
+    hx = Matrix.Translation((0, 0, -HEAD_DROP)) @ Matrix.Translation(HEAD_PIVOT) @ Matrix.Scale(HEAD_SCALE, 4) @ Matrix.Translation(-HEAD_PIVOT)
     for o, _, _ in parts:
         if o.name.split('.')[0] in ('head', 'eye_white', 'iris_ring', 'iris', 'pupil', 'eye_glint', 'lid', 'brow', 'hair', 'lower_lip_colour', 'upper_lip_colour', 'smile', 'upper_lash'): o.data.transform(hx)
     for bn in ('eye.L', 'eye.R', 'lid.L', 'lid.R', 'brow.L', 'brow.R', 'lip_lower'):
@@ -486,7 +488,7 @@ def head_reach(direction, z):
     d = V(direction[0], direction[1], 0).normalized(); hit = head_bvh.ray_cast(V(0, 0.006, z) + d * 0.3, -d)[0]
     return (hit - V(0, 0.006, z)).length if hit is not None else None
 z_open = 1.768 - HAT_DROP
-hat_rise = (HEAD_SCALE - 1.0) * (z_open - HEAD_PIVOT.z); z_open += hat_rise      # the hat rides on the scaled head
+hat_rise = (HEAD_SCALE - 1.0) * (z_open - HEAD_PIVOT.z) - HEAD_DROP; z_open += hat_rise      # the hat rides on the scaled, lowered head
 for o, _, _ in parts[HAT0:]: o.data.transform(Matrix.Translation((0, 0, hat_rise)))
 want = [head_reach(d, z_open) for d in ((1, 0), (-1, 0), (0, 1), (0, -1))]
 if '--hat-mutant' not in args and None not in want:
@@ -508,10 +510,10 @@ for k, p in rim.items():
 print('REPORT hat fit: rim to hair min %.1f mm (%d deg) max %.1f mm (%d deg), %d directions' % (min(gaps)[0] * 1000, min(gaps)[1], max(gaps)[0] * 1000, max(gaps)[1], len(gaps)))
 if (len(gaps) < 30 or min(gaps)[0] < -0.002 or max(gaps)[0] > 0.012): raise ValueError('the hat does not fit the head: %s %s' % (min(gaps), max(gaps)))
 # -- a softer scarf and well-used travelling gear
-scarf_wrap = loft('scarf', [(1.425,0,0.008,0.126,0.112),(1.442,0,0.006,0.125,0.111),
-    (1.463,0.003,0.004,0.121,0.107),(1.488,0.002,0.004,0.114,0.101),
-    (1.513,-0.003,0.005,0.105,0.094),(1.535,-0.004,0.006,0.096,0.085),
-    (1.547,-0.003,0.007,0.080,0.072),(1.559,-0.002,0.008,0.067,0.061)],'scarf',48,2,False,0.008)
+scarf_wrap = loft('scarf', [(1.425,0,0.008,0.114,0.101),(1.440,0,0.006,0.113,0.100),      # (slimmer and lower: the old wrap was a massive column under the chin)
+    (1.458,0.003,0.004,0.109,0.096),(1.477,0.002,0.004,0.102,0.090),
+    (1.496,-0.003,0.005,0.093,0.083),(1.513,-0.004,0.006,0.084,0.075),
+    (1.524,-0.003,0.007,0.073,0.066),(1.533,-0.002,0.008,0.063,0.058)],'scarf',48,2,False,0.008)
 for v in scarf_wrap.data.vertices:
     p=v.co;angle=math.atan2(p.x,-(p.y-0.006));u=max(0,min(1,(p.z-1.425)/0.134))
     fold=0.003*math.sin(math.pi*u)*math.sin(4*math.pi*u+0.9*math.sin(angle))
@@ -530,11 +532,25 @@ for zi in range(23):
         collar_hit = collar_bvh.ray_cast(origin, radial)[0]; scarf_hit = scarf_bvh.ray_cast(origin, radial)[0]
         if collar_hit is not None and scarf_hit is not None and (scarf_hit-origin).length < (collar_hit-origin).length + 0.002:
             raise ValueError('scarf intersects the coat collar (z %.3f angle %.1f collar %.5f scarf %.5f)' % (z, math.degrees(angle), (collar_hit-origin).length, (scarf_hit-origin).length))
-part(ellipsoid('scarf_knot', (0.036, -0.110, 1.452), (0.027, 0.019, 0.022), 'scarf', 20, 12), ['neck', 'chest'])      # (smaller: the big ball under the chin met every hand-to-chin emote once the shoulders came in)
+# The knot sits on the wrap and the tails lie on the chest (they hung 1.5 to 4 cm in front of it and read as floating): each is placed on the
+# surface it rests on, cast from the front.
+chest_bvhs = [BVHTree.FromObject(o, bpy.context.evaluated_depsgraph_get()) for o, _, _ in parts if o.name in ('vest', 'shirt_collar')] + [scarf_bvh]
+def front_of(x, z, trees):
+    ys = [t.ray_cast(V(x, -0.5, z), V(0, 1, 0))[0] for t in trees]; ys = [h.y for h in ys if h is not None]
+    if not ys: raise ValueError('nothing in front at %.3f %.3f' % (x, z))
+    return min(ys)
+KNOT = V(0.034, front_of(0.034, 1.452, [scarf_bvh]) + 0.009, 1.452)
+part(ellipsoid('scarf_knot', tuple(KNOT), (0.027, 0.019, 0.022), 'scarf', 20, 12), ['neck', 'chest'])      # (smaller: the big ball under the chin met every hand-to-chin emote)
 # The scarf tails hang from chains of bones (the proxy swings them as pendulums when the player moves or the wind blows); the satchel and the
 # canteen hang from one bone each. A chain bone starts at a ring's centre and ends at the next ring's.
-TAIL_A = [(1.45, 0.064, -0.145, 0.027, 0.006), (1.36, 0.072, -0.151, 0.031, 0.007), (1.25, 0.077, -0.158, 0.033, 0.007), (1.16, 0.085, -0.161, 0.027, 0.006)]
-TAIL_B = [(1.44, 0.015, -0.143, 0.024, 0.006), (1.37, 0.017, -0.146, 0.028, 0.007), (1.30, 0.024, -0.151, 0.026, 0.006)]
+def on_chest(rings, lift=0.0085):      # (z, x, _, rx, ry): y from the chest; the first ring starts in the knot
+    out = []
+    for k, (z, x, _, rx, ry) in enumerate(rings):
+        y = KNOT.y - 0.004 if k == 0 else front_of(x, z, chest_bvhs) - ry - lift
+        out.append((z, x, y, rx, ry))
+    return out
+TAIL_A = on_chest([(1.445, 0.052, 0, 0.026, 0.006), (1.36, 0.064, 0, 0.030, 0.007), (1.25, 0.071, 0, 0.032, 0.007), (1.16, 0.078, 0, 0.027, 0.006)])
+TAIL_B = on_chest([(1.440, 0.022, 0, 0.023, 0.006), (1.37, 0.020, 0, 0.027, 0.007), (1.30, 0.024, 0, 0.025, 0.006)])
 for tail, rings in (('a', TAIL_A), ('b', TAIL_B)):
     for k, (r0, r1) in enumerate(zip(rings, rings[1:])):
         B['scarf_%s.%d' % (tail, k + 1)] = (V(r0[1], r0[2], r0[0]), V(r1[1], r1[2], r1[0]), 'chest' if k == 0 else 'scarf_%s.%d' % (tail, k))
@@ -681,13 +697,21 @@ decal('motif_satchel', satchel, (-0.40, 0.080, 0.790), (0, -1, 0), (0, 0, 1), 0.
 decal('motif_rucksack', rucksack, (0.050, 0.30, 0.960), (-1, 0, 0), (0, 0, 1), 0.100, 0.0042, 'panel_line', ['spine', 'pelvis', 'chest'])
 part(tube('bedroll', (-0.165, 0.205, 1.305), (0.165, 0.205, 1.305), 0.058, 'bedroll', 24), ['chest', 'spine'])
 for bx in (-0.09, 0.09): part(loft('bedroll_strap', [(1.244, bx, 0.205, 0.014, 0.065), (1.366, bx, 0.205, 0.014, 0.065)], 'strap', 16, 0), ['chest', 'spine'])
-B['canteen'] = (V(0.185, 0.215, 1.125), V(0.185, 0.215, 0.94), 'spine')
-CANTEEN = V(0.185, 0.215, 1.02)      # a round, flat flask in a canvas cover with a brass rim (the plain blob read as a gourd)
-part(ellipsoid('canteen', tuple(CANTEEN), (0.060, 0.030, 0.062), 'bedroll', 32, 18), ['canteen'])
-part(tube('canteen_rim', tuple(CANTEEN + V(0, -0.0065, 0)), tuple(CANTEEN + V(0, 0.0065, 0)), 0.0605, 'brass', 40), ['canteen'])
-part(tube('canteen_neck', tuple(CANTEEN + V(0, 0, 0.055)), tuple(CANTEEN + V(0, 0, 0.079)), 0.0115, 'brass', 20, 0.0095), ['canteen'])
-part(tube('canteen_cork', tuple(CANTEEN + V(0, 0, 0.077)), tuple(CANTEEN + V(0, 0, 0.093)), 0.0095, 'leather', 16, 0.0110), ['canteen'])
-part(tube('canteen_tab', tuple(CANTEEN + V(0, -0.012, 0.066)), (0.175, 0.150, 1.050), 0.0055, 'strap', 8), ['canteen', 'spine'])
+# A round, flat flask in a canvas cover with a brass rim, hanging flat against the coat on the left hip from a tab on the belt (it floated
+# 20 cm behind the coat's side seam).
+CT = 2.15; cn = V(math.sin(CT), -math.cos(CT), 0); ctan = V(-math.cos(CT), -math.sin(CT), 0) * -1
+_hit = coat_front_bvh.ray_cast(V(0, 0.01, 0.955) + cn * 0.5, -cn)[0]
+CANTEEN = _hit + cn * 0.036
+cmat = Matrix.Translation(CANTEEN) @ Matrix.Rotation(CT + math.pi, 4, 'Z')      # local y (the flask's thin axis) along the coat's normal
+def canteen_part(ob):
+    ob.data.transform(cmat); part(ob, ['canteen']); return ob
+canteen_part(ellipsoid('canteen', (0, 0, 0), (0.058, 0.029, 0.060), 'bedroll', 32, 18))
+canteen_part(tube('canteen_rim', (0, -0.0065, 0), (0, 0.0065, 0), 0.0585, 'brass', 40))
+canteen_part(tube('canteen_neck', (0, 0, 0.053), (0, 0, 0.077), 0.0115, 'brass', 20, 0.0095))
+canteen_part(tube('canteen_cork', (0, 0, 0.075), (0, 0, 0.091), 0.0095, 'leather', 16, 0.0110))
+_belt = coat_front_bvh.ray_cast(V(0, 0.01, 1.035) + cn * 0.5, -cn)[0] + cn * 0.006
+part(tube('canteen_tab', tuple(cmat @ V(0, 0, 0.068)), tuple(_belt), 0.0055, 'strap', 8), ['canteen', 'spine'])
+B['canteen'] = (_belt.copy(), CANTEEN - V(0, 0, 0.09), 'spine')
 
 # -- construction details: folded lapels, topstitching, shoulder seams and real boot laces
 def cord(name, points, radius, material, bones, seg=6):
@@ -797,6 +821,15 @@ for s, sx in (('L', 1), ('R', -1)):
         if names & arm_bones: ob.data.transform(xform)
     for name in arm_bones:
         h, t, parent = B[name]; B[name] = (xform @ h, xform @ t, parent)
+
+# Bag sizes (the owner, 2026-11-05: the rucksack a bit bigger, the satchel a little smaller), each scaled about where it hangs from.
+RUCK_S, SATCHEL_S = 1.18, 0.82
+_rk = Matrix.Translation((0, 0.145, 1.07)) @ Matrix.Scale(RUCK_S, 4) @ Matrix.Translation((0, -0.145, -1.07))
+_sk = Matrix.Translation((-0.27, 0.04, 0.975)) @ Matrix.Scale(SATCHEL_S, 4) @ Matrix.Translation((0.27, -0.04, -0.975))
+for ob, _, _ in parts:
+    if ob.name.startswith(('rucksack', 'pack_pocket', 'pack_strap', 'pack_keeper', 'motif_rucksack', 'bedroll')): ob.data.transform(_rk)
+    elif ob.name.startswith(('satchel', 'motif_satchel')) and not ob.name.startswith('satchel_strap'): ob.data.transform(_sk)
+h_, t_, p_ = B['satchel']; B['satchel'] = (_sk @ h_, _sk @ t_, p_)
 
 # Narrower shoulders (the owner, 2026-11-05: "the shoulders are too wide apart"): every part and every bone is moved toward the midline by
 # the same smooth field (nothing above the waist and beyond 10 cm of the midline escapes it, nothing below the hands moves), so layered
@@ -1081,7 +1114,7 @@ def bake_texture(body, size, outdir):
             hit=(wa>=-0.03)&(wb>=-0.03)&(wc>=-0.03)
             if not hit.any():continue
             pos=wa[:,:,None]*p3[0]+wb[:,:,None]*p3[1]+wc[:,:,None]*p3[2]
-            pos=(pos-np.array(HEAD_PIVOT))/HEAD_SCALE+np.array(HEAD_PIVOT)
+            pos=(pos+np.array((0,0,HEAD_DROP))-np.array(HEAD_PIVOT))/HEAD_SCALE+np.array(HEAD_PIVOT)
             warm=np.zeros_like(xx)
             for sx in (-1,1):
                 warm+=0.20*np.exp(-(((pos-np.array([sx*0.045,-0.085,1.642]))/np.array([0.031,0.044,0.026]))**2).sum(axis=2))

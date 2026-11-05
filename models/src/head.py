@@ -50,8 +50,8 @@ def skull_and_face():
     # Small additive cheek/jaw strokes made separate islands of curvature in three-quarter view.
     strokes = [
         (s.ellipsoid((0, -0.022, 1.659), (0.076, 0.077, 0.086)), 0.040, 'add'),
-        (s.ellipsoid((0, -0.028, 1.600), (0.050, 0.060, 0.039)), 0.036, 'add'),
-        (s.ellipsoid((0, -0.048, F['chin_z'] + 0.021), (0.031, 0.037, 0.025)), 0.026, 'add'),
+        (s.ellipsoid((0, -0.030, 1.603), (0.054, 0.062, 0.046)), 0.050, 'add'),      # one jaw tapering into the chin, blended wide:
+        (s.ellipsoid((0, -0.046, F['chin_z'] + 0.025), (0.027, 0.034, 0.024)), 0.046, 'add'),      # (a separate chin ball met the jaw in a crease)
         (s.capsule((0, 0.025, 1.440), (0, 0.018, 1.602), 0.040), 0.030, 'add'),      # (a thin neck read long above the scarf)
     ]
     face = s.blend(base, strokes)
