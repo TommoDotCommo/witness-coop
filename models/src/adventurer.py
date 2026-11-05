@@ -10,7 +10,7 @@ from mathutils import Vector, Matrix
 
 args = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else []
 STYLE = args[args.index('--style') + 1] if '--style' in args else 'witness'      # witness: painterly colour fields (docs/CHARACTER.md); classic: the first version's grain and grime
-TEXTURE = '--no-texture' not in args; FLAT_MATERIALS = '--flat-materials' in args; TEXSIZE = int(args[args.index('--texsize') + 1]) if '--texsize' in args else 2048
+TEXTURE = '--no-texture' not in args; FLAT_MATERIALS = '--flat-materials' in args; TEXSIZE = int(args[args.index('--texsize') + 1]) if '--texsize' in args else 4096
 APPEARANCE = parse_appearance(args[args.index('--appearance') + 1] if '--appearance' in args else '')
 OUT = args[0]; PREVIEW = args[args.index('--preview') + 1] if '--preview' in args else None
 WALK_SPEED, RUN_SPEED = 1.2, 2.8
@@ -25,7 +25,7 @@ def srgb(h, material=None):      # '#rrggbb' -> linear rgba
     return tuple(tint_colour(rgb, material, APPEARANCE) + [1.0])
 COLOURS = dict(panel='#203a57', panel_line='#f3e7c8', nail='#bd967f', coat='#2f857d', coat_dark='#1d5753', trousers='#a8946b', boots='#563826', scarf='#df9d34', hat='#cfb58a', band='#a3442e', skin='#ddb397', hair='#4a3227',
                leather='#8a5634', brass='#aa8a4b', mouth_dark='#6d3930', skin_dark='#ae775e', vest='#725138', shirt='#c9bda5', sole='#211914', iris='#8c6a3a', iris_ring='#33241a', lash='#2a1f19', lips='#b87868', boots_cuff='#584031', scarf_dark='#b8742a', white='#f0e9d9', mouth='#8e5549', bedroll='#a99b7c', feather='#e48aa2', strap='#49301f', metal='#b99c68', eye='#17191a', thread='#a99b78', stitching='#b49a70')
-COLOURS.update(hand_skin=COLOURS['skin'],lid_skin=COLOURS['skin'],glove_leather=COLOURS['leather'])
+COLOURS.update(hand_skin=COLOURS['skin'],lid_skin=COLOURS['skin'],glove_leather='#7b5238')      # (the glove: a quieter, deeper tan than the bags, so the hand reads as skin against it)
 MATS = {}
 def mat(name):
     if name not in MATS:
@@ -730,15 +730,24 @@ def paint_materials():
             ramp = node('ShaderNodeValToRGB', (-300, -1100)); ramp.color_ramp.elements[0].color = (1-amount, 1-amount, 1-amount, 1); nt.links.new(cross.outputs[0], ramp.inputs[0])
             mix = node('ShaderNodeMixRGB', (-100, 200), blend_type='MULTIPLY'); mix.inputs['Fac'].default_value = 1.0; nt.links.new(out, mix.inputs['Color1']); nt.links.new(ramp.outputs[0], mix.inputs['Color2']); out = mix.outputs[0]
             add_height(cross.outputs[0], bump)
+        def rib(scale, amount, bump=0.0):      # clean horizontal rows: one soft sine of object height (no noise), a darker trough between rows
+            nonlocal out
+            sep = node('ShaderNodeSeparateXYZ', (-1100, -1300)); nt.links.new(tc.outputs['Object'], sep.inputs[0])
+            fq = node('ShaderNodeMath', (-900, -1300), operation='MULTIPLY'); fq.inputs[1].default_value = scale; nt.links.new(sep.outputs['Z'], fq.inputs[0])
+            sn = node('ShaderNodeMath', (-750, -1300), operation='SINE'); nt.links.new(fq.outputs[0], sn.inputs[0])
+            hf = node('ShaderNodeMath', (-600, -1300), operation='MULTIPLY_ADD'); hf.inputs[1].default_value = 0.5; hf.inputs[2].default_value = 0.5; nt.links.new(sn.outputs[0], hf.inputs[0])
+            ramp = node('ShaderNodeValToRGB', (-300, -1300)); ramp.color_ramp.elements[0].color = (1-amount, 1-amount, 1-amount, 1); nt.links.new(hf.outputs[0], ramp.inputs[0])
+            mix = node('ShaderNodeMixRGB', (-100, 200), blend_type='MULTIPLY'); mix.inputs['Fac'].default_value = 1.0; nt.links.new(out, mix.inputs['Color1']); nt.links.new(ramp.outputs[0], mix.inputs['Color2']); out = mix.outputs[0]
+            add_height(hf.outputs[0], bump)
         if STYLE == 'witness' and name not in ('skin',):
             # The island's look: large clean colour fields, light painted in (sunlit above, cooler in the folds below), almost no grain.
             c = base; cool = tuple(max(0.0, c[k] * f) for k, f in enumerate((0.62, 0.70, 0.86))); warm = tuple(min(1.0, c[k] * f) for k, f in enumerate((1.22, 1.16, 1.04)))
             noise_mul(2.4, 0.07, (1, 1, 1), 0, 0.0, 1)      # a painter's unevenness, very broad
             if name in ('coat', 'coat_dark'): grad(0.55, 1.05, cool, 0.42); grad(1.48, 1.28, warm, 0.28); noise_mul(9, 0.0, (1, 1, 3), 1, 0.025, 1)
             elif name in ('trousers', 'vest', 'shirt', 'bedroll'): grad(0.45, 0.95, cool, 0.35); noise_mul(9, 0.0, (1, 1, 1), 1, 0.2, 1)
-            elif name in ('hat', 'band'): grad(1.70, 1.80, cool, 0.30); grad(1.92, 1.82, warm, 0.25); noise_mul(8, 0.0, (1, 1, 1), 1, 0.025, 1)
+            elif name in ('hat', 'band'): grad(1.66, 1.86, cool, 0.26); grad(2.00, 1.80, warm, 0.20)      # felt: two broad smooth ramps, no relief noise
             elif name in ('boots', 'boots_cuff', 'leather', 'strap', 'sole'): grad(0.0, 0.25, cool, 0.30); noise_mul(14, 0.015, (1, 1, 1), 1, 0.045, 2)
-            elif name in ('scarf', 'scarf_dark'): grad(1.20, 1.50, cool, 0.30); weave(160, 0.025, 0.035)      # the knit stays: the one texture you can read
+            elif name in ('scarf', 'scarf_dark'): grad(1.20, 1.50, cool, 0.30); rib(430, 0.075, 0.05)      # a broad, clean knit rib (about 1.5 cm per row): a pattern you read at a distance, not noise
             elif name == 'hair': grad(1.58, 1.72, cool, 0.35); noise_mul(8, 0.025, (1, 1, 2), 2, 0.015, 1)      # strand direction, soft
         elif name in ('coat', 'coat_dark'): noise_mul(45, 0.09, (1, 1, 4), 0, 0.0, 2); noise_mul(7, 0.28, (1, 1, 1.6), 1, 1.0); weave(260, 0.07); noise_mul(22, 0.0, (1, 1, 2.5), 3, 0.2, 2); blend_to((0.02, 0.05, 0.04), z_mask(0.45, 0.85), 0.36)
         elif name in ('trousers', 'vest', 'bedroll', 'shirt'): noise_mul(40, 0.08, (4, 1, 1), 0, 0.0, 2); noise_mul(7, 0.24, (1, 1, 1), 1, 1.0); weave(240, 0.06); noise_mul(20, 0.0, (1, 1, 1), 3, 0.15, 2); blend_to((0.05, 0.035, 0.02), z_mask(0.50, 1.10), 0.35)
@@ -780,9 +789,9 @@ def paint_materials():
         bsdf.inputs['Metallic'].default_value = metal
 
 # roughness and metalness per material (the material map), and how strong each one's relief is (the normal map)
-SURFACE = dict(hand_skin=(0.64,0.0),lid_skin=(0.64,0.0),glove_leather=(0.62,0.0),skin=(0.62, 0.0), nail=(0.45, 0.0), lips=(0.50, 0.0), skin_dark=(0.65, 0.0), mouth=(0.45, 0.0), mouth_dark=(0.5, 0.0), hair=(0.55, 0.0), eye=(0.12, 0.0), white=(0.18, 0.0), iris=(0.14, 0.0), iris_ring=(0.2, 0.0), lash=(0.6, 0.0), panel=(0.55, 0.0), panel_line=(0.6, 0.0),
-               coat=(0.92, 0.0), coat_dark=(0.90, 0.0), vest=(0.88, 0.0), shirt=(0.80, 0.0), trousers=(0.90, 0.0), scarf=(0.95, 0.0), scarf_dark=(0.95, 0.0), hat=(0.90, 0.0), band=(0.65, 0.0), feather=(0.55, 0.0), bedroll=(0.92, 0.0), thread=(0.8, 0.0), stitching=(0.8, 0.0),
-               boots=(0.42, 0.0), boots_cuff=(0.50, 0.0), sole=(0.70, 0.0), leather=(0.52, 0.0), strap=(0.55, 0.0), brass=(0.38, 0.65), metal=(0.38, 1.0))
+SURFACE = dict(hand_skin=(0.64,0.0),lid_skin=(0.64,0.0),glove_leather=(0.55,0.0),skin=(0.62, 0.0), nail=(0.45, 0.0), lips=(0.50, 0.0), skin_dark=(0.65, 0.0), mouth=(0.45, 0.0), mouth_dark=(0.5, 0.0), hair=(0.55, 0.0), eye=(0.12, 0.0), white=(0.18, 0.0), iris=(0.14, 0.0), iris_ring=(0.2, 0.0), lash=(0.6, 0.0), panel=(0.55, 0.0), panel_line=(0.6, 0.0),
+               coat=(0.92, 0.0), coat_dark=(0.90, 0.0), vest=(0.88, 0.0), shirt=(0.80, 0.0), trousers=(0.90, 0.0), scarf=(0.95, 0.0), scarf_dark=(0.95, 0.0), hat=(0.93, 0.0), band=(0.65, 0.0), feather=(0.55, 0.0), bedroll=(0.92, 0.0), thread=(0.8, 0.0), stitching=(0.8, 0.0),
+               boots=(0.42, 0.0), boots_cuff=(0.50, 0.0), sole=(0.70, 0.0), leather=(0.46, 0.0), strap=(0.50, 0.0), brass=(0.38, 0.65), metal=(0.38, 1.0))
 BUMP = dict(white=0.0, iris=0.0, iris_ring=0.0, eye=0.0, lash=0.0, panel=0.1, panel_line=0.3, coat=0.55, coat_dark=0.55, vest=0.5, shirt=0.4, trousers=0.5, scarf=0.8, scarf_dark=0.8, hat=0.45, band=0.3, boots=0.5, boots_cuff=0.5, leather=0.6, strap=0.5, sole=0.4, skin=0.05, hair=0.5, bedroll=0.5, brass=0.1, metal=0.15, nail=0.05, lips=0.05, skin_dark=0.05)
 def bake_texture(body, size, outdir):
     if not FLAT_MATERIALS: paint_materials()
@@ -954,15 +963,20 @@ def bake_texture(body, size, outdir):
     ao = np.clip(b[:, :1], 0, 1) ** 1.25; ao_mix = 0.20 if STYLE == 'witness' else 0.50      # (painterly: occlusion lighter, so deep creases do not go black)
     lin = np.clip(a[:, :3] * ((1 - ao_mix) + ao_mix * ao), 0, 1); a[:, :3] = np.where(lin <= 0.0031308, lin * 12.92, 1.055 * np.power(lin, 1 / 2.4) - 0.055); a[:, 3] = 1.0      # (the image holds display values: the linear colour is encoded here)
     final = bpy.data.images.new('adventurer_tex', size, size, alpha=False); final.colorspace_settings.name = 'sRGB'; final.pixels.foreach_set(a.reshape(-1))
-    os.makedirs(outdir, exist_ok=True); path = os.path.join(outdir, 'adventurer_tex.jpg'); final.filepath_raw = path; final.file_format = 'JPEG'; scene.render.image_settings.quality = 93; final.save()
+    os.makedirs(outdir, exist_ok=True); path = os.path.join(outdir, 'adventurer_tex.png'); final.filepath_raw = path; final.file_format = 'PNG'; final.save()      # lossless: JPEG blocks stepped the smooth gradients (the hat crown)
     img = bpy.data.images.load(path); img.name = 'adventurer_tex_file'; img.pack()
     # the normal map (tangent space, +Y up as glTF wants) and the material map, both at half the atlas size (their detail is low frequency next to the colour's)
     def shrink(px4, factor):      # box filter: size x size x 4 -> (size/f) x (size/f) x 4
         q = px4.reshape(size // factor, factor, size // factor, factor, 4); return q.mean(axis=(1, 3))
     n4 = np.empty(size * size * 4, dtype=np.float32); imgs['NORMAL'].pixels.foreach_get(n4); n4 = n4.reshape(size, size, 4)
+    n4[n4[:, :, :3].max(axis=2) < 0.01] = (0.5, 0.5, 1.0, 1.0)      # unbaked texels decode to a wrong normal and light as black specks: make them flat
     nm = shrink(n4, 2); v = nm[:, :, :3] * 2 - 1; l = np.maximum(1e-6, np.sqrt((v * v).sum(axis=2, keepdims=True))); nm[:, :, :3] = (v / l) * 0.5 + 0.5; nm[:, :, 3] = 1
     flat = np.abs(nm[:, :, :2] - 0.5).mean(); print('REPORT normal map mean tilt %.4f (0 = flat)' % flat)
-    if flat < (0.0015 if STYLE == 'witness' else 0.005): raise ValueError('the normal map is flat: the bump relief was not baked')      # (the painterly style is flatter on purpose)
+    # Test authored cloth interiors, not the unused pixels between UV islands: a global mean depends on atlas occupancy.
+    ci = np.array(coat_indices, dtype=int); coat_n = nm[ci // size // 2, (ci % size) // 2, :2]
+    cloth_tilt = float(np.abs(coat_n - 0.5).mean())
+    print('REPORT cloth normal tilt %.6f from %d UV interiors (map mean %.4f)' % (cloth_tilt, len(ci), flat))
+    if cloth_tilt < (0.0003 if STYLE == 'witness' else 0.001): raise ValueError('the cloth normal map is flat: the bump relief was not baked')
     r4 = np.empty(size * size * 4, dtype=np.float32); imgs['ROUGHNESS'].pixels.foreach_get(r4); r4 = shrink(r4.reshape(size, size, 4), 2)
     m4 = np.empty(size * size * 4, dtype=np.float32); imgs['METAL'].pixels.foreach_get(m4); m4 = shrink(m4.reshape(size, size, 4), 2)
     orm = np.empty_like(r4); orm[:, :, 0] = shrink(np.clip(b[:, :1], 0, 1).reshape(size, size, 1).repeat(4, axis=2), 2)[:, :, 0]; orm[:, :, 1] = np.clip(r4[:, :, 0], 0, 1); orm[:, :, 2] = np.clip(m4[:, :, 0], 0, 1); orm[:, :, 3] = 1
@@ -978,7 +992,7 @@ def bake_texture(body, size, outdir):
     img_m = bpy.data.images.load(paths['orm']); img_m.name = 'adventurer_orm_file'; img_m.colorspace_settings.name = 'Non-Color'; img_m.pack()
     encoded = np.empty(size * size * 4, dtype=np.float32); img.pixels.foreach_get(encoded)
     values = encoded.reshape(-1, 4)[coat_indices, 1]
-    print('REPORT coat JPEG spread %.6f' % float(np.percentile(values, 90) - np.percentile(values, 10)))
+    print('REPORT coat atlas spread %.6f' % float(np.percentile(values, 90) - np.percentile(values, 10)))
     nm = bpy.data.materials.new('adventurer'); nm.use_nodes = True; bs = nm.node_tree.nodes['Principled BSDF']; bs.inputs['Roughness'].default_value = 1.0; bs.inputs['Metallic'].default_value = 0.0
     tn = nm.node_tree.nodes.new('ShaderNodeTexImage'); tn.image = img; nm.node_tree.links.new(tn.outputs['Color'], bs.inputs['Base Color']); nm.use_nodes = True
     tnn = nm.node_tree.nodes.new('ShaderNodeTexImage'); tnn.image = img_n; nmap = nm.node_tree.nodes.new('ShaderNodeNormalMap'); nm.node_tree.links.new(tnn.outputs['Color'], nmap.inputs['Color']); nm.node_tree.links.new(nmap.outputs['Normal'], bs.inputs['Normal'])

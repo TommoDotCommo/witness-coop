@@ -12,8 +12,9 @@ import sdf
 WRIST = np.array([0.265, 0.0, 0.910])        # the hand bone's head (adventurer.py's skeleton)
 KNUCKLE_Z = 0.826
 # per finger: y at the knuckle, segment lengths (proximal, middle, distal), radius at the knuckle
-FINGERS = ((-0.0255, (0.028, 0.020, 0.017), 0.0089), (-0.0085, (0.031, 0.022, 0.018), 0.0093),
-           (0.0085, (0.029, 0.020, 0.017), 0.0088), (0.0245, (0.023, 0.016, 0.015), 0.0077))
+FINGERS = ((-0.0285, (0.026, 0.019, 0.016), 0.0097), (-0.0095, (0.029, 0.021, 0.017), 0.0101),
+           (0.0095, (0.027, 0.019, 0.016), 0.0096), (0.0275, (0.021, 0.015, 0.014), 0.0085))      # chunky: short, thick, tapering; spaced so the fingers read apart
+HAND_SCALE = 1.12                            # the whole hand a little large, as the storybook head asks (about the wrist)
 CURL = (0.22, 0.38, 0.30)                    # radians per joint, toward the palm: relaxed, more at the middle joint
 
 def _finger(y, lengths, r0, spread):
@@ -22,13 +23,22 @@ def _finger(y, lengths, r0, spread):
     for k, L in enumerate(lengths):
         a += CURL[k]
         d = np.array([-np.sin(a), spread, -np.cos(a)]); d /= np.linalg.norm(d)
-        q = p + d * L; r1 = r * (0.90 if k < 2 else 0.80)
+        q = p + d * L; r1 = r * (0.93 if k < 2 else 0.84)
         parts.append(sdf.capsule(p, q, r, r1)); p, r = q, r1
     tip = p
-    return sdf.union(0.0035, *parts), tip
+    return sdf.union(0.0045, *parts), tip
+
+def _scaled(f):
+    """f grown by HAND_SCALE about the wrist (distances stay metric)."""
+    c = WRIST.copy(); k = HAND_SCALE
+    return lambda p: f(c + (p - c) / k) * k
 
 def skin(side=1):
-    """The hand's skin: palm, fingers, thumb (left hand; side -1 mirrors)."""
+    f = _scaled(_skin_raw())
+    return f if side > 0 else _mirror(f)
+
+def _skin_raw():
+    """The hand's skin: palm, fingers, thumb (left hand)."""
     s = sdf
     palm = s.union(0.010,
                    s.round_box((0.2665, 0.0000, 0.8580), (0.0125, 0.0345, 0.0335), 0.0100),          # the palm's block
@@ -36,27 +46,30 @@ def skin(side=1):
                    s.capsule((0.2665, -0.026, KNUCKLE_Z + 0.004), (0.2665, 0.025, KNUCKLE_Z + 0.004), 0.0095))  # the knuckle row
     fingers = []
     for i, (y, lengths, r0) in enumerate(FINGERS):
-        f, _ = _finger(y, lengths, r0, (i - 1.5) * 0.035); fingers.append(f)
+        f, _ = _finger(y, lengths, r0, (i - 1.5) * 0.050); fingers.append(f)
     # the thumb: from the heel of the palm, forward and down, curled in toward the index finger
     t0 = np.array([0.2600, -0.0300, 0.8800]); t1 = t0 + np.array([-0.0040, -0.0165, -0.0270]); t2 = t1 + np.array([-0.0070, -0.0060, -0.0200])
     global THUMB_TIP; THUMB_TIP = t2
-    thumb = s.union(0.004, s.capsule(t0, t1, 0.0102, 0.0090), s.capsule(t1, t2, 0.0090, 0.0072))
+    thumb = s.union(0.004, s.capsule(t0, t1, 0.0112, 0.0100), s.capsule(t1, t2, 0.0100, 0.0082))
     wrist = s.capsule(WRIST + np.array([0, 0, 0.030]), WRIST + np.array([0, 0, -0.022]), 0.0225, 0.0230)  # into the forearm
     hand = s.union(0.006, palm, wrist, thumb)
     hand = s.blend(hand, [(f, 0.0055, 'add') for f in fingers])
     hand = s.blend(hand, [(s.ellipsoid((0.2525, 0.0, 0.852), (0.0035, 0.022, 0.020)), 0.010, 'cut')])  # a soft hollow in the palm (the palm faces inward, -x)
-    return hand if side > 0 else _mirror(hand)
+    return hand
 
 THUMB_TIP = np.zeros(3)
 def glove(side=1):
-    """The fingerless glove: the palm's surface lifted 1.6 mm, from the wrist to just past the knuckles, the fingers bare."""
-    base = skin(1)
+    """The fingerless glove: the hand's surface lifted 2.2 mm, from a rolled cuff at the wrist to just past the knuckles, with
+    smooth rounded edges (no raw cut planes), the fingers and the thumb's tip bare."""
+    base = _skin_raw(); s = sdf; k = HAND_SCALE; c = WRIST
+    cuff = s.capsule(c + np.array([0, 0, 0.004]), c + np.array([0, 0, 0.040]), 0.0300, 0.0310)      # the wrist's rolled hem, an inch of leather round the wrist
     def f(p):
-        d = base(p) - 0.0016
-        d = np.maximum(d, (KNUCKLE_Z - 0.013) - p[:, 2])        # over the knuckles, the fingers bare past them
-        d = np.maximum(d, 0.024 - np.linalg.norm(p - THUMB_TIP, axis=1))      # the thumb bare past its base
-        d = np.maximum(d, p[:, 2] - (WRIST[2] + 0.020))           # and at the cuff
-        return d
+        q = c + (p - c) / k                                                                  # raw hand coordinates
+        d = s.smin(base(q) - 0.0022 / k, cuff(q), 0.006)
+        d = -s.smin(-d, q[:, 2] - (KNUCKLE_Z - 0.0125), 0.0035)                              # past the knuckles, a rounded edge
+        d = -s.smin(-d, np.linalg.norm(q - THUMB_TIP, axis=1) - 0.024, 0.0035)             # the thumb bare past its base
+        d = -s.smin(-d, (c[2] + 0.034) - q[:, 2], 0.0030)                                    # the top of the cuff, tucked under the bracer
+        return d * k
     return f if side > 0 else _mirror(f)
 
 def _mirror(f):
@@ -65,5 +78,5 @@ def _mirror(f):
     return g
 
 def bounds(side=1):
-    lo = np.array([0.215, -0.075, 0.735]); hi = np.array([0.315, 0.060, 0.945])
+    lo = np.array([0.205, -0.085, 0.715]); hi = np.array([0.325, 0.070, 0.955])
     return (lo, hi) if side > 0 else (np.array([-hi[0], lo[1], lo[2]]), np.array([-lo[0], hi[1], hi[2]]))
