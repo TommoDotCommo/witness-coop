@@ -35,9 +35,12 @@ $(BUILD)/text-test.exe: text_test.cpp theme.cpp theme.h trace.h ../common/gamefo
 $(BUILD)/text-mutant-GDI_GAME_FACE.exe: text_test.cpp theme.cpp theme.h trace.h ../common/gamefont.h
 	mkdir -p $(BUILD)
 	$(CXX) -std=c++17 -O2 -D_WIN32_WINNT=0x0601 -municode -static -DWL_MUT_GDI_GAME_FACE -o $@ text_test.cpp theme.cpp $(THEME_LIBS)
-text-test: $(BUILD)/text-test.exe $(BUILD)/text-mutant-GDI_GAME_FACE.exe
+$(BUILD)/text-mutant-GDI_SHAPES.exe: text_test.cpp theme.cpp theme.h trace.h ../common/gamefont.h
+	mkdir -p $(BUILD)
+	$(CXX) -std=c++17 -O2 -D_WIN32_WINNT=0x0601 -municode -static -DWL_MUT_GDI_SHAPES -o $@ text_test.cpp theme.cpp $(THEME_LIBS)
+text-test: $(BUILD)/text-test.exe $(BUILD)/text-mutant-GDI_GAME_FACE.exe $(BUILD)/text-mutant-GDI_SHAPES.exe
 	$(BUILD)/text-test.exe '$(GAME_DIR)'
-	@if [ -n "$(GAME_DIR)" ]; then if $(BUILD)/text-mutant-GDI_GAME_FACE.exe '$(GAME_DIR)' >/dev/null; then echo "MUTANT GDI_GAME_FACE SURVIVED (the test cannot fail for it)"; exit 1; else echo "text mutant GDI_GAME_FACE killed"; fi; fi
+	@if [ -n "$(GAME_DIR)" ]; then for m in GDI_GAME_FACE GDI_SHAPES; do if $(BUILD)/text-mutant-$$m.exe '$(GAME_DIR)' >/dev/null; then echo "MUTANT $$m SURVIVED (the test cannot fail for it)"; exit 1; else echo "text mutant $$m killed"; fi; done; fi
 .PHONY: text-test
 clean:
 	rm -rf $(BUILD)
@@ -52,7 +55,7 @@ VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 $(BUILD)/version.h: FORCE
 	@mkdir -p $(BUILD); printf '#define MOD_VERSION "%s"\n' '$(VERSION)' > $(BUILD)/version.h.new; cmp -s $(BUILD)/version.h.new $(BUILD)/version.h && rm $(BUILD)/version.h.new || mv $(BUILD)/version.h.new $(BUILD)/version.h
 FORCE:
-LMUTANTS = NF_MUT_IGNORE_REPLIES NO_PROBE_ANSWER NO_MONITOR NO_VIDEO_WRITE NO_SAVE_WRITE CFG_DROP LOBBY_NO_CFG LOBBY_NO_RESULT LOBBY_NO_RESTORE LOBBY_NO_VOICE WIDE_COMBOS TAB_REPAINT_ALWAYS LONG_LABELS LOBBY_VERSION_ANY NO_SAVE_ON_CHANGE NO_STEAM_AT_START GUIDE_REARM
+LMUTANTS = WINDOWS_CAPTION GOAL_ALWAYS STATUS_STAYS NF_MUT_IGNORE_REPLIES NO_PROBE_ANSWER NO_MONITOR NO_VIDEO_WRITE NO_SAVE_WRITE CFG_DROP LOBBY_NO_CFG LOBBY_NO_RESULT LOBBY_NO_RESTORE LOBBY_NO_VOICE WIDE_COMBOS TAB_REPAINT_ALWAYS LONG_LABELS LOBBY_VERSION_ANY NO_SAVE_ON_CHANGE NO_STEAM_AT_START GUIDE_REARM
 launcher-mutants: $(addsuffix .exe,$(addprefix $(BUILD)/witness_launcher_,$(LMUTANTS)))
 # finding each other and the hosting checks (C: the shared Windows headers vendored from MDK2 are C)
 NF_HDRS = netfind.h ../common/coop_witness.h ../common/coop_invite.h ../common/coop_discover.h ../common/coop_discover_win.h ../common/launcher_join.h ../common/launcher_host_core.h ../common/launcher_host_win.h joinglue.h

@@ -14,7 +14,7 @@
 
 namespace th {
 COLORREF kBg = RGB(13, 19, 22), kSurface = RGB(21, 31, 36), kSurface2 = RGB(32, 46, 53), kLine = RGB(207, 233, 241), kAccent = RGB(78, 224, 255), kWarm = RGB(255, 200, 87), kText = RGB(230, 238, 240), kMuted = RGB(126, 147, 155), kDanger = RGB(255, 107, 107);
-static HFONT g_body, g_small, g_bold, g_title, g_tile, g_label; static HBRUSH g_bg, g_surface; static std::wstring g_face;      // g_face: the game's face when it was read, else empty
+static HFONT g_body, g_small, g_bold, g_title, g_tile, g_label, g_tabFont; static HBRUSH g_bg, g_surface; static std::wstring g_face;      // g_face: the game's face when it was read, else empty
 static HFONT Font(int px, int weight, const wchar_t* face) { return CreateFontW(-px, 0, 0, 0, weight, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, face); }
 // The game's menu face for the headings: read from the player's own archive into memory (common/gamefont.h) and added as a private font; nothing is written.
 // Labels (row labels, "Your name", choice and switch text) use it too (owner, 2026-11-04); descriptions, hints, text boxes and lists stay Segoe UI
@@ -45,6 +45,33 @@ static ID2D1DCRenderTarget* Target() {
     }
     return g_rt;
 }
+// Shapes (the start circles, the line round a button) are drawn by Direct2D too: GDI's Ellipse and Polyline have no edge smoothing and looked pixelated (owner, 2026-11-06).
+// Paint2D binds the render target to the box `b` of the DC and calls fn with the DC's own coordinates; false: no Direct2D, the caller draws with GDI.
+static ID2D1StrokeStyle* g_round;
+template <class F> static bool Paint2D(HDC dc, RECT b, F fn) {
+#ifdef WL_MUT_GDI_SHAPES
+    return false;      // mutant: shapes stay GDI's (the shape test must see hard, stepped edges)
+#endif
+    ID2D1DCRenderTarget* rt = Target(); if (!rt) return false; RECT clip; if (GetClipBox(dc, &clip) != ERROR) IntersectRect(&b, &b, &clip); if (b.right <= b.left || b.bottom <= b.top) return true;
+    if (!g_round) { D2D1_STROKE_STYLE_PROPERTIES sp = D2D1::StrokeStyleProperties(D2D1_CAP_STYLE_ROUND, D2D1_CAP_STYLE_ROUND, D2D1_CAP_STYLE_ROUND, D2D1_LINE_JOIN_ROUND); g_d2->CreateStrokeStyle(sp, nullptr, 0, &g_round); }
+    if (FAILED(rt->BindDC(dc, &b))) return false;
+    rt->BeginDraw(); rt->SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE); rt->SetTransform(D2D1::Matrix3x2F::Translation(-float(b.left), -float(b.top))); fn(rt);
+    rt->SetTransform(D2D1::Matrix3x2F::Identity()); if (rt->EndDraw() == (HRESULT)D2DERR_RECREATE_TARGET) Rel(g_rt); return true;
+}
+static D2D1_COLOR_F Col(COLORREF c, float a = 1) { return D2D1::ColorF(GetRValue(c) / 255.f, GetGValue(c) / 255.f, GetBValue(c) / 255.f, a); }
+template <class F> static void WithBrush(ID2D1RenderTarget* rt, COLORREF c, float a, F fn) { ID2D1SolidColorBrush* br = nullptr; if (SUCCEEDED(rt->CreateSolidColorBrush(Col(c, a), &br))) { fn(br); br->Release(); } }
+static void Disc2D(ID2D1RenderTarget* rt, float cx, float cy, float r, COLORREF c, float a = 1) { WithBrush(rt, c, a, [&](ID2D1Brush* b) { rt->FillEllipse(D2D1::Ellipse(D2D1::Point2F(cx, cy), r, r), b); }); }
+static void Ring2D(ID2D1RenderTarget* rt, float cx, float cy, float r, float w, COLORREF c, float a = 1) { WithBrush(rt, c, a, [&](ID2D1Brush* b) { rt->DrawEllipse(D2D1::Ellipse(D2D1::Point2F(cx, cy), r, r), b, w); }); }
+static void Glow2D(ID2D1RenderTarget* rt, float cx, float cy, float r, COLORREF c, float a) {      // a soft light fading out to radius r
+    D2D1_GRADIENT_STOP st[3] = {{0, Col(c, a)}, {.45f, Col(c, a * .55f)}, {1, Col(c, 0)}}; ID2D1GradientStopCollection* sc = nullptr; ID2D1RadialGradientBrush* br = nullptr;
+    if (SUCCEEDED(rt->CreateGradientStopCollection(st, 3, &sc)) && SUCCEEDED(rt->CreateRadialGradientBrush(D2D1::RadialGradientBrushProperties(D2D1::Point2F(cx, cy), D2D1::Point2F(0, 0), r, r), sc, &br))) rt->FillEllipse(D2D1::Ellipse(D2D1::Point2F(cx, cy), r, r), br);
+    if (br) br->Release(); if (sc) sc->Release();
+}
+static void Poly2D(ID2D1RenderTarget* rt, const std::vector<trace::Pt>& p, float w, COLORREF c, float a = 1) {
+    if (p.size() < 2) return; ID2D1PathGeometry* g = nullptr; ID2D1GeometrySink* k = nullptr; if (FAILED(g_d2->CreatePathGeometry(&g))) return;
+    if (SUCCEEDED(g->Open(&k))) { k->BeginFigure(D2D1::Point2F(p[0].x, p[0].y), D2D1_FIGURE_BEGIN_HOLLOW); for (size_t i = 1; i < p.size(); ++i) k->AddLine(D2D1::Point2F(p[i].x, p[i].y)); k->EndFigure(D2D1_FIGURE_END_OPEN); k->Close(); k->Release(); }
+    WithBrush(rt, c, a, [&](ID2D1Brush* b) { rt->DrawGeometry(g, b, w, g_round); }); g->Release();
+}
 static bool DwInit(const std::wstring& family) {
 #ifdef WL_MUT_GDI_GAME_FACE
     return false;      // mutant: the game's face stays in GDI (the text test must see grey, pixelated edges)
@@ -57,12 +84,12 @@ static bool DwInit(const std::wstring& family) {
         UINT32 i = 0; BOOL found = FALSE; IDWriteFontFamily1* ff = nullptr; IDWriteFont* f = nullptr;
         if (SUCCEEDED(g_dwFonts->FindFamilyName(family.c_str(), &i, &found)) && found && SUCCEEDED(g_dwFonts->GetFontFamily(i, &ff)) && SUCCEEDED(ff->GetFirstMatchingFont(DWRITE_FONT_WEIGHT_BOLD, DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL, &f))) {
             DWRITE_FONT_METRICS m; f->GetMetrics(&m); if (m.designUnitsPerEm) { g_dwAscent = float(m.ascent) / m.designUnitsPerEm; g_dwDescent = float(m.descent) / m.designUnitsPerEm; }      // (GDI's line: ascent + descent, no gap)
-            ok = SUCCEEDED(D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, __uuidof(ID2D1Factory), nullptr, (void**)&g_d2)) && Target();
+            ok = Target() != nullptr;
         }
         Rel(f); Rel(ff);
     }
     Rel(set); Rel(sb); Rel(file); Rel(ld);      // (the loader stays registered with the factory, which holds it)
-    if (!ok) { Rel(g_rt); Rel(g_d2); Rel(g_dwFonts); Rel(g_dw); }
+    if (!ok) { Rel(g_dwFonts); Rel(g_dw); }
     return ok;
 }
 static bool GameFaceIn(HFONT f, LOGFONTW* lf) { return g_dwFonts && f && !g_face.empty() && GetObjectW(f, sizeof *lf, lf) && g_face == lf->lfFaceName; }
@@ -135,9 +162,10 @@ const std::string& FontState() { return g_fontState; }
 void Init(const std::wstring& gameDir) {
     if (g_body) return;
     g_body = Font(15, FW_NORMAL, L"Segoe UI"); g_small = Font(13, FW_NORMAL, L"Segoe UI");
+    D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, __uuidof(ID2D1Factory), nullptr, (void**)&g_d2);      // (shapes and the game's face; none: GDI as before)
     std::wstring face = GameFace(gameDir); g_face = face; if (!face.empty()) g_fontState += DwInit(face) ? " directwrite" : " gdi";
-    if (!face.empty()) { g_bold = Font(16, FW_BOLD, face.c_str()); g_title = Font(30, FW_BOLD, face.c_str()); g_tile = Font(20, FW_BOLD, face.c_str()); g_label = Font(16, FW_BOLD, face.c_str()); }      // (Karmina's capitals are a little smaller than Segoe's at one size: 16 px matches the 15 px Semibold)
-    else { g_bold = Font(15, FW_SEMIBOLD, L"Segoe UI Semibold"); g_title = Font(30, FW_LIGHT, L"Segoe UI Light"); g_tile = Font(18, FW_SEMIBOLD, L"Segoe UI Semibold"); g_label = g_body; }
+    if (!face.empty()) { g_bold = Font(16, FW_BOLD, face.c_str()); g_title = Font(30, FW_BOLD, face.c_str()); g_tile = Font(20, FW_BOLD, face.c_str()); g_label = Font(16, FW_BOLD, face.c_str()); g_tabFont = Font(22, FW_BOLD, face.c_str()); }      // (Karmina's capitals are a little smaller than Segoe's at one size: 16 px matches the 15 px Semibold)
+    else { g_bold = Font(15, FW_SEMIBOLD, L"Segoe UI Semibold"); g_title = Font(30, FW_LIGHT, L"Segoe UI Light"); g_tile = Font(18, FW_SEMIBOLD, L"Segoe UI Semibold"); g_label = g_body; g_tabFont = Font(20, FW_SEMIBOLD, L"Segoe UI Semibold"); }
     g_bg = CreateSolidBrush(kBg); g_surface = CreateSolidBrush(kSurface);
 }
 HFONT Body() { return g_body; } HFONT Small() { return g_small; } HFONT Bold() { return g_bold; } HFONT Title() { return g_title; }
@@ -146,6 +174,8 @@ static std::wstring ClassOf(HWND h) { wchar_t c[40] = {}; GetClassNameW(h, c, 40
 void MarkMuted(HWND h) { SetPropW(h, L"muted", (HANDLE)1); SendMessageW(h, WM_SETFONT, (WPARAM)g_small, TRUE); }
 
 void DrawDot(HDC dc, int cx, int cy, int r, COLORREF c, bool filled) {
+    float fx = cx + .5f, fy = cy + .5f; RECT b = {cx - r - 3, cy - r - 3, cx + r + 4, cy + r + 4};
+    if (Paint2D(dc, b, [&](ID2D1RenderTarget* rt) { if (filled) Disc2D(rt, fx, fy, r + .5f, c); else Ring2D(rt, fx, fy, r - .5f, 2, c); })) return;
     HPEN pen = CreatePen(PS_SOLID, 2, c); HBRUSH br = filled ? CreateSolidBrush(c) : (HBRUSH)GetStockObject(NULL_BRUSH); HGDIOBJ op = SelectObject(dc, pen), ob = SelectObject(dc, br);
     Ellipse(dc, cx - r, cy - r, cx + r + 1, cy + r + 1); SelectObject(dc, op); SelectObject(dc, ob); DeleteObject(pen); if (filled) DeleteObject(br);
 }
@@ -154,16 +184,27 @@ static COLORREF Mix(COLORREF a, COLORREF b, float t) { return RGB(GetRValue(a) +
 // A Play choice as a tile: a card with the puzzle's start circle (lit and a first stroke of line when chosen), the name in the game's face, the description under it.
 static void DrawTile(HWND h, HDC dc, const RECT& rc, const wchar_t* name, bool checked, bool hot, bool dis) {
     COLORREF fill = checked ? Mix(kSurface, kWarm, 0.10f) : (hot ? kSurface2 : kSurface), edge = checked ? kWarm : (hot ? kMuted : kSurface2);
-    HBRUSH fb = CreateSolidBrush(fill); HPEN pen = CreatePen(PS_SOLID, checked ? 2 : 1, edge); HGDIOBJ op = SelectObject(dc, pen), ob = SelectObject(dc, fb);
-    RoundRect(dc, rc.left + 1, rc.top + 1, rc.right - 1, rc.bottom - 1, 10, 10); SelectObject(dc, op); SelectObject(dc, ob); DeleteObject(pen); DeleteObject(fb);
-    int r = 9, cx = 18 + r, cy = 16 + r;
-    if (checked) { LOGBRUSH lb = {BS_SOLID, kWarm, 0}; HPEN lp = ExtCreatePen(PS_GEOMETRIC | PS_SOLID | PS_ENDCAP_ROUND, 5, &lb, 0, nullptr); HGDIOBJ o = SelectObject(dc, lp); MoveToEx(dc, cx, cy, nullptr); LineTo(dc, cx, rc.bottom - 14); SelectObject(dc, o); DeleteObject(lp); }
-    DrawDot(dc, cx, cy, r, dis ? kSurface2 : (checked ? kWarm : (hot ? kLine : kMuted)), checked);
+    int r = 9, cx = 18 + r, cy = 16 + r; bool focus = GetFocus() == h && !dis;
+    // the card and the puzzle's start circle, smooth: a hollow circle, lit (filled, with the soft light of a powered start) when chosen. (The line that ran down from it
+    // looked like a lollipop: owner, 2026-11-06.)
+    bool smooth = Paint2D(dc, rc, [&](ID2D1RenderTarget* rt) {
+        D2D1_ROUNDED_RECT card = {D2D1::RectF(rc.left + 1.5f, rc.top + 1.5f, rc.right - 1.5f, rc.bottom - 1.5f), 6, 6};
+        WithBrush(rt, fill, 1, [&](ID2D1Brush* b) { rt->FillRoundedRectangle(card, b); }); WithBrush(rt, edge, 1, [&](ID2D1Brush* b) { rt->DrawRoundedRectangle(card, b, checked ? 2.f : 1.f); });
+        float x = cx + .5f, y = cy + .5f;
+        if (checked && !dis) { Glow2D(rt, x, y, r + 12.f, kWarm, .30f); Disc2D(rt, x, y, r + .5f, kWarm); Disc2D(rt, x, y, r * .38f, RGB(255, 251, 236), .85f); }
+        else Ring2D(rt, x, y, r - .75f, 2.5f, dis ? kSurface2 : (hot ? kLine : kMuted));
+        if (focus) WithBrush(rt, kLine, 1, [&](ID2D1Brush* b) { rt->DrawRoundedRectangle({D2D1::RectF(rc.left + 5.f, rc.top + 5.f, rc.right - 5.f, rc.bottom - 5.f), 4, 4}, b, 1.5f); });
+    });
+    if (!smooth) {
+        HBRUSH fb = CreateSolidBrush(fill); HPEN pen = CreatePen(PS_SOLID, checked ? 2 : 1, edge); HGDIOBJ op = SelectObject(dc, pen), ob = SelectObject(dc, fb);
+        RoundRect(dc, rc.left + 1, rc.top + 1, rc.right - 1, rc.bottom - 1, 10, 10); SelectObject(dc, op); SelectObject(dc, ob); DeleteObject(pen); DeleteObject(fb);
+        DrawDot(dc, cx, cy, r, dis ? kSurface2 : (checked ? kWarm : (hot ? kLine : kMuted)), checked);
+    }
     SetBkMode(dc, TRANSPARENT); SelectObject(dc, g_tile); SetTextColor(dc, dis ? kMuted : (checked ? kWarm : kText));
     RECT nr = {cx + r + 14, rc.top + 10, rc.right - 12, rc.top + 42}; Text(dc, name, -1, &nr, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
     wchar_t desc[300] = {}; if (HWND d = (HWND)GetPropW(h, L"desc")) GetWindowTextW(d, desc, 300);
     SelectObject(dc, g_small); SetTextColor(dc, checked ? kText : kMuted); RECT dr = {nr.left, rc.top + 44, rc.right - 12, rc.bottom - 8}; Text(dc, desc, -1, &dr, DT_LEFT | DT_WORDBREAK | DT_END_ELLIPSIS);
-    if (GetFocus() == h && !dis) { HPEN fp = CreatePen(PS_SOLID, 2, kLine); HGDIOBJ o1 = SelectObject(dc, fp), o2 = SelectObject(dc, GetStockObject(NULL_BRUSH)); RoundRect(dc, rc.left + 4, rc.top + 4, rc.right - 4, rc.bottom - 4, 8, 8); SelectObject(dc, o1); SelectObject(dc, o2); DeleteObject(fp); }
+    if (focus && !smooth) { HPEN fp = CreatePen(PS_SOLID, 2, kLine); HGDIOBJ o1 = SelectObject(dc, fp), o2 = SelectObject(dc, GetStockObject(NULL_BRUSH)); RoundRect(dc, rc.left + 4, rc.top + 4, rc.right - 4, rc.bottom - 4, 8, 8); SelectObject(dc, o1); SelectObject(dc, o2); DeleteObject(fp); }
 }
 void MarkTile(HWND radio, HWND desc) { SetPropW(radio, L"tile", (HANDLE)1); SetPropW(radio, L"desc", desc); if (desc) ShowWindow(desc, SW_HIDE); }
 
@@ -181,6 +222,8 @@ static void TraceUpdate(HWND h) {
 static float TraceProgress(HWND h) { ULONG_PTR t0 = (ULONG_PTR)GetPropW(h, L"tr0"); if (!t0) return 0; if (!Motion()) return 1; return trace::EaseOut(float(GetTickCount64() - t0) / kTraceMs); }
 static void DrawTrace(HDC dc, const RECT& rc, int inset, float rad, float progress, COLORREF col, int width, int dot) {
     if (progress <= 0) return;
+    { float h = width / 2.f; auto ring = trace::Prefix(trace::Ring(rc.left + inset + h, rc.top + inset + h, rc.right - inset - h, rc.bottom - inset - h, rad, 8), progress);
+      if (Paint2D(dc, rc, [&](ID2D1RenderTarget* rt) { Poly2D(rt, ring, float(width), col); if (dot > 0) Disc2D(rt, ring[0].x, ring[0].y, dot + .5f, col); })) return; }
     auto ring = trace::Prefix(trace::Ring(rc.left + inset + .5f, rc.top + inset + .5f, rc.right - 1 - inset - .5f, rc.bottom - 1 - inset - .5f, rad), progress);
     std::vector<POINT> pts; for (auto& q : ring) pts.push_back({LONG(lroundf(q.x)), LONG(lroundf(q.y))});
     LOGBRUSH lb = {BS_SOLID, col, 0}; HPEN pen = ExtCreatePen(PS_GEOMETRIC | PS_SOLID | PS_ENDCAP_ROUND | PS_JOIN_ROUND, width, &lb, 0, nullptr); HGDIOBJ op = SelectObject(dc, pen);
@@ -211,8 +254,10 @@ static LRESULT CALLBACK ButtonProc(HWND h, UINT m, WPARAM w, LPARAM l, UINT_PTR,
             if (GetFocus() == h) { HPEN pen = CreatePen(PS_DOT, 1, kMuted); HGDIOBJ op = SelectObject(mem, pen); SelectObject(mem, GetStockObject(NULL_BRUSH)); Rectangle(mem, rc.left, rc.top, rc.right, rc.bottom); SelectObject(mem, op); DeleteObject(pen); }
         } else {
             bool primary = type == BS_DEFPUSHBUTTON; COLORREF fill = primary ? (dis ? kSurface2 : (down ? kLine : (hot ? Mix(kWarm, kLine, 0.25f) : kWarm))) : (down ? kSurface : (hot ? kSurface2 : kSurface)), edge = primary ? fill : (dis ? kSurface2 : kMuted);
-            HBRUSH fb = CreateSolidBrush(fill); HPEN pen = CreatePen(PS_SOLID, 1, edge); HGDIOBJ op = SelectObject(mem, pen), obr = SelectObject(mem, fb); RoundRect(mem, rc.left, rc.top, rc.right, rc.bottom, 6, 6); SelectObject(mem, op); SelectObject(mem, obr); DeleteObject(pen); DeleteObject(fb);
-            if (!dis) { bool big = rc.bottom - rc.top >= 36; DrawTrace(mem, rc, primary ? (big ? 7 : 5) : 3, primary ? 4 : 3, TraceProgress(h), primary ? RGB(255, 251, 236) : kAccent, primary && big ? 3 : 2, primary ? (big ? 5 : 4) : 3); }      // under the pointer or with the focus: the line runs round (keyboard and pad users see where they are)
+            if (!Paint2D(mem, rc, [&](ID2D1RenderTarget* rt) { D2D1_ROUNDED_RECT b = {D2D1::RectF(rc.left + .5f, rc.top + .5f, rc.right - .5f, rc.bottom - .5f), 4, 4}; WithBrush(rt, fill, 1, [&](ID2D1Brush* br) { rt->FillRoundedRectangle(b, br); }); WithBrush(rt, edge, 1, [&](ID2D1Brush* br) { rt->DrawRoundedRectangle(b, br, 1); }); })) {
+                HBRUSH fb = CreateSolidBrush(fill); HPEN pen = CreatePen(PS_SOLID, 1, edge); HGDIOBJ op = SelectObject(mem, pen), obr = SelectObject(mem, fb); RoundRect(mem, rc.left, rc.top, rc.right, rc.bottom, 6, 6); SelectObject(mem, op); SelectObject(mem, obr); DeleteObject(pen); DeleteObject(fb);
+            }
+            if (!dis) DrawTrace(mem, rc, primary ? 3 : 2, 3, TraceProgress(h), primary ? RGB(255, 251, 236) : kAccent, 2, 3);      // (near the edge, well clear of the words: owner, 2026-11-06)      // under the pointer or with the focus: the line runs round (keyboard and pad users see where they are)
             SelectObject(mem, g_bold); SetTextColor(mem, primary ? (dis ? kMuted : kBg) : (dis ? kMuted : kText)); Text(mem, text, -1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
         }
         BitBlt(dc, 0, 0, rc.right, rc.bottom, mem, 0, 0, SRCCOPY); SelectObject(mem, ob); DeleteObject(bmp); DeleteDC(mem); EndPaint(h, &ps); return 0;
@@ -251,13 +296,13 @@ static LRESULT CALLBACK TabProc(HWND h, UINT m, WPARAM w, LPARAM l, UINT_PTR, DW
     case WM_PAINT: {
         InterlockedIncrement(&g_tabPaints); PAINTSTRUCT ps; HDC wdc = BeginPaint(h, &ps); RECT rc; GetClientRect(h, &rc); HDC dc = CreateCompatibleDC(wdc); HBITMAP bmp = CreateCompatibleBitmap(wdc, rc.right, rc.bottom); HGDIOBJ obmp = SelectObject(dc, bmp);      // drawn off screen and copied once: no flicker
         HBRUSH bg = CreateSolidBrush(kBg); FillRect(dc, &rc, bg); DeleteObject(bg);
-        int hotTab = (int)(INT_PTR)GetPropW(h, L"hot") - 1; int n = TabCtrl_GetItemCount(h), sel = TabCtrl_GetCurSel(h); SetBkMode(dc, TRANSPARENT); SelectObject(dc, g_bold);
+        int hotTab = (int)(INT_PTR)GetPropW(h, L"hot") - 1; int n = TabCtrl_GetItemCount(h), sel = TabCtrl_GetCurSel(h); SetBkMode(dc, TRANSPARENT); SelectObject(dc, g_tabFont);
         RECT first = {}; if (n) TabCtrl_GetItemRect(h, 0, &first); int stripBottom = first.bottom;
         HPEN lp = CreatePen(PS_SOLID, 1, kSurface2); HGDIOBJ op = SelectObject(dc, lp); MoveToEx(dc, rc.left, stripBottom, nullptr); LineTo(dc, rc.right, stripBottom); SelectObject(dc, op); DeleteObject(lp);
         for (int i = 0; i < n; ++i) {
             RECT r; TabCtrl_GetItemRect(h, i, &r); wchar_t t[80] = {}; TCITEMW it = {}; it.mask = TCIF_TEXT; it.pszText = t; it.cchTextMax = 80; TabCtrl_GetItem(h, i, &it);
             bool hot = i == hotTab; SetTextColor(dc, i == sel ? kText : (hot ? kLine : kMuted)); RECT tr = r; Text(dc, t, -1, &tr, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-            if (i == sel) { HBRUSH ab = CreateSolidBrush(kWarm); RECT ar = {r.left + 8, stripBottom - 3, r.right - 8, stripBottom}; FillRect(dc, &ar, ab); DeleteObject(ab); }
+            if (i == sel) { HBRUSH ab = CreateSolidBrush(kWarm); RECT ar = {r.left + 18, stripBottom - 4, r.right - 18, stripBottom}; FillRect(dc, &ar, ab); DeleteObject(ab); }
         }
         BitBlt(wdc, 0, 0, rc.right, rc.bottom, dc, 0, 0, SRCCOPY); SelectObject(dc, obmp); DeleteObject(bmp); DeleteDC(dc); EndPaint(h, &ps); return 0;
     }
@@ -265,10 +310,29 @@ static LRESULT CALLBACK TabProc(HWND h, UINT m, WPARAM w, LPARAM l, UINT_PTR, DW
     }
     return DefSubclassProc(h, m, w, l);
 }
-void StyleTab(HWND tab) { SetWindowSubclass(tab, TabProc, 2, 0); SendMessageW(tab, WM_SETFONT, (WPARAM)g_bold, TRUE); TabCtrl_SetItemSize(tab, 112, 34); TabCtrl_SetPadding(tab, 12, 6); }
+void StyleTab(HWND tab) { SetWindowSubclass(tab, TabProc, 2, 0); SendMessageW(tab, WM_SETFONT, (WPARAM)g_tabFont, TRUE); TabCtrl_SetItemSize(tab, 150, 46); TabCtrl_SetPadding(tab, 16, 8); }      // (bigger words, wider apart: owner, 2026-11-06)
+// A list's column headings, painted here: the dark theme's own were dim grey on near black and hard to read (owner, 2026-11-06). Light words in the labels' face on a raised strip.
+static LRESULT CALLBACK HeaderProc(HWND h, UINT m, WPARAM w, LPARAM l, UINT_PTR, DWORD_PTR) {
+    if (m == WM_ERASEBKGND) return 1;
+    if (m == WM_PAINT) {
+        PAINTSTRUCT ps; HDC wdc = BeginPaint(h, &ps); RECT rc; GetClientRect(h, &rc); int cw = std::max<LONG>(1, rc.right), ch = std::max<LONG>(1, rc.bottom);
+        HDC dc = CreateCompatibleDC(wdc); HBITMAP bmp = CreateCompatibleBitmap(wdc, cw, ch); HGDIOBJ ob = SelectObject(dc, bmp), of = SelectObject(dc, g_label);
+        HBRUSH bg = CreateSolidBrush(kSurface2); FillRect(dc, &rc, bg); DeleteObject(bg); SetBkMode(dc, TRANSPARENT); SetTextColor(dc, kText);
+        HBRUSH sep = CreateSolidBrush(kBg); int n = Header_GetItemCount(h);
+        for (int i = 0; i < n; ++i) {
+            RECT r; Header_GetItemRect(h, i, &r); wchar_t t[80] = {}; HDITEMW it = {}; it.mask = HDI_TEXT | HDI_FORMAT; it.pszText = t; it.cchTextMax = 80; Header_GetItem(h, i, &it);
+            RECT tr = r; tr.left += 8; tr.right -= 8; Text(dc, t, -1, &tr, DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX | ((it.fmt & HDF_RIGHT) ? DT_RIGHT : (it.fmt & HDF_CENTER) ? DT_CENTER : DT_LEFT));
+            RECT sr = {r.right - 1, r.top + 5, r.right, r.bottom - 5}; FillRect(dc, &sr, sep);
+        }
+        RECT line = {0, ch - 1, cw, ch}; FillRect(dc, &line, sep); DeleteObject(sep);
+        BitBlt(wdc, 0, 0, cw, ch, dc, 0, 0, SRCCOPY); SelectObject(dc, of); SelectObject(dc, ob); DeleteObject(bmp); DeleteDC(dc); EndPaint(h, &ps); return 0;
+    }
+    if (m == WM_NCDESTROY) RemoveWindowSubclass(h, HeaderProc, 4);
+    return DefSubclassProc(h, m, w, l);
+}
 void StyleList(HWND list) {
     SetWindowTheme(list, L"DarkMode_Explorer", nullptr); ListView_SetBkColor(list, kSurface); ListView_SetTextBkColor(list, kSurface); ListView_SetTextColor(list, kText); SendMessageW(list, WM_SETFONT, (WPARAM)g_body, TRUE);
-    HWND hdr = ListView_GetHeader(list); if (hdr) SetWindowTheme(hdr, L"DarkMode_ItemsView", nullptr);
+    HWND hdr = ListView_GetHeader(list); if (hdr) { SetWindowTheme(hdr, L"DarkMode_ItemsView", nullptr); SetWindowSubclass(hdr, HeaderProc, 4, 0); InvalidateRect(hdr, nullptr, TRUE); }
 }
 
 // ---- the banner's art, drawn in software into a 32-bit buffer (anti-aliased shapes; GDI's own circles and lines have no edge smoothing)
@@ -320,7 +384,7 @@ static void Cover(Canvas& c, const uint8_t* rgba, int w, int h, float focusY) {
 }
 // A Witness puzzle panel: a yellow panel with its darker grid (4 x 3 cells), the start circle at the bottom left, the end cap past the top right corner, and a solved
 // line traced in white along the grid from the start to the end, with the soft glow of a lit line.
-struct Grid { float gx, gy, cell, half, cap; int cols, rows; };      // a board's nodes: (gx + i * cell, gy + j * cell), the line half as thick as `half`, its end cap `cap` past the top right node
+struct Grid { float gx, gy, cell, half, cap; int cols, rows; bool up = false; };      // up: the end cap leaves the top right node upwards (else to the right)      // a board's nodes: (gx + i * cell, gy + j * cell), the line half as thick as `half`, its end cap `cap` past the top right node
 static Grid PuzzleGrid(float x, float y, float w, float h) { const int cols = 4, rows = 3; float m = std::min(w, h) * .15f, cell = std::min((w - 2 * m) / cols, (h - 2 * m) / rows); return {x + (w - cols * cell) / 2, y + (h - rows * cell) / 2, cell, cell * .12f, cell * .34f, cols, rows}; }
 static void Puzzle(Canvas& c, float x, float y, float w, float h, bool solved = true) {
     const COLORREF body = RGB(240, 186, 56), body2 = RGB(222, 158, 38), grid = RGB(126, 90, 30), line = RGB(255, 251, 236);
@@ -369,24 +433,43 @@ static HBITMAP NewDib(HDC ref, int w, int h, uint32_t** bits) {
     BITMAPINFO bi = {}; bi.bmiHeader = {sizeof(BITMAPINFOHEADER), w, -h, 1, 32, BI_RGB, 0, 0, 0, 0, 0}; void* p = nullptr;
     HBITMAP b = CreateDIBSection(ref, &bi, DIB_RGB_COLORS, &p, nullptr, 0); *bits = (uint32_t*)p; return b;
 }
+static bool g_capOn, g_capMax, g_capActive = true; static int g_capHot, g_capDown; static const int kCapW = 46, kCapH = 32;      // (the caption buttons: see PaintHeader)
 static HBITMAP g_banner; static uint32_t* g_bannerBits; static int g_bannerW, g_bannerH; static unsigned g_bannerGen;
 
-// ---- the moving line on the banner: a random solution traced on the board (the drawn panel, or the faint grid over a save's picture) from its start circle to
-// its end cap, a flash when it is solved, a fade, a rest, and the next puzzle (trace.h). The clock runs only while the launcher is the window in use.
-static bool g_boardOn, g_boardPanel; static Grid g_board; static std::vector<trace::Pt> g_line; static double g_lineMs = 3000, g_clock, g_cycle0;
+// ---- the moving line on the banner: the boards (one drawn yellow panel, or over a save's picture a row of small dark Witness panels) are solved one after another,
+// each line from its start circle to its end cap along a random solution (trace.h); a solved line stays lit, the last solve holds, they fade together, a rest, new puzzles.
+// The clock runs only while the launcher is the window in use.
+struct Board { Grid g; std::vector<trace::Pt> line; double ms; };
+static bool g_boardOn, g_boardPanel; static std::vector<Board> g_boards; static double g_clock, g_cycle0;
 static uint32_t g_seed = 1; static unsigned g_frames, g_puzzles; static bool g_active, g_motion = true;
 static HBITMAP g_frame; static uint32_t* g_frameBits; static int g_frameW, g_frameH; static ULONGLONG g_lastTick, g_lastInval;
+constexpr double kNextMs = 700;      // a solved panel's flash before the next one starts
 static void NewPuzzle() {
-    const Grid& g = g_board; auto nodes = trace::SolvePath(g.cols, g.rows, g_seed++, g_boardPanel ? g.cols + g.rows + 6 : int((g.cols + g.rows) * 1.6f)); g_line.clear();
-    for (auto& n : nodes) g_line.push_back({g.gx + n.i * g.cell, g.gy + n.j * g.cell});
-    if (!g_line.empty()) g_line.push_back({g.gx + g.cols * g.cell + g.cap, g.gy});
-    g_lineMs = std::max(1400.0, std::min(7000.0, trace::Length(g_line) / (g.cell * (g_boardPanel ? 3.2 : 5.5)) * 1000.0)); g_cycle0 = g_clock; ++g_puzzles;
+    for (auto& b : g_boards) {
+        const Grid& g = b.g; auto nodes = trace::SolvePath(g.cols, g.rows, g_seed++, g.cols + g.rows + (g_boardPanel ? 6 : 4)); b.line.clear();
+        for (auto& n : nodes) b.line.push_back({g.gx + n.i * g.cell, g.gy + n.j * g.cell});
+        if (!b.line.empty()) b.line.push_back(g.up ? trace::Pt{g.gx + g.cols * g.cell, g.gy - g.cap} : trace::Pt{g.gx + g.cols * g.cell + g.cap, g.gy});
+        b.ms = std::max(1100.0, std::min(5000.0, trace::Length(b.line) / (g.cell * 3.4) * 1000.0));
+    }
+    g_cycle0 = g_clock; ++g_puzzles;
 }
-static void SetBoard(const Grid& g, bool panel) {
-    bool same = g_boardOn && g_boardPanel == panel && g_board.cols == g.cols && g_board.rows == g.rows && fabsf(g_board.cell - g.cell) < .01f && fabsf(g_board.gx - g.gx) < .01f && fabsf(g_board.gy - g.gy) < .01f;
-    g_board = g; g_boardPanel = panel; g_boardOn = true; if (!same) NewPuzzle();
+static void SetBoards(const std::vector<Grid>& gs, bool panel) {
+    bool same = g_boardOn && g_boardPanel == panel && g_boards.size() == gs.size();
+    for (size_t i = 0; same && i < gs.size(); ++i) { const Grid &a = g_boards[i].g, &b = gs[i]; same = a.cols == b.cols && a.rows == b.rows && a.up == b.up && fabsf(a.cell - b.cell) < .01f && fabsf(a.gx - b.gx) < .01f && fabsf(a.gy - b.gy) < .01f; }
+    if (same) return; g_boards.clear(); for (auto& g : gs) g_boards.push_back({g, {}, 1000}); g_boardPanel = panel; g_boardOn = !gs.empty(); if (g_boardOn) NewPuzzle();
 }
-static void ClearBoard() { g_boardOn = false; g_line.clear(); }
+static void ClearBoard() { g_boardOn = false; g_boards.clear(); }
+// where the sequence is at `ms`: the panel being worked on and its state (trace.h's phases; the last panel's solve, fade and rest end the cycle)
+struct Seq { size_t cur; trace::State st; };
+static double SeqMs() { double t = 0; for (size_t k = 0; k < g_boards.size(); ++k) t += k + 1 < g_boards.size() ? g_boards[k].ms + kNextMs : trace::CycleMs(g_boards[k].ms); return t; }
+static Seq SeqAt(double ms) {
+    for (size_t k = 0; k < g_boards.size(); ++k) {
+        double tm = g_boards[k].ms; if (k + 1 == g_boards.size()) return {k, trace::At(ms, tm)};
+        if (ms < tm) return {k, {trace::kTrace, float(ms / tm), 0, 1}}; ms -= tm;
+        if (ms < kNextMs) { float f = ms < trace::kFlashMs ? float(1 - ms / trace::kFlashMs) : 0; return {k, {trace::kSolved, 1, f * f, 1}}; } ms -= kNextMs;
+    }
+    return {0, {trace::kRest, 0, 0, 0}};
+}
 // a polyline with each pixel taken by its nearest segment only, so the soft glow does not double up at the corners (and only small boxes are visited)
 static void SoftLine(Canvas& c, const std::vector<trace::Pt>& p, float half, COLORREF col, float alpha, float soft) {
     if (p.size() < 2 || alpha <= 0) return; int n = (int)p.size() - 1; float reach = half + soft + 1;
@@ -401,14 +484,36 @@ static void SoftLine(Canvas& c, const std::vector<trace::Pt>& p, float half, COL
         }
     }
 }
-static void DrawMovingLine(Canvas& c, const trace::State& st) {
-    if (g_line.empty() || st.alpha <= 0) return;
-    auto drawn = trace::Prefix(g_line, st.drawn); const Grid& g = g_board; float half = g.half, r0 = half * (g_boardPanel ? 2.5f : 2.6f); trace::Pt s0 = g_line.front();
-    float solved = st.phase == trace::kTrace ? 0.f : 1.f;
-    COLORREF core = g_boardPanel ? RGB(255, 251, 236) : Mix(RGB(240, 252, 255), kWarm, .45f * solved), glow = g_boardPanel ? RGB(255, 251, 236) : Mix(kAccent, kWarm, solved);
-    float ga = (g_boardPanel ? .35f : .5f) + .45f * st.flash, soft = half * ((g_boardPanel ? 3.5f : 5.0f) + 5.0f * st.flash);
+static void DrawOneLine(Canvas& c, const Board& b, const trace::State& st) {
+    if (b.line.empty() || st.alpha <= 0) return;
+    auto drawn = trace::Prefix(b.line, st.drawn); float half = b.g.half, r0 = half * 2.5f; trace::Pt s0 = b.line.front(); bool solved = st.phase != trace::kTrace;
+    // as in the game: a pale line while it is drawn, bright warm white with a soft light once the panel is solved (a flash at the moment of solving)
+    COLORREF core = g_boardPanel ? RGB(255, 251, 236) : (solved ? RGB(255, 250, 232) : RGB(226, 236, 240)), glow = g_boardPanel ? RGB(255, 251, 236) : (solved ? kWarm : kLine);
+    float ga = (g_boardPanel ? .35f : solved ? .40f : .18f) + .5f * st.flash, soft = half * (3.0f + 5.0f * st.flash);
     SoftLine(c, drawn, half, glow, ga * st.alpha, soft); Disc(c, s0.x, s0.y, r0, glow, ga * st.alpha, soft);
     SoftLine(c, drawn, half, core, st.alpha, 0); Disc(c, s0.x, s0.y, r0, core, st.alpha);
+}
+static void DrawMovingLine(Canvas& c, double ms, bool still) {
+    if (g_boards.empty()) return;
+    if (still) { for (auto& b : g_boards) DrawOneLine(c, b, {trace::kSolved, 1, 0, 1}); return; }
+    Seq q = SeqAt(ms); bool ending = q.cur + 1 == g_boards.size() && q.st.phase != trace::kTrace;
+    for (size_t k = 0; k < q.cur; ++k) DrawOneLine(c, g_boards[k], {trace::kSolved, 1, 0, ending ? q.st.alpha : 1.f});
+    DrawOneLine(c, g_boards[q.cur], q.st);
+}
+// A small dark Witness panel over the picture: a slate square with a soft shadow, its grid as wide grooves with round ends, the start circle at the bottom left and the end
+// cap past the top right node (up or to the right). n x n cells.
+static Grid DarkPanel(Canvas& c, float x, float y, float ps, int n, bool up) {
+    float r = ps * .07f; const COLORREF body = RGB(30, 37, 41), rim = RGB(58, 70, 76), groove = RGB(74, 89, 97);
+    Shape(c, x, y, x + ps, y + ps, RGB(0, 0, 0), .55f, ps * .10f, [&](float px, float py) { return RoundRectDist(px, py, x + 2, y + 5, ps, ps, r); });
+    Shape(c, x, y, x + ps, y + ps, rim, .95f, 0, [&](float px, float py) { return RoundRectDist(px, py, x, y, ps, ps, r); });
+    Shape(c, x, y, x + ps, y + ps, body, 1, 0, [&](float px, float py) { return RoundRectDist(px, py, x + 1.5f, y + 1.5f, ps - 3, ps - 3, r * .85f); });
+    float m = ps * .2f, cell = (ps - 2 * m) / n, half = std::max(1.6f, cell * .12f); Grid g{x + m, y + m, cell, half, std::max(cell * .42f, half * 3.2f), n, n, up};
+    auto nx = [&](float i) { return g.gx + i * cell; }; auto ny = [&](float j) { return g.gy + j * cell; };
+    for (int j = 0; j <= n; ++j) { float p[] = {nx(0), ny(j), nx(n), ny(j)}; Line(c, p, 2, half, groove, 1); }
+    for (int i = 0; i <= n; ++i) { float p[] = {nx(i), ny(0), nx(i), ny(n)}; Line(c, p, 2, half, groove, 1); }
+    { float p[] = {nx(n), ny(0), up ? nx(n) : nx(n) + g.cap, up ? ny(0) - g.cap : ny(0)}; Line(c, p, 2, half, groove, 1); }
+    Disc(c, nx(0), ny(n), half * 2.5f, groove, 1);
+    return g;
 }
 static void Compose(HDC ref, int W, int H, const wchar_t* subtitle) {
     uint32_t* bits = nullptr; HBITMAP bmp = NewDib(ref, W, H, &bits); if (!bmp || !bits) return; Canvas c{W, H, bits};
@@ -418,7 +523,7 @@ static void Compose(HDC ref, int W, int H, const wchar_t* subtitle) {
     } else {      // no picture: an evening sky over the drawn panel
         Shade(c, kBg, [](int, int) { return 1.f; });
         Shade(c, RGB(34, 66, 76), [&](int x, int y) { float t = 1 - float(y) / H; return .85f * t * t * (.55f + .45f * float(x) / W); });
-        float ph = H * .72f, pw = ph * 1.3f, px = W - pw - std::max(28.f, W * .05f), py = (H - ph) / 2 - H * .03f; Puzzle(c, px, py, pw, ph, false); SetBoard(PuzzleGrid(px, py, pw, ph), true);
+        float ph = H * .72f, pw = ph * 1.3f, px = W - pw - std::max(28.f, W * .05f), py = (H - ph) / 2 - H * .03f; Puzzle(c, px, py, pw, ph, false); SetBoards({PuzzleGrid(px, py, pw, ph)}, true);
     }
     HDC mem = CreateCompatibleDC(ref); HGDIOBJ ob = SelectObject(mem, bmp); SetBkMode(mem, TRANSPARENT);
     int tp = std::max(26, std::min(60, H * 27 / 100)), x0 = std::max(24, W * 3 / 100); bool compact = H < 110;
@@ -430,29 +535,44 @@ static void Compose(HDC ref, int W, int H, const wchar_t* subtitle) {
     if (subtitle && *subtitle) { SelectObject(mem, g_body); SetTextCharacterExtra(mem, 0); SetTextColor(mem, kLine); RECT sr = {x0 + 2, compact ? ty + ts.cy + 2 : cy + cs.cy + 6, W - 24, H - 4}; Text(mem, subtitle, -1, &sr, DT_LEFT | DT_SINGLELINE | DT_END_ELLIPSIS); }
     int textRight = compact ? cx + cs.cx : std::max(x0 + (int)ts.cx, cx + (int)cs.cx);
     SelectObject(mem, ob); DeleteDC(mem); DeleteObject(title); DeleteObject(coop); GdiFlush();
-    if (!g_art.empty()) {      // over the picture: a faint panel grid right of the title, for the moving line to solve
-        int rows = H < 110 ? 2 : 3; float my = H * .2f, cell = (H - 2 * my) / rows, xEnd = W - std::max(28.f, W * .03f), xStart = textRight + std::max(40.f, H * .45f); int cols = std::min(14, int((xEnd - xStart - cell * .5f) / cell));      // (a panel, not a sheet: at most 14 wide)
-        if (cols >= 3) {
-            Grid g{xEnd - cell * .5f - cols * cell, my, cell, std::max(1.6f, cell * .085f), cell * .45f, cols, rows};
-            auto groove = [&](float a, float b, float c2, float d, float k) { float p[] = {a, b, c2, d}; Line(c, p, 2, g.half * .55f + 1, RGB(0, 0, 0), .18f * k); Line(c, p, 2, g.half * .55f, kLine, .15f * k); };
-            for (int j = 0; j <= rows; ++j) for (int i = 0; i < cols; ++i) groove(g.gx + i * cell, g.gy + j * cell, g.gx + (i + 1) * cell, g.gy + j * cell, std::min(1.f, .45f + .2f * i));      // (fading in from the left)
-            for (int i = 0; i <= cols; ++i) groove(g.gx + i * cell, g.gy, g.gx + i * cell, g.gy + rows * cell, std::min(1.f, .45f + .2f * i));
-            groove(g.gx + cols * cell, g.gy, g.gx + cols * cell + g.cap, g.gy, 1);
-            Disc(c, g.gx, g.gy + rows * cell, g.half * 2.6f + 1, RGB(0, 0, 0), .18f); Disc(c, g.gx, g.gy + rows * cell, g.half * 2.6f, kLine, .2f);
-            SetBoard(g, false);
+    if (!g_art.empty()) {      // over the picture: a row of small Witness panels right of the title, solved one after another (a 14 x 3 grid read as a sheet, not a puzzle: owner, 2026-11-06)
+        float ps = std::round(H * .68f), gap = std::round(ps * .32f), xEnd = W - std::max(28.f, W * .03f) - (g_capOn ? 3 * kCapW - 8.f : 0.f), xStart = textRight + std::max(48.f, H * .5f); int n = 3;      // (the row ends clear of the caption buttons)
+        while (n > 0 && n * ps + (n - 1) * gap > xEnd - xStart) --n;
+        if (n > 0) {
+            static const int kCells[3][3] = {{4, 0, 0}, {3, 4, 0}, {3, 4, 4}}; std::vector<Grid> gs; float y = std::round((H - ps) / 2 - H * .02f);
+            for (int i = 0; i < n; ++i) gs.push_back(DarkPanel(c, std::round(xEnd - (n - i) * ps - (n - 1 - i) * gap), y, ps, kCells[n - 1][i], i % 2 == 1));
+            SetBoards(gs, false);
         } else ClearBoard();
     }
     if (g_banner) DeleteObject(g_banner); g_banner = bmp; g_bannerBits = bits; g_bannerW = W; g_bannerH = H; g_bannerGen = g_artGen;
+}
+// ---- the window's own caption buttons (minimize, maximize or restore, close) on the banner's top right: the Windows title bar is gone (owner, 2026-11-06)
+void SetCaption(int hot, int down, bool maximized, bool active) { g_capOn = true; g_capHot = hot; g_capDown = down; g_capMax = maximized; g_capActive = active; }
+int CaptionHit(int x, int y, int clientW) { if (y < 0 || y >= kCapH || x >= clientW || x < clientW - 3 * kCapW) return 0; return 1 + (x - (clientW - 3 * kCapW)) / kCapW; }
+RECT CaptionRect(int clientW) { return {clientW - 3 * kCapW, 0, clientW, kCapH}; }
+static void DrawCaption(Canvas& c) {
+    auto box = [&](float x0, float y0, float x1, float y1, COLORREF col, float a) { for (int y = std::max(0, int(y0)); y < std::min(c.h, int(y1)); ++y) for (int x = std::max(0, int(x0)); x < std::min(c.w, int(x1)); ++x) Blend(c, x, y, col, a); };
+    auto seg = [&](float ax, float ay, float bx, float by, COLORREF col) { float p[] = {ax, ay, bx, by}; Line(c, p, 2, .55f, col, 1); };
+    for (int k = 1; k <= 3; ++k) {
+        float x0 = float(c.w - (4 - k) * kCapW), cx = x0 + kCapW / 2.f, cy = kCapH / 2.f, s = 5; bool hot = g_capHot == k, down = g_capDown == k;
+        if (hot || down) box(x0, 0, x0 + kCapW, kCapH, k == 3 ? RGB(196, 43, 28) : RGB(255, 255, 255), k == 3 ? (down ? .78f : 1.f) : (down ? .18f : .11f));
+        COLORREF ink = k == 3 && (hot || down) ? RGB(255, 255, 255) : (g_capActive ? kText : kMuted);
+        if (k == 1) seg(cx - s, cy + .5f, cx + s, cy + .5f, ink);
+        else if (k == 2 && !g_capMax) { seg(cx - s, cy - s, cx + s, cy - s, ink); seg(cx + s, cy - s, cx + s, cy + s, ink); seg(cx + s, cy + s, cx - s, cy + s, ink); seg(cx - s, cy + s, cx - s, cy - s, ink); }
+        else if (k == 2) { float o = 2; seg(cx - s, cy - s + o, cx + s - o, cy - s + o, ink); seg(cx + s - o, cy - s + o, cx + s - o, cy + s, ink); seg(cx + s - o, cy + s, cx - s, cy + s, ink); seg(cx - s, cy + s, cx - s, cy - s + o, ink);
+                           seg(cx - s + o, cy - s, cx + s, cy - s, ink); seg(cx + s, cy - s, cx + s, cy + s - o, ink); }      // (restore: two windows)
+        else { seg(cx - s, cy - s, cx + s, cy + s, ink); seg(cx + s, cy - s, cx - s, cy + s, ink); }
+    }
 }
 void PaintHeader(HDC dc, const RECT& client, int height, const wchar_t* subtitle) {
     int W = client.right; if (W <= 0 || height <= 0) return;
     if (!g_banner || g_bannerW != W || g_bannerH != height || g_bannerGen != g_artGen) Compose(dc, W, height, subtitle);
     if (!g_banner) return; HBITMAP show = g_banner;
-    if (g_boardOn && g_bannerBits) {      // the banner, then the line as it is now (still and solved when Windows' animations are off)
+    if ((g_boardOn || g_capOn) && g_bannerBits) {      // the banner, then the line as it is now (still and solved when Windows' animations are off) and the caption buttons
         if (!g_frame || g_frameW != W || g_frameH != height) { if (g_frame) DeleteObject(g_frame); g_frame = NewDib(dc, W, height, &g_frameBits); g_frameW = W; g_frameH = height; }
         if (g_frame && g_frameBits) {
             GdiFlush(); memcpy(g_frameBits, g_bannerBits, (size_t)W * height * 4); Canvas c{W, height, g_frameBits};
-            DrawMovingLine(c, g_motion ? trace::At(g_clock - g_cycle0, g_lineMs) : trace::State{trace::kSolved, 1, 0, 1}); show = g_frame; ++g_frames;
+            if (g_boardOn) { DrawMovingLine(c, g_clock - g_cycle0, !g_motion); ++g_frames; } if (g_capOn) DrawCaption(c); show = g_frame;
         }
     }
     HDC mem = CreateCompatibleDC(dc); HGDIOBJ o = SelectObject(mem, show); BitBlt(dc, 0, 0, W, height, mem, 0, 0, SRCCOPY); SelectObject(mem, o); DeleteDC(mem);
@@ -461,14 +581,15 @@ void AnimTick(HWND wnd, bool active) {
     ULONGLONG now = GetTickCount64(); double dt = g_lastTick ? double(std::min<ULONGLONG>(100, now - g_lastTick)) : 0; g_lastTick = now;
     bool motion = Motion(); if (motion != g_motion) { g_motion = motion; if (g_banner) { RECT r = {0, 0, g_bannerW, g_bannerH}; InvalidateRect(wnd, &r, FALSE); } }
     g_active = active; if (!active || !g_motion || !g_boardOn || !g_banner) return;
-    g_clock += dt; if (g_clock - g_cycle0 >= trace::CycleMs(g_lineMs)) NewPuzzle();
-    bool resting = trace::At(g_clock - g_cycle0, g_lineMs).phase == trace::kRest;
-    if (now - g_lastInval >= 33 && !(resting && trace::At(g_clock - g_cycle0 - 100, g_lineMs).phase == trace::kRest)) { g_lastInval = now; RECT r = {0, 0, g_bannerW, g_bannerH}; InvalidateRect(wnd, &r, FALSE); }
+    g_clock += dt; if (g_clock - g_cycle0 >= SeqMs()) NewPuzzle();
+    auto resting = [&](double ms) { Seq q = SeqAt(ms); return q.cur + 1 == g_boards.size() && q.st.phase == trace::kRest; };
+    if (now - g_lastInval >= 33 && !(resting(g_clock - g_cycle0) && resting(g_clock - g_cycle0 - 100))) { g_lastInval = now; RECT r = {0, 0, g_bannerW, g_bannerH}; InvalidateRect(wnd, &r, FALSE); }
 }
 std::string AnimState() {
-    const char* ph[] = {"trace", "solved", "fade", "rest"}; trace::State st = trace::At(g_clock - g_cycle0, g_lineMs);
-    return std::string(!g_boardOn ? "off" : !g_motion ? "still" : g_active ? "on" : "paused") + " board " + (g_boardOn ? (g_boardPanel ? "panel" : "grid") : "none") + " " + std::to_string(g_board.cols) + "x" + std::to_string(g_board.rows) +
-           " phase " + ph[st.phase] + " puzzles " + std::to_string(g_puzzles) + " frames " + std::to_string(g_frames);
+    const char* ph[] = {"trace", "solved", "fade", "rest"}; Seq q = g_boards.empty() ? Seq{0, {trace::kRest, 0, 0, 0}} : SeqAt(g_clock - g_cycle0); std::string sizes;
+    for (auto& b : g_boards) sizes += (sizes.empty() ? "" : ",") + std::to_string(b.g.cols) + "x" + std::to_string(b.g.rows);
+    return std::string(!g_boardOn ? "off" : !g_motion ? "still" : g_active ? "on" : "paused") + " board " + (g_boardOn ? (g_boardPanel ? "panel" : "panels") : "none") + " " + (sizes.empty() ? "0x0" : sizes) +
+           " at " + std::to_string(q.cur) + " phase " + ph[q.st.phase] + " puzzles " + std::to_string(g_puzzles) + " frames " + std::to_string(g_frames);
 }
 HBITMAP Thumb(const uint8_t* rgba, int w, int h, int tw, int th) {
     HDC screen = GetDC(nullptr); uint32_t* bits = nullptr; HBITMAP b = NewDib(screen, tw, th, &bits); ReleaseDC(nullptr, screen); if (!b || !bits) return b; Canvas c{tw, th, bits};

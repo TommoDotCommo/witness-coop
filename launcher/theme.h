@@ -31,6 +31,10 @@ void PaintHeader(HDC dc, const RECT& client, int height, const wchar_t* subtitle
 // The banner's moving line: a random solution traced on its board, solved, faded, the next one. Call about every 16 ms; `active`: the launcher is the window in use
 // (the clock stops otherwise, so it costs nothing while the game is played). Windows' "Show animations" off: the line is shown solved and still.
 void AnimTick(HWND wnd, bool active);
+// The window's own caption buttons on the banner's top right (the Windows title bar is removed): 1 minimize, 2 maximize/restore, 3 close; 0 none.
+void SetCaption(int hot, int down, bool maximized, bool active);
+int CaptionHit(int x, int y, int clientW);
+RECT CaptionRect(int clientW);
 std::string AnimState();                                                // the stat file's "anim" line: on|paused|still|off, the board, the phase, puzzles and frames so far
 bool Motion();                                                          // Windows' animations setting
 // A save's thumbnail for the Saves list (its picture cropped to fill), or the drawn panel when it has none; the caller owns the bitmap.

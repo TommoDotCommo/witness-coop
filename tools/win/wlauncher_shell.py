@@ -32,8 +32,20 @@ def cmd(*lines):
     time.sleep(0.5)
 si = subprocess.STARTUPINFO(); si.dwFlags |= subprocess.STARTF_USESHOWWINDOW; si.wShowWindow = 4      # SW_SHOWNOACTIVATE
 p = subprocess.Popen([exe, '--dir', gdir, '--no-activate', '--size', '1280', '800', '--stat-file', statf, '--cmd-file', cmdf], startupinfo=si)
+def clear_of_pointer(pid):      # a pointer resting over the window (someone at the PC) sends it mouse moves, which switch the footer back to keyboard hints: move the window aside (never the pointer)
+    import ctypes, ctypes.wintypes as wt
+    us = ctypes.WinDLL('user32'); us.SetProcessDPIAware(); found = []
+    @ctypes.WINFUNCTYPE(wt.BOOL, wt.HWND, wt.LPARAM)
+    def cb(hw, lp):
+        q = wt.DWORD(); us.GetWindowThreadProcessId(hw, ctypes.byref(q)); c = ctypes.create_unicode_buffer(64); us.GetClassNameW(hw, c, 64)
+        if q.value == pid and c.value == 'WitnessLauncher': found.append(hw)
+        return True
+    us.EnumWindows(cb, 0); cur = wt.POINT(); us.GetCursorPos(ctypes.byref(cur))
+    for hw in found:
+        r = wt.RECT(); us.GetWindowRect(hw, ctypes.byref(r))
+        if r.left <= cur.x < r.right and r.top <= cur.y < r.bottom: us.SetWindowPos(hw, None, cur.x + 40, r.top, 0, 0, 0x0001 | 0x0004 | 0x0010)      # SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE
 try:
-    time.sleep(2.5)
+    time.sleep(2.5); clear_of_pointer(p.pid)
     u, s, h = ui()
     check('1. the launcher opens on Play at 1280x800', 'tab 0 label Play' in u and 'client 1280 800' in u, u)
     cmd('tab 2', 'section 2', 'focus cfg:voice_volume', 'pad 0 0 0', 'pad 0004 0 0', 'pad 0 0 0'); u, s, h = ui()
@@ -53,7 +65,8 @@ try:
     check('7. the Play choice is remembered', cfg().get('launcher_choice') == 'solo', cfg().get('launcher_choice'))
     cmd('choice host', 'host 47391'); time.sleep(1.0); u = ui()[0]
     check('8. hosting turns Play into Lobby', 'label Lobby lobbyview 1' in u, u)
-    cmd('leave'); time.sleep(0.5); u = ui()[0]
+    cmd('leave'); t0 = time.time(); u = ui()[0]      # (leaving closes the router mapping first, which can take a few seconds)
+    while 'label Play lobbyview 0' not in u and time.time() - t0 < 10: time.sleep(0.2); u = ui()[0]
     check('   leaving returns to the tiles', 'label Play lobbyview 0' in u, u)
     check('9. lines the launcher does not know are kept', cfg().get('some_future_key') == 'kept')
     cmd('quit'); p.wait(5)

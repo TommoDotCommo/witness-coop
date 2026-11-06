@@ -80,8 +80,10 @@ wl::CfgFile LoadCfg() { return wl::CfgFile::Parse(ReadFile8(CfgPath())); }
 diag::Session g_log; bool g_logOpen;      // this run's own log (common/diag_log.h), in the same folder as the game's
 void Dlog(const char* text) { static CRITICAL_SECTION cs; static LONG made; if (InterlockedCompareExchange(&made, 1, 0) == 0) InitializeCriticalSection(&cs); EnterCriticalSection(&cs); if (g_logOpen) g_log.Line(text); LeaveCriticalSection(&cs); }      // (netfind.c's workers log too)
 int g_footAction;                          // the command the footer's next-step button sends (F4), 0: hidden
+void LayoutAll(); RECT OuterFor(int w, int h);
+std::wstring g_fleeting; ULONGLONG g_fleetingUntil;      // a status that only reports a moment ("You left the lobby."): it clears itself after a few seconds (it stayed for good: owner, 2026-11-06)
 void Status(const std::wstring& s, const wchar_t* action = nullptr, int cmd = 0) {
-    SetWindowTextW(g_status, s.c_str()); Dlog(("status: " + U(s)).c_str());
+    g_fleetingUntil = 0; SetWindowTextW(g_status, s.c_str()); Dlog(("status: " + U(s)).c_str());
     HWND b = g_ctl.count(ID_FOOT_ACTION) ? g_ctl[ID_FOOT_ACTION] : nullptr; g_footAction = action ? cmd : 0;
     if (b) { if (action) SetWindowTextW(b, action); ShowWindow(b, action ? SW_SHOW : SW_HIDE); }
 }
@@ -561,7 +563,7 @@ void PendingJoinTick() {
     if (g_pend.plan.invite.flags & CI_FLAG_STEAM) { JoinSteamLobby(g_pend.plan.invite.steam_lobby); return; }
     char routes[120], b[400]; lj_routes_text(&g_pend.plan.invite, routes, sizeof routes); lj_failure(LJ_F_NO_ANSWER, "the host", routes, b, sizeof b); Status(W(b), L"Try again", ID_PRIMARY);
 }
-void LeaveLobby() { nf_host_close(); g_voice.Stop(); g_sess.Stop(); g_shown = wlobby::State(); SendMessageW(LB(ID_LB_MEMBERS), LB_RESETCONTENT, 0, 0); SendMessageW(LB(ID_LB_READY), BM_SETCHECK, BST_UNCHECKED, 0); RefreshLobbyUi(); LobbyStatus(L"You left the lobby."); }
+void LeaveLobby() { nf_host_close(); g_voice.Stop(); g_sess.Stop(); g_shown = wlobby::State(); SendMessageW(LB(ID_LB_MEMBERS), LB_RESETCONTENT, 0, 0); SendMessageW(LB(ID_LB_READY), BM_SETCHECK, BST_UNCHECKED, 0); RefreshLobbyUi(); LobbyStatus(L"You left the lobby."); g_fleeting = L"You left the lobby."; g_fleetingUntil = GetTickCount64() + 4000; }
 void AppendChat(const std::wstring& line) { g_chatLog += line + L"\r\n"; HWND l = LB(ID_LB_LOG); SetWindowTextW(l, g_chatLog.c_str()); SendMessageW(l, EM_SETSEL, g_chatLog.size(), g_chatLog.size()); SendMessageW(l, EM_SCROLLCARET, 0, 0); }
 std::string WaitingFor() { std::string w; for (const auto& m : g_shown.members) if (!m.host && !m.ready) w += (w.empty() ? "" : ", ") + m.name; return w; }
 void StartLabel() {      // D3: the host's button says whom it waits for
@@ -616,7 +618,7 @@ void RefreshLobbyUi() {
     EnableWindow(LB(ID_LB_MODE), !act || host); EnableWindow(LB(ID_LB_GOAL), !act || host); EnableWindow(LB(ID_LB_NEWGAME), !act || host); EnableWindow(LB(ID_LB_PARTS), !act || host);
 }
 void ApplyRemoteSettings(const wlobby::State& st) {      // a guest sees what the host chose
-    if (g_sess.IsHost()) return; SendMessageW(LB(ID_LB_MODE), CB_SETCURSEL, st.settings.mode == wlobby::kRace ? 1 : 0, 0); SetWindowTextW(LB(ID_LB_GOAL), W(st.settings.raceGoal).c_str());
+    if (g_sess.IsHost()) return; bool wasRace = SendMessageW(LB(ID_LB_MODE), CB_GETCURSEL, 0, 0) == 1; SendMessageW(LB(ID_LB_MODE), CB_SETCURSEL, st.settings.mode == wlobby::kRace ? 1 : 0, 0); if (wasRace != (st.settings.mode == wlobby::kRace)) LayoutAll(); SetWindowTextW(LB(ID_LB_GOAL), W(st.settings.raceGoal).c_str());
     SendMessageW(LB(ID_LB_NEWGAME), BM_SETCHECK, st.settings.newGame ? BST_CHECKED : BST_UNCHECKED, 0); g_lobbySpec = st.settings.progress; PartsInfo();
 }
 int CurTab(); void LayoutAll();
@@ -884,7 +886,12 @@ void LayoutLobby(int W, int H) {
     if (steamHost) { PlaceId(ID_LB_STEAM_FRIENDS, c3, y + 2, c3w - 130, 300); PlaceId(ID_LB_STEAM_SEND, c3 + c3w - 122, y, 122, 32); y += 38; }
     y += 6;
     PlaceId(ID_LB_H_PLAY, c3, y, c3w, 20); y += 26; PlaceId(ID_LB_H_GAME, c3, y + 6, 90, 22); PlaceId(ID_LB_MODE, c3 + 96, y + 2, c3w - 96, 200); y += 38;
-    PlaceId(ID_LB_H_GOAL, c3, y + 6, 90, 22); PlaceId(ID_LB_GOAL, c3 + 96, y + 2, c3w - 96, 30); y += 34; PlaceId(ID_LB_H_GOALHINT, c3 + 96, y, c3w - 96, 20); y += 26;
+    bool race = SendMessageW(LB(ID_LB_MODE), CB_GETCURSEL, 0, 0) == 1;
+#ifdef WL_MUT_GOAL_ALWAYS
+    race = true;      // (mutant: the race goal shows for co-op too)
+#endif
+    ShowId(ID_LB_H_GOAL, race); ShowId(ID_LB_GOAL, race); ShowId(ID_LB_H_GOALHINT, race);      // the race goal only for a race (owner, 2026-11-06)
+    if (race) { PlaceId(ID_LB_H_GOAL, c3, y + 6, 90, 22); PlaceId(ID_LB_GOAL, c3 + 96, y + 2, c3w - 96, 30); y += 34; PlaceId(ID_LB_H_GOALHINT, c3 + 96, y, c3w - 96, 20); y += 26; }
     PlaceId(ID_LB_NEWGAME, c3, y, c3w, 28); y += 34; PlaceId(ID_LB_PARTS, c3, y, c3w, 34); y += 40; PlaceId(ID_LB_PARTSINFO, c3, y, c3w, 20); y += 26; PlaceId(ID_LB_RESULT, c3, y, c3w, std::max(20, H - y - 8));
 }
 void BuildLobbyPanel(HWND pg) {
@@ -980,7 +987,7 @@ void PollCommands() {      // tests: one command per line in launcher_cmd.txt, t
         else if (cmd == "leave") LeaveLobby();
         else if (cmd == "ready") { SendMessageW(LB(ID_LB_READY), BM_SETCHECK, arg == "1" ? BST_CHECKED : BST_UNCHECKED, 0); g_sess.SetReady(arg == "1"); }
         else if (cmd == "chat") { SetWindowTextW(LB(ID_LB_CHAT), W(arg).c_str()); SendChatLine(); }
-        else if (cmd == "mode") { SendMessageW(LB(ID_LB_MODE), CB_SETCURSEL, arg == "race" ? 1 : 0, 0); PushSettings(); }
+        else if (cmd == "mode") { SendMessageW(LB(ID_LB_MODE), CB_SETCURSEL, arg == "race" ? 1 : 0, 0); PushSettings(); LayoutAll(); }
         else if (cmd == "goal") { SetWindowTextW(LB(ID_LB_GOAL), W(arg).c_str()); PushSettings(); }
         else if (cmd == "newgame") { SendMessageW(LB(ID_LB_NEWGAME), BM_SETCHECK, arg == "1" ? BST_CHECKED : BST_UNCHECKED, 0); PushSettings(); }
         else if (cmd == "parts") { g_lobbySpec = arg; PartsInfo(); PushSettings(); }
@@ -1000,7 +1007,7 @@ void PollCommands() {      // tests: one command per line in launcher_cmd.txt, t
         else if (cmd == "focus") { if (Field* f = ByKey(arg)) SetFocus(f->h); else if (HWND h = C(atoi(arg.c_str()))) SetFocus(h); }
         else if (cmd == "setting") { std::string k = arg.substr(0, arg.find(' ')), v = arg.find(' ') == std::string::npos ? "" : arg.substr(arg.find(' ') + 1); if (Field* f = ByKey(k)) { SetVal(*f, v); OnFieldChanged(*f); } }
         else if (cmd == "capture") { std::string k = arg.substr(0, arg.find(' ')); unsigned vk = (unsigned)strtoul(arg.substr(arg.find(' ') + 1).c_str(), nullptr, 0); if (Field* f = ByKey(k)) { StartCapture(*f); EndCapture(vk); } }
-        else if (cmd == "size") { int w = 0, h = 0; if (sscanf(arg.c_str(), "%d %d", &w, &h) == 2) { ShowWindow(g_main, SW_RESTORE); RECT r = {0, 0, w, h}; AdjustWindowRect(&r, WS_OVERLAPPEDWINDOW, FALSE); SetWindowPos(g_main, nullptr, 0, 0, r.right - r.left, r.bottom - r.top, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE); } }
+        else if (cmd == "size") { int w = 0, h = 0; if (sscanf(arg.c_str(), "%d %d", &w, &h) == 2) { ShowWindow(g_main, SW_RESTORE); RECT r = OuterFor(w, h); SetWindowPos(g_main, nullptr, 0, 0, r.right - r.left, r.bottom - r.top, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE); } }
         else if (cmd == "quit") PostMessageW(g_main, WM_CLOSE, 0, 0);
         else if (cmd == "paste") { SetWindowTextW(LB(ID_LB_INVITE), W(arg).c_str()); }
     }
@@ -1263,12 +1270,35 @@ void DrawSectionItem(DRAWITEMSTRUCT* d) {
     SetBkMode(dc, TRANSPARENT); SelectObject(dc, sel ? th::Bold() : th::Body()); SetTextColor(dc, sel ? th::kText : (focus ? th::kLine : th::kMuted)); RECT tr = r; tr.left += 16;
     th::Text(dc, W(ls::SectionName((int)d->itemID)).c_str(), -1, &tr, DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
 }
+// The window draws its own title bar: the banner is the caption (drag, double-click, the system menu) with minimize, maximize and close on its top right; the
+// sizing borders on the left, right and bottom stay Windows' own (invisible, with the shadow), the top edge sizes from the banner's first pixels. (Owner, 2026-11-06.)
+RECT FrameInsets() { RECT f = {0, 0, 0, 0}; AdjustWindowRectEx(&f, WS_OVERLAPPEDWINDOW, FALSE, WS_EX_CONTROLPARENT); return f; }      // (left negative; right and bottom the frame)
+RECT OuterFor(int w, int h) { RECT f = FrameInsets(); return {0, 0, w - f.left + f.right, h + f.bottom}; }      // the window size for a client of w x h
+int g_capHot, g_capDown; bool g_capActive = true;
+void CaptionChanged() { if (!g_main) return; th::SetCaption(g_capHot, g_capDown, IsZoomed(g_main) != FALSE, g_capActive); RECT rc; GetClientRect(g_main, &rc); RECT r = th::CaptionRect(rc.right); InvalidateRect(g_main, &r, FALSE); }
+int CapOf(WPARAM ht) { return ht == HTMINBUTTON ? 1 : ht == HTMAXBUTTON ? 2 : ht == HTCLOSE ? 3 : 0; }
 LRESULT CALLBACK MainProc(HWND h, UINT m, WPARAM w, LPARAM l) {
     switch (m) {
+#ifndef WL_MUT_WINDOWS_CAPTION
+    case WM_NCCALCSIZE: if (w) { RECT f = FrameInsets(); RECT& r = ((NCCALCSIZE_PARAMS*)l)->rgrc[0]; r.left -= f.left; r.right -= f.right; r.bottom -= f.bottom; if (IsZoomed(h)) r.top += f.bottom; return 0; } break;
+    case WM_NCHITTEST: {
+        LRESULT r = DefWindowProcW(h, m, w, l); if (r != HTCLIENT) return r;
+        POINT p = {(short)LOWORD(l), (short)HIWORD(l)}; ScreenToClient(h, &p); RECT rc; GetClientRect(h, &rc);
+        if (int k = th::CaptionHit(p.x, p.y, rc.right)) return k == 1 ? HTMINBUTTON : k == 2 ? HTMAXBUTTON : HTCLOSE;      // (HTMAXBUTTON: Windows 11 shows its snap layouts there)
+        if (!IsZoomed(h) && p.y < 6) return p.x < 16 ? HTTOPLEFT : p.x >= rc.right - 16 ? HTTOPRIGHT : HTTOP;
+        return p.y < th::BannerHeight(rc.bottom) ? HTCAPTION : HTCLIENT;
+    }
+    case WM_NCMOUSEMOVE: { int k = CapOf(w); if (k != g_capHot) { g_capHot = k; CaptionChanged(); } if (k) { TRACKMOUSEEVENT t = {sizeof t, TME_LEAVE | TME_NONCLIENT, h, 0}; TrackMouseEvent(&t); return 0; } break; }
+    case WM_NCMOUSELEAVE: if (g_capHot || g_capDown) { g_capHot = g_capDown = 0; CaptionChanged(); } break;
+    case WM_NCLBUTTONDOWN: case WM_NCLBUTTONDBLCLK: if (int k = CapOf(w)) { g_capDown = k; CaptionChanged(); return 0; } break;      // (not to DefWindowProc: it would draw the old buttons)
+    case WM_NCLBUTTONUP: if (int k = CapOf(w)) { bool fire = k == g_capDown; g_capDown = 0; CaptionChanged(); if (fire) PostMessageW(h, WM_SYSCOMMAND, k == 1 ? SC_MINIMIZE : k == 2 ? (IsZoomed(h) ? SC_RESTORE : SC_MAXIMIZE) : SC_CLOSE, 0); return 0; } break;
+    case WM_NCACTIVATE: g_capActive = w != 0; CaptionChanged(); return DefWindowProcW(h, m, w, -1);      // (-1: Windows paints no title bar of its own)
+#endif
+    case WM_SETTEXT: case WM_SETICON: { LRESULT r = DefWindowProcW(h, m, w, l); RECT rc; GetClientRect(h, &rc); RECT top = {0, 0, rc.right, th::BannerHeight(rc.bottom)}; InvalidateRect(h, &top, FALSE); return r; }      // (Windows may draw its old title over the banner here)
     case WM_ACTIVATEAPP: if (!w) { g_guideHold.Reset(); ShowGuide(false); } else ClipboardCheck(); break;
     case WM_ERASEBKGND: { RECT rc; GetClientRect(h, &rc); FillRect((HDC)w, &rc, th::BgBrush()); return 1; }
     case WM_PAINT: { PAINTSTRUCT ps; HDC dc = BeginPaint(h, &ps); RECT rc; GetClientRect(h, &rc); th::PaintHeader(dc, rc, th::BannerHeight(rc.bottom)); EndPaint(h, &ps); return 0; }
-    case WM_SIZE: LayoutAll(); return 0;
+    case WM_SIZE: LayoutAll(); CaptionChanged(); return 0;
     case WM_GETMINMAXINFO: { MINMAXINFO* mm = (MINMAXINFO*)l; mm->ptMinTrackSize.x = 1024; mm->ptMinTrackSize.y = 640; return 0; }
     case WM_CTLCOLORSTATIC: case WM_CTLCOLOREDIT: case WM_CTLCOLORLISTBOX: case WM_CTLCOLORBTN: return th::CtlColor(m, (HDC)w, (HWND)l);
     case WM_DRAWITEM: {      // each row drawn off screen and copied once: the lobby's list is redrawn every tick, and a row drawn on screen in steps (its background, then its text) flickered
@@ -1278,7 +1308,11 @@ LRESULT CALLBACK MainProc(HWND h, UINT m, WPARAM w, LPARAM l) {
         BitBlt(src->hDC, src->rcItem.left, src->rcItem.top, iw, ih, mem, 0, 0, SRCCOPY); SelectObject(mem, ob); DeleteObject(bmp); DeleteDC(mem); return TRUE; }
     case WM_HSCROLL: { Field* f = ByHwnd((HWND)l); if (f && f->kind == kSlider) { SliderText(*f); if (LOWORD(w) == TB_ENDTRACK) OnFieldChanged(*f); } return 0; }
     case WM_TIMER:
-        if (w == 1) { PollCommands(); LobbyTick(); WriteStat(); DiagPoll(); UpdateUi(); UpdateTabs(); if (g_updFromLobby && g_upd.Available()) { g_updFromLobby = false; g_upd.StartApply(); } }
+        if (w == 1) { if (g_fleetingUntil && GetTickCount64() >= g_fleetingUntil) { wchar_t t[200] = {}; GetWindowTextW(g_status, t, 200); if (g_fleeting == t) Status(L""); g_fleetingUntil = 0; }
+#ifdef WL_MUT_STATUS_STAYS
+            g_fleetingUntil = 0;      // (mutant: "You left the lobby." stays for good)
+#endif
+            PollCommands(); LobbyTick(); WriteStat(); DiagPoll(); UpdateUi(); UpdateTabs(); if (g_updFromLobby && g_upd.Available()) { g_updFromLobby = false; g_upd.StartApply(); } }
         else if (w == 2) { PadPoll(); HWND fg = GetForegroundWindow(); DWORD pid = 0; if (fg) GetWindowThreadProcessId(fg, &pid); static const bool always = _wgetenv(L"WITNESS_LAUNCHER_ANIM") && !wcscmp(_wgetenv(L"WITNESS_LAUNCHER_ANIM"), L"always"); th::AnimTick(h, (always || pid == GetCurrentProcessId()) && !IsIconic(h)); }      // (WITNESS_LAUNCHER_ANIM=always: tests film the line without taking the focus)
         return 0;
     case WM_CLOSE: nf_host_close(); g_voice.Stop(); g_sess.Stop(); DestroyWindow(h); return 0;      // (nf_host_close: the router mappings go before the launcher does)
@@ -1325,7 +1359,7 @@ LRESULT CALLBACK MainProc(HWND h, UINT m, WPARAM w, LPARAM l) {
         else if (id == ID_LB_READY && code == BN_CLICKED) g_sess.SetReady(SendMessageW(LB(ID_LB_READY), BM_GETCHECK, 0, 0) == BST_CHECKED);
         else if (id == ID_LB_START) { PushSettings(); if (!g_sess.Start()) LobbyStatus(L"Everybody has to be ready first: " + W(WaitingFor()) + L"."); }
         else if (id == ID_LB_SEND) SendChatLine();
-        else if (id == ID_LB_MODE && code == CBN_SELCHANGE) PushSettings();
+        else if (id == ID_LB_MODE && code == CBN_SELCHANGE) { PushSettings(); LayoutAll(); }
         else if (id == ID_LB_GOAL && code == EN_CHANGE) PushSettings();
         else if (id == ID_LB_NEWGAME) PushSettings();
         else if (id == ID_LB_PARTS) OpenNewGame(true);
@@ -1374,8 +1408,9 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, LPWSTR cmdline, int show) {
     // 1280x800 (a Steam Deck's screen) or the work area if that is smaller; resizable (K8)
     RECT wa; SystemParametersInfoW(SPI_GETWORKAREA, 0, &wa, 0); int ww = sizeW ? sizeW : std::min(1280, (int)(wa.right - wa.left)), wh = sizeH ? sizeH : std::min(800, (int)(wa.bottom - wa.top));
     if (!sizeW && (wa.right - wa.left <= 1280 || wa.bottom - wa.top <= 800)) fill = true;
-    RECT want = {0, 0, ww, wh}; if (sizeW) AdjustWindowRect(&want, WS_OVERLAPPEDWINDOW, FALSE);
+    RECT want = {0, 0, ww, wh}; if (sizeW) want = OuterFor(ww, wh);
     g_main = CreateWindowExW(WS_EX_CONTROLPARENT, L"WitnessLauncher", (std::wstring(L"The Witness co-op: launcher ") + W(MOD_VERSION)).c_str(), WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, CW_USEDEFAULT, CW_USEDEFAULT, want.right - want.left, want.bottom - want.top, nullptr, nullptr, hi, nullptr);
+    SetWindowPos(g_main, nullptr, 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE); CaptionChanged();
     g_tab = CreateWindowExW(WS_EX_CONTROLPARENT, WC_TABCONTROLW, L"", WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN, 8, 88, 600, 400, g_main, (HMENU)ID_TAB, hi, nullptr); SendMessageW(g_tab, WM_SETFONT, (WPARAM)GetStockObject(DEFAULT_GUI_FONT), TRUE);
     static TCITEMW items[ls::kTabCount]; static std::wstring names[ls::kTabCount];
     for (int i = 0; i < ls::kTabCount; ++i) { names[i] = W(ls::TabLabel(i, false)); items[i] = {}; items[i].mask = TCIF_TEXT; items[i].pszText = &names[i][0]; TabCtrl_InsertItem(g_tab, i, &items[i]); }

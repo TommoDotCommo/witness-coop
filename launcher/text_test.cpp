@@ -49,6 +49,9 @@ int wmain(int argc, wchar_t** argv) {
     Shot c1 = NewShot(300, 30), c2 = NewShot(300, 30); SelectObject(c1.dc, th::Body()); SelectObject(c2.dc, th::Body()); RECT q1 = {4, 0, 296, 30}, q2 = q1;
     th::Text(c1.dc, L"Open a lobby; friends join", -1, &q1, DT_VCENTER | DT_SINGLELINE); DrawTextW(c2.dc, L"Open a lobby; friends join", -1, &q2, DT_VCENTER | DT_SINGLELINE); GdiFlush();
     Check(memcmp(c1.px, c2.px, 300 * 30 * 4) == 0, "Segoe UI text is GDI's, unchanged");
+    // the start circles (radio buttons, tiles, list marks) are smooth: their edges are part-covered pixels, not GDI's hard steps (owner, 2026-11-06)
+    Shot d1 = NewShot(60, 30); th::DrawDot(d1.dc, 14, 15, 8, th::kMuted, false); th::DrawDot(d1.dc, 44, 15, 8, th::kWarm, true); GdiFlush(); Ink e = Measure(d1);
+    snprintf(d, sizeof d, "%d part-covered pixels in %d steps", e.partial, e.steps); Check(e.right > 50 && e.partial >= 16 && e.steps >= 8, "circles have smooth edges", d); Free(d1);
     Free(a); Free(b); Free(c1); Free(c2); DeleteObject(gdiTwin);
     printf(g_fail ? "text-test FAILED (%d)\n" : "text-test OK\n", g_fail); return g_fail ? 1 : 0;
 }
