@@ -1,81 +1,128 @@
-# Playing together: chat, pings, emotes, drawing, voice, a lobby, a race, the launcher
+# Features
 
-Everything here is in the proxy DLL (`witness_coop.cfg` settings in brackets) and the launcher (`launcher/`). Each feature has an automated check; the scenario that
-proves it is named in the last column of the table at the end. Keys can be changed in the cfg or in the launcher.
+Everything the co-op mod adds, in the game and in the launcher. For installing and getting into a game, see the
+[README](README.md). For pictures, see the [showcase](docs/SHOWCASE.md).
 
-Hold **F1** in either the game or launcher for the shared quick guide; release to hide it.
-It lists your current configured keys, fixed shortcuts, features and troubleshooting on one screen.
-F1 is reserved; an old custom F1 action moves to F2 (or the next free fallback listed in the README).
+Hold **F1** in the game or the launcher at any time to see your current keys.
 
-## In the game
+## The shared world
 
-| What | How |
-|---|---|
-| **Chat** | `T` opens the box, Enter sends, Esc cancels. The log shows bottom left; a player's last line also floats over their head for a few seconds. |
-| **Typing dots** | While someone has the chat box open, three animated dots show over their head for everyone. |
-| **Ping** | `V` or the middle mouse button marks the point under the cross-hair (the distance comes from the game's own depth buffer). Everyone sees a pole with the sender's name and the distance; off screen, an arrow at the edge of the screen points the way. |
-| **Emote wheel** | Hold `H`, point at a slot and release to play. `Tab` while held cycles three pages of eight emotes; `Esc` cancels the selection. The camera stays still. Others see skeletal animation and the emote name. `F1` shows controls generated from the same binding table as input dispatch. See [adventurer gestures](docs/GESTURES.md) for the catalog, interruption rules and verification. |
-| **Adventurer** | Everyone is drawn as the original adventurer with idle, walk and run clips and four fidgets. Its mouth moves while its player speaks, and its hand reaches for the panel its player is tracing. It blinks, glances at you when you come near, carries its head where its player looks, breathes (out of breath after a run), swings its scarf and gear, is lit with a normal map, roughness and metalness and a sun shadow, and its footsteps are heard where it walks ([the life layer](docs/LIFE.md)). Old selections migrate automatically; see [README](README.md#character-migration). Use the launcher’s Settings, Players and interface, to customize skin, hair, eyes, coat, scarf, trousers, boots and gear; choices sync to the other players. See [appearance controls](docs/APPEARANCE.md). |
-| **Free drawing** | Hold `X`: ink goes onto the surface the cross-hair is on (the game's scene depth at that pixel), in your colour, and everyone sees it, in puzzles too. `Z` toggles the canvas: the mouse then moves a pen over the screen (the camera stays), so a puzzle panel can be drawn on precisely. `B` changes ink colour, Backspace in the canvas undoes the last stroke, Shift+`X` clears yours. |
-| **Voice chat** | Hold `B` (or the mouse side button) to talk (`voice_mode=ptt`, the default), or `voice_mode=open` for an open microphone with a voice-activity gate. Players near you are heard in the world: louder when close, duller when farther, from the side they are on. Beyond `voice_range` (25 m) the voice turns into a walkie-talkie (band-limited, a little distorted, noise, squelch at the start and end) coming from the middle, fading over from the proximity voice; `voice_radio_range` limits even that, `voice_radio=0` turns it off. A speaking player shows moving bars beside their head; your own microphone state shows bottom left. |
-| **Voice channels** | Who hears you, and how, is the channel (`voice_channel=`, and `Y` steps through them, the mic indicator names it): **proximity** (as above), **radio** (experimental: only with `experimental_radio=1`; everybody, at any distance, with the walkie-talkie sound, and R holds it with a walkie-talkie in your hand), **open line** (`global`: everybody, as you sound, as loud far away as next to you), and **one on one** with each player in turn (only that player hears you, over the radio). A player that is not the addressee is never even sent your voice. |
-| **Watch another player's screen** | hold `Tab` for the player panel and click Watch on a player's row (or Enter on the chosen row); `[` and `]` cycle, `F9` size. A quiet reminder is bottom right. |
-| **See through players** | Players fade only during body overlap (`see_through=0` turns it off, `ghost_alpha=` sets how faint). Nearby players at 0.65 m and teammates in front of a puzzle stay opaque. Horizontal and vertical overlap edges fade smoothly, and opacity returns quickly when bodies separate. |
-| **Race** | `game_mode=race` (the lobby sets it): each player plays their own world and nothing of it is shared: no panel, door, cable or drawn line crosses over; you still see the others run about, chat and talk. Everybody waits until all worlds are loaded, a countdown ends in the same GO for all (the lowest player number sets it, the others take it from its reports), progress counts from GO, the first to the goal wins (`race_goal=panel:9F7F`, the mountain's last box, or `count:25`, the first to solve 25 panels). Clock, goal, standings and the winner are on screen. |
-| **Two windows on one PC** | `run_unfocused=1` (also *Keep running in the background* in the launcher's Settings, Display): a game window that is not active keeps running at full speed instead of the game's own ~10 fps background sleep, so the window you are not using is not choppy. It sets only the game's "active" byte: the keyboard and the mouse still go to the window that has the focus. |
-| **Versions and updates** | The launcher shows the mod version (window title, About tab, every name in the lobby list); a player on another version is refused by the host with both versions named, and the lobby page offers **Update the launcher**. The launcher checks GitHub releases at start (once a day, switchable, no telemetry), shows *Update available: vX* on the Play tab with **Update**, **What's new** and **Later**, downloads the zip and its `.sha256`, verifies, and replaces the managed files through the installer's receipts (all or none; the proxy only while the game is not running; never a file of the game; a v0.1.0-alpha folder is migrated off the Ansel DLL). Games of two versions started without the lobby say so once in the game instead of silently ignoring each other. See README, *Updating*, and [docs/UPDATER.md](docs/UPDATER.md). |
-| **Game volume** | `game_volume=<percent>` sets the game's entry in the Windows volume mixer. |
-| **Map picture** | The dev menu's map (F8) can have a picture of the island under it. Its "Make a picture of the island" button flies the player over the island looking down and stitches the game's own frames (nothing of the mod is drawn); the picture stays on your machine in `witness_map\`. |
-| **New game with progress** | `start_progress=<spec>` in the cfg (the launcher's New game window writes it) completes parts of the map when the next new world is up, in the order the game needs. See below. |
+When anyone solves a panel, it's solved in every game, and whatever it powers follows: doors open, cables light up,
+other panels switch on and lasers turn on. Doors that close and timed panels that reset do the same for everyone.
 
-## New game with parts of the map completed
+You also see each other's puzzle lines as they're drawn, including the mirrored half on the symmetry panels, so you
+can watch a friend work on a panel or work one out together.
 
-`progress/progression.txt` lists every puzzle panel with the game's own entity id, its area and the full set of panels the game needs solved before it: the panels in front of it in its
-own area, the panel behind every door on the way in, the panels that open the way between areas. It is built by `tools/gen_progression.py` from the logic file of the
-Archipelago randomizer for The Witness (MIT, https://github.com/ArchipelagoMW/Archipelago). Choosing "Symmetry Island" therefore also solves the tutorial gate and the Glass
-Factory, because the game's door to the island is opened by a panel that needs the factory's last panel; choosing "Mountain (Outside)" lights the seven cheapest lasers; choosing
-nothing else changes nothing. A spec reads `area:Desert;area:Symmetry Island;lasers:3;panel:0x293;preset:seven-lasers`. Doors the solved panels open are opened too (a few tutorial
-doors are opened by the game's script, not by a panel's target, and are opened by hand). The list is kept next to the saves (`coop_progress.txt`), because the game's own save has no
-solution line for a panel solved this way, and is put back when a later session loads a campaign. A save made while the mod runs gets `<save>.coop.txt` beside it: when it was made, the
-players who were in the game with their names and times (historical character labels remain readable) (earlier sessions of the campaign add up), panels solved in all and per area, lasers lit, doors open.
+If someone joins late, or their game restarts, their world catches up with everything that's been solved.
 
-## The launcher (`launcher/witness_launcher.exe`, next to the game's exe)
+Bridges and moving platforms aren't shared yet: each player moves those in their own world.
 
-* **Over the internet (Steam)**: **Host on Steam** makes a friends-only Steam lobby (16 players); invite through the Steam overlay, a Steam chat invite to a friend picked in the launcher, or the lobby number; friends accept in Steam (Join Game works too; if nothing is open, Steam starts the game, which hands over to the launcher). The lobby and the games talk through Steam, which relays when there is no direct path: no port forwarding. A lobby without the mod's key, a different mod version, a full or vanished lobby, Steam not running or offline each get a plain message, and a Steam session lost in the game is said on screen; nothing falls back to UDP by itself. See [docs/STEAM.md](docs/STEAM.md).
-* **Lobby** (the first tab): host a lobby and send friends the invite (`address:port/CODE`, "Host direct (LAN)"), or paste an invite and join. Everybody sees who is there (ready, speaking, in game), chats by text and by voice (the microphone and the same codec as in the game, relayed by the host, so only the host's port has to be reachable; mute and deafen buttons), and the host chooses what to play: co-op or a race with its goal, a new game with parts of the map done. Everybody says they are ready, the host starts, a countdown runs, and each launcher writes the cfg of its own game from the same roster (number, port, the others' addresses, mode, goal, parts of the map) and starts it; the lines of your own cfg the lobby does not set are kept and the whole cfg is put back when the game ends. While the game runs the lobby stays; when every game has ended everybody is back in it with the result of the race.
-* **Firewall**: the first time you host or join a lobby (and the first time the games connect), Windows asks whether to allow `witness_launcher.exe` and the game through its firewall: allow it on private networks. This PC's test copies never ask: `resource provider firewall` (once, one UAC click) allows the launcher and the game copies in every resource provider slot.
-* **Play**: Continue (the latest save) or New game, which asks what is already completed (areas, lasers, presets, with what each needs first) and starts a fresh world with `-new_game`; saves stay where they are.
-* **Video**: the game's own `Launcher.variables` (render profile, full screen, vsync, resolution or a custom size, anti-aliasing, the quality settings), written in the game's format; the launcher starts the game with `-skip_config_dialog`.
-* **Sound and voice**: game volume, game sound off, voice mode, push-to-talk key, voice and microphone volume, the hearing range (the far-voice radio sound and its range are cfg keys, not launcher rows, unless changed).
-* **Controls**: the mod's keys.
-* **Game options**: the options that live inside each save (mouse speed, invert, smoothing, brightness, field of view, reticle, vignetting, look magnetism), patched in place; a copy of the save as it was is kept once (`.before-launcher`).
-* **Co-op**: player number, name, port, the other players, dev menu. Lines of the cfg the launcher does not know are kept.
-* **Saves**: each save with who was in the game and how far it got; copy or move saves to a backup folder.
+## Seeing each other
 
-## Checks
+Everyone appears as the adventurer, a character made for this mod, with a name tag in their colour showing their ping,
+and bars beside it that move when they're talking. The adventurer walks and runs at its player's speed, looks where they look,
+blinks, glances at you when you come close, gets out of breath after a run, and reaches for a panel its player is
+tracing. Its mouth moves when its player talks, and you hear its footsteps where it walks. Walls and doors hide other
+players the way they'd hide anything else in the world.
 
-| Feature | Game-free (T0) | Two real games (T2, `tools/qa.sh <scenario>`) |
-|---|---|---|
-| Chat, typing dots, bubbles, pings | `make -C proxy/core test` (social layer: loss, jitter, restart, corruption; 8 twins) | `social` |
-| Emotes | `python3 tools/test_gestures.py` (poses, activity, wire simulator and mutants) | `emote` |
-| Free drawing | core stroke messages | `ink` |
-| Progression and new game | `make -C proxy/progress test` (closure, order, lasers, text, sidecar; 6 mutants) | `progress` (solved panels and open doors read from both games' memory; the save's sidecar) |
-| Launcher | `make -C launcher test` (cfg, video file, options in a save, saves; 5 mutants) | `launcher` (the window driven with window messages, the files on disk, the game it starts: its own log and the save it writes) |
-| Voice / Walkie-talkie (the handheld radio is experimental, `experimental_radio=1`) | `make -C common test` (gating: R does nothing and the guide has no radio while off; 2 mutants), `make -C proxy/voice test` (codec, packets, mix, radio filter, jitter, channels; 12 mutants) and `make -C proxy/radio test` (18 mutants) | `voice` (proximity gain, pan, fade and radio read from the listener's mixer with real positions; push to talk; speaking flag; game volume read back from the system; `voice channels`: every channel at 80 m and 5 m, one on one with a player that is not there, the `H` key; mutants) |
-| See through players | `make -C proxy/ghost test` (body overlap, opaque proximity and puzzle sightlines, smooth vertical edges and restoration; 6 mutants) | `ghost` (B reads rendered alpha while A stays opaque near a puzzle and at 0.65 m, fades during overlap, and stays solid on another level; partial edges and a disabled-fade mutant) |
-| Race | `make -C proxy/race test` (waiting, one GO, baseline, winner and grace, loss, different goals; 6 mutants) and `make -C proxy/core test` (`race-isolation`: nothing shared, a co-op sender not blocked; 2 twins) | `race` (both games count down together, a panel solved in the countdown does not count, A's panels are unsolved in B's memory, the standings and the finish time agree; mutants) |
-| Shared lines in the panel's own frame | `make -C proxy/frame test` (round trip, a panel that turns 70 degrees and moves, the tip of a line part drawn; 2 mutants) | `linemove` (a half-drawn line is half way in B, the solved line the whole edge, after B's door has swung 1.0 m the line is unchanged in the panel's frame; 2 mutants) |
-| Window not active | - | `unfocus` (real focus on A: B at 60 fps with `run_unfocused=1`, 9.6 without; holds the resource provider's input lock) |
-| Launcher looks | - | `looks` (the real pointer along a tab: 3 repaints against 72; no dropdown covers a text on any page; 2 mutants) |
-| Quick guide (hold F1) | `make -C common test` (bindings, F1 migration, the shared keys and their migration from the old defaults, the moved-keys list written once, notice wording, layout budget, hold vs toggle; 14 mutants) | `tools/qa.sh probe tools/qa_cozy.py`: actual renderer text bounds, F1 hold/release, roster Escape and captures at six screen sizes; key-consumption mutant |
-| Shared keys and the hold-Tab player panel | `make -C common test` (above) and `make -C proxy/ui test` (the panel's rows, layout at every size, mouse and keyboard actions; 2 mutants) | `shared` (the old-default cfg migrates, a custom key is kept, V and middle mouse ping and B and the side button talk with counters read from both games, the panel's Mute, Watch, volume, name tags and Leave by mouse and keyboard, a confirmed Leave closes only that game; mutants: V still watches, Tab does nothing) |
-| POV screen | game-free core tests | `pov` (also started the way the lobby does, and the panel's Watch; 5 mutants) |
-| Back TV (experimental, `experimental_tv=1`) | `make -C common test` (gating and guide, mutants), `python3 tools/test_tv.py` and `make -C proxy/core test` (wire, consent, geometry and mutants) | `tv` (live frame hashes, visible screen pixels, camera updates, viewer off, consent revocation; missing-feed mutant), `tvoff` (off by default on both: keys and commands start nothing; one side on, the other off) |
-| Lobby | `make -C launcher lobby-test` (join with an invite, ready, start, roster, chat exactly once in order on a link losing 30% and damaging packets, voice relay, leaving, a host that restarts; the same lobby over a fake Steam link that loses, duplicates and reorders, with a stranger who knows the code; 9 twins and 2 mutants: `NO_CHECKSUM`, `GATE_OPEN`) | `lobby` (two real launchers and two real games: host, join, chat, voice, the host's choices, ready and start, the cfgs written, the games race, back in the lobby with the result; 4 mutants) |
-| Versions and updates | `make -C launcher test` (`lobby-test`: JOIN carries the version, a host on another version refuses with both versions named, the list shows each version, an older lobby protocol gets `kBadVersion`; 3 mutants. `update-test`: `tools/test_launcher_update.py`, release list parsing, versions, throttling, SHA-256, ZIP/CRC/path checks, the receipt rules, rollback, recovery of an interrupted update, downgrade, game running; 36 source mutants), `make -C proxy/core test` (`version-notice`: a peer on another magic generation is said once; 3 mutants), `python3 tools/test_launcher_update_win.py --mutants` (WinINet against a local fake release server; 7 mutants), `python3 tools/qa_lobby_version.py` (three real launchers: same version joins, another is refused with both versions in its window; a host that admits any version is caught) |
-| Steam transport | `make -C proxy/core test` (`tests/peers.cpp`: three production sync cores over a fake Steam link losing 20%, duplicating 10% and reordering; an impostor claiming a member's id and a stranger are never heard; the cfg syntax; mutants `STEAM_ANY_SENDER`, `STEAM_ANY_MEMBER`) and `make -C proxy/core transport-test` (UDP through the production `coop.cpp`) | `steam` (one slot: a game without Steam's environment says the Steam transport is down; the launcher's Steam lobby id, mod key, protocol key, code and limit read back through Steam; the game started from it uses the game's own Steam connection, `steamstat` app 210970, and with Steam's overlay in it still runs a minute later; mutant `PRESENT_LOOP`). Two Steam members: the two-account test in [docs/STEAM.md](docs/STEAM.md) |
-| Map picture | - | `map` (seams of neighbouring tiles agree, content, nothing of the mod drawn, the player returns) |
+Change your adventurer's skin, hair, eyes, coat, scarf, trousers, boots and gear under **Settings > Players and
+interface**. Everyone sees your choices.
 
-Real speech: `tools/make_speech.sh` records a spoken sentence with the Windows voice; `SPEECH_WAV=<file> make -C proxy/voice test` then also checks that it survives the codec (23.7 dB on the
-sentence used) and keeps its loudness rhythm through the mixer (correlation 1.000 five metres away, 0.939 over the radio at 80 m), and `voice-demo <folder> <file>` writes the
-speech versions of the listening files (`speech_voice_*.wav`). A person speaking into a microphone has not been tested.
+If you walk into another player, the two of you fade a little so you can still see what you're doing. Turn that off
+with **See-through players** in the same settings page.
+
+## Talking
+
+**Voice chat.** Hold `B` (or the mouse side button) to talk. Players near you sound like they're standing where they
+are: louder up close, from the side they're on. Players further away sound like they're on a walkie-talkie.
+
+Press `Y` to change who hears you:
+
+- **Nearby:** whoever is close, as above.
+- **Open line:** everyone, as loud far away as up close.
+- **One on one:** a single player you pick. Nobody else gets your voice at all.
+
+On a controller, voice is an open mic (with a gate that only opens when you speak). You can pick a stick click for
+push-to-talk instead under **Settings > Voice and sound**, along with volumes, the hearing range and your microphone.
+
+**Chat.** Press `T`, type, Enter. Messages show in the corner, and the last thing someone said floats over their head
+for a few seconds. Three dots show over someone's head while they're typing. On a controller, chat opens Steam's
+keyboard, or one on screen.
+
+**Quick chat** (controller: hold View, press RB): Ready, Wait for me, Over here, Come look at this, Thanks.
+
+## Pointing things out
+
+**Ping** (`V` or middle mouse): puts a marker on the spot you're looking at, with your name and the distance. If it's
+off someone's screen, an arrow at the edge points them to it.
+
+**Draw** (hold `X`): paints onto whatever you're looking at, in your colour, and everyone sees it, on panels too.
+`Shift`+`X` clears your drawings, and the mouse wheel changes colour while you draw.
+
+**Canvas** (`Z`): instead of aiming with the camera, you move a pen across the screen. Useful for marking up a panel
+precisely. Backspace undoes the last line. Press `Z` again to put the pen away.
+
+## Emotes
+
+Hold `H` for the emote wheel, point at one and let go. There are 24 across three pages (`Tab` turns the page),
+from a wave, a bow and a thumbs up to a facepalm, a shrug and a dance. While you emote the camera moves behind you so
+you can see yourself do it; turn that off with **Third-person view when emoting** in Settings > Players and interface.
+
+## Watching other players
+
+Hold `Tab` for the player panel and choose **Watch** on someone to see a small live picture of their screen in the
+corner. `[` and `]` step through players, and `F9` changes the picture's size or hides it. It's handy for comparing
+notes on a puzzle that's on the other side of the island.
+
+The player panel is also where you mute someone, set their volume, hide name tags, copy the invite and leave the
+game. On a controller, hold View.
+
+## Race mode
+
+The host can pick a race instead of co-op. Nothing is shared between worlds, but you still see, hear and chat with each
+other. Every game waits until all players have loaded, then a countdown starts everyone together. The goal is either
+a particular panel (the last one on the mountain, for example) or a number of panels solved. The clock, standings and
+winner are on screen, and everyone goes back to the lobby with the result.
+
+## New game with parts already done
+
+When starting a new game, the host can tick areas of the island to count as already solved, or a number of lasers.
+The mod solves exactly what's needed for that, including anything the game requires first (picking Symmetry Island,
+for example, also solves the Glass Factory, because that's what opens the way there). Handy if you've played the game
+before and want to go straight to a part you like.
+
+## Saves
+
+The game saves as normal, in its usual place. The launcher's **Saves** tab shows who played in each save, how far it
+got, how many lasers are on and the save's picture. You can back saves up from there too.
+
+## The launcher
+
+Four tabs:
+
+- **Play:** your name, and the choice to host, join or play solo. Hosting or joining turns it into the lobby, with
+  the players, a chat, voice, and the host's choices for what to play.
+- **Saves:** your saves, who played in them, and **New game**.
+- **Settings:** co-op rules, players and interface, voice and sound, controls, display, network, and the launcher
+  itself. Changes save as soon as you make them, and **Reset section** puts a page back to its defaults.
+- **About:** your version, updates, the quick guide, **Send diagnostics**, and credits.
+
+The launcher works with a mouse, a keyboard or a controller. On a Steam Deck it fills the screen.
+
+Press Play in Steam and the launcher opens first. If you'd rather Steam started the game directly, turn off **Show the
+launcher at start** under Settings > Launcher. Holding Shift while the game starts brings the launcher back.
+
+## Experimental
+
+These are off by default. Turn them on under **Settings > Launcher**; they take effect next time the game starts.
+Players who leave them off aren't affected.
+
+- **Handheld radio:** hold `R` to talk to everyone over a walkie-talkie, which your adventurer holds up while you
+  do.
+- **TV features:** a small TV on your back that shows nearby players what you're seeing (only if you allow it), and a
+  big screen you can put up showing another player's view, with stools to sit on and watch.
+
+## Two games on one PC
+
+If you run two copies of the game on one PC, turn on **Keep running in the background** under Settings > Display, so
+the window you're not using doesn't slow to a crawl.

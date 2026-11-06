@@ -10,7 +10,9 @@ prepare a reviewable diff before asking to publish. Never force-push.
 
 ## Repository map
 
-- `README.md`: what works, how to run the dev setup, architecture, QA results.
+- `README.md`, `features.md`, `docs/SHOWCASE.md`, `dist/README.txt`: the player's documents (install, play, keys, what is shared). Write them for players:
+  no test names, file paths or internals, and no statements about what is or is not tested.
+- `docs/DEVELOPMENT.md`: how the mod works, the dev setup, architecture, offsets, QA results and feature checks (the README until the beta).
 - `proxy/`: C++ source of the 64-bit `dsound.dll` proxy that the game loads from its own folder (it forwards to the system `dsound.dll`).
   `dsound_proxy.cpp` (export stubs, chain load, `DllMain`, log, startup of the other parts), `overlay.cpp` (Direct3D 11
   `Present` hook and puppet drawing), `coop.cpp` (UDP pose exchange and the reliable event layer), `state.cpp`
@@ -58,7 +60,7 @@ prepare a reviewable diff before asking to publish. Never force-push.
 - Build the DLL: `make -C proxy` (needs `x86_64-w64-mingw32-g++`).
 - Put it into the test copies: `tools/install.sh` (checks both exe hashes first and refuses any other build).
 - Restart both games with fresh new games: `tools/restart.sh` (with a resource provider: registers and places your allocated windows). Close them: `tools/stop.sh`.
-- Dev menu (F8/F4/F9), partner view and saves: `proxy/ui.cpp` (2D drawing and text atlas), `devmenu.cpp` (menu, map, actions, test commands), `video.cpp` (partner pictures), `savepoints.cpp` (save points and presets); see the README.
+- Dev menu (F8/F4/F9), partner view and saves: `proxy/ui.cpp` (2D drawing and text atlas), `devmenu.cpp` (menu, map, actions, test commands), `video.cpp` (partner pictures), `savepoints.cpp` (save points and presets); see docs/DEVELOPMENT.md.
 - Manual testing: `WITNESS_HUMAN=1 WITNESS_FPS=60 tools/restart.sh` starts both games for a person (real mouse and keyboard, A on the first monitor, B on the second); `tools/tour.sh list|go N|next|prev|here [A|B|both]` teleports the player to numbered spots across the island (31 map cells, each in front of a real panel).
 - Full regression: `tools/qa.sh` (or `tools/qa.sh --all [filter ...]`) runs every scenario with its mutants in parallel shards
   (`tools/qa_par.sh`): each shard is its own resource owner with two slots, and new shards start while the provider status shows
@@ -75,13 +77,13 @@ prepare a reviewable diff before asking to publish. Never force-push.
 
 ## Compatibility constraints
 
-- Addresses, offsets and signatures target Steam build 11370412 (`witness64_d3d11.exe`, SHA-256 in the README).
+- Addresses, offsets and signatures target Steam build 11370412 (`witness64_d3d11.exe`, SHA-256 in docs/DEVELOPMENT.md).
   `install.sh` refuses any other build. A new build needs its offsets re-derived and the checks re-run.
 - Do no file or network I/O in `DllMain` (loader lock: a log write there hung the game). Work goes to threads.
 - Call game functions and write game memory only from the render thread (the `Present` hook), between frames, and
   check the entity's type descriptor before calling a type-specific function.
 - Never sync or baseline before the world is stable; after applying a remote change, suppress local detection for
-  that entity (the echo guard). Both were real bugs, see the README.
+  that entity (the echo guard). Both were real bugs, see docs/DEVELOPMENT.md.
 - Changes in the first 15 s after the stable-world gate are start-up noise and are folded into the baseline, except
   after progress the mod applies itself: anything that solves, powers, opens or lights on its own (a progress list,
   a preset, the dev tools, doors opened by hand) calls `SyncCore::modProgressApplied`, which ends that window, so

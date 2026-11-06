@@ -33,7 +33,7 @@ body:
     attributes:
       label: Mod version
       description: The launcher's title bar shows it; the diagnostics zip also has it (system.txt).
-      placeholder: e.g. v0.1.0-alpha
+      placeholder: e.g. v0.2.0-beta.1
     validations:
       required: true
   - type: dropdown
@@ -47,7 +47,7 @@ body:
     id: transport
     attributes:
       label: How you connected
-      options: [Lobby over the internet, Lobby on a LAN, A VPN (Tailscale / ZeroTier / Hamachi), Two copies on one PC, Not connected]
+      options: [Steam lobby, Direct lobby over the internet, Lobby on a LAN, A VPN (Tailscale / ZeroTier / Hamachi), Two copies on one PC, Not connected]
   - type: input
     id: players
     attributes:

@@ -5,21 +5,21 @@ body:
   - type: markdown
     attributes:
       value: |
-        Sessions that went well matter too: some things (long internet games, other people's routers and firewalls, real
-        microphones, many players) can only be checked by real players. Anything that broke also deserves its own bug report
-        with the diagnostics zip (the launcher's **Send diagnostics** button).
+        Sessions that went well are worth hearing about too, especially long games over the internet, bigger groups and
+        voice chat. If something broke, please also file a bug report with the diagnostics zip (the launcher's
+        **Send diagnostics** button).
   - type: input
     id: version
     attributes:
       label: Mod version
-      placeholder: e.g. v0.1.0-alpha
+      placeholder: e.g. v0.2.0-beta.1
     validations:
       required: true
   - type: input
     id: setup
     attributes:
       label: Players and connection
-      placeholder: e.g. 3 players over the lobby, two countries
+      placeholder: e.g. 3 players in a Steam lobby, two countries
     validations:
       required: true
   - type: input
@@ -34,12 +34,14 @@ body:
     attributes:
       label: What you tried
       options:
-        - label: Hosting a lobby and joining one over the internet
+        - label: Hosting a lobby and joining one over the internet (Steam)
+        - label: Joining with a pasted invite, on a LAN or Tailscale
         - label: A session of an hour or more
         - label: Solving panels together (the other player sees the solve and the door)
-        - label: Chat, pings, drawing and the emote wheel
+        - label: Chat, pings, drawing and emotes
+        - label: Playing with a controller or on a Steam Deck
         - label: Voice chat with a real microphone
-        - label: Watching a partner's screen (V)
+        - label: Watching another player's screen (hold Tab, Watch)
         - label: A race
         - label: More than two players
         - label: Restarting a game mid-session and rejoining
