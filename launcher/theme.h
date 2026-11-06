@@ -10,6 +10,11 @@ extern COLORREF kBg, kSurface, kSurface2, kLine, kAccent, kWarm, kText, kMuted, 
 void Init(const std::wstring& gameDir = L"");                           // headings, tabs and buttons in the game's own face (Karmina Bold, read in memory from the player's data-pc.zip), else Segoe UI
 const std::string& FontState();                                        // which face the headings use and why (the stat file's "font" line)
 HFONT Body(); HFONT Small(); HFONT Bold(); HFONT Title();
+// DrawTextW for the font selected in dc (and `extra` pixels between letters). Text in the game's face goes through DirectWrite (GDI gives that CFF font only coarse grey edges,
+// which looked pixelated); every other font, and a Windows without DirectWrite's in-memory fonts, through GDI. DT_CALCRECT measures the way it will be drawn.
+int Text(HDC dc, const wchar_t* s, int n, RECT* r, UINT fmt, int extra = 0);
+unsigned ScreenTextDraws();                                            // game-face texts drawn straight onto a window (flicker risk: they should be drawn off screen); 0 expected
+const char* TextEngine();                                              // "directwrite" while the game's face is drawn through it, else "gdi"
 HBRUSH BgBrush(); HBRUSH SurfaceBrush();
 void Style(HWND h);                                                    // paint this control in the theme (by its class); call after it is created and has its text
 void MarkMuted(HWND h);                                                // a static text that is a hint: dimmer
@@ -22,7 +27,12 @@ void StyleList(HWND list);                                             // a list
 int BannerHeight(int clientH);
 void SetArt(const uint8_t* rgba, int w, int h, const std::string& name);  // the picture (RGBA, w x h) or nullptr: the drawn panel
 const std::string& ArtState();                                          // the stat file's "art" line: "picture <name> <w>x<h>" or "panel"
-void PaintHeader(HDC dc, const RECT& client, int height, const wchar_t* subtitle);
+void PaintHeader(HDC dc, const RECT& client, int height, const wchar_t* subtitle = L"");      // (an empty subtitle: none)
+// The banner's moving line: a random solution traced on its board, solved, faded, the next one. Call about every 16 ms; `active`: the launcher is the window in use
+// (the clock stops otherwise, so it costs nothing while the game is played). Windows' "Show animations" off: the line is shown solved and still.
+void AnimTick(HWND wnd, bool active);
+std::string AnimState();                                                // the stat file's "anim" line: on|paused|still|off, the board, the phase, puzzles and frames so far
+bool Motion();                                                          // Windows' animations setting
 // A save's thumbnail for the Saves list (its picture cropped to fill), or the drawn panel when it has none; the caller owns the bitmap.
 HBITMAP Thumb(const uint8_t* rgba, int w, int h, int tw, int th);
 void MarkTile(HWND radio, HWND desc);                                  // a radio button drawn as a tile (its name, a start circle, the description from `desc`, which is hidden)

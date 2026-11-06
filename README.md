@@ -158,6 +158,11 @@ Four tabs, the same in every co-op mod: **Play**, **Saves**, **Settings**, **Abo
   starts to get the launcher).
 - **About**: version and updates, the quick guide, *Send diagnostics*, links, credits, the game folder.
 
+The banner solves puzzles: on a faint panel grid right of the title (or on the drawn panel when there is no save picture) a line traces a random solution from
+the start circle to the end cap, flashes when solved, fades, and the next one starts; buttons under the pointer or with the focus get a line that runs round
+them from a start dot. Its clock runs only while the launcher is the window in use, and with Windows' *Show animations* off the line is shown solved and still
+(`launcher/trace.h`; `make -C launcher trace-test`, 6 mutants; the stat file's `anim` line; `WITNESS_LAUNCHER_ANIM=always` lets a test film it without the focus).
+
 Keyboard: Enter, Esc (back), Tab, Ctrl+Tab (tabs), Ctrl+Enter (the page's main button), hold F1 (quick guide). A pad (XInput: Xbox pads, the Steam Deck's
 controls) works too: stick or D-pad move, A selects, B goes back, LB/RB change tabs, Start presses the page's main button, X and Y are the actions the footer
 names. The window is resizable, opens at 1280x800 (or the screen when that is smaller) and fills the screen on a Steam Deck. The shape is in `launcher/shell.h`,

@@ -647,14 +647,14 @@ void DrawJoinRow(DRAWITEMSTRUCT* d) {      // B5: name, state, players of limit,
     HDC dc = d->hDC; RECT r = d->rcItem; HBRUSH bg = CreateSolidBrush((d->itemState & ODS_SELECTED) ? th::kSurface2 : th::kSurface); FillRect(dc, &r, bg); DeleteObject(bg);
     if (d->itemID == (UINT)-1 || d->itemID >= g_rows.size()) return; const nf_row& row = g_rows[d->itemID]; bool grey = row.mismatch || row.full; SetBkMode(dc, TRANSPARENT);
     th::DrawDot(dc, r.left + 16, (r.top + r.bottom) / 2, 6, grey ? th::kMuted : row.state == CD_IN_LOBBY ? th::kWarm : th::kAccent, !grey);
-    SelectObject(dc, th::Bold()); SetTextColor(dc, grey ? th::kMuted : th::kText); RECT nr = r; nr.left += 34; nr.right = r.left + 34 + (r.right - r.left) * 30 / 100; DrawTextW(dc, W(row.name).c_str(), -1, &nr, DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
-    SelectObject(dc, th::Small()); SetTextColor(dc, grey ? th::kMuted : th::kLine); RECT lr = r; lr.left = nr.right + 12; lr.right -= 12; DrawTextW(dc, W(row.line).c_str(), -1, &lr, DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+    SelectObject(dc, th::Bold()); SetTextColor(dc, grey ? th::kMuted : th::kText); RECT nr = r; nr.left += 34; nr.right = r.left + 34 + (r.right - r.left) * 30 / 100; th::Text(dc, W(row.name).c_str(), -1, &nr, DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+    SelectObject(dc, th::Small()); SetTextColor(dc, grey ? th::kMuted : th::kLine); RECT lr = r; lr.left = nr.right + 12; lr.right -= 12; th::Text(dc, W(row.line).c_str(), -1, &lr, DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
 }
 // "Friends can join by" (C1) and the invite box, while hosting
 int g_fjState[NF_ROWS];      // the panel rows' states as last drawn
 int TextHeight(HWND h, int width) {      // the height a static's text takes at its font, wrapped to width
     wchar_t t[600] = {}; GetWindowTextW(h, t, 600); if (!t[0]) return 16; HDC dc = GetDC(h); HGDIOBJ old = SelectObject(dc, (HFONT)SendMessageW(h, WM_GETFONT, 0, 0));
-    RECT r = {0, 0, width, 0}; DrawTextW(dc, t, -1, &r, DT_CALCRECT | DT_WORDBREAK | DT_NOPREFIX); SelectObject(dc, old); ReleaseDC(h, dc); return std::max(16, (int)r.bottom);
+    RECT r = {0, 0, width, 0}; th::Text(dc, t, -1, &r, DT_CALCRECT | DT_WORDBREAK | DT_NOPREFIX); SelectObject(dc, old); ReleaseDC(h, dc); return std::max(16, (int)r.bottom);
 }
 void HostUiTick() {
     static ULONGLONG at; static bool laidSteam; if (GetTickCount64() - at < 400) return; at = GetTickCount64();
@@ -726,9 +726,9 @@ void DrawMember(DRAWITEMSTRUCT* d) {
     HDC dc = d->hDC; RECT r = d->rcItem; HBRUSH bg = CreateSolidBrush((d->itemState & ODS_SELECTED) ? th::kSurface2 : th::kSurface); FillRect(dc, &r, bg); DeleteObject(bg);
     if (d->itemID == (UINT)-1 || d->itemID >= g_shown.members.size()) return; const auto& m = g_shown.members[d->itemID]; SetBkMode(dc, TRANSPARENT);
     th::DrawDot(dc, r.left + 16, (r.top + r.bottom) / 2, 6, m.speaking ? th::kAccent : (m.ready || m.host ? th::kWarm : th::kMuted), m.speaking || m.ready || m.host);
-    SelectObject(dc, m.host ? th::Bold() : th::Body()); SetTextColor(dc, th::kText); RECT nr = r; nr.left += 34; nr.right -= 230; DrawTextW(dc, W(m.name + (m.id == g_sess.MyId() ? "  (you)" : "")).c_str(), -1, &nr, DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
-    { bool differs = !m.version.empty() && m.version != MOD_VERSION; SelectObject(dc, th::Small()); SetTextColor(dc, differs ? th::kAccent : th::kMuted); RECT vr = r; vr.right -= 120; vr.left = r.right - 230; DrawTextW(dc, W(m.version).c_str(), -1, &vr, DT_VCENTER | DT_SINGLELINE | DT_RIGHT | DT_END_ELLIPSIS); }
-    const wchar_t* st = m.inGame ? L"in game" : m.host ? L"host" : m.ready ? L"ready" : L"not ready"; SelectObject(dc, th::Small()); SetTextColor(dc, m.inGame ? th::kAccent : m.ready || m.host ? th::kWarm : th::kMuted); RECT sr = r; sr.right -= 12; DrawTextW(dc, st, -1, &sr, DT_VCENTER | DT_SINGLELINE | DT_RIGHT);
+    SelectObject(dc, m.host ? th::Bold() : th::Body()); SetTextColor(dc, th::kText); RECT nr = r; nr.left += 34; nr.right -= 230; th::Text(dc, W(m.name + (m.id == g_sess.MyId() ? "  (you)" : "")).c_str(), -1, &nr, DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+    { bool differs = !m.version.empty() && m.version != MOD_VERSION; SelectObject(dc, th::Small()); SetTextColor(dc, differs ? th::kAccent : th::kMuted); RECT vr = r; vr.right -= 120; vr.left = r.right - 230; th::Text(dc, W(m.version).c_str(), -1, &vr, DT_VCENTER | DT_SINGLELINE | DT_RIGHT | DT_END_ELLIPSIS); }
+    const wchar_t* st = m.inGame ? L"in game" : m.host ? L"host" : m.ready ? L"ready" : L"not ready"; SelectObject(dc, th::Small()); SetTextColor(dc, m.inGame ? th::kAccent : m.ready || m.host ? th::kWarm : th::kMuted); RECT sr = r; sr.right -= 12; th::Text(dc, st, -1, &sr, DT_VCENTER | DT_SINGLELINE | DT_RIGHT);
 }
 void DrawLevel(DRAWITEMSTRUCT* d) {
     HDC dc = d->hDC; RECT r = d->rcItem; HBRUSH bg = CreateSolidBrush(th::kSurface2); FillRect(dc, &r, bg); DeleteObject(bg); lw::VoiceStats v = g_voice.Stats();
@@ -1030,7 +1030,7 @@ void WriteStat() {      // tests: what the lobby is, as text lines, rewritten ev
     snprintf(b, sizeof b, "game pid %lu running %d launches %u\n", (unsigned long)g_gamePid, g_game ? 1 : 0, g_launches); o += b;
     { wchar_t sb[400] = {}, hb[400] = {}; GetWindowTextW(g_status, sb, 400); GetWindowTextW(g_hints, hb, 400); HWND f = GetFocus(); Field* ff = f ? ByHwnd(f) : nullptr; RECT cr; GetClientRect(g_main, &cr); std::string fk = ff ? ff->key : (f ? std::to_string(GetDlgCtrlID(f)) : std::string("-"));
       snprintf(b, sizeof b, "ui tab %d label %s lobbyview %d section %d choice %s padlast %d capture %d focus %s client %ld %ld\n", CurTab(), ls::TabLabel(CurTab(), g_sess.Active()), IsWindowVisible(g_lobbyPanel) ? 1 : 0, g_section, ls::ChoiceKey(g_choice), g_padLast ? 1 : 0, g_capture, fk.c_str(), cr.right, cr.bottom); o += b;
-      o += "font " + th::FontState() + "\n"; o += "art " + th::ArtState() + "\n"; o += "thumbs " + std::to_string(g_thumbs ? ImageList_GetImageCount(g_thumbs) : 0) + " of " + std::to_string(g_saves.size()) + "\n";
+      o += "font " + th::FontState() + "\n"; o += "textscreen " + std::to_string(th::ScreenTextDraws()) + "\n"; o += "art " + th::ArtState() + "\n"; o += "anim " + th::AnimState() + "\n"; o += "thumbs " + std::to_string(g_thumbs ? ImageList_GetImageCount(g_thumbs) : 0) + " of " + std::to_string(g_saves.size()) + "\n";
       o += "savepic " + std::to_string(g_savePic && IsWindowVisible(g_savePic) ? 1 : 0) + " " + std::to_string(g_picW) + " " + std::to_string(g_picH) + "\n";
       o += "uistatus " + U(sb) + "\n" + "hints " + U(hb) + "\n" + "steamatstart " + g_steamAtStart + "\n" + "joinbox " + EditText(LB(ID_LB_INVITE)) + "\n"; }
     std::wstring tmp = g_statFile + L".tmp"; if (WriteFile8(tmp, o)) MoveFileExW(tmp.c_str(), g_statFile.c_str(), MOVEFILE_REPLACE_EXISTING);
@@ -1050,7 +1050,7 @@ LRESULT CALLBACK GuideProc(HWND h, UINT m, WPARAM w, LPARAM l) {
         DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, FIXED_PITCH, L"Consolas");
     HGDIOBJ old = SelectObject(dc, th::Bold()); SetTextColor(dc, th::kWarm);
     const wchar_t* title = L"THE WITNESS CO-OP - QUICK GUIDE";
-    TextOutW(dc, 16, 12, title, (int)wcslen(title));
+    { RECT tr = {16, 12, 16, 12}; th::Text(dc, title, -1, &tr, DT_LEFT | DT_TOP | DT_SINGLELINE | DT_NOPREFIX | DT_NOCLIP); }
     SelectObject(dc, th::Small()); SetTextColor(dc, th::kAccent);
     const wchar_t* hint = L"Hold F1 to read / release to return. Keys reflect current launcher settings.";
     TextOutW(dc, 16, 40, hint, (int)wcslen(hint)); SelectObject(dc, font);
@@ -1261,21 +1261,25 @@ void DrawSectionItem(DRAWITEMSTRUCT* d) {
     if (d->itemID == (UINT)-1) return;
     if (sel) { HBRUSH a = CreateSolidBrush(th::kWarm); RECT ar = {r.left, r.top + 6, r.left + 4, r.bottom - 6}; FillRect(dc, &ar, a); DeleteObject(a); }
     SetBkMode(dc, TRANSPARENT); SelectObject(dc, sel ? th::Bold() : th::Body()); SetTextColor(dc, sel ? th::kText : (focus ? th::kLine : th::kMuted)); RECT tr = r; tr.left += 16;
-    DrawTextW(dc, W(ls::SectionName((int)d->itemID)).c_str(), -1, &tr, DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+    th::Text(dc, W(ls::SectionName((int)d->itemID)).c_str(), -1, &tr, DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
 }
 LRESULT CALLBACK MainProc(HWND h, UINT m, WPARAM w, LPARAM l) {
     switch (m) {
     case WM_ACTIVATEAPP: if (!w) { g_guideHold.Reset(); ShowGuide(false); } else ClipboardCheck(); break;
     case WM_ERASEBKGND: { RECT rc; GetClientRect(h, &rc); FillRect((HDC)w, &rc, th::BgBrush()); return 1; }
-    case WM_PAINT: { PAINTSTRUCT ps; HDC dc = BeginPaint(h, &ps); RECT rc; GetClientRect(h, &rc); th::PaintHeader(dc, rc, th::BannerHeight(rc.bottom), L"Co-op for The Witness   |   hold F1: quick guide"); EndPaint(h, &ps); return 0; }
+    case WM_PAINT: { PAINTSTRUCT ps; HDC dc = BeginPaint(h, &ps); RECT rc; GetClientRect(h, &rc); th::PaintHeader(dc, rc, th::BannerHeight(rc.bottom)); EndPaint(h, &ps); return 0; }
     case WM_SIZE: LayoutAll(); return 0;
     case WM_GETMINMAXINFO: { MINMAXINFO* mm = (MINMAXINFO*)l; mm->ptMinTrackSize.x = 1024; mm->ptMinTrackSize.y = 640; return 0; }
     case WM_CTLCOLORSTATIC: case WM_CTLCOLOREDIT: case WM_CTLCOLORLISTBOX: case WM_CTLCOLORBTN: return th::CtlColor(m, (HDC)w, (HWND)l);
-    case WM_DRAWITEM: { DRAWITEMSTRUCT* d = (DRAWITEMSTRUCT*)l; if (d->CtlID == ID_LB_MEMBERS) DrawMember(d); else if (d->CtlID == ID_JOIN_LIST) DrawJoinRow(d); else if (d->CtlID == ID_LB_LEVEL) DrawLevel(d); else if (d->CtlID == ID_SECTIONS) DrawSectionItem(d); return TRUE; }
+    case WM_DRAWITEM: {      // each row drawn off screen and copied once: the lobby's list is redrawn every tick, and a row drawn on screen in steps (its background, then its text) flickered
+        DRAWITEMSTRUCT* src = (DRAWITEMSTRUCT*)l; DRAWITEMSTRUCT b = *src; DRAWITEMSTRUCT* d = &b; int iw = std::max<LONG>(1, src->rcItem.right - src->rcItem.left), ih = std::max<LONG>(1, src->rcItem.bottom - src->rcItem.top);
+        HDC mem = CreateCompatibleDC(src->hDC); HBITMAP bmp = CreateCompatibleBitmap(src->hDC, iw, ih); HGDIOBJ ob = SelectObject(mem, bmp); b.hDC = mem; OffsetRect(&b.rcItem, -src->rcItem.left, -src->rcItem.top);
+        if (d->CtlID == ID_LB_MEMBERS) DrawMember(d); else if (d->CtlID == ID_JOIN_LIST) DrawJoinRow(d); else if (d->CtlID == ID_LB_LEVEL) DrawLevel(d); else if (d->CtlID == ID_SECTIONS) DrawSectionItem(d);
+        BitBlt(src->hDC, src->rcItem.left, src->rcItem.top, iw, ih, mem, 0, 0, SRCCOPY); SelectObject(mem, ob); DeleteObject(bmp); DeleteDC(mem); return TRUE; }
     case WM_HSCROLL: { Field* f = ByHwnd((HWND)l); if (f && f->kind == kSlider) { SliderText(*f); if (LOWORD(w) == TB_ENDTRACK) OnFieldChanged(*f); } return 0; }
     case WM_TIMER:
         if (w == 1) { PollCommands(); LobbyTick(); WriteStat(); DiagPoll(); UpdateUi(); UpdateTabs(); if (g_updFromLobby && g_upd.Available()) { g_updFromLobby = false; g_upd.StartApply(); } }
-        else if (w == 2) PadPoll();
+        else if (w == 2) { PadPoll(); HWND fg = GetForegroundWindow(); DWORD pid = 0; if (fg) GetWindowThreadProcessId(fg, &pid); static const bool always = _wgetenv(L"WITNESS_LAUNCHER_ANIM") && !wcscmp(_wgetenv(L"WITNESS_LAUNCHER_ANIM"), L"always"); th::AnimTick(h, (always || pid == GetCurrentProcessId()) && !IsIconic(h)); }      // (WITNESS_LAUNCHER_ANIM=always: tests film the line without taking the focus)
         return 0;
     case WM_CLOSE: nf_host_close(); g_voice.Stop(); g_sess.Stop(); DestroyWindow(h); return 0;      // (nf_host_close: the router mappings go before the launcher does)
     case WM_COMMAND: {

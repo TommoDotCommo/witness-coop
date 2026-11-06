@@ -25,6 +25,20 @@ diag-test: $(BUILD)/diag-test.exe $(addsuffix .exe,$(addprefix $(BUILD)/diag-mut
 	$(BUILD)/diag-test.exe
 	@for m in $(DIAG_MUTANTS); do if $(BUILD)/diag-mutant-$$m.exe >/dev/null; then echo "MUTANT diag $$m SURVIVED (the test cannot fail for it)"; exit 1; else echo "diag mutant $$m killed"; fi; done
 .PHONY: diag-test
+
+# launcher text in the game's face through DirectWrite (theme.cpp th::Text): needs the player's data-pc.zip, so give the game folder (Windows path):
+#   make text-test GAME_DIR='C:\path\to\The Witness'    (without it: SKIP). The mutant keeps GDI and must fail.
+THEME_LIBS = -lcomctl32 -luxtheme -lgdi32 -lmsimg32 -ld2d1 -ldwrite -lole32
+$(BUILD)/text-test.exe: text_test.cpp theme.cpp theme.h trace.h ../common/gamefont.h
+	mkdir -p $(BUILD)
+	$(CXX) -std=c++17 -O2 -Wall -D_WIN32_WINNT=0x0601 -municode -static -o $@ text_test.cpp theme.cpp $(THEME_LIBS)
+$(BUILD)/text-mutant-GDI_GAME_FACE.exe: text_test.cpp theme.cpp theme.h trace.h ../common/gamefont.h
+	mkdir -p $(BUILD)
+	$(CXX) -std=c++17 -O2 -D_WIN32_WINNT=0x0601 -municode -static -DWL_MUT_GDI_GAME_FACE -o $@ text_test.cpp theme.cpp $(THEME_LIBS)
+text-test: $(BUILD)/text-test.exe $(BUILD)/text-mutant-GDI_GAME_FACE.exe
+	$(BUILD)/text-test.exe '$(GAME_DIR)'
+	@if [ -n "$(GAME_DIR)" ]; then if $(BUILD)/text-mutant-GDI_GAME_FACE.exe '$(GAME_DIR)' >/dev/null; then echo "MUTANT GDI_GAME_FACE SURVIVED (the test cannot fail for it)"; exit 1; else echo "text mutant GDI_GAME_FACE killed"; fi; fi
+.PHONY: text-test
 clean:
 	rm -rf $(BUILD)
 .PHONY: test clean
@@ -49,16 +63,16 @@ $(BUILD)/netfind_%.o: netfind.c $(NF_HDRS)
 	mkdir -p $(BUILD)
 	x86_64-w64-mingw32-gcc -std=c99 -O2 -Wno-unused-parameter -D_WIN32_WINNT=0x0601 -D$* -c -o $@ netfind.c
 $(BUILD)/witness_launcher_NF_MUT_IGNORE_REPLIES.exe: $(BUILD)/netfind_NF_MUT_IGNORE_REPLIES.o      # (the Join list mutant is in netfind.c)
-$(BUILD)/witness_launcher_%.exe: $(NF_HDRS) $(BUILD)/netfind.o ../common/guide.h ../common/bindings.def ../proxy/config.h main.cpp shell.cpp shell.h ../common/handover.h update_win.h update.h ../dist/install-policy.h core.cpp core.h ../proxy/core/appearance.h theme.cpp theme.h lobby.cpp lobby.h lobby_win.cpp lobby_win.h lobby_steam.cpp lobby_steam.h ../common/steam_abi.h ../common/steam_ids.h ../proxy/voice/voice.cpp $(BUILD)/launcher_res.o ../proxy/progress/progress.cpp ../proxy/progress/progress_data.cpp ../proxy/progress/savemeta.cpp $(BUILD)/diag_ps1.h $(BUILD)/version.h ../common/diag_log.h ../common/crash_handler.h
-	$(CXX) -std=c++17 -O2 -I$(BUILD) -D_WIN32_WINNT=0x0601 -mwindows -municode -static -DWL_MUT_$* -o $@ main.cpp shell.cpp core.cpp theme.cpp lobby.cpp lobby_win.cpp lobby_steam.cpp ../proxy/voice/voice.cpp ../proxy/progress/progress.cpp ../proxy/progress/progress_data.cpp ../proxy/progress/savemeta.cpp $(if $(filter NF_MUT_%,$*),$(BUILD)/netfind_$*.o,$(BUILD)/netfind.o) $(BUILD)/launcher_res.o -lcomctl32 -lshell32 -lole32 -luuid -luxtheme -lws2_32 -lwinmm -lgdi32 -lmsimg32 -lwininet
+$(BUILD)/witness_launcher_%.exe: $(NF_HDRS) $(BUILD)/netfind.o ../common/guide.h ../common/bindings.def ../proxy/config.h main.cpp shell.cpp shell.h ../common/handover.h update_win.h update.h ../dist/install-policy.h core.cpp core.h ../proxy/core/appearance.h theme.cpp theme.h trace.h lobby.cpp lobby.h lobby_win.cpp lobby_win.h lobby_steam.cpp lobby_steam.h ../common/steam_abi.h ../common/steam_ids.h ../proxy/voice/voice.cpp $(BUILD)/launcher_res.o ../proxy/progress/progress.cpp ../proxy/progress/progress_data.cpp ../proxy/progress/savemeta.cpp $(BUILD)/diag_ps1.h $(BUILD)/version.h ../common/diag_log.h ../common/crash_handler.h
+	$(CXX) -std=c++17 -O2 -I$(BUILD) -D_WIN32_WINNT=0x0601 -mwindows -municode -static -DWL_MUT_$* -o $@ main.cpp shell.cpp core.cpp theme.cpp lobby.cpp lobby_win.cpp lobby_steam.cpp ../proxy/voice/voice.cpp ../proxy/progress/progress.cpp ../proxy/progress/progress_data.cpp ../proxy/progress/savemeta.cpp $(if $(filter NF_MUT_%,$*),$(BUILD)/netfind_$*.o,$(BUILD)/netfind.o) $(BUILD)/launcher_res.o -lcomctl32 -lshell32 -lole32 -luuid -luxtheme -lws2_32 -lwinmm -lgdi32 -lmsimg32 -lwininet -ld2d1 -ldwrite
 # the manifest plus a VERSIONINFO (ProductName "The Witness Co-op", the mod version): tools/versioninfo.py writes the version part
 $(BUILD)/launcher_res.o: launcher.rc launcher.manifest ../tools/versioninfo.py $(BUILD)/version.h
 	mkdir -p $(BUILD)
 	python3 -I ../tools/versioninfo.py '$(VERSION)' witness_launcher.exe 'The Witness Co-op launcher' $(BUILD)/launcher_version.rc
 	{ cat launcher.rc; cat $(BUILD)/launcher_version.rc; } > $(BUILD)/launcher_all.rc
 	x86_64-w64-mingw32-windres -I . $(BUILD)/launcher_all.rc -o $@
-$(BUILD)/witness_launcher.exe: $(NF_HDRS) $(BUILD)/netfind.o ../common/guide.h ../common/bindings.def ../proxy/config.h main.cpp shell.cpp shell.h ../common/handover.h update_win.h update.h ../dist/install-policy.h core.cpp core.h ../proxy/core/appearance.h theme.cpp theme.h lobby.cpp lobby.h lobby_win.cpp lobby_win.h lobby_steam.cpp lobby_steam.h ../common/steam_abi.h ../common/steam_ids.h ../proxy/voice/voice.cpp $(BUILD)/launcher_res.o ../proxy/progress/progress.cpp ../proxy/progress/progress_data.cpp ../proxy/progress/savemeta.cpp $(BUILD)/diag_ps1.h $(BUILD)/version.h ../common/diag_log.h ../common/crash_handler.h
-	$(CXX) -std=c++17 -O2 -Wall -I$(BUILD) -D_WIN32_WINNT=0x0601 -mwindows -municode -static -o $@ main.cpp shell.cpp core.cpp theme.cpp lobby.cpp lobby_win.cpp lobby_steam.cpp ../proxy/voice/voice.cpp ../proxy/progress/progress.cpp ../proxy/progress/progress_data.cpp ../proxy/progress/savemeta.cpp $(BUILD)/netfind.o $(BUILD)/launcher_res.o -lcomctl32 -lshell32 -lole32 -luuid -luxtheme -lws2_32 -lwinmm -lgdi32 -lmsimg32 -lwininet
+$(BUILD)/witness_launcher.exe: $(NF_HDRS) $(BUILD)/netfind.o ../common/guide.h ../common/bindings.def ../proxy/config.h main.cpp shell.cpp shell.h ../common/handover.h update_win.h update.h ../dist/install-policy.h core.cpp core.h ../proxy/core/appearance.h theme.cpp theme.h trace.h lobby.cpp lobby.h lobby_win.cpp lobby_win.h lobby_steam.cpp lobby_steam.h ../common/steam_abi.h ../common/steam_ids.h ../proxy/voice/voice.cpp $(BUILD)/launcher_res.o ../proxy/progress/progress.cpp ../proxy/progress/progress_data.cpp ../proxy/progress/savemeta.cpp $(BUILD)/diag_ps1.h $(BUILD)/version.h ../common/diag_log.h ../common/crash_handler.h
+	$(CXX) -std=c++17 -O2 -Wall -I$(BUILD) -D_WIN32_WINNT=0x0601 -mwindows -municode -static -o $@ main.cpp shell.cpp core.cpp theme.cpp lobby.cpp lobby_win.cpp lobby_steam.cpp ../proxy/voice/voice.cpp ../proxy/progress/progress.cpp ../proxy/progress/progress_data.cpp ../proxy/progress/savemeta.cpp $(BUILD)/netfind.o $(BUILD)/launcher_res.o -lcomctl32 -lshell32 -lole32 -luuid -luxtheme -lws2_32 -lwinmm -lgdi32 -lmsimg32 -lwininet -ld2d1 -ldwrite
 .PHONY: launcher
 
 # the lobby (game-free): the same kind of test and mutants
@@ -103,6 +117,20 @@ shell-test: $(BUILD)/shell-test.exe $(addsuffix .exe,$(addprefix $(BUILD)/shell-
 	@for m in $(SHELL_MUTANTS); do if $(BUILD)/shell-mutant-$$m.exe >/dev/null; then echo "MUTANT $$m SURVIVED (the test cannot fail for it)"; exit 1; else echo "shell mutant $$m killed"; fi; done
 .PHONY: shell-test
 test: shell-test
+
+# the moving puzzle line (trace.h): solution paths, the drawn part, a button's ring, the timing; game-free, with mutants
+TRACE_MUTANTS = TR_MUT_NO_SEED TR_MUT_DIAGONAL TR_MUT_REVISIT TR_MUT_PREFIX_NODES TR_MUT_RING_CCW TR_MUT_NO_FADE
+$(BUILD)/trace-test.exe: trace_test.cpp trace.h
+	mkdir -p $(BUILD)
+	$(CXX) -std=c++17 -O2 -Wall -Wextra -static -o $@ trace_test.cpp
+$(BUILD)/trace-mutant-%.exe: trace_test.cpp trace.h
+	mkdir -p $(BUILD)
+	$(CXX) -std=c++17 -O2 -Wno-unused-parameter -Wno-unused-variable -static -D$* -o $@ trace_test.cpp
+trace-test: $(BUILD)/trace-test.exe $(addsuffix .exe,$(addprefix $(BUILD)/trace-mutant-,$(TRACE_MUTANTS)))
+	$(BUILD)/trace-test.exe
+	@for m in $(TRACE_MUTANTS); do if $(BUILD)/trace-mutant-$$m.exe >/dev/null; then echo "MUTANT $$m SURVIVED (the test cannot fail for it)"; exit 1; else echo "trace mutant $$m killed"; fi; done
+.PHONY: trace-test
+test: trace-test
 
 # the self-update (update.h, ported from the MDK2 launcher): game-free, with source mutants (tools/test_launcher_update.py)
 update-test:
