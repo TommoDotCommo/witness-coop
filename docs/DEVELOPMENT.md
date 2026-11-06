@@ -333,7 +333,7 @@ files and the real exe; `tools/unknown_build_slot.sh` (one game slot) starts a s
 ## Making a release
 
 `tools/release.sh v0.x.y` builds, in `local/release/`: `witness-coop-v0.x.y.zip` (+ `.sha256`; proxy, launcher, model, thin Setup, scripts, `install-linux.sh`,
-`README.txt` with the version, `LICENSE.txt`) and `witness-coop-v0.x.y-single/Witness-Coop-Setup.exe` (+ `.sha256`), the main download.
+`README.txt` with the version, `LICENSE.txt`, the Steam Input layout `steam-input/witness-coop_deck.vdf`) and `witness-coop-v0.x.y-single/Witness-Coop-Setup.exe` (+ `.sha256`), the main download.
 `tools/check_release_package.py <zip> --single <exe>` checks the inventory, the checksum, that the zip holds the proxy, and that the one-file setup carries the same
 bytes as the zip under its own compiled-in checksum. **Signing:** set `SIGN_CMD` (and optionally `SIGN_VERIFY_CMD`) and every `.exe` and `.dll` is signed before it is hashed and
 embedded, the one-file setup last, then verified; without it the build is unsigned and says so. See [docs/SIGNING.md](SIGNING.md) (certificate, `SIGN_CMD` examples,

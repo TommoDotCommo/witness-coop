@@ -61,6 +61,14 @@ int main() {
         check(go.find("Channels: proximity, open line") != std::string::npos && go.find("adio (hold)") == std::string::npos && go.find("walkie") == std::string::npos, "the quick guide has no radio channel while off");
         check(gn.find("Channels: proximity, radio, open line") != std::string::npos, "the quick guide names the radio channel while on");
     }
+    {   // the developer menu's keys and map help are only in the guide when dev_menu=1 (off in a normal install)
+        auto text = [](const guide::Columns& cols) { std::string t; for (const auto& col : cols) for (const auto& l : col) t += l + "\n"; return t; };
+        Cfg off; Cfg on; on.devMenu = true; std::string go = text(guide::Content(off)), gn = text(guide::Content(on));
+        for (const char* w : {"Developer menu", "Nearby puzzles", "Dev map"}) {
+            check(go.find(w) == std::string::npos, "the quick guide leaves out the developer menu while it is off");
+            check(gn.find(w) != std::string::npos, "the quick guide lists the developer menu while it is on");
+        }
+    }
     guide::Hold h;
     check(!h.Open() && !h.Key('T', true), "only F1 opens guide");
     check(h.Key(guide::Help, true) && h.Open(), "F1 down opens guide");

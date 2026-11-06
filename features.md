@@ -38,9 +38,9 @@ are: louder up close, from the side they're on. Players further away sound like 
 
 Press `Y` to change who hears you:
 
-- **Nearby:** whoever is close, as above.
+- **Proximity:** whoever is close, as above.
 - **Open line:** everyone, as loud far away as up close.
-- **One on one:** a single player you pick. Nobody else gets your voice at all.
+- **Private:** a single player you pick. Nobody else gets your voice at all.
 
 On a controller, voice is an open mic (with a gate that only opens when you speak). You can pick a stick click for
 push-to-talk instead under **Settings > Voice and sound**, along with volumes, the hearing range and your microphone.

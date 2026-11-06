@@ -22,9 +22,10 @@ import versioninfo
 
 EXPECTED = ['Witness-Coop-Setup.exe', 'dsound.dll', 'witness_launcher.exe', 'witness_models/adventurer.glb',
             'witness_models/adventurer.glb.txt', 'witness-coop.ps1', 'installer-gui.ps1', 'install-state.ps1',
-            'install-policy.exe', 'install-linux.sh', 'README.txt', 'LICENSE.txt', 'coop-mod.json']
+            'install-policy.exe', 'install-linux.sh', 'README.txt', 'LICENSE.txt', 'coop-mod.json',
+            'steam-input/witness-coop_deck.vdf']
 ROOT_FILES = ['coop-mod.json']      # beside the top folder as well, for mod managers
-ONE_FILE_SKIPS = {'Witness-Coop-Setup.exe', 'install-linux.sh'}      # in the zip only
+ONE_FILE_SKIPS = {'Witness-Coop-Setup.exe', 'install-linux.sh', 'steam-input/witness-coop_deck.vdf'}      # in the zip only
 PE_FILES = ['Witness-Coop-Setup.exe', 'dsound.dll', 'witness_launcher.exe', 'install-policy.exe']
 ORIGINAL_ANSEL = '3b0677ae1e01fc17645c903c8322497785768145abbe3758364299fdaa8aff15'
 
@@ -77,11 +78,13 @@ def check(archive, policy_source=None, single=None, require_signed=False):
         script = package.read(root + 'install-linux.sh')
         assert b'\r' not in script and script.startswith(b'#!/bin/sh'), 'install-linux.sh must have LF line endings (it runs under sh)'
         assert script.decode() == (Path(__file__).resolve().parents[1] / 'dist/install-linux.sh').read_text(), 'stale install-linux.sh'
+        layout = Path(__file__).resolve().parents[1] / 'dist/steam-input/witness-coop_deck.vdf'
+        assert package.read(root + 'steam-input/witness-coop_deck.vdf') == layout.read_bytes(), 'stale Steam Input layout'
         if require_signed:
             unsigned = [f for f in PE_FILES if not is_signed(package.read(root + f))]
             assert not unsigned, 'not signed in the zip: ' + ', '.join(unsigned)
         mod_manifest.check(archive)
-        notes = ['checksum', 'exact inventory', 'coop-mod.json against the zip', 'VERSIONINFO of every binary', 'proxy payload', 'policy script', 'Windows PE headers']
+        notes = ['checksum', 'exact inventory', 'coop-mod.json against the zip', 'VERSIONINFO of every binary', 'proxy payload', 'policy script', 'Steam Input layout', 'Windows PE headers']
         if single:
             exe = Path(single).read_bytes()
             assert exe[:2] == b'MZ', 'the one-file setup is not a Windows PE'

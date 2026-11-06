@@ -97,7 +97,7 @@ Hold F1 in the game or the launcher to see all of them, including ones you chang
   T                     chat (Enter sends, Esc cancels)
   V or middle mouse     ping the spot you're looking at
   B or mouse side btn   push to talk
-  Y                     next voice channel (nearby, open line, one on one)
+  Y                     next voice channel (proximity, open line, private)
   hold H                emote wheel (Tab changes page)
   hold X                draw on the world (Shift+X clears, mouse wheel = colour)
   Z                     drawing canvas, a pen you move on the screen (Backspace undoes)
@@ -110,6 +110,14 @@ Hold F1 in the game or the launcher to see all of them, including ones you chang
 Controller: the co-op actions are on the View button. Tap to ping, hold for the
 player panel. While holding View: D-pad up emotes, D-pad down chat, D-pad left/right
 watch players, RB quick chat, Y the quick guide.
+
+Set Steam up for a controller first: the game's own Steam controller setting turns
+your pad into keyboard and mouse. In Steam, open The Witness's controller settings,
+choose the current layout, open Templates and pick Gamepad. On a Steam Deck also set
+L4 to Select (the View button) and R4 to the keyboard key B (push to talk). With an
+Xbox or PlayStation pad on Windows you can instead disable Steam Input for the game
+(Properties > Controller). The same layout is ready-made in this zip as
+steam-input\witness-coop_deck.vdf.
 
 Change keys in the launcher under Settings > Controls.
 
@@ -150,7 +158,7 @@ My friend's game isn't in the list:
 
 No voice:
   Check Settings > Voice and sound, mute/deafen in the lobby, and the player panel
-  (hold Tab). On a one-on-one channel only that player hears you.
+  (hold Tab). On a private channel only that player hears you.
 
 
 Reporting a bug

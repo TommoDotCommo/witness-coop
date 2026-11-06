@@ -2,6 +2,7 @@
 # Build the player downloads into local/release/:
 #   witness-coop-<version>.zip                 the manual-install zip: the proxy (dsound.dll), the launcher, the player model, the thin Setup.exe
 #                                              (runs the scripts beside it), the PowerShell scripts, install-linux.sh, README.txt, LICENSE.txt,
+#                                              steam-input/witness-coop_deck.vdf (the Steam Input layout),
 #                                              coop-mod.json (what the package is: tools/mod_manifest.py; also at the zip root); every shipped exe and
 #                                              dll carries a VERSIONINFO (ProductName "The Witness Co-op", the version)
 #   NEXUS-<version>.txt                        the copy note for Nexus Mods: the same zip, the same version string (no upload)
@@ -53,7 +54,7 @@ fi
 make -s -C "$here/proxy" VERSION="$ver"
 make -s -C "$here/launcher" launcher VERSION="$ver"
 rm -rf "$stage" "$single" "$out/$name.zip" "$out/$name.zip.sha256"
-mkdir -p "$stage/witness_models" "$single"
+mkdir -p "$stage/witness_models" "$stage/steam-input" "$single"
 cp "$here/proxy/dsound.dll" "$stage/"
 cp "$here/launcher/build/witness_launcher.exe" "$stage/"
 cp "$here/assets/models/adventurer.glb" "$here/assets/models/adventurer.glb.txt" "$stage/witness_models/"
@@ -62,6 +63,7 @@ sign "$stage/dsound.dll" "$stage/witness_launcher.exe" "$stage/install-policy.ex
 for f in witness-coop.ps1 installer-gui.ps1 install-state.ps1; do
     sed 's/\r$//; s/$/\r/' "$here/dist/$f" > "$stage/$f"; done
 cp "$here/dist/install-linux.sh" "$stage/install-linux.sh"; chmod +x "$stage/install-linux.sh"      # LF line endings: it runs under sh
+cp "$here/dist/steam-input/witness-coop_deck.vdf" "$stage/steam-input/"      # the Steam Input layout (README: Controllers and Steam Deck); zip only
 sed 's/\r$//; s/$/\r/; s/@VERSION@/'"$ver"'/' "$here/dist/README.txt" > "$stage/README.txt"
 sed 's/\r$//; s/$/\r/' "$here/LICENSE" > "$stage/LICENSE.txt"
 
@@ -71,7 +73,7 @@ sign "$stage/Witness-Coop-Setup.exe"
 # coop-mod.json (tools/mod_manifest.py): what this package is and the hashes of the game-folder files as signed; inside the top folder (Setup, the updater
 # and diagnostics read it there; it is in the one-file Setup's payload too) and, below, at the zip root for mod managers
 python3 -I "$here/tools/mod_manifest.py" "$ver" "$stage" > "$stage/coop-mod.json"
-python3 -I "$here/tools/pack_payload.py" "$stage" "$out/$name-payload.bin" --skip Witness-Coop-Setup.exe --skip install-linux.sh > "$out/$name-payload.sha256"
+python3 -I "$here/tools/pack_payload.py" "$stage" "$out/$name-payload.bin" --skip Witness-Coop-Setup.exe --skip install-linux.sh --skip steam-input/witness-coop_deck.vdf > "$out/$name-payload.sha256"
 "$here/tools/build_setup.sh" "$single/Witness-Coop-Setup.exe" "$ver" "$out/$name-payload.bin"
 sign "$single/Witness-Coop-Setup.exe"
 (cd "$single" && sha256sum Witness-Coop-Setup.exe > Witness-Coop-Setup.exe.sha256)

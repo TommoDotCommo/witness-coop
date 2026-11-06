@@ -81,8 +81,11 @@ The [README](../README.md) covers installing, hosting and joining.
 - **Controller co-op** on the View button: tap to ping, hold for the player panel, and with View held, emotes, chat
   (Steam's keyboard or one on screen), watching players, quick chat and the guide. Voice is automatically push-to-talk
   on the keyboard and open mic on a pad.
-- **A Steam Input layout** for the Steam Deck and other pads (in the repository's `dist/steam-input` folder), with L4
-  as the View button and R4 as push to talk.
+- **Controllers through Steam:** pick Steam's Gamepad template for The Witness (its own controller setting sends only
+  keyboard and mouse). On a Steam Deck, set L4 to Select (View) and R4 to the key B (push to talk). The same layout is
+  in the zip as `steam-input/witness-coop_deck.vdf`. The README has the steps.
+- **The quick guide (hold F1)** is up to date: Steam lobbies and Tailscale, what's shared, and how to report a problem.
+  The developer keys only appear when the developer menu is on.
 - **Join and leave notices:** "Fox joined", "Lost Fox, waiting up to 30 s", "Reconnecting to Fox".
 - **The co-op text uses the game's own typeface**, read from your copy of the game.
 - **The symmetry panels** now show the other player's mirrored line as well as the one they're drawing.

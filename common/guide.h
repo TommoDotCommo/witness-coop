@@ -244,41 +244,51 @@ inline Columns Content(const Cfg& c, bool pad = false) {
 #ifndef GUIDE_MUT_TV_IN_GUIDE
         if ((b.key == TvView || b.key == TvConsent) && !c.experimentalTv) continue;
 #endif
+#ifndef GUIDE_MUT_DEV_IN_GUIDE
+        if ((b.key == DevMenu || b.key == Nearby) && !c.devMenu) continue;      // developer keys only with dev_menu=1 (off in a normal install)
+#endif
         out[0].push_back(KeyName(b.key) + "  " + b.text);
     }
     out[0].push_back(KeyName(MarkerKey(c)) + "  Mark a problem: saves the last minute for a bug report (every player's game marks it)");
     out[0].push_back("GAME / MENU CONTROLS");
     out[0].push_back("Game uses your settings. Defaults: WASD move, mouse look / draw, click puzzles, Esc back.");
     out[0].push_back("Lists: arrows, Enter, Esc. Launcher: Tab / Shift+Tab and Enter.");
-    out[0].push_back("Dev map: wheel zoom, right-drag pan; click a dot. Buttons teleport or act on a puzzle.");
+#ifdef GUIDE_MUT_DEV_IN_GUIDE
+    if (true)
+#else
+    if (c.devMenu)
+#endif
+        out[0].push_back("Dev map: wheel zoom, right-drag pan; click a dot. Buttons teleport or act on a puzzle.");
 #ifndef GUIDE_MUT_NO_PAD
     if (!pad) for (auto& l : PadLines(c)) out[0].push_back(l);
 #endif
     out[1] = {
         "PLAY TOGETHER",
-        "Explore independently. See animated teammates, names, typing dots, pings and emotes.",
+        "Everyone plays their own game on the same island. You see each other as the adventurer, with names, chat, pings and emotes.",
         "Shared keys (the same in every co-op mod): V or middle mouse pings, B or the mouse side button talks, hold H for emotes, hold Tab for the player panel (watch, mute, volume, leave), [ and ] watch the previous / next player.",
-        "Co-op shares solved panels, traced puzzle lines, opened doors, panel power and cable lighting. Late arrivals recover shared progress.",
-        "Players fade during close body overlap. Watch a partner's view to compare clues. Draw on surfaces or use the precise screen canvas.",
-        c.RadioOn() ? "Voice: proximity is spatial nearby, radio farther away. Channels: proximity, radio, open line (global), or one on one. The mic indicator names yours."
-                    : "Voice: proximity is spatial nearby, radio farther away. Channels: proximity, open line (global), or one on one. The mic indicator names yours.",
-        "Race mode keeps worlds and puzzle lines separate. Players, chat and voice remain. Wait for all worlds, countdown, GO; first to the chosen goal wins.",
+        "Shared: solved panels, puzzle lines as they are traced, doors, panel power, cables and lasers. A player who joins late catches up. Not shared yet: bridges and moving platforms.",
+        "Players fade when you walk into each other. Watch a player's view to compare clues. Draw on the world, or use the canvas for precise lines on a panel.",
+        c.RadioOn() ? "Voice: players nearby are heard where they stand, far away over a radio. Channels: proximity, radio, open line, or private (one player). The mic line shows yours."
+                    : "Voice: players nearby are heard where they stand, far away over a radio. Channels: proximity, open line, or private (one player). The mic line shows yours.",
+        "Race: nothing is shared, but you still see, chat and talk. Everyone starts on the same GO; first to the goal wins.",
         "HOST / JOIN - in the launcher",
-        "Host a lobby, copy the invite and send it to friends. Join with the invite. Check the roster and chat / voice before starting.",
-        "Host chooses co-op or race, goal and new-game progress. Guests mark Ready; host starts when everyone is ready. Return to the lobby after the game.",
-        "Saves list participants and progress. Back up saves, or start a new game with chosen island areas already completed."
+        "Over the internet: Host a game, Through Steam, and invite friends in Steam. No ports to open.",
+        "Same network or Tailscale: Host a game, Direct. Friends see it in Join a friend, or paste the invite you copy for them.",
+        "The host picks co-op or race, continue or new game. Everyone ticks Ready and the host starts. After the game you are back in the lobby.",
+        "Saves show who played and how far. A new game can start with chosen areas of the island already solved."
     };
     out[2] = {
         "HOW IT WORKS",
-        "Each player runs their own game and mod. A UDP mesh exchanges movement and pictures; reliable events retry shared world changes. Local game functions apply progress between frames.",
-        "Everyone needs the same supported game build and mod version. Steam build 11370412 is supported. Use matching model packs to see the intended characters.",
-        "Your movement and camera stay yours. Shared solves run their targets, but moving platforms and bridges are not synced. This is experimental co-op.",
+        "Each player runs their own game with the mod. Moves, voice and chat go to the others directly or through Steam, and shared progress is resent until every game has it.",
+        "Everyone needs Steam build 11370412 of The Witness and the same mod version. The launcher offers updates.",
+        "Your movement and camera stay yours: only progress is shared.",
         "TROUBLESHOOTING",
-        "Can't connect? Check invite, peer address / ports and firewall rules. Across the internet use reachable UDP addresses or a shared VPN; a lobby invite does not bypass NAT.",
-        "Missing progress? Wait for both worlds to load and catch up. Match co-op / race mode. Race deliberately does not share world progress.",
-        "No voice? Check voice mode, PTT key, microphone, volumes, mute / deafen and channel. One-on-one only reaches its selected recipient.",
-        "Slow puzzle cursor? Toggle the puzzle mouse boost. No picture? Choose a player, check partner view is enabled and wait for a frame.",
-        "Hold F1 here or in game; release to return. The game keeps running. Settings edits take effect after restarting the game."
+        "Can't connect? Over the internet, use a Steam lobby or Tailscale. In a Direct lobby, Friends can join by says what to fix. Allow the launcher and the game through Windows Firewall.",
+        "Missing progress? Give a freshly loaded world a few seconds. Check you are both in co-op, not a race.",
+        "No voice? Check voice mode, push-to-talk key, microphone, volumes, mute / deafen and your channel. A private channel only reaches that player.",
+        "Slow puzzle cursor? " + KeyName(Boost) + " toggles a faster puzzle mouse. No picture of a player? Choose them in the player panel and wait a moment.",
+        "Something wrong? Press " + KeyName(MarkerKey(c)) + " at once, then Send diagnostics on the launcher's About tab and attach the zip to a bug report.",
+        "Hold F1 here or in game; release to return. The game keeps running. Settings changes apply the next time the game starts."
     };
     return out;
 }

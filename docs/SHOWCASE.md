@@ -120,11 +120,11 @@ When you play an emote yourself, the view moves back behind you and a little abo
 Who hears you is the voice channel, shown in the microphone line at the bottom left. `Y` steps through the channels. Proximity (the default) is heard in the world, louder when close,
 and turns into a radio sound far away. The bars beside a name are the players who are talking.
 
-| Open line | One on one |
+| Open line | Private |
 |---|---|
-| ![Open line](showcase/voice_global.jpg) | ![One on one](showcase/voice_direct.jpg) |
+| ![Open line](showcase/voice_global.jpg) | ![Private](showcase/voice_direct.jpg) |
 
-Open line: everybody hears you as you sound, as loud far away as next to you. One on one: only the named player hears you (the label says *Private: Owl*); the voice is not sent to anybody
+Open line: everybody hears you as you sound, as loud far away as next to you. Private: only the named player hears you (the label says *Private: Owl*); the voice is not sent to anybody
 else.
 
 ### Drawing

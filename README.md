@@ -120,7 +120,7 @@ defaults as the other mods made with the [Co-op Anything](https://github.com/cra
 | `T` | Chat (Enter sends, Esc cancels) |
 | `V` or middle mouse | Ping the spot you're looking at. Everyone sees a marker with your name and the distance |
 | `B` or mouse side button | Push to talk |
-| `Y` | Next voice channel: nearby, open line, or one-on-one with a player |
+| `Y` | Next voice channel: proximity, open line, or private to one player |
 | Hold `H` | Emote wheel. Move the mouse to pick, let go to play it. `Tab` changes page |
 | Hold `X` | Draw on the world in your colour (`Shift`+`X` clears your drawings, mouse wheel changes colour) |
 | `Z` | Drawing canvas: a pen you move across the screen for precise lines on a panel (Backspace undoes) |
@@ -136,6 +136,17 @@ You can change any of these in the launcher under **Settings > Controls**.
 the player panel, and while holding it: D-pad up for emotes, D-pad down for chat, D-pad left and right to watch other
 players, RB for quick chat (Ready, Wait for me, Over here...), Y for the quick guide. Voice chat is push-to-talk when
 you're on the keyboard and an open mic when you're on a pad.
+
+**Set Steam up for a controller first.** The Witness's own Steam controller setting turns your pad into keyboard and
+mouse, so the game (and the co-op buttons) never see a controller. In Steam, open the controller settings for The
+Witness (on a Steam Deck: press the Steam button in the game, then Controller settings), choose the current layout,
+open **Templates** and pick **Gamepad**. On a Steam Deck, set the back buttons while you're there: **L4** to
+**Select** (the View button, so you can ping and open the player panel) and **R4** to the keyboard key **B** (push to
+talk). On Windows with an Xbox or PlayStation pad you can instead turn Steam Input off for the game (The Witness >
+Properties > Controller > Disable Steam Input).
+
+That layout also comes ready-made in the zip, as `steam-input/witness-coop_deck.vdf`, for anyone who manages Steam
+Input files themselves.
 
 When you emote, the camera swings round behind you so you can see your own character do it. You can turn that off
 under **Settings > Players and interface**.
@@ -179,7 +190,7 @@ networks (Setup's firewall option does this for you).
 
 **I can't hear anyone.**
 Check **Settings > Voice and sound**, check you haven't muted or deafened yourself in the lobby, and check the player
-panel (hold `Tab`) for muted players. If you're on a one-on-one voice channel (`Y`), only that player hears you.
+panel (hold `Tab`) for muted players. If you're on a private voice channel (`Y`), only that player hears you.
 
 **Something is different in my friend's game.**
 Make sure you're both in co-op mode and not a race, and give a freshly loaded world a few seconds to catch up. If it
@@ -192,9 +203,8 @@ stays different, press **F2** and report it.
   can't be done, set the launch option `WINEDLLOVERRIDES="dsound=n,b" %command%` on The Witness in Steam.
 - Play in Steam then opens the launcher, Game Mode included. On a Deck it fills the screen and works with the controls.
   Typing a name or an invite needs the Steam keyboard (Steam + X).
-- The game's own Steam controller config only sends keyboard and mouse input, so the co-op controller layer won't be
-  reachable with it. A Steam Input layout that presents a proper gamepad (with L4 for the View button and R4 for push
-  to talk) is in [`dist/steam-input`](dist/steam-input).
+- Pick Steam's **Gamepad** template for The Witness and set the back buttons as described under
+  [Controls](#controls); the game's own controller setting only sends keyboard and mouse.
 
 ## Reporting a bug
 
