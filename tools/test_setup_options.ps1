@@ -86,7 +86,8 @@ function Run-Checks($code) {
         $dirs = @((Join-Path $steam 'steamapps\common\The Witness'), (Join-Path $library 'steamapps\common\Custom Witness'), (Join-Path $programRoot 'GOG Galaxy\Games\The Witness'), $gogReg, $custom, $epicGame)
         foreach ($dir in $dirs) { New-Item -ItemType Directory -Force $dir | Out-Null; [IO.File]::WriteAllText((Join-Path $dir 'witness64_d3d11.exe'), 'fixture') }
         New-Item -ItemType Directory $other2 | Out-Null; [IO.File]::WriteAllText((Join-Path $other2 'other.exe'), 'another game')
-        [IO.File]::WriteAllText((Join-Path $steam 'steamapps\libraryfolders.vdf'), ('"libraryfolders" {{ "0" {{ "path" "{0}" }} "1" {{ "path" "{1}" }} }}' -f $steam.Replace('\','\\'), $library.Replace('\','\\')))
+        # (the Steam library also listed in lower case, as Steam's own file has it: still one install, spelled as on disk)
+        [IO.File]::WriteAllText((Join-Path $steam 'steamapps\libraryfolders.vdf'), ('"libraryfolders" {{ "0" {{ "path" "{0}" }} "1" {{ "path" "{1}" }} "2" {{ "path" "{2}" }} }}' -f $steam.Replace('\','\\'), $library.Replace('\','\\'), $steam.ToLowerInvariant().Replace('\','\\')))
         [IO.File]::WriteAllText((Join-Path $library 'steamapps\appmanifest_210970.acf'), '"AppState" { "installdir" "Custom Witness" }')
         $epicManifests = Join-Path $programData 'Epic\EpicGamesLauncher\Data\Manifests'
         New-Item -ItemType Directory -Force $epicManifests | Out-Null
@@ -108,7 +109,7 @@ function Run-Checks($code) {
             $env:SystemDrive = $root; $env:ProgramW6432 = $programRoot; $env:ProgramData = $programData; $env:ProgramFiles = $programRoot; ${env:ProgramFiles(x86)} = $programRoot
             $found = @(Find-AllGames)
             Require ($found.Count -eq 6) "six distinct installs discovered, got $($found.Count)"
-            foreach ($dir in $dirs) { Require ($found -contains $dir) "discovered $dir" }
+            foreach ($dir in $dirs) { Require ($found -ccontains $dir) "discovered $dir, spelled as on disk (got: $($found -join '; '))" }
         } finally { $env:SystemDrive = $oldSystemDrive; $env:ProgramW6432 = $oldProgram64; $env:ProgramData = $oldData; $env:ProgramFiles = $oldProgram; ${env:ProgramFiles(x86)} = $oldProgram32 }
         function Get-WitnessInstallStatus($dir, $package) {
             return [pscustomobject]@{ owner=$(if ($dir -eq $script:installedDir) { 'manual' } else { 'none' }); build=$(if ($dir.StartsWith($steam)) { 'current' } else { 'conflict' }) }
@@ -148,7 +149,8 @@ if ($Mutants) {
         @("        `$dirs += Join-Path `$lib 'steamapps\common\The Witness'", ''),
         @('if (-not $selected -and $hasCoop)', 'if ($false)'),
         @("(Test-WitnessProxy (Join-Path `$dir 'dsound.dll'))", '$false'),
-        @("'GOG Galaxy\Games\The Witness', 'The Witness'", "'The Witness'")
+        @("'GOG Galaxy\Games\The Witness', 'The Witness'", "'The Witness'"),
+        @('ForEach-Object { Get-TrueCasePath $_ } | Where-Object { $seen.Add($_) }', 'ForEach-Object { (Resolve-Path $_).ProviderPath } | Select-Object -Unique')
     )) {
         Require ($source.Contains($twin[0])) "mutant applies: $($twin[0])"
         $failed = $false

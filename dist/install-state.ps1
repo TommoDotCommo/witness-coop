@@ -404,6 +404,17 @@ function Steam-Libraries {
     }
     $libs | Where-Object { $_ } | ForEach-Object { $_.TrimEnd('\') } | Select-Object -Unique
 }
+# A folder's path as spelled on disk (each name as the file system has it, the drive letter in capitals); a network path is kept as given.
+function Get-TrueCasePath($path) {
+    $full = (Resolve-Path -LiteralPath $path).ProviderPath.TrimEnd('\')
+    if ($full.StartsWith('\\')) { return $full }
+    $parts = $full.Split('\'); $out = $parts[0].ToUpperInvariant()
+    for ($i = 1; $i -lt $parts.Count; $i++) {
+        $match = @(([IO.DirectoryInfo]::new($out + '\')).GetFileSystemInfos($parts[$i]) | Select-Object -First 1)      # (.NET, not Get-ChildItem: an exact name, no wildcards)
+        $out = $out + '\' + $(if ($match.Count) { $match[0].Name } else { $parts[$i] })
+    }
+    return $out
+}
 function Find-AllGames {
     $found = @()
     $exe = 'witness64_d3d11.exe'
@@ -449,7 +460,10 @@ function Find-AllGames {
             if (Test-Path -LiteralPath (Join-Path $d $exe) -PathType Leaf) { $found += $d }
         }
     }
-    return @($found | ForEach-Object { (Resolve-Path $_).ProviderPath } | Select-Object -Unique)
+    # one card per folder: each as spelled on disk, and no folder twice in another case (Steam's libraryfolders.vdf keeps library paths in lower case, the
+    # registry as created: the Steam install showed twice, differing only in case; owner, 2026-11-06)
+    $seen = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    return @($found | ForEach-Object { Get-TrueCasePath $_ } | Where-Object { $seen.Add($_) })
 }
 
 # ---- the three optional Windows integrations (G3): desktop shortcut, Windows Firewall rule, witness-coop:// links. Uninstall removes all three.
