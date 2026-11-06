@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """Game-free check of the launcher's own window frame (no Windows title bar; the banner is the caption with its own minimize, maximize and close), the race goal
 shown only for a race, and "You left the lobby." clearing itself (tools/win/wlauncher_frame.py). No game slot: it only starts the launcher on a temporary folder.
+Also: no focus line on a tab opened with the mouse, a sunny-sea banner, faint panels behind the pages, About's full or pre-release choice saved.
 Mutants (builds of the launcher) that must fail it: the Windows title bar kept (WL_MUT_WINDOWS_CAPTION), the goal always shown (WL_MUT_GOAL_ALWAYS), the status
-staying (WL_MUT_STATUS_STAYS).   usage: qa_launcher_frame.py"""
+staying (WL_MUT_STATUS_STAYS), the focus line whatever moved the focus (WL_MUT_FOCUS_TRACE_ALWAYS), a dark banner (WL_MUT_DARK_BANNER), no backdrop
+(WL_MUT_NO_BACKDROP), a backdrop as bright as the controls (WL_MUT_LOUD_BACKDROP), the update choice not saved (WL_MUT_UPD_CHOICE_UNSAVED).   usage: qa_launcher_frame.py"""
 import os, subprocess, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from witness import TOOLS, ROOT, PYW, win
 LDIR = os.path.join(ROOT, 'launcher', 'build')
-MUTANTS = ['WINDOWS_CAPTION', 'GOAL_ALWAYS', 'STATUS_STAYS']
+MUTANTS = ['WINDOWS_CAPTION', 'GOAL_ALWAYS', 'STATUS_STAYS', 'FOCUS_TRACE_ALWAYS', 'DARK_BANNER', 'NO_BACKDROP', 'LOUD_BACKDROP', 'UPD_CHOICE_UNSAVED']
 
 def run(exe):
     r = subprocess.run([PYW, '-I', win(os.path.join(TOOLS, 'win', 'wlauncher_frame.py')), win(os.path.join(LDIR, exe))], capture_output=True, text=True, timeout=180)

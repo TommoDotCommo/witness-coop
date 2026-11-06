@@ -14,6 +14,7 @@
 
 namespace th {
 COLORREF kBg = RGB(13, 19, 22), kSurface = RGB(21, 31, 36), kSurface2 = RGB(32, 46, 53), kLine = RGB(207, 233, 241), kAccent = RGB(78, 224, 255), kWarm = RGB(255, 200, 87), kText = RGB(230, 238, 240), kMuted = RGB(126, 147, 155), kDanger = RGB(255, 107, 107);
+static HBRUSH g_backdrop; static void BuildBackdrop(); static void AlignBackdrop(HDC dc, HWND wnd);      // (the faint panels behind the pages: see the backdrop below)
 static HFONT g_body, g_small, g_bold, g_title, g_tile, g_label, g_tabFont; static HBRUSH g_bg, g_surface; static std::wstring g_face;      // g_face: the game's face when it was read, else empty
 static HFONT Font(int px, int weight, const wchar_t* face) { return CreateFontW(-px, 0, 0, 0, weight, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, face); }
 // The game's menu face for the headings: read from the player's own archive into memory (common/gamefont.h) and added as a private font; nothing is written.
@@ -212,13 +213,22 @@ void MarkTile(HWND radio, HWND desc) { SetPropW(radio, L"tile", (HANDLE)1); SetP
 bool Motion() { BOOL on = TRUE; if (!SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION, 0, &on, 0)) on = TRUE; return on != FALSE; }
 // The line around a button: under the pointer (or with the keyboard or pad focus) a line leaves a start dot at the middle of its left side and runs round its edge, as a
 // panel's line does; it stays lit while the button is the one you are on.
-static const UINT_PTR kTraceTimer = 0x7472; static const float kTraceMs = 600;
+// The focus line shows only while the keyboard or a pad is in use (owner, 2026-11-06): a tab opened with the mouse puts the focus on its main button, and the line was already
+// drawn round it when the page appeared. Tab, the arrows and the pad turn the cues on (the line then runs round the focused button); the mouse turns them off.
+static const UINT_PTR kTraceTimer = 0x7472; static const float kTraceMs = 600; static bool g_cues;
 static bool Traceable(HWND h) { if (GetPropW(h, L"tile")) return true; int type = GetWindowLongW(h, GWL_STYLE) & BS_TYPEMASK; return type == BS_PUSHBUTTON || type == BS_DEFPUSHBUTTON; }
 static void TraceUpdate(HWND h) {
-    bool want = Traceable(h) && IsWindowEnabled(h) && (GetPropW(h, L"hot") || (!GetPropW(h, L"tile") && GetFocus() == h)), had = GetPropW(h, L"tr0") != nullptr;
+#ifdef WL_MUT_FOCUS_TRACE_ALWAYS
+    const bool cues = true;      // (mutant: the focus line shows whatever moved the focus, as before)
+#else
+    const bool cues = g_cues;
+#endif
+    bool want = Traceable(h) && IsWindowEnabled(h) && (GetPropW(h, L"hot") || (cues && !GetPropW(h, L"tile") && GetFocus() == h)), had = GetPropW(h, L"tr0") != nullptr;
     if (want && !had) { SetPropW(h, L"tr0", (HANDLE)(ULONG_PTR)(GetTickCount64() | 1)); if (Motion()) SetTimer(h, kTraceTimer, 15, nullptr); InvalidateRect(h, nullptr, FALSE); }
     else if (!want && had) { RemovePropW(h, L"tr0"); KillTimer(h, kTraceTimer); InvalidateRect(h, nullptr, FALSE); }
 }
+void SetNavCues(bool on) { if (on == g_cues) return; g_cues = on; HWND f = GetFocus(); if (f && ClassOf(f) == L"Button") TraceUpdate(f); }
+bool NavCues() { return g_cues; }
 static float TraceProgress(HWND h) { ULONG_PTR t0 = (ULONG_PTR)GetPropW(h, L"tr0"); if (!t0) return 0; if (!Motion()) return 1; return trace::EaseOut(float(GetTickCount64() - t0) / kTraceMs); }
 static void DrawTrace(HDC dc, const RECT& rc, int inset, float rad, float progress, COLORREF col, int width, int dot) {
     if (progress <= 0) return;
@@ -241,7 +251,7 @@ static LRESULT CALLBACK ButtonProc(HWND h, UINT m, WPARAM w, LPARAM l, UINT_PTR,
     case WM_PAINT: {
         PAINTSTRUCT ps; HDC dc = BeginPaint(h, &ps); RECT rc; GetClientRect(h, &rc);
         HDC mem = CreateCompatibleDC(dc); HBITMAP bmp = CreateCompatibleBitmap(dc, rc.right, rc.bottom); HGDIOBJ ob = SelectObject(mem, bmp);
-        HBRUSH bg = CreateSolidBrush(kBg); FillRect(mem, &rc, bg); DeleteObject(bg);
+        FillBg(mem, h, rc);      // (the backdrop round the button's corners, lined up with the page behind it)
         wchar_t text[200] = {}; GetWindowTextW(h, text, 200); LONG style = GetWindowLongW(h, GWL_STYLE); int type = style & BS_TYPEMASK;
         bool dis = !IsWindowEnabled(h), hot = GetPropW(h, L"hot") != nullptr, down = (SendMessageW(h, BM_GETSTATE, 0, 0) & BST_PUSHED) != 0, checked = SendMessageW(h, BM_GETCHECK, 0, 0) == BST_CHECKED;
         SelectObject(mem, g_body); SetBkMode(mem, TRANSPARENT);
@@ -278,7 +288,8 @@ void Style(HWND h) {
 LRESULT CtlColor(UINT msg, HDC dc, HWND ctl) {
     std::wstring c = ClassOf(ctl);
     if (msg == WM_CTLCOLOREDIT || msg == WM_CTLCOLORLISTBOX || c == L"Edit" || c == L"ListBox") { SetTextColor(dc, kText); SetBkColor(dc, kSurface); return (LRESULT)g_surface; }
-    SetBkMode(dc, TRANSPARENT); SetTextColor(dc, GetPropW(ctl, L"muted") ? kMuted : kText); SetBkColor(dc, kBg); return (LRESULT)g_bg;
+    SetBkMode(dc, TRANSPARENT); SetTextColor(dc, GetPropW(ctl, L"muted") ? kMuted : kText); SetBkColor(dc, kBg);
+    if (!g_backdrop) BuildBackdrop(); AlignBackdrop(dc, ctl); return (LRESULT)(g_backdrop ? g_backdrop : g_bg);      // (labels, switches and sliders over the backdrop, lined up with it)
 }
 
 static volatile LONG g_tabPaints; unsigned TabPaintCount() { return (unsigned)g_tabPaints; }
@@ -295,10 +306,10 @@ static LRESULT CALLBACK TabProc(HWND h, UINT m, WPARAM w, LPARAM l, UINT_PTR, DW
     case WM_MOUSELEAVE: SetPropW(h, L"hot", nullptr); InvalidateRect(h, nullptr, FALSE); return 0;
     case WM_PAINT: {
         InterlockedIncrement(&g_tabPaints); PAINTSTRUCT ps; HDC wdc = BeginPaint(h, &ps); RECT rc; GetClientRect(h, &rc); HDC dc = CreateCompatibleDC(wdc); HBITMAP bmp = CreateCompatibleBitmap(wdc, rc.right, rc.bottom); HGDIOBJ obmp = SelectObject(dc, bmp);      // drawn off screen and copied once: no flicker
-        HBRUSH bg = CreateSolidBrush(kBg); FillRect(dc, &rc, bg); DeleteObject(bg);
+        FillBg(dc, h, rc);
         int hotTab = (int)(INT_PTR)GetPropW(h, L"hot") - 1; int n = TabCtrl_GetItemCount(h), sel = TabCtrl_GetCurSel(h); SetBkMode(dc, TRANSPARENT); SelectObject(dc, g_tabFont);
         RECT first = {}; if (n) TabCtrl_GetItemRect(h, 0, &first); int stripBottom = first.bottom;
-        HPEN lp = CreatePen(PS_SOLID, 1, kSurface2); HGDIOBJ op = SelectObject(dc, lp); MoveToEx(dc, rc.left, stripBottom, nullptr); LineTo(dc, rc.right, stripBottom); SelectObject(dc, op); DeleteObject(lp);
+        // (no rule under the row of tabs: the owner found it looked out of place, 2026-11-06; the chosen tab keeps its yellow line)
         for (int i = 0; i < n; ++i) {
             RECT r; TabCtrl_GetItemRect(h, i, &r); wchar_t t[80] = {}; TCITEMW it = {}; it.mask = TCIF_TEXT; it.pszText = t; it.cchTextMax = 80; TabCtrl_GetItem(h, i, &it);
             bool hot = i == hotTab; SetTextColor(dc, i == sel ? kText : (hot ? kLine : kMuted)); RECT tr = r; Text(dc, t, -1, &tr, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
@@ -403,149 +414,139 @@ static void Puzzle(Canvas& c, float x, float y, float w, float h, bool solved = 
     Line(c, path, 8, half, line, .35f, half * 3.5f); Disc(c, nx(0), ny(rows), half * 2.5f, line, .35f, half * 3.5f);      // the glow
     Line(c, path, 8, half, line, 1); Disc(c, nx(0), ny(rows), half * 2.5f, line, 1);
 }
-// A soft blur (two box passes each way): the game's save pictures are 320 x 180, so the banner shows them 4 to 6 times larger; blurred they read as a calm backdrop, not as blocks.
-static void Blur(Canvas& c, int r) {
-    if (r < 1) return; std::vector<uint32_t> tmp((size_t)c.w * c.h);
-    auto pass = [&](const uint32_t* src, uint32_t* dst, int n, int lines, size_t step, size_t lineStep) {
-        for (int l = 0; l < lines; ++l) {
-            const uint32_t* s0 = src + l * lineStep; uint32_t* d0 = dst + l * lineStep; int sum[3] = {0, 0, 0};
-            auto at = [&](int i) { i = i < 0 ? 0 : i >= n ? n - 1 : i; return s0[i * step]; };
-            for (int i = -r; i <= r; ++i) { uint32_t v = at(i); sum[0] += v & 255; sum[1] += (v >> 8) & 255; sum[2] += (v >> 16) & 255; }
-            for (int i = 0; i < n; ++i) {
-                int k = 2 * r + 1; d0[i * step] = 0xFF000000u | (uint32_t(sum[2] / k) << 16) | (uint32_t(sum[1] / k) << 8) | uint32_t(sum[0] / k);
-                uint32_t a = at(i + r + 1), b = at(i - r); sum[0] += int(a & 255) - int(b & 255); sum[1] += int((a >> 8) & 255) - int((b >> 8) & 255); sum[2] += int((a >> 16) & 255) - int((b >> 16) & 255);
-            }
-        }
-    };
-    for (int it = 0; it < 2; ++it) { pass(c.px, tmp.data(), c.w, c.h, 1, c.w); pass(tmp.data(), c.px, c.h, c.w, c.w, 1); }
-}
 static void Shade(Canvas& c, COLORREF col, const std::function<float(int, int)>& alpha) { for (int y = 0; y < c.h; ++y) for (int x = 0; x < c.w; ++x) Blend(c, x, y, col, alpha(x, y)); }
 
-static std::vector<uint8_t> g_art; static int g_artW, g_artH; static unsigned g_artGen = 1; static std::string g_artState = "panel";
-void SetArt(const uint8_t* rgba, int w, int h, const std::string& name) {
-    if (rgba && w > 0 && h > 0) { g_art.assign(rgba, rgba + (size_t)w * h * 4); g_artW = w; g_artH = h; g_artState = "picture " + name + " " + std::to_string(w) + "x" + std::to_string(h); }
-    else { g_art.clear(); g_artW = g_artH = 0; g_artState = "panel"; }
-    ++g_artGen;
-}
-const std::string& ArtState() { return g_artState; }
 int BannerHeight(int clientH) { return clientH < 640 ? 72 : clientH < 760 ? 100 : std::min(200, std::max(128, clientH * 16 / 100)); }      // 128 at 1280 x 800, 172 at 1080
 static HBITMAP NewDib(HDC ref, int w, int h, uint32_t** bits) {
     BITMAPINFO bi = {}; bi.bmiHeader = {sizeof(BITMAPINFOHEADER), w, -h, 1, 32, BI_RGB, 0, 0, 0, 0, 0}; void* p = nullptr;
     HBITMAP b = CreateDIBSection(ref, &bi, DIB_RGB_COLORS, &p, nullptr, 0); *bits = (uint32_t*)p; return b;
 }
+static HBITMAP g_frame; static uint32_t* g_frameBits; static int g_frameW, g_frameH;      // (the banner with the caption buttons over it)
 static bool g_capOn, g_capMax, g_capActive = true; static int g_capHot, g_capDown; static const int kCapW = 46, kCapH = 32;      // (the caption buttons: see PaintHeader)
-static HBITMAP g_banner; static uint32_t* g_bannerBits; static int g_bannerW, g_bannerH; static unsigned g_bannerGen;
+static HBITMAP g_banner; static uint32_t* g_bannerBits; static int g_bannerW, g_bannerH;
 
-// ---- the moving line on the banner: the boards (one drawn yellow panel, or over a save's picture a row of small dark Witness panels) are solved one after another,
-// each line from its start circle to its end cap along a random solution (trace.h); a solved line stays lit, the last solve holds, they fade together, a rest, new puzzles.
-// The clock runs only while the launcher is the window in use.
-struct Board { Grid g; std::vector<trace::Pt> line; double ms; };
-static bool g_boardOn, g_boardPanel; static std::vector<Board> g_boards; static double g_clock, g_cycle0;
-static uint32_t g_seed = 1; static unsigned g_frames, g_puzzles; static bool g_active, g_motion = true;
-static HBITMAP g_frame; static uint32_t* g_frameBits; static int g_frameW, g_frameH; static ULONGLONG g_lastTick, g_lastInval;
-constexpr double kNextMs = 700;      // a solved panel's flash before the next one starts
-static void NewPuzzle() {
-    for (auto& b : g_boards) {
-        const Grid& g = b.g; auto nodes = trace::SolvePath(g.cols, g.rows, g_seed++, g.cols + g.rows + (g_boardPanel ? 6 : 4)); b.line.clear();
-        for (auto& n : nodes) b.line.push_back({g.gx + n.i * g.cell, g.gy + n.j * g.cell});
-        if (!b.line.empty()) b.line.push_back(g.up ? trace::Pt{g.gx + g.cols * g.cell, g.gy - g.cap} : trace::Pt{g.gx + g.cols * g.cell + g.cap, g.gy});
-        b.ms = std::max(1100.0, std::min(5000.0, trace::Length(b.line) / (g.cell * 3.4) * 1000.0));
-    }
-    g_cycle0 = g_clock; ++g_puzzles;
-}
-static void SetBoards(const std::vector<Grid>& gs, bool panel) {
-    bool same = g_boardOn && g_boardPanel == panel && g_boards.size() == gs.size();
-    for (size_t i = 0; same && i < gs.size(); ++i) { const Grid &a = g_boards[i].g, &b = gs[i]; same = a.cols == b.cols && a.rows == b.rows && a.up == b.up && fabsf(a.cell - b.cell) < .01f && fabsf(a.gx - b.gx) < .01f && fabsf(a.gy - b.gy) < .01f; }
-    if (same) return; g_boards.clear(); for (auto& g : gs) g_boards.push_back({g, {}, 1000}); g_boardPanel = panel; g_boardOn = !gs.empty(); if (g_boardOn) NewPuzzle();
-}
-static void ClearBoard() { g_boardOn = false; g_boards.clear(); }
-// where the sequence is at `ms`: the panel being worked on and its state (trace.h's phases; the last panel's solve, fade and rest end the cycle)
-struct Seq { size_t cur; trace::State st; };
-static double SeqMs() { double t = 0; for (size_t k = 0; k < g_boards.size(); ++k) t += k + 1 < g_boards.size() ? g_boards[k].ms + kNextMs : trace::CycleMs(g_boards[k].ms); return t; }
-static Seq SeqAt(double ms) {
-    for (size_t k = 0; k < g_boards.size(); ++k) {
-        double tm = g_boards[k].ms; if (k + 1 == g_boards.size()) return {k, trace::At(ms, tm)};
-        if (ms < tm) return {k, {trace::kTrace, float(ms / tm), 0, 1}}; ms -= tm;
-        if (ms < kNextMs) { float f = ms < trace::kFlashMs ? float(1 - ms / trace::kFlashMs) : 0; return {k, {trace::kSolved, 1, f * f, 1}}; } ms -= kNextMs;
-    }
-    return {0, {trace::kRest, 0, 0, 0}};
-}
-// a polyline with each pixel taken by its nearest segment only, so the soft glow does not double up at the corners (and only small boxes are visited)
-static void SoftLine(Canvas& c, const std::vector<trace::Pt>& p, float half, COLORREF col, float alpha, float soft) {
-    if (p.size() < 2 || alpha <= 0) return; int n = (int)p.size() - 1; float reach = half + soft + 1;
-    auto d = [&](int k, float x, float y) { return SegDist(x, y, p[k].x, p[k].y, p[k + 1].x, p[k + 1].y); };
-    for (int k = 0; k < n; ++k) {
-        int xa = std::max(0, int(std::min(p[k].x, p[k + 1].x) - reach)), xb = std::min(c.w, int(std::max(p[k].x, p[k + 1].x) + reach + 1)), ya = std::max(0, int(std::min(p[k].y, p[k + 1].y) - reach)), yb = std::min(c.h, int(std::max(p[k].y, p[k + 1].y) + reach + 1));
-        for (int y = ya; y < yb; ++y) for (int x = xa; x < xb; ++x) {
-            float px = x + .5f, py = y + .5f, dk = d(k, px, py); if (dk > reach) continue;
-            if ((k > 0 && d(k - 1, px, py) <= dk) || (k + 1 < n && d(k + 1, px, py) < dk)) continue;
-            float s = dk - half, a = soft > 0 ? (s <= 0 ? 1.f : s >= soft ? 0.f : (1 - s / soft) * (1 - s / soft)) : (s <= -.5f ? 1.f : s >= .5f ? 0.f : .5f - s);
-            if (a > 0) Blend(c, x, y, col, a * alpha);
+// ---- the banner's picture: a sunny sea, painted here (owner, 2026-11-06: "a nice sunny water image" in place of the save's picture and the panels). A clear sky deepening
+// upwards, the sun with its glow, a few soft clouds, a hazy island on the horizon, turquoise water darkening towards the viewer and the sun's glitter on it. Nothing from the
+// game is shipped or read; the same picture every time (fixed seeds), scaled to the banner.
+static inline float Clamp01(float v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
+static inline COLORREF MixC(COLORREF a, COLORREF b, float t) { t = Clamp01(t); return RGB(int(GetRValue(a) + (GetRValue(b) - GetRValue(a)) * t + .5f), int(GetGValue(a) + (GetGValue(b) - GetGValue(a)) * t + .5f), int(GetBValue(a) + (GetBValue(b) - GetBValue(a)) * t + .5f)); }
+static void SunnySea(Canvas& c) {
+    const int W = c.w, H = c.h; const float hz = std::round(H * .62f), sx = W * .66f, sy = H * .27f, sr = std::max(5.f, H * .075f);
+    const COLORREF skyTop = RGB(46, 128, 214), skyLow = RGB(170, 220, 248), sun = RGB(255, 247, 222), seaFar = RGB(92, 200, 214), seaNear = RGB(18, 124, 160), haze = RGB(222, 240, 250);
+    for (int y = 0; y < H; ++y) for (int x = 0; x < W; ++x) {
+        float dx = x + .5f - sx, dy = y + .5f - sy, d = sqrtf(dx * dx + dy * dy); COLORREF col;
+        if (y < hz) {
+            float t = (y + .5f) / hz; col = MixC(skyTop, skyLow, powf(t, 1.5f));
+            col = MixC(col, haze, Clamp01((t - .82f) / .18f) * .55f);      // the haze along the horizon
+            col = MixC(col, sun, Clamp01(.85f * expf(-d / (H * .42f)) + .55f * expf(-d / (H * .12f))));      // the sun's glow
+        } else {
+            float t = (y + .5f - hz) / (H - hz); col = MixC(seaFar, seaNear, powf(t, .7f));
+            float spread = W * .05f + t * W * .11f, k = dx / spread; col = MixC(col, RGB(250, 238, 200), expf(-k * k) * (.42f - .22f * t));      // the sun's path on the water
+            col = MixC(col, haze, Clamp01(1 - t * 9) * .35f);
         }
+        c.px[(size_t)y * W + x] = 0xFF000000u | (uint32_t(GetRValue(col)) << 16) | (uint32_t(GetGValue(col)) << 8) | uint32_t(GetBValue(col));
     }
-}
-static void DrawOneLine(Canvas& c, const Board& b, const trace::State& st) {
-    if (b.line.empty() || st.alpha <= 0) return;
-    auto drawn = trace::Prefix(b.line, st.drawn); float half = b.g.half, r0 = half * 2.5f; trace::Pt s0 = b.line.front(); bool solved = st.phase != trace::kTrace;
-    // as in the game: a pale line while it is drawn, bright warm white with a soft light once the panel is solved (a flash at the moment of solving)
-    COLORREF core = g_boardPanel ? RGB(255, 251, 236) : (solved ? RGB(255, 250, 232) : RGB(226, 236, 240)), glow = g_boardPanel ? RGB(255, 251, 236) : (solved ? kWarm : kLine);
-    float ga = (g_boardPanel ? .35f : solved ? .40f : .18f) + .5f * st.flash, soft = half * (3.0f + 5.0f * st.flash);
-    SoftLine(c, drawn, half, glow, ga * st.alpha, soft); Disc(c, s0.x, s0.y, r0, glow, ga * st.alpha, soft);
-    SoftLine(c, drawn, half, core, st.alpha, 0); Disc(c, s0.x, s0.y, r0, core, st.alpha);
-}
-static void DrawMovingLine(Canvas& c, double ms, bool still) {
-    if (g_boards.empty()) return;
-    if (still) { for (auto& b : g_boards) DrawOneLine(c, b, {trace::kSolved, 1, 0, 1}); return; }
-    Seq q = SeqAt(ms); bool ending = q.cur + 1 == g_boards.size() && q.st.phase != trace::kTrace;
-    for (size_t k = 0; k < q.cur; ++k) DrawOneLine(c, g_boards[k], {trace::kSolved, 1, 0, ending ? q.st.alpha : 1.f});
-    DrawOneLine(c, g_boards[q.cur], q.st);
-}
-// A small dark Witness panel over the picture: a slate square with a soft shadow, its grid as wide grooves with round ends, the start circle at the bottom left and the end
-// cap past the top right node (up or to the right). n x n cells.
-static Grid DarkPanel(Canvas& c, float x, float y, float ps, int n, bool up) {
-    float r = ps * .07f; const COLORREF body = RGB(30, 37, 41), rim = RGB(58, 70, 76), groove = RGB(74, 89, 97);
-    Shape(c, x, y, x + ps, y + ps, RGB(0, 0, 0), .55f, ps * .10f, [&](float px, float py) { return RoundRectDist(px, py, x + 2, y + 5, ps, ps, r); });
-    Shape(c, x, y, x + ps, y + ps, rim, .95f, 0, [&](float px, float py) { return RoundRectDist(px, py, x, y, ps, ps, r); });
-    Shape(c, x, y, x + ps, y + ps, body, 1, 0, [&](float px, float py) { return RoundRectDist(px, py, x + 1.5f, y + 1.5f, ps - 3, ps - 3, r * .85f); });
-    float m = ps * .2f, cell = (ps - 2 * m) / n, half = std::max(1.6f, cell * .12f); Grid g{x + m, y + m, cell, half, std::max(cell * .42f, half * 3.2f), n, n, up};
-    auto nx = [&](float i) { return g.gx + i * cell; }; auto ny = [&](float j) { return g.gy + j * cell; };
-    for (int j = 0; j <= n; ++j) { float p[] = {nx(0), ny(j), nx(n), ny(j)}; Line(c, p, 2, half, groove, 1); }
-    for (int i = 0; i <= n; ++i) { float p[] = {nx(i), ny(0), nx(i), ny(n)}; Line(c, p, 2, half, groove, 1); }
-    { float p[] = {nx(n), ny(0), up ? nx(n) : nx(n) + g.cap, up ? ny(0) - g.cap : ny(0)}; Line(c, p, 2, half, groove, 1); }
-    Disc(c, nx(0), ny(n), half * 2.5f, groove, 1);
-    return g;
+    uint32_t s = 0x5eaf00du;
+    for (int i = 0; i < 7; ++i) {      // soft clouds, kept away from the sun
+        float cx = W * (.08f + .9f * trace::Uniform(s)), cy = H * (.10f + .30f * trace::Uniform(s)), r = H * (.08f + .10f * trace::Uniform(s));
+        if (fabsf(cx - sx) < H * .7f) continue;
+        for (int k = 0; k < 4; ++k) Disc(c, cx + (k - 1.5f) * r * .9f, cy + (k % 2 ? -r * .25f : r * .1f), r * (k % 3 ? .8f : 1.f), RGB(255, 255, 255), .16f, r * 1.4f);
+    }
+    {   // a hazy island on the horizon, left of the sun: a hill and a lower shoulder
+        float ix = W * .30f, iw = std::max(80.f, W * .16f), ih = std::max(4.f, H * .10f);
+        Shape(c, ix - iw, hz - ih - 2, ix + iw, hz + 1, RGB(98, 150, 166), .9f, 0, [&](float px, float py) {
+            float u = (px - ix) / iw; if (fabsf(u) >= 1) return 1e9f; float top = hz - ih * (powf(cosf(u * 1.5708f), 1.6f) * .9f + .35f * expf(-(u + .45f) * (u + .45f) * 30)); return std::max(top - py, py - hz);
+        });
+        float lx = ix + iw * .48f; Shape(c, lx - 2, hz - ih * 1.05f, lx + 2, hz, RGB(236, 240, 238), .85f, 0, [&](float px, float py) { return std::max(fabsf(px - lx) - 1.1f, std::max(hz - ih * .95f - py, py - hz)); });      // a tiny white tower
+    }
+    { float p[] = {0, hz + .5f, float(W), hz + .5f}; Line(c, p, 2, .5f, RGB(236, 248, 252), .55f); }      // the bright line of the horizon
+    Disc(c, sx, sy, sr, sun, .55f, sr * 1.6f); Disc(c, sx, sy, sr, RGB(255, 252, 240), 1);      // the sun
+    s = 0xc0ffee1u; int n = int(W * (H - hz) / 90);
+    for (int i = 0; i < n; ++i) {      // the glitter: short bright strokes, thick near the sun's path, thinning out to the sides; longer towards the viewer
+        float t = powf(trace::Uniform(s), 1.3f), y = hz + 2 + t * (H - hz - 3), g = (trace::Uniform(s) + trace::Uniform(s) + trace::Uniform(s) - 1.5f) * 2.f;
+        float x = sx + g * (W * .05f + t * W * .13f) * (trace::Uniform(s) < .25f ? 3.f : 1.f), len = 1.5f + t * 9 * trace::Uniform(s), k = (x - sx) / (W * .06f + t * W * .12f);
+        float a = (.25f + .75f * trace::Uniform(s)) * expf(-k * k * .6f) * (.95f - .3f * t);
+        float p[] = {x - len, y, x + len, y}; Line(c, p, 2, .35f + t * .6f, RGB(255, 251, 236), a);
+    }
+    s = 0xbeefu; for (int i = 0; i < W / 6; ++i) {      // calm swell: faint darker strokes across the water
+        float t = trace::Uniform(s), y = hz + 3 + t * (H - hz - 4), x = W * trace::Uniform(s), len = 6 + t * 40 * trace::Uniform(s);
+        float p[] = {x - len, y, x + len, y}; Line(c, p, 2, .4f + t * .5f, RGB(6, 70, 104), .18f + .2f * t);
+    }
 }
 static void Compose(HDC ref, int W, int H, const wchar_t* subtitle) {
     uint32_t* bits = nullptr; HBITMAP bmp = NewDib(ref, W, H, &bits); if (!bmp || !bits) return; Canvas c{W, H, bits};
-    if (!g_art.empty()) {      // the save's picture, then a calm shade: darker to the left where the title sits, fading into the window at the bottom
-        Cover(c, g_art.data(), g_artW, g_artH, .42f); Blur(c, int(std::max(float(W) / g_artW, float(H) / g_artH) * .8f));
-        Shade(c, kBg, [&](int x, int y) { float t = std::max(0.f, 1 - x / (W * .6f)), b = y > H * .5f ? (y - H * .5f) / (H * .5f) : 0; return std::max(.12f + .70f * powf(t, 1.3f), powf(b, 1.6f)); });
-    } else {      // no picture: an evening sky over the drawn panel
-        Shade(c, kBg, [](int, int) { return 1.f; });
-        Shade(c, RGB(34, 66, 76), [&](int x, int y) { float t = 1 - float(y) / H; return .85f * t * t * (.55f + .45f * float(x) / W); });
-        float ph = H * .72f, pw = ph * 1.3f, px = W - pw - std::max(28.f, W * .05f), py = (H - ph) / 2 - H * .03f; Puzzle(c, px, py, pw, ph, false); SetBoards({PuzzleGrid(px, py, pw, ph)}, true);
-    }
+#ifdef WL_MUT_DARK_BANNER
+    Shade(c, kBg, [](int, int) { return 1.f; });      // (mutant: no sunny picture: the test must see a dark banner)
+#else
+    SunnySea(c);
+#endif
+    // the title's corner a little darker for the words, the caption buttons' corner a little darker for their marks, and the bottom fading into the window
+    Shade(c, RGB(6, 26, 40), [&](int x, int y) { float t = Clamp01(1 - x / (W * .36f)), r = Clamp01((x - (W - 3.f * kCapW - 40)) / 60.f) * Clamp01(1 - y / float(kCapH + 10)); return std::max(.48f * powf(t, 1.5f), .22f * r); });
+    Shade(c, kBg, [&](int, int y) { float b = y > H * .80f ? (y - H * .80f) / (H * .20f) : 0; return powf(b, 1.8f); });
     HDC mem = CreateCompatibleDC(ref); HGDIOBJ ob = SelectObject(mem, bmp); SetBkMode(mem, TRANSPARENT);
     int tp = std::max(26, std::min(60, H * 27 / 100)), x0 = std::max(24, W * 3 / 100); bool compact = H < 110;
     HFONT title = Font(tp, FW_BOLD, g_face.empty() ? L"Segoe UI Light" : g_face.c_str()), coop = Font(std::max(14, tp / 2), FW_BOLD, g_face.empty() ? L"Segoe UI Semibold" : g_face.c_str());
     auto text = [&](HFONT f, int extra, const wchar_t* t, int x, int y, COLORREF col) { SelectObject(mem, f); const UINT k = DT_LEFT | DT_TOP | DT_SINGLELINE | DT_NOPREFIX | DT_NOCLIP; RECT sh = {x + 2, y + 2, x + 2, y + 2}, at = {x, y, x, y}, m = at;
         SetTextColor(mem, RGB(0, 0, 0)); Text(mem, t, -1, &sh, k, extra); SetTextColor(mem, col); Text(mem, t, -1, &at, k, extra); Text(mem, t, -1, &m, k | DT_CALCRECT, extra); return SIZE{m.right - m.left, m.bottom - m.top}; };      // (in the game's face through DirectWrite, letter-spaced)
-    int ty = compact ? 8 : H * 16 / 100; SIZE ts = text(title, tp / 8, L"THE WITNESS", x0, ty, kText);
+    int ty = compact ? 8 : H * 16 / 100; SIZE ts = text(title, tp / 8, L"THE WITNESS", x0, ty, RGB(255, 255, 255));
     int cy = compact ? ty + (ts.cy - std::max(14, tp / 2)) / 2 + 2 : ty + ts.cy + 2, cx = compact ? x0 + ts.cx + tp / 2 : x0 + 2; SIZE cs = text(coop, tp / 4, L"CO-OP", cx, cy, kWarm);
     if (subtitle && *subtitle) { SelectObject(mem, g_body); SetTextCharacterExtra(mem, 0); SetTextColor(mem, kLine); RECT sr = {x0 + 2, compact ? ty + ts.cy + 2 : cy + cs.cy + 6, W - 24, H - 4}; Text(mem, subtitle, -1, &sr, DT_LEFT | DT_SINGLELINE | DT_END_ELLIPSIS); }
-    int textRight = compact ? cx + cs.cx : std::max(x0 + (int)ts.cx, cx + (int)cs.cx);
     SelectObject(mem, ob); DeleteDC(mem); DeleteObject(title); DeleteObject(coop); GdiFlush();
-    if (!g_art.empty()) {      // over the picture: a row of small Witness panels right of the title, solved one after another (a 14 x 3 grid read as a sheet, not a puzzle: owner, 2026-11-06)
-        float ps = std::round(H * .68f), gap = std::round(ps * .32f), xEnd = W - std::max(28.f, W * .03f) - (g_capOn ? 3 * kCapW - 8.f : 0.f), xStart = textRight + std::max(48.f, H * .5f); int n = 3;      // (the row ends clear of the caption buttons)
-        while (n > 0 && n * ps + (n - 1) * gap > xEnd - xStart) --n;
-        if (n > 0) {
-            static const int kCells[3][3] = {{4, 0, 0}, {3, 4, 0}, {3, 4, 4}}; std::vector<Grid> gs; float y = std::round((H - ps) / 2 - H * .02f);
-            for (int i = 0; i < n; ++i) gs.push_back(DarkPanel(c, std::round(xEnd - (n - i) * ps - (n - 1 - i) * gap), y, ps, kCells[n - 1][i], i % 2 == 1));
-            SetBoards(gs, false);
-        } else ClearBoard();
-    }
-    if (g_banner) DeleteObject(g_banner); g_banner = bmp; g_bannerBits = bits; g_bannerW = W; g_bannerH = H; g_bannerGen = g_artGen;
+    if (g_banner) DeleteObject(g_banner); g_banner = bmp; g_bannerBits = bits; g_bannerW = W; g_bannerH = H;
 }
+
+// ---- the backdrop: faint Witness panels scattered behind the pages (owner, 2026-11-06: out of the banner, "faded so as not to interrupt the foreground"). Drawn once into
+// a tile that repeats without a seam; every background in the window (the window, the pages, the tab row, a label, a button's corners) is filled from it lined up with the
+// window, so it reads as one picture behind the controls. Still: nothing moves behind the words.
+static const int kTileW = 1180, kTileH = 820; static int g_backdropPanels; static float g_backdropMax;
+static void FaintPanel(Canvas& c, float x, float y, float ps, int n, bool up, uint32_t seed, bool solved) {
+    const float k = .9f;      // how much of each mark is laid over the background (they stay within a few levels of it)
+#ifdef WL_MUT_LOUD_BACKDROP
+    const COLORREF body = RGB(52, 74, 84), groove = RGB(96, 124, 136), lit = RGB(255, 200, 87);      // (mutant: panels as bright as the controls: the test's limit must catch it)
+#else
+    const COLORREF body = RGB(17, 25, 29), groove = RGB(21, 31, 36), lit = RGB(29, 33, 31);
+#endif
+    float r = ps * .07f, m = ps * .2f, cell = (ps - 2 * m) / n, half = std::max(1.6f, cell * .11f), cap = std::max(cell * .42f, half * 3.2f), gx = x + m, gy = y + m;
+    Shape(c, x, y, x + ps, y + ps, body, k, 0, [&](float px, float py) { return RoundRectDist(px, py, x, y, ps, ps, r); });
+    auto nx = [&](float i) { return gx + i * cell; }; auto ny = [&](float j) { return gy + j * cell; };
+    for (int j = 0; j <= n; ++j) { float p[] = {nx(0), ny(j), nx(n), ny(j)}; Line(c, p, 2, half, groove, k); }
+    for (int i = 0; i <= n; ++i) { float p[] = {nx(i), ny(0), nx(i), ny(n)}; Line(c, p, 2, half, groove, k); }
+    { float p[] = {nx(n), ny(0), up ? nx(n) : nx(n) + cap, up ? ny(0) - cap : ny(0)}; Line(c, p, 2, half, groove, k); }
+    Disc(c, nx(0), ny(n), half * 2.5f, groove, k);
+    if (!solved) return;
+    std::vector<trace::Pt> line; for (auto& q : trace::SolvePath(n, n, seed, 2 * n + 4)) line.push_back({nx(float(q.i)), ny(float(q.j))});
+    if (line.empty()) return; line.push_back(up ? trace::Pt{nx(n), ny(0) - cap} : trace::Pt{nx(n) + cap, ny(0)});
+    std::vector<float> p; for (auto& q : line) { p.push_back(q.x); p.push_back(q.y); }
+    Line(c, p.data(), (int)line.size(), half * .8f, lit, k); Disc(c, line[0].x, line[0].y, half * 2.2f, lit, k);      // a solved line, as dim as the rest
+}
+static void BuildBackdrop() {
+    HDC screen = GetDC(nullptr); uint32_t* bits = nullptr; HBITMAP bmp = NewDib(screen, kTileW, kTileH, &bits); ReleaseDC(nullptr, screen); if (!bmp || !bits) return;
+    Canvas c{kTileW, kTileH, bits}; for (size_t i = 0; i < (size_t)kTileW * kTileH; ++i) bits[i] = 0xFF000000u | (uint32_t(GetRValue(kBg)) << 16) | (uint32_t(GetGValue(kBg)) << 8) | GetBValue(kBg);
+#ifndef WL_MUT_NO_BACKDROP
+    struct P { float x, y, s; }; std::vector<P> placed; uint32_t s = 0x7e57u;
+    for (int tries = 0; tries < 4000 && placed.size() < 14; ++tries) {      // scattered: random places and sizes, never overlapping (also across the tile's wrap)
+        float ps = std::round(70 + 110 * trace::Uniform(s)), x = std::round(kTileW * trace::Uniform(s)), y = std::round(kTileH * trace::Uniform(s)); bool clear = true;
+        for (auto& q : placed) { float dx = fabsf(x - q.x), dy = fabsf(y - q.y); dx = std::min(dx, kTileW - dx); dy = std::min(dy, kTileH - dy); float need = (ps + q.s) / 2 + 70; if (dx < need && dy < need) { clear = false; break; } }
+        if (!clear) continue; placed.push_back({x, y, ps});
+        int n = 3 + int(trace::Uniform(s) * 3); bool up = trace::Uniform(s) < .5f, solved = trace::Uniform(s) < .6f; uint32_t seed = trace::Next(s);
+        for (int oy = -1; oy <= 1; ++oy) for (int ox = -1; ox <= 1; ++ox) {      // drawn at its place and wrapped, so the tile repeats without a seam
+            float px = x - ps / 2 + ox * kTileW, py = y - ps / 2 + oy * kTileH; if (px > kTileW || py > kTileH || px + ps * 1.4f < 0 || py + ps * 1.4f < 0) continue;
+            FaintPanel(c, px, py, ps, n, up, seed, solved);
+        }
+    }
+    g_backdropPanels = (int)placed.size();
+#endif
+    float mx = 0; for (size_t i = 0; i < (size_t)kTileW * kTileH; ++i) { uint32_t v = bits[i]; mx = std::max({mx, fabsf(float((v >> 16) & 255) - GetRValue(kBg)), fabsf(float((v >> 8) & 255) - GetGValue(kBg)), fabsf(float(v & 255) - GetBValue(kBg))}); }
+    g_backdropMax = mx; GdiFlush(); g_backdrop = CreatePatternBrush(bmp); DeleteObject(bmp);      // (the brush keeps its own copy)
+    if (!g_backdrop) g_backdrop = CreateSolidBrush(kBg);
+}
+static void AlignBackdrop(HDC dc, HWND wnd) {
+    POINT o = {0, 0}; HWND root = GetAncestor(wnd, GA_ROOT); if (root && root != wnd) MapWindowPoints(wnd, root, &o, 1);
+    SetBrushOrgEx(dc, ((-o.x) % kTileW + kTileW) % kTileW, ((-o.y) % kTileH + kTileH) % kTileH, nullptr);
+}
+void FillBg(HDC dc, HWND wnd, const RECT& rc) { if (!g_backdrop) BuildBackdrop(); AlignBackdrop(dc, wnd); FillRect(dc, &rc, g_backdrop ? g_backdrop : g_bg); }
+std::string BackdropState() { char b[80]; snprintf(b, sizeof b, "panels %d maxdelta %.0f", g_backdropPanels, g_backdropMax); return b; }
+const std::string& ArtState() { static const std::string s = "sea"; return s; }
 // ---- the window's own caption buttons (minimize, maximize or restore, close) on the banner's top right: the Windows title bar is gone (owner, 2026-11-06)
 void SetCaption(int hot, int down, bool maximized, bool active) { g_capOn = true; g_capHot = hot; g_capDown = down; g_capMax = maximized; g_capActive = active; }
 int CaptionHit(int x, int y, int clientW) { if (y < 0 || y >= kCapH || x >= clientW || x < clientW - 3 * kCapW) return 0; return 1 + (x - (clientW - 3 * kCapW)) / kCapW; }
@@ -566,30 +567,13 @@ static void DrawCaption(Canvas& c) {
 }
 void PaintHeader(HDC dc, const RECT& client, int height, const wchar_t* subtitle) {
     int W = client.right; if (W <= 0 || height <= 0) return;
-    if (!g_banner || g_bannerW != W || g_bannerH != height || g_bannerGen != g_artGen) Compose(dc, W, height, subtitle);
+    if (!g_banner || g_bannerW != W || g_bannerH != height) Compose(dc, W, height, subtitle);
     if (!g_banner) return; HBITMAP show = g_banner;
-    if ((g_boardOn || g_capOn) && g_bannerBits) {      // the banner, then the line as it is now (still and solved when Windows' animations are off) and the caption buttons
+    if (g_capOn && g_bannerBits) {      // the banner, then the caption buttons as they are now
         if (!g_frame || g_frameW != W || g_frameH != height) { if (g_frame) DeleteObject(g_frame); g_frame = NewDib(dc, W, height, &g_frameBits); g_frameW = W; g_frameH = height; }
-        if (g_frame && g_frameBits) {
-            GdiFlush(); memcpy(g_frameBits, g_bannerBits, (size_t)W * height * 4); Canvas c{W, height, g_frameBits};
-            if (g_boardOn) { DrawMovingLine(c, g_clock - g_cycle0, !g_motion); ++g_frames; } if (g_capOn) DrawCaption(c); show = g_frame;
-        }
+        if (g_frame && g_frameBits) { GdiFlush(); memcpy(g_frameBits, g_bannerBits, (size_t)W * height * 4); Canvas c{W, height, g_frameBits}; DrawCaption(c); show = g_frame; }
     }
     HDC mem = CreateCompatibleDC(dc); HGDIOBJ o = SelectObject(mem, show); BitBlt(dc, 0, 0, W, height, mem, 0, 0, SRCCOPY); SelectObject(mem, o); DeleteDC(mem);
-}
-void AnimTick(HWND wnd, bool active) {
-    ULONGLONG now = GetTickCount64(); double dt = g_lastTick ? double(std::min<ULONGLONG>(100, now - g_lastTick)) : 0; g_lastTick = now;
-    bool motion = Motion(); if (motion != g_motion) { g_motion = motion; if (g_banner) { RECT r = {0, 0, g_bannerW, g_bannerH}; InvalidateRect(wnd, &r, FALSE); } }
-    g_active = active; if (!active || !g_motion || !g_boardOn || !g_banner) return;
-    g_clock += dt; if (g_clock - g_cycle0 >= SeqMs()) NewPuzzle();
-    auto resting = [&](double ms) { Seq q = SeqAt(ms); return q.cur + 1 == g_boards.size() && q.st.phase == trace::kRest; };
-    if (now - g_lastInval >= 33 && !(resting(g_clock - g_cycle0) && resting(g_clock - g_cycle0 - 100))) { g_lastInval = now; RECT r = {0, 0, g_bannerW, g_bannerH}; InvalidateRect(wnd, &r, FALSE); }
-}
-std::string AnimState() {
-    const char* ph[] = {"trace", "solved", "fade", "rest"}; Seq q = g_boards.empty() ? Seq{0, {trace::kRest, 0, 0, 0}} : SeqAt(g_clock - g_cycle0); std::string sizes;
-    for (auto& b : g_boards) sizes += (sizes.empty() ? "" : ",") + std::to_string(b.g.cols) + "x" + std::to_string(b.g.rows);
-    return std::string(!g_boardOn ? "off" : !g_motion ? "still" : g_active ? "on" : "paused") + " board " + (g_boardOn ? (g_boardPanel ? "panel" : "panels") : "none") + " " + (sizes.empty() ? "0x0" : sizes) +
-           " at " + std::to_string(q.cur) + " phase " + ph[q.st.phase] + " puzzles " + std::to_string(g_puzzles) + " frames " + std::to_string(g_frames);
 }
 HBITMAP Thumb(const uint8_t* rgba, int w, int h, int tw, int th) {
     HDC screen = GetDC(nullptr); uint32_t* bits = nullptr; HBITMAP b = NewDib(screen, tw, th, &bits); ReleaseDC(nullptr, screen); if (!b || !bits) return b; Canvas c{tw, th, bits};

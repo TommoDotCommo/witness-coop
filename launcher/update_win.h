@@ -17,7 +17,7 @@ namespace wup {
 #define WUP_DEFAULT_API "https://api.github.com/repos/TommoDotCommo/witness-coop/releases?per_page=10"
 #define WUP_PREFIX "witness-coop"
 enum State { kIdle, kChecking, kCurrent, kAvailable, kDownloading, kApplied, kError };
-struct Snapshot { State state = kIdle; std::string message, tag, notes, version; bool prerelease = false; int lastError = 0; bool autoCheck = true; int prereleases = -1; bool manual = false; bool managed = false; };      // managed: a mod manager (Vortex) installed the files; it updates them
+struct Snapshot { State state = kIdle; std::string message, tag, notes, version; bool prerelease = false; int lastError = 0; bool autoCheck = true; int prereleases = -1; bool manual = false; bool managed = false; bool offersPre = false; };      // offersPre: what the choice comes to (auto resolved)      // managed: a mod manager (Vortex) installed the files; it updates them
 
 inline std::string Narrow(const std::wstring& w) { if (w.empty()) return ""; int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr); std::string s(n, 0); WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), &s[0], n, nullptr, nullptr); return s; }
 
@@ -51,7 +51,7 @@ public:
     void StartApply() { if (!inited_ || managed_) return; { Lock l(&cs_); if (snap_.state != kAvailable) return; snap_.state = kDownloading; snap_.message = std::string("Downloading and verifying ") + rel_.zip_name + " ..."; } if (InterlockedCompareExchange(&busy_, 1, 0) != 0) return; HANDLE t = CreateThread(nullptr, 0, ApplyThread, this, 0, nullptr); if (t) CloseHandle(t); else InterlockedExchange(&busy_, 0); }
     void Later() { Lock l(&cs_); if (snap_.state == kAvailable) { snap_.state = kCurrent; snap_.message = "Update " + snap_.tag + " postponed; it is offered again at the next check."; } }
     Snapshot Get() {
-        Lock l(&cs_); Snapshot s = snap_; s.autoCheck = sched_.auto_enabled != 0; s.prereleases = prePref_; s.managed = managed_;
+        Lock l(&cs_); Snapshot s = snap_; s.autoCheck = sched_.auto_enabled != 0; s.prereleases = prePref_; s.managed = managed_; s.offersPre = sched_.include_prereleases != 0;
         if (managed_ && s.state == kAvailable) s.message = "Update available: " + s.tag + ". Installed by Vortex: update it in Vortex (Nexus Mods), or download it from GitHub Releases. The launcher leaves its files alone.";
         return s;
     }

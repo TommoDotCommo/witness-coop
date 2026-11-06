@@ -147,7 +147,8 @@ Four tabs, the same in every co-op mod: **Play**, **Saves**, **Settings**, **Abo
 
 - **Play**: your name, three choices (*Host a game*, *Join a friend*, *Play solo*) and one button that says what it does (*Open lobby*, *Join*, *Play solo*);
   the last choice is remembered (`launcher_choice=`). Hosting or joining turns the tab into **Lobby**: players (host mark, ready, speaking light, mute me,
-  deafen) | chat | *Friends can join by* with the invite above *What to play* (the host chooses co-op or race, a new game, parts of the map done). The host's button reads *Start game*
+  deafen) | chat | *Friends can join by* (one row per way in: Steam, Same network, Tailscale, Internet, Windows Firewall, each with a coloured dot, *Ready*,
+  *Needs a look* or *Off*, one line of what was found and, when it needs a look, one line of what to do; the full text is the row's tooltip) with the invite above *What to play* (the host chooses co-op or race, a new game, parts of the map done). The host's button reads *Start game*
   or *Waiting for <names>*; the others tick *Ready*; *Leave* is one click. An available update is a banner on Play (*Update*, *What's new*), never over a lobby.
 - **Saves**: the co-op saves (who played, progress, lasers, time) and *New game...* (the parts of the map that are done at the start).
 - **Settings**: sections in the shared order (Co-op rules, Players and interface, Voice and sound, Controls, Display, Network, Launcher). Every change is
@@ -156,12 +157,14 @@ Four tabs, the same in every co-op mod: **Play**, **Saves**, **Settings**, **Abo
   own options (mouse, FOV, brightness, ...) live inside a save: they are marked *(in a save)* and change the save chosen in *Save to change*. The player
   number is gone from the settings: the lobby assigns it. *Show the launcher at start* off lets Play in Steam start the game directly (hold Shift while it
   starts to get the launcher).
-- **About**: version and updates, the quick guide, *Send diagnostics*, links, credits, the game folder.
+- **About**: version and updates (*Updates to offer*: *Full releases* or *Pre-releases too*, the same setting as Settings, Launcher), the quick guide, *Send diagnostics*, links, credits, the game folder.
 
-The banner solves puzzles: on a faint panel grid right of the title (or on the drawn panel when there is no save picture) a line traces a random solution from
-the start circle to the end cap, flashes when solved, fades, and the next one starts; buttons under the pointer or with the focus get a line that runs round
-them from a start dot. Its clock runs only while the launcher is the window in use, and with Windows' *Show animations* off the line is shown solved and still
-(`launcher/trace.h`; `make -C launcher trace-test`, 6 mutants; the stat file's `anim` line; `WITNESS_LAUNCHER_ANIM=always` lets a test film it without the focus).
+The banner is a sunny sea painted by the launcher (sky, sun, a hazy island, turquoise water with the sun's glitter; nothing from the game is shipped). Behind the
+pages, faint Witness panels are scattered as a still backdrop, a few levels from the background colour so they never compete with the controls. Buttons under the
+pointer get a line that runs round them from a start dot, as a panel's line does; the button with the focus gets it only while the keyboard or a pad is in use (a
+tab opened with the mouse shows none). With Windows' *Show animations* off the line is shown drawn at once (`launcher/trace.h`; `make -C launcher trace-test`;
+`python3 tools/qa_launcher_frame.py` checks the banner, the backdrop and the focus line on the real window, with mutants; the stat file's `art`, `backdrop`
+and `cues` lines).
 
 Keyboard: Enter, Esc (back), Tab, Ctrl+Tab (tabs), Ctrl+Enter (the page's main button), hold F1 (quick guide). A pad (XInput: Xbox pads, the Steam Deck's
 controls) works too: stick or D-pad move, A selects, B goes back, LB/RB change tabs, Start presses the page's main button, X and Y are the actions the footer
@@ -181,7 +184,7 @@ in the game and the log (*"Player 2 is on v0.1.0, you are on v0.2.0: update both
 **The launcher updates itself from GitHub releases** (`launcher/update.h`, `update_win.h`; ported from the MDK2 launcher's updater). At start it asks for the latest release of
 `TommoDotCommo/witness-coop` (at most once a day; nothing about you is sent: one plain request for the public release list, and one per file if you press Update; failures are only written to the
 launcher's log). When a newer release exists the Play tab shows *Update available: vX (first line of the notes)* with **Update**, **What's new** and **Later**; the About tab has the full notes, a *Check for
-updates* button, and the two settings (Settings, Launcher) (also in `witness_launcher_update.cfg` in the mod's data folder, `%LOCALAPPDATA%\witness-coop\`: `update_check=0` turns the automatic check off, `update_prereleases=auto|1|0`;
+updates* button, and the two settings (*Updates to offer* is on About too) (also in `witness_launcher_update.cfg` in the mod's data folder, `%LOCALAPPDATA%\witness-coop\`: `update_check=0` turns the automatic check off, `update_prereleases=auto|1|0`;
 *auto* offers pre-releases only to an installed pre-release). **Update** downloads `witness-coop-<tag>.zip` and its `.sha256`, checks the size and SHA-256, opens the archive in memory
 (CRC of every file, no path may leave its folder, the executables must be 64-bit), and then replaces `dsound.dll`, `witness_launcher.exe` and `witness_models\*` through **the
 installer's own receipt rules** (`dist/install-policy.h`): a file is replaced only if its `.coop-receipt.json` says the installer put exactly that file there, with the receipt journal

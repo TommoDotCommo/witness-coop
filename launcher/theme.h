@@ -22,20 +22,21 @@ LRESULT CtlColor(UINT msg, HDC dc, HWND ctl);                          // the an
 unsigned TabPaintCount();                                              // how many times the tab row was painted (the test counts them: a hover must not repaint it again and again)
 void StyleTab(HWND tab);                                               // the row of tabs as words
 void StyleList(HWND list);                                             // a list view
-// The banner at the top of the window: the player's newest save picture (SetArt), cropped to fill, with a soft shade where the title sits, or without one a
-// Witness puzzle panel drawn here (a yellow panel, its grid, a start circle, an end cap and a traced white line). Nothing from the game is shipped.
+// The banner at the top of the window: a sunny sea painted here (sky, sun, a hazy island, turquoise water with the sun's glitter), the title over its darker left corner,
+// fading into the window at the bottom. Nothing from the game is shipped.
 int BannerHeight(int clientH);
-void SetArt(const uint8_t* rgba, int w, int h, const std::string& name);  // the picture (RGBA, w x h) or nullptr: the drawn panel
-const std::string& ArtState();                                          // the stat file's "art" line: "picture <name> <w>x<h>" or "panel"
+const std::string& ArtState();                                          // the stat file's "art" line: "sea"
 void PaintHeader(HDC dc, const RECT& client, int height, const wchar_t* subtitle = L"");      // (an empty subtitle: none)
-// The banner's moving line: a random solution traced on its board, solved, faded, the next one. Call about every 16 ms; `active`: the launcher is the window in use
-// (the clock stops otherwise, so it costs nothing while the game is played). Windows' "Show animations" off: the line is shown solved and still.
-void AnimTick(HWND wnd, bool active);
+// The backdrop behind the pages: faint Witness panels scattered over the window, still, a few levels from the background colour. FillBg fills rc of wnd's client with it,
+// lined up with wnd's top-level window, so the window, its pages and every control's background continue one picture.
+void FillBg(HDC dc, HWND wnd, const RECT& rc);
+std::string BackdropState();                                            // the stat file's "backdrop" line: "panels <n> maxdelta <levels from the background colour>"
+// Keyboard and pad cues: while on, the focused button has the traced line round it; the mouse turns them off (a page opened with the mouse shows no focus line).
+void SetNavCues(bool on); bool NavCues();
 // The window's own caption buttons on the banner's top right (the Windows title bar is removed): 1 minimize, 2 maximize/restore, 3 close; 0 none.
 void SetCaption(int hot, int down, bool maximized, bool active);
 int CaptionHit(int x, int y, int clientW);
 RECT CaptionRect(int clientW);
-std::string AnimState();                                                // the stat file's "anim" line: on|paused|still|off, the board, the phase, puzzles and frames so far
 bool Motion();                                                          // Windows' animations setting
 // A save's thumbnail for the Saves list (its picture cropped to fill), or the drawn panel when it has none; the caller owns the bitmap.
 HBITMAP Thumb(const uint8_t* rgba, int w, int h, int tw, int th);

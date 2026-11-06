@@ -116,7 +116,7 @@ static std::vector<Row> Build() {
     // Launcher
     v.push_back(Toggle("cfg:show_launcher", "Show the launcher at start", kLauncher, "1", "off: Play in Steam starts the game directly; hold Shift while it starts to see the launcher"));
     v.push_back(Toggle("upd:auto", "Check for updates when the launcher starts", kLauncher, "1", "once a day at most; nothing about you is sent"));
-    v.push_back(Toggle("upd:pre", "Offer pre-releases", kLauncher, "0"));
+    { Row r = Choice_("upd:pre", "Updates to offer", kLauncher, {"Full releases", "Pre-releases too"}, "0"); r.values = {"0", "1"}; r.hint = "pre-releases are newer and less tested"; v.push_back(r); }
 #ifdef SHELL_MUT_TV_DEFAULT_ON
     v.push_back(Toggle("cfg:experimental_tv", "Experimental: TV features", kLauncher, "1", "mutant"));
 #else

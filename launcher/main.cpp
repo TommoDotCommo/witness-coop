@@ -51,8 +51,9 @@ bool Exists(const std::wstring& p) { return GetFileAttributesW(p.c_str()) != INV
 
 enum { ID_TAB = 100, ID_APPLY, ID_LAUNCH, ID_NEWGAME, ID_BROWSE, ID_GAMEDIR, ID_STATUS, ID_REFRESH, ID_OPENSAVES, ID_BACKUP, ID_TRASH, ID_SAVELIST, ID_SAVEINFO, ID_SAVEPICK, ID_DIAG, ID_UP_VER, ID_UP_STATUS, ID_UP_NOTES, ID_UP_CHECK, ID_UP_APPLY, ID_UP_LATER, ID_UP_AUTO, ID_UP_PRE, ID_UP_BANNER, ID_UP_BANNER_APPLY, ID_UP_BANNER_LATER,
        ID_SAVEPICK2, ID_PRIMARY, ID_NAME, ID_TILE_HOST, ID_TILE_JOIN, ID_TILE_SOLO, ID_TILE_HOST_TXT, ID_TILE_JOIN_TXT, ID_TILE_SOLO_TXT, ID_HOST_STEAM, ID_HOST_DIRECT, ID_JOIN_LABEL, ID_SOLO_NOTE, ID_SOLO_NEW, ID_UP_WHATSNEW, ID_HINTS, ID_FOOT_ACTION,
-       ID_SECTIONS, ID_RESET, ID_GUIDE_BTN, ID_LINK_HOME, ID_LINK_NOTES, ID_CREDITS, ID_FOLDER_LABEL, ID_ABOUT_TITLE, ID_ABOUT_GUIDE_TXT, ID_ABOUT_DIAG_TXT, ID_SECTION_TITLE, ID_PICK_LABEL, ID_PICK_LABEL2, ID_RESET2, ID_SAVEPIC,
+       ID_SECTIONS, ID_RESET, ID_GUIDE_BTN, ID_LINK_HOME, ID_LINK_NOTES, ID_CREDITS, ID_FOLDER_LABEL, ID_ABOUT_TITLE, ID_ABOUT_GUIDE_TXT, ID_ABOUT_DIAG_TXT, ID_SECTION_TITLE, ID_PICK_LABEL, ID_PICK_LABEL2, ID_RESET2, ID_SAVEPIC, ID_UP_REL, ID_UP_WHICH,
        ID_NG_OK = 300, ID_NG_LASERS, ID_NG_PRESET, ID_NG_INFO, ID_NG_AREAS = 400, ID_FIELD = 1000 };
+static_assert(ID_UP_WHICH < ID_NG_OK, "control ids run into the New game dialog's");
 enum Kind { kCheck, kCombo, kEdit, kMulti, kSlider, kKeyBtn, kNoteK };
 struct Field { int id; ls::Section section; std::string label, key; Kind kind; std::vector<std::string> choices; std::string def, hint; const ls::Row* row; HWND h = nullptr, hLabel = nullptr, hHint = nullptr, hValue = nullptr; };
 guide::Hold g_guideHold;
@@ -127,7 +128,7 @@ void FillPeers(Field& f, const wl::CfgFile& c) { std::string t; for (const auto&
 // ---- the saves page
 std::vector<wl::SaveInfo> g_saves; HWND g_saveList, g_saveInfo, g_savePick, g_savePick2;
 HWND g_savePic; std::vector<uint8_t> g_picRgba; int g_picW, g_picH, g_savesW, g_savesH; std::wstring g_picPath;
-void LayoutSaves(int W, int H); void FillThumbs(); void LoadArt();
+void LayoutSaves(int W, int H); void FillThumbs();
 std::wstring Stamp() { SYSTEMTIME st; GetLocalTime(&st); wchar_t b[40]; swprintf(b, 40, L"%04d-%02d-%02d_%02d.%02d.%02d", st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond); return b; }
 std::wstring When(unsigned long long ft) { FILETIME f; f.dwLowDateTime = (DWORD)ft; f.dwHighDateTime = (DWORD)(ft >> 32); FILETIME l; SYSTEMTIME st; FileTimeToLocalFileTime(&f, &l); FileTimeToSystemTime(&l, &st); wchar_t b[40]; swprintf(b, 40, L"%04d-%02d-%02d %02d:%02d", st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute); return b; }
 void RefreshSaves() {
@@ -139,7 +140,6 @@ void RefreshSaves() {
         SendMessageW(g_savePick, CB_ADDSTRING, 0, (LPARAM)When(s.when).c_str()); SendMessageW(g_savePick2, CB_ADDSTRING, 0, (LPARAM)When(s.when).c_str());
     }
     SendMessageW(g_savePick, CB_SETCURSEL, 0, 0); SendMessageW(g_savePick2, CB_SETCURSEL, 0, 0);
-    LoadArt();
 }
 // A picture file decoded to RGBA (the game's save pictures are PNGs); false: missing, not a picture, or larger than 8192 px.
 bool DecodePicture(const std::wstring& png, std::vector<uint8_t>* rgba, int* pw, int* ph) {
@@ -152,12 +152,6 @@ bool DecodePicture(const std::wstring& png, std::vector<uint8_t>* rgba, int* pw,
 // The save's own picture (the .png the game writes beside each save), beside its details on the Saves page; none: the details take the whole width as before.
 bool LoadSavePic(const std::wstring& png) {
     g_picPath.clear(); if (!DecodePicture(png, &g_picRgba, &g_picW, &g_picH)) return false; g_picPath = png; return true;
-}
-// The banner's art: the newest save's picture that loads, else the drawn puzzle panel (wl::PickArt). Read at run time; nothing of it is kept on disk.
-void LoadArt() {
-    std::vector<uint8_t> px; int w = 0, h = 0; wl::ArtPick a = wl::PickArt(g_saves, [&](const std::wstring& p) { return DecodePicture(p, &px, &w, &h); });
-    std::wstring name = a.png.substr(a.png.find_last_of(L"\\/") + 1); th::SetArt(a.picture ? px.data() : nullptr, w, h, U(name));
-    if (g_main) InvalidateRect(g_main, nullptr, FALSE);
 }
 // Each save's thumbnail in the Saves list (its picture cropped to fill, or the drawn panel), in the list's small image list.
 HIMAGELIST g_thumbs;
@@ -321,6 +315,7 @@ void StartNewGame() {
     WriteFile8(CfgPath(), c.Text()); DestroyWindow(g_ng); g_ng = nullptr; LaunchGame(true);
 }
 LRESULT CALLBACK NgProc(HWND h, UINT m, WPARAM w, LPARAM l) {
+    if (m == WM_ERASEBKGND) { RECT rc; GetClientRect(h, &rc); th::FillBg((HDC)w, h, rc); return 1; }
     if (m == WM_CTLCOLORSTATIC || m == WM_CTLCOLOREDIT || m == WM_CTLCOLORLISTBOX || m == WM_CTLCOLORBTN) return th::CtlColor(m, (HDC)w, (HWND)l);
     if (m == WM_COMMAND) { int id = LOWORD(w); if (id == ID_NG_OK) { StartNewGame(); return 0; } if (id == IDCANCEL) { DestroyWindow(h); g_ng = nullptr; return 0; } if (id >= ID_NG_AREAS || id == ID_NG_PRESET || id == ID_NG_LASERS) NgUpdate(); return 0; }
     if (m == WM_CLOSE) { DestroyWindow(h); g_ng = nullptr; return 0; }
@@ -432,6 +427,7 @@ void ShowId(int id, bool on) { Show(C(id), on); }
 std::string EditText(HWND h) { wchar_t b[1000] = {}; GetWindowTextW(h, b, 1000); return U(b); }
 
 LRESULT CALLBACK PageProc(HWND h, UINT m, WPARAM w, LPARAM l) {
+    if (m == WM_ERASEBKGND) { RECT rc; GetClientRect(h, &rc); th::FillBg((HDC)w, h, rc); return 1; }      // (the faint panels, lined up with the window)
     if (m == WM_CTLCOLORSTATIC || m == WM_CTLCOLOREDIT || m == WM_CTLCOLORLISTBOX || m == WM_CTLCOLORBTN) return th::CtlColor(m, (HDC)w, (HWND)l);
     if (m == WM_DRAWITEM || m == WM_MEASUREITEM) return SendMessageW(g_main, m, w, l);
     if (m == WM_COMMAND || m == WM_HSCROLL) { SendMessageW(g_main, m, w, l); return 0; }
@@ -654,6 +650,32 @@ void DrawJoinRow(DRAWITEMSTRUCT* d) {      // B5: name, state, players of limit,
 }
 // "Friends can join by" (C1) and the invite box, while hosting
 int g_fjState[NF_ROWS];      // the panel rows' states as last drawn
+// Each way in is a row (owner, 2026-11-06: the wall of text replaced): a coloured dot and the way's name, a word for its state on the right, one line of what was found
+// under it and, when it needs a look, one line of what to do. The whole text (cut short in the row when long) is the row's tooltip and its window text.
+struct FjRow { std::wstring title, result, fix; }; FjRow g_fj[NF_ROWS]; HWND g_fjTips;
+bool FjTall(int st) { return st == NF_WARN; }
+int FjHeight(int st) { return FjTall(st) ? 62 : 42; }
+void FjTip(HWND row, const std::wstring& text) {
+    if (!g_fjTips) { g_fjTips = CreateWindowExW(WS_EX_TOPMOST, TOOLTIPS_CLASSW, nullptr, WS_POPUP | TTS_NOPREFIX | TTS_ALWAYSTIP, 0, 0, 0, 0, GetParent(row), nullptr, GetModuleHandleW(nullptr), nullptr); SendMessageW(g_fjTips, TTM_SETMAXTIPWIDTH, 0, 420); SendMessageW(g_fjTips, TTM_SETDELAYTIME, TTDT_AUTOPOP, 30000); }
+    std::wstring t = text; TOOLINFOW ti = {}; ti.cbSize = sizeof ti; ti.uFlags = TTF_IDISHWND | TTF_SUBCLASS; ti.hwnd = GetParent(row); ti.uId = (UINT_PTR)row; ti.lpszText = &t[0];
+    wchar_t buf[600] = {}; TOOLINFOW q = ti; q.lpszText = buf;
+    SendMessageW(g_fjTips, SendMessageW(g_fjTips, TTM_GETTOOLINFOW, 0, (LPARAM)&q) ? TTM_UPDATETIPTEXTW : TTM_ADDTOOLW, 0, (LPARAM)&ti);      // (empty text: no tip)
+}
+std::wstring FirstSentence(const std::wstring& t) { size_t e = t.find(L". "); return e == std::wstring::npos ? (t.size() && t.back() == L'.' ? t.substr(0, t.size() - 1) : t) : t.substr(0, e); }
+void DrawFjRow(DRAWITEMSTRUCT* d, int i) {
+    HDC dc = d->hDC; RECT r = d->rcItem; th::FillBg(dc, d->hwndItem, r); const FjRow& f = g_fj[i]; int st = g_fjState[i]; SetBkMode(dc, TRANSPARENT);
+    if (f.title.empty()) { if (i == 0) { SelectObject(dc, th::Small()); SetTextColor(dc, th::kMuted); RECT tr = r; tr.left += 2; th::Text(dc, L"Shown while you host.", -1, &tr, DT_LEFT | DT_TOP | DT_SINGLELINE); } return; }
+    RECT card = {r.left, r.top, r.right, r.bottom - 4}; HBRUSH cb = CreateSolidBrush(th::kSurface); HPEN cp = CreatePen(PS_SOLID, 1, st == NF_WARN ? RGB(92, 76, 40) : th::kSurface2);
+    HGDIOBJ ob = SelectObject(dc, cb), op = SelectObject(dc, cp); RoundRect(dc, card.left, card.top, card.right, card.bottom, 10, 10); SelectObject(dc, ob); SelectObject(dc, op); DeleteObject(cb); DeleteObject(cp);
+    COLORREF col = st == NF_OK ? RGB(92, 214, 140) : st == NF_WARN ? th::kWarm : st == NF_CHECKING ? th::kLine : th::kMuted;
+    const wchar_t* word = st == NF_OK ? L"Ready" : st == NF_WARN ? L"Needs a look" : st == NF_CHECKING ? L"Checking\x2026" : L"Off";
+    th::DrawDot(dc, card.left + 16, card.top + 14, 5, col, st != NF_OFF);
+    SelectObject(dc, th::Small()); SetTextColor(dc, col); RECT wr = {card.left + 30, card.top + 4, card.right - 12, card.top + 24}; th::Text(dc, word, -1, &wr, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+    RECT ww = wr; th::Text(dc, word, -1, &ww, DT_RIGHT | DT_VCENTER | DT_SINGLELINE | DT_CALCRECT);
+    SelectObject(dc, th::Bold()); SetTextColor(dc, st == NF_OFF ? th::kMuted : th::kText); RECT tr = {card.left + 30, card.top + 4, card.right - 12 - (ww.right - ww.left) - 10, card.top + 24}; th::Text(dc, f.title.c_str(), -1, &tr, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
+    SelectObject(dc, th::Small()); SetTextColor(dc, th::kMuted); RECT dr = {card.left + 30, card.top + 21, card.right - 12, card.top + 38}; std::wstring det = FirstSentence(f.result); th::Text(dc, det.c_str(), -1, &dr, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
+    if (!f.fix.empty() && FjTall(st)) { SetTextColor(dc, th::kWarm); RECT fr = {card.left + 30, card.top + 37, card.right - 12, card.top + 54}; std::wstring fx = FirstSentence(f.fix); th::Text(dc, fx.c_str(), -1, &fr, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX); }
+}
 int TextHeight(HWND h, int width) {      // the height a static's text takes at its font, wrapped to width
     wchar_t t[600] = {}; GetWindowTextW(h, t, 600); if (!t[0]) return 16; HDC dc = GetDC(h); HGDIOBJ old = SelectObject(dc, (HFONT)SendMessageW(h, WM_GETFONT, 0, 0));
     RECT r = {0, 0, width, 0}; th::Text(dc, t, -1, &r, DT_CALCRECT | DT_WORDBREAK | DT_NOPREFIX); SelectObject(dc, old); ReleaseDC(h, dc); return std::max(16, (int)r.bottom);
@@ -661,12 +683,14 @@ int TextHeight(HWND h, int width) {      // the height a static's text takes at 
 void HostUiTick() {
     static ULONGLONG at; static bool laidSteam; if (GetTickCount64() - at < 400) return; at = GetTickCount64();
     bool host = g_sess.Active() && g_sess.IsHost(), steamHost = host && g_sess.SteamMode(); if (steamHost != laidSteam) { laidSteam = steamHost; LayoutAll(); }
-    static const wchar_t* marks[] = {L"\x2026", L"\x2713", L"!", L"\x2013"};      // checking, OK, needs a look, off
     nf_host_row rows[NF_ROWS]; if (host) nf_host_rows(rows); bool relayout = false;
     for (int i = 0; i < NF_ROWS; ++i) {
-        int st = host ? rows[i].state : NF_OFF; if (st != g_fjState[i]) g_fjState[i] = st;
-        std::wstring t = host ? std::wstring(marks[rows[i].state & 3]) + L"  " + W(std::string(rows[i].title) + ": " + rows[i].result) + (rows[i].state == NF_WARN && rows[i].fix[0] ? L"\n" + W(rows[i].fix) : L"") : std::wstring(i == 0 ? L"Shown while you host." : L"");
-        wchar_t cur[600] = {}; GetWindowTextW(LB(ID_LB_FJ0 + i), cur, 600); if (t != cur) { SetWindowTextW(LB(ID_LB_FJ0 + i), t.c_str()); relayout = true; }
+        int st = host ? rows[i].state : NF_OFF; bool tall = FjTall(st), wasTall = FjTall(g_fjState[i]); g_fjState[i] = st;
+        FjRow r{host ? W(rows[i].title) : L"", host ? W(rows[i].result) : L"", host && rows[i].state == NF_WARN ? W(rows[i].fix) : L""};
+        if (r.title != g_fj[i].title || r.result != g_fj[i].result || r.fix != g_fj[i].fix || tall != wasTall) {
+            g_fj[i] = r; std::wstring full = r.title.empty() ? L"" : r.title + L": " + r.result + (r.fix.empty() ? L"" : L"\n" + r.fix);
+            SetWindowTextW(LB(ID_LB_FJ0 + i), full.c_str()); FjTip(LB(ID_LB_FJ0 + i), full); InvalidateRect(LB(ID_LB_FJ0 + i), nullptr, FALSE); if (tall != wasTall) relayout = true;
+        }
     }
     if (relayout) LayoutAll();
     if (host) { std::string code; if (HostInvite(&code, nullptr)) { std::wstring wc = W(code); wchar_t cur[200] = {}; GetWindowTextW(LB(ID_LB_INVITE_SHOW), cur, 200); if (wc != cur) SetWindowTextW(LB(ID_LB_INVITE_SHOW), wc.c_str()); } }
@@ -728,8 +752,9 @@ void DrawMember(DRAWITEMSTRUCT* d) {
     HDC dc = d->hDC; RECT r = d->rcItem; HBRUSH bg = CreateSolidBrush((d->itemState & ODS_SELECTED) ? th::kSurface2 : th::kSurface); FillRect(dc, &r, bg); DeleteObject(bg);
     if (d->itemID == (UINT)-1 || d->itemID >= g_shown.members.size()) return; const auto& m = g_shown.members[d->itemID]; SetBkMode(dc, TRANSPARENT);
     th::DrawDot(dc, r.left + 16, (r.top + r.bottom) / 2, 6, m.speaking ? th::kAccent : (m.ready || m.host ? th::kWarm : th::kMuted), m.speaking || m.ready || m.host);
-    SelectObject(dc, m.host ? th::Bold() : th::Body()); SetTextColor(dc, th::kText); RECT nr = r; nr.left += 34; nr.right -= 230; th::Text(dc, W(m.name + (m.id == g_sess.MyId() ? "  (you)" : "")).c_str(), -1, &nr, DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
-    { bool differs = !m.version.empty() && m.version != MOD_VERSION; SelectObject(dc, th::Small()); SetTextColor(dc, differs ? th::kAccent : th::kMuted); RECT vr = r; vr.right -= 120; vr.left = r.right - 230; th::Text(dc, W(m.version).c_str(), -1, &vr, DT_VCENTER | DT_SINGLELINE | DT_RIGHT | DT_END_ELLIPSIS); }
+    SelectObject(dc, m.host ? th::Bold() : th::Body()); SetTextColor(dc, th::kText); bool differs = !m.version.empty() && m.version != MOD_VERSION;      // (the version only when it is not mine: in a narrow column it left the name a few letters)
+    RECT nr = r; nr.left += 34; nr.right -= differs ? 230 : 96; th::Text(dc, W(m.name + (m.id == g_sess.MyId() ? "  (you)" : "")).c_str(), -1, &nr, DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+    if (differs) { SelectObject(dc, th::Small()); SetTextColor(dc, differs ? th::kAccent : th::kMuted); RECT vr = r; vr.right -= 120; vr.left = r.right - 230; th::Text(dc, W(m.version).c_str(), -1, &vr, DT_VCENTER | DT_SINGLELINE | DT_RIGHT | DT_END_ELLIPSIS); }
     const wchar_t* st = m.inGame ? L"in game" : m.host ? L"host" : m.ready ? L"ready" : L"not ready"; SelectObject(dc, th::Small()); SetTextColor(dc, m.inGame ? th::kAccent : m.ready || m.host ? th::kWarm : th::kMuted); RECT sr = r; sr.right -= 12; th::Text(dc, st, -1, &sr, DT_VCENTER | DT_SINGLELINE | DT_RIGHT);
 }
 void DrawLevel(DRAWITEMSTRUCT* d) {
@@ -880,11 +905,12 @@ void LayoutLobby(int W, int H) {
     PlaceId(ID_LB_READY, c1, H - 48, c1w, 34); PlaceId(ID_LB_START, c1, H - 52, c1w, 42);
     PlaceId(ID_LB_H_CHAT, c2, y0, c2w, 20); PlaceId(ID_LB_LOG, c2, y0 + 24, c2w, H - y0 - 24 - 60); PlaceId(ID_LB_CHAT, c2, H - 50, c2w - 96, 32); PlaceId(ID_LB_SEND, c2 + c2w - 88, H - 52, 88, 36);
     int y = y0; PlaceId(ID_LB_H_INVITE, c3, y, c3w, 20); y += 22;
-    for (int i = 0; i < NF_ROWS; ++i) { int rh = std::min(76, TextHeight(LB(ID_LB_FJ0 + i), c3w)); PlaceId(ID_LB_FJ0 + i, c3, y, c3w, rh); y += rh + 2; }      // C1: Steam, Same network, Tailscale, Internet, Windows Firewall: a mark and the result; under a warning its fix
-    PlaceId(ID_LB_INVITE_SHOW, c3, y, c3w, 28); y += 32; PlaceId(ID_LB_COPY, c3, y, (c3w - 8) / 2, 32); PlaceId(ID_LB_STEAM_INVITE, c3 + (c3w + 8) / 2, y, (c3w - 8) / 2, 32); y += 38;
-    bool steamHost = g_sess.Active() && g_sess.IsHost() && g_sess.SteamMode(); ShowId(ID_LB_STEAM_FRIENDS, steamHost); ShowId(ID_LB_STEAM_SEND, steamHost); ShowId(ID_LB_H_STEAMHINT, false);
-    if (steamHost) { PlaceId(ID_LB_STEAM_FRIENDS, c3, y + 2, c3w - 130, 300); PlaceId(ID_LB_STEAM_SEND, c3 + c3w - 122, y, 122, 32); y += 38; }
-    y += 6;
+    for (int i = 0; i < NF_ROWS; ++i) { bool any = !g_fj[i].title.empty(); int rh = any ? FjHeight(g_fjState[i]) : (i == 0 ? 24 : 0); ShowId(ID_LB_FJ0 + i, rh > 0); if (rh) PlaceId(ID_LB_FJ0 + i, c3, y, c3w, rh); y += rh; }      // C1: Steam, Same network, Tailscale, Internet, Windows Firewall: a mark and the result; under a warning its fix
+    // the invite: its code and Copy invite on one line; the Steam buttons only in a Steam lobby (they did nothing in a direct one)
+    y += 6; PlaceId(ID_LB_INVITE_SHOW, c3, y + 2, c3w - 138, 28); PlaceId(ID_LB_COPY, c3 + c3w - 130, y, 130, 32); y += 40;
+    bool steamHost = g_sess.Active() && g_sess.IsHost() && g_sess.SteamMode(); ShowId(ID_LB_STEAM_FRIENDS, steamHost); ShowId(ID_LB_STEAM_SEND, steamHost); ShowId(ID_LB_STEAM_INVITE, steamHost); ShowId(ID_LB_H_STEAMHINT, false);
+    if (steamHost) { PlaceId(ID_LB_STEAM_FRIENDS, c3, y + 2, c3w - 268, 300); PlaceId(ID_LB_STEAM_SEND, c3 + c3w - 260, y, 122, 32); PlaceId(ID_LB_STEAM_INVITE, c3 + c3w - 130, y, 130, 32); y += 40; }
+    y += 8;
     PlaceId(ID_LB_H_PLAY, c3, y, c3w, 20); y += 26; PlaceId(ID_LB_H_GAME, c3, y + 6, 90, 22); PlaceId(ID_LB_MODE, c3 + 96, y + 2, c3w - 96, 200); y += 38;
     bool race = SendMessageW(LB(ID_LB_MODE), CB_GETCURSEL, 0, 0) == 1;
 #ifdef WL_MUT_GOAL_ALWAYS
@@ -892,7 +918,7 @@ void LayoutLobby(int W, int H) {
 #endif
     ShowId(ID_LB_H_GOAL, race); ShowId(ID_LB_GOAL, race); ShowId(ID_LB_H_GOALHINT, race);      // the race goal only for a race (owner, 2026-11-06)
     if (race) { PlaceId(ID_LB_H_GOAL, c3, y + 6, 90, 22); PlaceId(ID_LB_GOAL, c3 + 96, y + 2, c3w - 96, 30); y += 34; PlaceId(ID_LB_H_GOALHINT, c3 + 96, y, c3w - 96, 20); y += 26; }
-    PlaceId(ID_LB_NEWGAME, c3, y, c3w, 28); y += 34; PlaceId(ID_LB_PARTS, c3, y, c3w, 34); y += 40; PlaceId(ID_LB_PARTSINFO, c3, y, c3w, 20); y += 26; PlaceId(ID_LB_RESULT, c3, y, c3w, std::max(20, H - y - 8));
+    PlaceId(ID_LB_NEWGAME, c3, y + 3, 140, 28); PlaceId(ID_LB_PARTS, c3 + 150, y, c3w - 150, 34); y += 40; PlaceId(ID_LB_PARTSINFO, c3 + 150, y, c3w - 150, 20); y += 24; PlaceId(ID_LB_RESULT, c3, y, c3w, std::max(20, H - y - 8));
 }
 void BuildLobbyPanel(HWND pg) {
     auto mk = [&](const wchar_t* cls, const wchar_t* text, DWORD style, int id) { return Make(pg, cls, text, style, 0, 0, 10, 10, id); };
@@ -903,7 +929,7 @@ void BuildLobbyPanel(HWND pg) {
     mk(L"BUTTON", L"Ready", BS_AUTOCHECKBOX, ID_LB_READY); mk(L"BUTTON", L"Start game", BS_DEFPUSHBUTTON, ID_LB_START);
     head(L"CHAT", ID_LB_H_CHAT); mk(L"EDIT", L"", WS_BORDER | ES_MULTILINE | ES_READONLY | WS_VSCROLL | ES_AUTOVSCROLL, ID_LB_LOG);
     HWND ce = mk(L"EDIT", L"", WS_BORDER | ES_AUTOHSCROLL, ID_LB_CHAT); SetWindowSubclass(ce, ChatEditProc, 3, 0); mk(L"BUTTON", L"Send", BS_PUSHBUTTON, ID_LB_SEND);
-    head(L"FRIENDS CAN JOIN BY", ID_LB_H_INVITE); for (int i = 0; i < NF_ROWS; ++i) SendMessageW(mk(L"STATIC", L"", SS_LEFT | SS_NOPREFIX, ID_LB_FJ0 + i), WM_SETFONT, (WPARAM)th::Small(), TRUE);
+    head(L"FRIENDS CAN JOIN BY", ID_LB_H_INVITE); for (int i = 0; i < NF_ROWS; ++i) { g_fjState[i] = NF_OFF; SendMessageW(mk(L"STATIC", L"", SS_OWNERDRAW | SS_NOTIFY, ID_LB_FJ0 + i), WM_SETFONT, (WPARAM)th::Small(), TRUE); }
     mk(L"EDIT", L"", WS_BORDER | ES_AUTOHSCROLL | ES_READONLY, ID_LB_INVITE_SHOW);
     mk(L"BUTTON", L"Copy invite", BS_PUSHBUTTON, ID_LB_COPY); mk(L"BUTTON", L"Steam overlay", BS_PUSHBUTTON, ID_LB_STEAM_INVITE);
     { HWND fc = mk(L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_VSCROLL, ID_LB_STEAM_FRIENDS); SendMessageW(fc, CB_ADDSTRING, 0, (LPARAM)L"(Steam lobby only)"); SendMessageW(fc, CB_SETCURSEL, 0, 0); }
@@ -938,16 +964,20 @@ void BuildAbout(HWND pg) {
     Make(pg, L"BUTTON", L"Check for updates", BS_DEFPUSHBUTTON, 0, 0, 10, 10, ID_UP_CHECK); Make(pg, L"BUTTON", L"Update", BS_PUSHBUTTON, 0, 0, 10, 10, ID_UP_APPLY); Make(pg, L"BUTTON", L"Later", BS_PUSHBUTTON, 0, 0, 10, 10, ID_UP_LATER);
     Make(pg, L"STATIC", L"", SS_LEFT | SS_ENDELLIPSIS, 0, 0, 10, 10, ID_UP_STATUS); Make(pg, L"EDIT", L"", WS_BORDER | ES_MULTILINE | ES_READONLY | WS_VSCROLL | ES_AUTOVSCROLL, 0, 0, 10, 10, ID_UP_NOTES);
     Make(pg, L"BUTTON", L"Check for updates when the launcher starts (once a day at most; nothing about you is sent)", BS_AUTOCHECKBOX, 0, 0, 10, 10, ID_UP_AUTO);
+    Make(pg, L"STATIC", L"Updates to offer", SS_LEFT, 0, 0, 10, 10, ID_UP_WHICH);      // full releases only, or pre-releases too (owner, 2026-11-06); the same setting as Settings, Launcher
+    Make(pg, L"BUTTON", L"Full releases", BS_AUTORADIOBUTTON | WS_GROUP | WS_TABSTOP, 0, 0, 10, 10, ID_UP_REL); Make(pg, L"BUTTON", L"Pre-releases too (newer, less tested)", BS_AUTORADIOBUTTON, 0, 0, 10, 10, ID_UP_PRE);
     Make(pg, L"BUTTON", L"Quick guide", BS_PUSHBUTTON, 0, 0, 10, 10, ID_GUIDE_BTN); th::MarkMuted(Make(pg, L"STATIC", L"Every co-op key and what it does (hold F1 anywhere in the launcher or the game).", SS_LEFT, 0, 0, 10, 10, ID_ABOUT_GUIDE_TXT));
     Make(pg, L"BUTTON", L"Send diagnostics", BS_PUSHBUTTON, 0, 0, 10, 10, ID_DIAG); th::MarkMuted(Make(pg, L"STATIC", L"Report a problem: a zip of logs and settings on your Desktop (names and addresses replaced, nothing uploaded).", SS_LEFT, 0, 0, 10, 10, ID_ABOUT_DIAG_TXT));
     Make(pg, L"BUTTON", L"Project page", BS_PUSHBUTTON, 0, 0, 10, 10, ID_LINK_HOME); Make(pg, L"BUTTON", L"Release notes", BS_PUSHBUTTON, 0, 0, 10, 10, ID_LINK_NOTES);
     th::MarkMuted(Make(pg, L"STATIC", L"Credits: The Witness is by Thekla, Inc. This co-op mod is a fan project (MIT licence), not made or endorsed by Thekla. Steam features go through the game's own Steam library.", SS_LEFT, 0, 0, 10, 10, ID_CREDITS));
     Make(pg, L"STATIC", L"Game folder", SS_LEFT, 0, 0, 10, 10, ID_FOLDER_LABEL); Make(pg, L"EDIT", g_dir.c_str(), WS_BORDER | ES_AUTOHSCROLL | ES_READONLY, 0, 0, 10, 10, ID_GAMEDIR); Make(pg, L"BUTTON", L"Browse...", BS_PUSHBUTTON, 0, 0, 10, 10, ID_BROWSE);
 }
+bool g_upNotes;      // About shows the release notes box (an update found or just applied)
 void LayoutAbout(int W, int H) {
     (void)H; int m = 24, y = 16, cw = std::min(W - 2 * m, 1000);
     PlaceId(ID_UP_VER, m, y, cw, 28); y += 40; PlaceId(ID_UP_CHECK, m, y, 200, 36); PlaceId(ID_UP_APPLY, m + 210, y, 110, 36); PlaceId(ID_UP_LATER, m + 330, y, 100, 36); y += 44;
-    PlaceId(ID_UP_STATUS, m, y, cw, 22); y += 26; PlaceId(ID_UP_NOTES, m, y, cw, 90); y += 98; PlaceId(ID_UP_AUTO, m, y, cw, 26); y += 44;
+    PlaceId(ID_UP_STATUS, m, y, cw, 22); y += 26; if (g_upNotes) { PlaceId(ID_UP_NOTES, m, y, cw, 90); y += 98; } ShowId(ID_UP_NOTES, g_upNotes); PlaceId(ID_UP_AUTO, m, y, cw, 26); y += 34;      // (the release notes only while there are some: owner, 2026-11-06)
+    PlaceId(ID_UP_WHICH, m, y + 2, 160, 22); PlaceId(ID_UP_REL, m + 170, y, 170, 26); PlaceId(ID_UP_PRE, m + 350, y, std::max(10, cw - 350), 26); y += 44;
     PlaceId(ID_GUIDE_BTN, m, y, 200, 36); PlaceId(ID_ABOUT_GUIDE_TXT, m + 214, y + 8, cw - 214, 22); y += 46;
     PlaceId(ID_DIAG, m, y, 200, 36); PlaceId(ID_ABOUT_DIAG_TXT, m + 214, y + 8, cw - 214, 22); y += 46;
     PlaceId(ID_LINK_HOME, m, y, 200, 36); PlaceId(ID_LINK_NOTES, m + 210, y, 200, 36); y += 50;
@@ -956,16 +986,23 @@ void LayoutAbout(int W, int H) {
 }
 
 // ---- the update banner (Play) and the About block follow the updater's state
+// which updates are offered, shown the same on About and in Settings (auto, an installed pre-release's default, shows as what it means: pre-releases too)
+void SyncUpdChoice() {
+    bool pre = g_upd.Get().offersPre; auto set = [](HWND h, bool on) { if (h && (SendMessageW(h, BM_GETCHECK, 0, 0) == BST_CHECKED) != on) SendMessageW(h, BM_SETCHECK, on ? BST_CHECKED : BST_UNCHECKED, 0); };
+    set(C(ID_UP_REL), !pre); set(C(ID_UP_PRE), pre);
+    if (Field* f = ByKey("upd:pre")) if (f->h && SendMessageW(f->h, CB_GETCURSEL, 0, 0) != (pre ? 1 : 0)) SendMessageW(f->h, CB_SETCURSEL, pre ? 1 : 0, 0);
+}
 void UpdateUi() {
+    SyncUpdChoice();
     static std::string lastMsg; static int lastState = -1; static bool lastRefused, lastLobby;
     wup::Snapshot s = g_upd.Get(); bool refused = g_sess.Active() && !g_sess.IsHost() && g_sess.Refused() == wlobby::kVersionMismatch, lobby = g_sess.Active();
     if (s.message == lastMsg && (int)s.state == lastState && refused == lastRefused && lobby == lastLobby) return; lastMsg = s.message; lastState = (int)s.state; lastRefused = refused; lastLobby = lobby;
     bool avail = s.state == wup::kAvailable;
     SetWindowTextW(C(ID_UP_STATUS), W(s.message).c_str()); SetWindowTextW(C(ID_UP_NOTES), W(avail || s.state == wup::kApplied ? s.tag + "\r\n" + std::string(s.notes) : "").c_str());
+    { bool notes = avail || s.state == wup::kApplied; if (notes != g_upNotes) { g_upNotes = notes; LayoutAll(); } }
     for (int id : {ID_UP_APPLY, ID_UP_LATER}) ShowId(id, avail && !s.managed);      // (a mod manager's install: the manager updates it, the message says so)
     EnableWindow(C(ID_UP_CHECK), !g_upd.Busy()); SendMessageW(C(ID_UP_AUTO), BM_SETCHECK, s.autoCheck ? BST_CHECKED : BST_UNCHECKED, 0);
     if (Field* f = ByKey("upd:auto")) SendMessageW(f->h, BM_SETCHECK, s.autoCheck ? BST_CHECKED : BST_UNCHECKED, 0);
-    if (Field* f = ByKey("upd:pre")) SendMessageW(f->h, BM_SETCHECK, s.prereleases == 1 ? BST_CHECKED : BST_UNCHECKED, 0);
     std::string first = s.notes.substr(0, s.notes.find_first_of("\r\n")); if (first.size() > 60) first = first.substr(0, 57) + "...";
     SetWindowTextW(C(ID_UP_BANNER), avail ? W("Update available: " + s.tag + (s.managed ? ". Installed by Vortex: update it in Vortex" : first.empty() ? "" : " (" + first + ")")).c_str() : L"");
     for (int id : {ID_UP_BANNER, ID_UP_WHATSNEW}) ShowId(id, avail && !lobby);      // F3: a banner on Play, never over a lobby
@@ -1037,7 +1074,8 @@ void WriteStat() {      // tests: what the lobby is, as text lines, rewritten ev
     snprintf(b, sizeof b, "game pid %lu running %d launches %u\n", (unsigned long)g_gamePid, g_game ? 1 : 0, g_launches); o += b;
     { wchar_t sb[400] = {}, hb[400] = {}; GetWindowTextW(g_status, sb, 400); GetWindowTextW(g_hints, hb, 400); HWND f = GetFocus(); Field* ff = f ? ByHwnd(f) : nullptr; RECT cr; GetClientRect(g_main, &cr); std::string fk = ff ? ff->key : (f ? std::to_string(GetDlgCtrlID(f)) : std::string("-"));
       snprintf(b, sizeof b, "ui tab %d label %s lobbyview %d section %d choice %s padlast %d capture %d focus %s client %ld %ld\n", CurTab(), ls::TabLabel(CurTab(), g_sess.Active()), IsWindowVisible(g_lobbyPanel) ? 1 : 0, g_section, ls::ChoiceKey(g_choice), g_padLast ? 1 : 0, g_capture, fk.c_str(), cr.right, cr.bottom); o += b;
-      o += "font " + th::FontState() + "\n"; o += "textscreen " + std::to_string(th::ScreenTextDraws()) + "\n"; o += "art " + th::ArtState() + "\n"; o += "anim " + th::AnimState() + "\n"; o += "thumbs " + std::to_string(g_thumbs ? ImageList_GetImageCount(g_thumbs) : 0) + " of " + std::to_string(g_saves.size()) + "\n";
+      o += "font " + th::FontState() + "\n"; o += "textscreen " + std::to_string(th::ScreenTextDraws()) + "\n"; o += "art " + th::ArtState() + "\n"; o += "backdrop " + th::BackdropState() + "\n";
+      { HWND ft = GetFocus(); wchar_t fc[40] = {}; if (ft) GetClassNameW(ft, fc, 40); o += "cues " + std::to_string(th::NavCues() ? 1 : 0) + " focustrace " + std::to_string(ft && GetPropW(ft, L"tr0") ? 1 : 0) + " focusclass " + U(fc) + "\n"; } o += "thumbs " + std::to_string(g_thumbs ? ImageList_GetImageCount(g_thumbs) : 0) + " of " + std::to_string(g_saves.size()) + "\n";
       o += "savepic " + std::to_string(g_savePic && IsWindowVisible(g_savePic) ? 1 : 0) + " " + std::to_string(g_picW) + " " + std::to_string(g_picH) + "\n";
       o += "uistatus " + U(sb) + "\n" + "hints " + U(hb) + "\n" + "steamatstart " + g_steamAtStart + "\n" + "joinbox " + EditText(LB(ID_LB_INVITE)) + "\n"; }
     std::wstring tmp = g_statFile + L".tmp"; if (WriteFile8(tmp, o)) MoveFileExW(tmp.c_str(), g_statFile.c_str(), MOVEFILE_REPLACE_EXISTING);
@@ -1121,12 +1159,12 @@ void LayoutAll() {
     Place(g_secList, 12, 12, 240, ph - 24);
     for (int s = 0; s < ls::kSectionCount; ++s) { Place(g_secPanel[s], 270, 8, pw - 282, ph - 16); LayoutSection(g_secPanel[s], s, pw - 282, ph - 16); }
     Place(g_status, 16, h - foot + 8, w - 300, 24); Place(C(ID_FOOT_ACTION), w - 270, h - foot + 4, 254, 30); Place(g_hints, 16, h - 28, w - 32, 22);
-    InvalidateRect(g_main, nullptr, TRUE);
+    RedrawWindow(g_main, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN);      // (every page and control: a control moved by the layout left a stale copy of itself in the lobby)
 }
 void OnFieldChanged(Field& f) {
     if (g_loading) return;
     if (f.key == "upd:auto") { g_upd.SetAutoCheck(SendMessageW(f.h, BM_GETCHECK, 0, 0) == BST_CHECKED); return; }
-    if (f.key == "upd:pre") { g_upd.SetPrereleases(SendMessageW(f.h, BM_GETCHECK, 0, 0) == BST_CHECKED ? 1 : -1); return; }
+    if (f.key == "upd:pre") { g_upd.SetPrereleases(SendMessageW(f.h, CB_GETCURSEL, 0, 0) == 1 ? 1 : 0); SyncUpdChoice(); Status(L"Saved: Updates to offer"); return; }
     if (f.key == "cfg:name") { g_loading = true; SetWindowTextW(C(ID_NAME), W(GetVal(f)).c_str()); g_loading = false; }
 #ifdef WL_MUT_NO_SAVE_ON_CHANGE
     return;      // (mutant: a change is not saved)
@@ -1198,7 +1236,7 @@ void MoveFocus(bool prev) {
     HWND n = GetNextDlgTabItem(page, f, prev); if (n) SetFocus(n);
 }
 void PadAct(ls::PadAction a) {
-    g_padLast = true; HWND f = GetFocus(); std::wstring cls = ClassName(f); Field* fld = f ? ByHwnd(f) : nullptr;
+    g_padLast = true; th::SetNavCues(true); HWND f = GetFocus(); std::wstring cls = ClassName(f); Field* fld = f ? ByHwnd(f) : nullptr;
     bool dropped = cls == L"ComboBox" && SendMessageW(f, CB_GETDROPPEDSTATE, 0, 0);
     switch (a) {
     case ls::kUp: case ls::kDown:
@@ -1254,6 +1292,7 @@ void PadPoll() {
 bool KeyMessage(const MSG& m) {
     if (m.message != WM_KEYDOWN) return false;
     g_padLast = false; bool ctrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0, shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+    if (m.wParam == VK_TAB || (m.wParam >= VK_LEFT && m.wParam <= VK_DOWN)) th::SetNavCues(true);      // (moving with the keyboard: the focused button shows its line)
     if (m.wParam == VK_ESCAPE) { if (g_ng && GetForegroundWindow() == g_ng) return false; return Back() || true; }
     if (ctrl && m.wParam == VK_TAB) { SelectTab(CurTab() + (shift ? -1 : 1)); return true; }
     if (ctrl && m.wParam == VK_RETURN) { Primary(); return true; }
@@ -1296,7 +1335,7 @@ LRESULT CALLBACK MainProc(HWND h, UINT m, WPARAM w, LPARAM l) {
 #endif
     case WM_SETTEXT: case WM_SETICON: { LRESULT r = DefWindowProcW(h, m, w, l); RECT rc; GetClientRect(h, &rc); RECT top = {0, 0, rc.right, th::BannerHeight(rc.bottom)}; InvalidateRect(h, &top, FALSE); return r; }      // (Windows may draw its old title over the banner here)
     case WM_ACTIVATEAPP: if (!w) { g_guideHold.Reset(); ShowGuide(false); } else ClipboardCheck(); break;
-    case WM_ERASEBKGND: { RECT rc; GetClientRect(h, &rc); FillRect((HDC)w, &rc, th::BgBrush()); return 1; }
+    case WM_ERASEBKGND: { RECT rc; GetClientRect(h, &rc); th::FillBg((HDC)w, h, rc); return 1; }
     case WM_PAINT: { PAINTSTRUCT ps; HDC dc = BeginPaint(h, &ps); RECT rc; GetClientRect(h, &rc); th::PaintHeader(dc, rc, th::BannerHeight(rc.bottom)); EndPaint(h, &ps); return 0; }
     case WM_SIZE: LayoutAll(); CaptionChanged(); return 0;
     case WM_GETMINMAXINFO: { MINMAXINFO* mm = (MINMAXINFO*)l; mm->ptMinTrackSize.x = 1024; mm->ptMinTrackSize.y = 640; return 0; }
@@ -1304,7 +1343,7 @@ LRESULT CALLBACK MainProc(HWND h, UINT m, WPARAM w, LPARAM l) {
     case WM_DRAWITEM: {      // each row drawn off screen and copied once: the lobby's list is redrawn every tick, and a row drawn on screen in steps (its background, then its text) flickered
         DRAWITEMSTRUCT* src = (DRAWITEMSTRUCT*)l; DRAWITEMSTRUCT b = *src; DRAWITEMSTRUCT* d = &b; int iw = std::max<LONG>(1, src->rcItem.right - src->rcItem.left), ih = std::max<LONG>(1, src->rcItem.bottom - src->rcItem.top);
         HDC mem = CreateCompatibleDC(src->hDC); HBITMAP bmp = CreateCompatibleBitmap(src->hDC, iw, ih); HGDIOBJ ob = SelectObject(mem, bmp); b.hDC = mem; OffsetRect(&b.rcItem, -src->rcItem.left, -src->rcItem.top);
-        if (d->CtlID == ID_LB_MEMBERS) DrawMember(d); else if (d->CtlID == ID_JOIN_LIST) DrawJoinRow(d); else if (d->CtlID == ID_LB_LEVEL) DrawLevel(d); else if (d->CtlID == ID_SECTIONS) DrawSectionItem(d);
+        if (d->CtlID == ID_LB_MEMBERS) DrawMember(d); else if (d->CtlID == ID_JOIN_LIST) DrawJoinRow(d); else if (d->CtlID == ID_LB_LEVEL) DrawLevel(d); else if (d->CtlID == ID_SECTIONS) DrawSectionItem(d); else if (d->CtlID >= ID_LB_FJ0 && d->CtlID <= ID_LB_FJ4) DrawFjRow(d, d->CtlID - ID_LB_FJ0);
         BitBlt(src->hDC, src->rcItem.left, src->rcItem.top, iw, ih, mem, 0, 0, SRCCOPY); SelectObject(mem, ob); DeleteObject(bmp); DeleteDC(mem); return TRUE; }
     case WM_HSCROLL: { Field* f = ByHwnd((HWND)l); if (f && f->kind == kSlider) { SliderText(*f); if (LOWORD(w) == TB_ENDTRACK) OnFieldChanged(*f); } return 0; }
     case WM_TIMER:
@@ -1313,7 +1352,7 @@ LRESULT CALLBACK MainProc(HWND h, UINT m, WPARAM w, LPARAM l) {
             g_fleetingUntil = 0;      // (mutant: "You left the lobby." stays for good)
 #endif
             PollCommands(); LobbyTick(); WriteStat(); DiagPoll(); UpdateUi(); UpdateTabs(); if (g_updFromLobby && g_upd.Available()) { g_updFromLobby = false; g_upd.StartApply(); } }
-        else if (w == 2) { PadPoll(); HWND fg = GetForegroundWindow(); DWORD pid = 0; if (fg) GetWindowThreadProcessId(fg, &pid); static const bool always = _wgetenv(L"WITNESS_LAUNCHER_ANIM") && !wcscmp(_wgetenv(L"WITNESS_LAUNCHER_ANIM"), L"always"); th::AnimTick(h, (always || pid == GetCurrentProcessId()) && !IsIconic(h)); }      // (WITNESS_LAUNCHER_ANIM=always: tests film the line without taking the focus)
+        else if (w == 2) PadPoll();
         return 0;
     case WM_CLOSE: nf_host_close(); g_voice.Stop(); g_sess.Stop(); DestroyWindow(h); return 0;      // (nf_host_close: the router mappings go before the launcher does)
     case WM_COMMAND: {
@@ -1376,6 +1415,12 @@ LRESULT CALLBACK MainProc(HWND h, UINT m, WPARAM w, LPARAM l) {
         }
         else if (id == ID_UP_CHECK) g_upd.StartManual();
         else if (id == ID_UP_APPLY || id == ID_UP_BANNER_APPLY) g_upd.StartApply();
+        else if ((id == ID_UP_REL || id == ID_UP_PRE) && HIWORD(w) == BN_CLICKED) {
+#ifndef WL_MUT_UPD_CHOICE_UNSAVED
+            g_upd.SetPrereleases(id == ID_UP_PRE ? 1 : 0);
+#endif
+            SyncUpdChoice(); Status(id == ID_UP_PRE ? L"Saved: pre-releases are offered too" : L"Saved: only full releases are offered");
+        }
         else if (id == ID_UP_LATER || id == ID_UP_BANNER_LATER) g_upd.Later();
         else if (id == ID_UP_AUTO && code == BN_CLICKED) g_upd.SetAutoCheck(SendMessageW(C(ID_UP_AUTO), BM_GETCHECK, 0, 0) == BST_CHECKED);
         else if (id == ID_LB_UPDATE) { if (g_upd.Available()) g_upd.StartApply(); else { g_updFromLobby = true; g_upd.StartManual(); } }      // (the mismatch's Update button: the same check, then the same apply)
@@ -1450,6 +1495,9 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, LPWSTR cmdline, int show) {
             continue;
         }
         if (msg.message == WM_LBUTTONDOWN || msg.message == WM_MOUSEMOVE) g_padLast = false;
+        { static POINT last = {-99999, -99999}; POINT pt = msg.pt;      // the mouse in use: no focus line (a WM_MOUSEMOVE without movement, as Windows sends when a window appears under a resting pointer, does not count)
+          if (msg.message == WM_LBUTTONDOWN || msg.message == WM_RBUTTONDOWN || (msg.message == WM_MOUSEMOVE && last.x != -99999 && (pt.x != last.x || pt.y != last.y))) th::SetNavCues(false);
+          if (msg.message == WM_MOUSEMOVE) last = pt; }
         if ((!g_ng || GetForegroundWindow() != g_ng) && KeyMessage(msg)) continue;
         if (!IsDialogMessageW(g_ng ? g_ng : g_main, &msg)) { TranslateMessage(&msg); DispatchMessageW(&msg); }
     }

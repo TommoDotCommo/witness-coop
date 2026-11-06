@@ -11,8 +11,7 @@ No game files are in this repository: every player needs their own copy of The W
 
 ## The launcher
 
-The launcher has four tabs: Play, Saves, Settings and About. It is drawn in the look of the game: the newest save's picture as the banner (a drawn puzzle panel when there is no
-save yet), the game's typeface and its yellow for the main button and the selection.
+The launcher has four tabs: Play, Saves, Settings and About. It is drawn in the look of the game: a sunny sea as the banner, faint puzzle panels behind the pages, the game's typeface and its yellow for the main button and the selection.
 
 ![Play: your name, Host a game, Join a friend, Play solo, and the button Open lobby](showcase/launcher_play.jpg)
 
@@ -210,7 +209,7 @@ They are not shown in pictures here. The options are in the launcher under Setti
 
 ![Settings, Launcher: the experimental options are off](showcase/launcher_launcher.jpg)
 
-The same page has *Show the launcher at start*, *Check for updates when the launcher starts* and *Offer pre-releases*. The two keys of the experimental families (R and J, K)
+The same page has *Show the launcher at start*, *Check for updates when the launcher starts* and *Updates to offer* (full releases, or pre-releases too). The two keys of the experimental families (R and J, K)
 are listed in Controls with "only with Experimental" under them.
 
 ## Listen
