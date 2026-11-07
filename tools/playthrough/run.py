@@ -24,6 +24,7 @@ sys.path.insert(0, HERE); sys.path.insert(0, TOOLS)
 from logic import Logic, CREDITS
 from planner import Planner
 import divergence
+sys.path.insert(0, os.path.join(TOOLS, 'win')); import wtrace      # the typed trace (tools/win/wtrace.py): <run>/trace.jsonl
 from witness import ROOT, RUN, PYW, win, real_saves
 import solver
 TAUGHT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'taught.json')      # learned from recordings of a person (teach.py)
@@ -170,6 +171,7 @@ class Playthrough:
         self.fps, self.drop, self.start, self.resume = fps, drop, start, resume
         self.bots = [Bot(i) for i in range(1, n + 1)]
         self.out = Path(RUN) / 'playthrough' / time.strftime('%Y%m%d-%H%M%S'); self.rec = Recorder(self.out)
+        self.trace = wtrace.Trace(str(self.out / 'trace.jsonl')); self.trace_off = {}; self.trace_lock = threading.Lock()      # the typed trace of the run; each bot's own (walker, teleports) is copied in after every panel
         self.nav_map = Path(ROOT) / 'local' / 'nav_map.bin'      # the walking map every run (and the survey) adds to, whoever runs it (see merge_maps)
         self.manifest = {}; self.paths = {}; self.no_solver = set()
         self.planner = None; self.solved = set(); self.lock = threading.Lock()
@@ -255,7 +257,31 @@ class Playthrough:
             self.last_why[h] = 'bot error: %r' % e; self.rec('failed', bot=bot.id, panel='%#x' % h, name=self.logic.entities[h].name, area=self.logic.entities[h].area, seconds=0, why=self.last_why[h])
             return False
 
+    def bot_trace(self, bot):
+        """Copy the lines the bot's walker and drawing script wrote since the last call into the run's trace.jsonl, in order."""
+        try:
+            with open(bot.dir / 'trace.jsonl', 'rb') as f:
+                f.seek(self.trace_off.get(bot.id, 0)); data = f.read()
+        except OSError: return
+        whole = data[:data.rfind(b'\n') + 1]; self.trace_off[bot.id] = self.trace_off.get(bot.id, 0) + len(whole)
+        with self.trace_lock:
+            for line in whole.decode(errors='replace').splitlines():
+                try: rec = wtrace.check(json.loads(line))
+                except ValueError: continue
+                rec['bot'] = bot.id; self.trace.lines.append(rec); self.trace.f.write(json.dumps(rec) + '\n')
+            self.trace.f.flush()
+
     def _solve(self, bot, h, redraw=False):
+        with self.trace_lock: self.trace.emit('panel_start', panel='%#x' % h, ok='', why='', bot=bot.id)
+        ok = False; why = ''
+        try:
+            ok = self._solve1(bot, h, redraw); why = '' if ok else self.last_why.get(h, '')
+            return ok
+        finally:
+            self.bot_trace(bot)
+            with self.trace_lock: self.trace.emit('panel_end', panel='%#x' % h, ok=bool(ok), why=why, bot=bot.id)
+
+    def _solve1(self, bot, h, redraw=False):
         import sweep
         e = self.logic.entities[h]; path = self.paths[h]; t0 = time.time()
         script = 'wwalk.py' if str(h) in sweep.floor_panels() else 'wdraw.py'
@@ -514,7 +540,9 @@ class Playthrough:
                  divergences=sum(1 for e in ev if e['kind'] == 'divergence' and e.get('persistent', True)), divergence_check=divergence.summary(ev), transient_differences=sum(1 for e in ev if e['kind'] == 'divergence' and e.get('persistent') is False), crashes=sum(1 for e in ev if e['kind'] == 'crash'),
                  no_solver=sorted('%#x' % h for h in self.no_solver), blocked=[e for e in ev if e['kind'] == 'blocked'][-1:] or None,
                  movement=dict(walks=sum(1 for m in moves if m['how'] == 'walk' and m.get('ok')), walks_failed=sum(1 for m in moves if m['how'] == 'walk' and not m.get('ok')),
-                               teleports=sum(1 for m in moves if m['how'] == 'teleport'), metres_walked=round(sum(m.get('walked', 0) for m in moves))))
+                               teleports=sum(1 for m in moves if m['how'] == 'teleport'), metres_walked=round(sum(m.get('walked', 0) for m in moves)),
+                               teleports_after_giveup=sum(1 for e in solves + fails for a, b in zip(e.get('moves', []), e.get('moves', [])[1:]) if b['how'] == 'teleport' and a['how'] == 'walk' and not a.get('ok')),      # (a teleport is the last resort: it follows a walk that gave up)
+                               giveups=[dict(panel=e['panel'], **m['giveup']) for e in solves + fails for m in e.get('moves', []) if m.get('giveup')][:60]))
         (self.out / 'summary.json').write_text(json.dumps(s, indent=1)); print('SUMMARY', json.dumps(s), flush=True)
 
 

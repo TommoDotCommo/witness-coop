@@ -42,7 +42,7 @@ bots = [run.Bot(i + 1) for i in range(n)]
 for b in bots:
     b.prepare('id=1\nlisten=%d\nsave_dir=instance\nshare_zip=1\n' % b.port, 60, 0)
     saves = b.dir / 'appdata' / 'The Witness'; saves.mkdir(parents=True, exist_ok=True); replace_copy(save, saves / save.name)
-    for f in ('wnav_map.bin', 'wnav_trace.jsonl'): (b.dir / f).unlink(missing_ok=True)
+    for f in ('wnav_map.bin', 'wnav_trace.jsonl', 'trace.jsonl'): (b.dir / f).unlink(missing_ok=True)
     shutil.copyfile(root / os.environ.get('WALK_BENCH_MAP', 'local/nav_map.bin'), b.dir / 'wnav_map.bin')      # every run starts from the same map (WALK_BENCH_MAP: a learnt one, see the usage)
     b.start(new_game=False)
 for b in bots: run.wait(lambda: 'resources ready' in (b.dir / 'witness_proxy.log').read_text(errors='ignore'), 'bot %d loaded' % b.id, 400)
@@ -53,7 +53,7 @@ def walk(k):
     r = subprocess.run([PYW, '-I', win(os.path.join(run.TOOLS, 'win', 'wbench.py')), b.pid, win(str(b.dir)), win(str(res)), ','.join(shares[k])],
                        env=env, capture_output=True, text=True, errors='replace', timeout=7200)
     (out / ('wbench_b%d.log' % b.id)).write_text(r.stdout + '\n--- stderr\n' + r.stderr[-20000:])
-    for f in ('wnav_trace.jsonl', 'witness_proxy.log', 'wnav_map.bin'):
+    for f in ('wnav_trace.jsonl', 'trace.jsonl', 'witness_proxy.log', 'wnav_map.bin'):      # (trace.jsonl: the typed trace, tools/win/wtrace.py)
         if (b.dir / f).exists(): shutil.copyfile(b.dir / f, out / ('%s_b%d%s' % (Path(f).stem, b.id, Path(f).suffix)))
     for f in (b.dir).glob('wnav_*stuck*.bin'): shutil.copyfile(f, out / ('%s_b%d.bin' % (f.stem, b.id)))      # (WNAV_KEEP=1: a depth picture at each stuck)
     return res
@@ -67,4 +67,6 @@ EOF
 cd ../..
 python3 tools/walk_bench.py table "$OUT/results.jsonl" | tee "$OUT/table.txt"
 echo "results: $OUT"
+# the typed trace: the legs as rows, and the checks (a teleport follows a giveup; a walked leg has none)
+python3 tools/trace_summary.py "$OUT"/trace_b*.jsonl | tee "$OUT/trace_summary.txt" || echo "TRACE PROBLEMS (see $OUT/trace_summary.txt)"
 if [ -n "$BEFORE" ]; then python3 tools/walk_bench.py compare "$BEFORE" "$OUT/results.jsonl" | tee "$OUT/compare.txt"; fi

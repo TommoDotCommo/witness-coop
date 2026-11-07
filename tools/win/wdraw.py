@@ -142,13 +142,20 @@ def walk_to(hx, hy, hz, tol=1.0):
     import wnav
     if walker is None: walker = wnav.Walker(p, c, gdir, log=dbg)
     d = math.dist(p.camera()[0][:2], (hx, hy))
-    r = walker.go((hx, hy, hz), tol, min(300.0, 60.0 + 2.0 * d), ztol=1.8)
+    r = walker.go((hx, hy, hz), tol, min(300.0, 60.0 + 2.0 * d), ztol=1.8, leg='%#x' % eid)
     if r['ok'] and tol < 0.5: r['settled'] = round(walker.settle((hx, hy)), 2)      # onto the exact spot
     MOVES.append({'how': 'walk', 'ok': r['ok'], 'why': r['why'], 'seconds': r['seconds'], 'walked': r['walked'], 'stuck': r['stuck'], 'settled': r.get('settled'),
-                  'backouts': r.get('backouts', 0), 'sidesteps': r.get('sidesteps', 0)})
+                  'backouts': r.get('backouts', 0), 'sidesteps': r.get('sidesteps', 0),
+                  'giveup': None if r['ok'] else {'why': r['why'], 'detail': r['detail'], 'distance_left': r['distance_left'], 'stuck_class': r['stuck_class'], 'tried': r['tried'][-12:]}})      # (the WalkResult of a walk that did not get there: a teleport after it is no surprise)
     stamp('walked %.0f m in %.0f s: %s' % (r['walked'], r['seconds'], 'there' if r['ok'] else r['why']))
     return r['ok']
-def teleported(why): MOVES.append({'how': 'teleport', 'why': why}); stamp('TELEPORT (last resort): %s' % why)
+def teleported(why):
+    """A teleport is the last resort and always follows a giveup in the typed trace (tools/win/wtrace.py): the walker wrote its own; when none was
+    written (walking is off, or it arrived but not at the standing place) one is written here."""
+    MOVES.append({'how': 'teleport', 'why': why}); stamp('TELEPORT (last resort): %s' % why)
+    import wtrace
+    tr = walker.tr if walker is not None else wtrace.Trace(os.path.join(gdir, 'trace.jsonl'))
+    wtrace.teleport(tr, why, 'walking is off' if not WALK else 'not at the standing place')
 def hover_to(hx, hy, hz, yaw, why):
     """Walk to (hx, hy); when that fails, the old way: held there (a teleport) and let go to settle."""
     if walk_to(hx, hy, hz): return

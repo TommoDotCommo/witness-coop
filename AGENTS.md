@@ -26,7 +26,9 @@ prepare a reviewable diff before asking to publish. Never force-push.
 - Puzzle sweep: `tools/sweep.sh` / `tools/sweep.py` (every panel), `tools/puzzle.sh` / `puzzle.py` (one panel), `tools/solver.py` (which line to draw),
   `tools/psolve/` (the rule solver, C++, `make -C tools/psolve test`), `tools/win/wdraw.py` (walk there, enter, find the start, draw), `tools/win/wpanels.py` (manifest).
 - Walking: `tools/win/wnav.py` (the player walks with mouse and keys; it maps the island from the proxy's `depthdump` and plans with A*;
-  teleport only when a walk fails, and every move is recorded), `tools/navmap.py` (picture of a map), `python3 tools/test_wnav.py` (game-free, with mutants).
+  teleport only when a walk fails, and every move is recorded), `tools/navmap.py` (picture of a map), `python3 tools/test_wnav.py` (game-free, with mutants),
+  `python3 tools/test_navsim.py` (the real planner and walk loop on simulated levels; a planner or walker change merges only with it passing and a
+  before/after of `tools/test_walk_bench.sh`: `docs/WALKER.md`).
 - Collision oracle (the engine's own ray cast and ground query, `proxy/oracle.cpp`; how it was found and what it cannot see: `docs/COLLISION-ORACLE.md`):
   commands `ray`, `ground`, `where`, `oracle` (batch), `scan` (map cells); `tools/oracle_live.py` (one game from a save, batch queries, `check`),
   `tools/oracle_map.py` (map a rectangle: the player is held at each tile so its collision is loaded), `proxy/core/oracle_cell.h` (cells from queries,
