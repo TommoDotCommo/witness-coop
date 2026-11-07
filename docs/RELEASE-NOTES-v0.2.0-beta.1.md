@@ -84,10 +84,12 @@ The [README](../README.md) covers installing, hosting and joining.
 - **Controllers through Steam:** pick Steam's Gamepad template for The Witness (its own controller setting sends only
   keyboard and mouse). On a Steam Deck, set L4 to Select (View) and R4 to the key B (push to talk). The same layout is
   in the zip as `steam-input/witness-coop_deck.vdf`. The README has the steps.
-- **The quick guide (hold F1)** is up to date: Steam lobbies and Tailscale, what's shared, and how to report a problem.
-  The developer keys only appear when the developer menu is on.
+- **The quick guide (hold F1)** is up to date and easier to read: one table of keys with readable names (Middle mouse,
+  Mouse 4, Mouse wheel) and short sections on playing together, hosting and joining, the controller and what to do
+  when something goes wrong. The developer keys only appear when the developer menu is on.
 - **Join and leave notices:** "Fox joined", "Lost Fox, waiting up to 30 s", "Reconnecting to Fox".
-- **The co-op text uses the game's own typeface**, read from your copy of the game.
+- **The co-op text uses the game's own typeface**, read from your copy of the game, and sits centred in its buttons
+  and boxes.
 - **The symmetry panels** now show the other player's mirrored line as well as the one they're drawing.
 
 ## The adventurer

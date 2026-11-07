@@ -39,7 +39,7 @@ prepare a reviewable diff before asking to publish. Never force-push.
   `wdraw.py` (`WDRAW_TAUGHT`); `python3 tools/playthrough/test_teach.py` (game-free, with mutants).
 - `dist/`: the player installer (`installer.c` stub -> `Witness-Coop-Setup.exe`, `installer-gui.ps1`, `witness-coop.ps1`, the
   ownership journal `install-state.ps1` with the pure decisions in `install-policy.h`), and the player's `README.txt`.
-  `tools/release.sh <version>` builds the zip, `tools/check_release_package.py` checks it, `tools/qa_installer.sh <game folder>`
+  `tools/release.sh <version>` builds the zip and prints the publish command with every asset (`tools/test_release_assets.sh`), `tools/check_release_package.py` checks it, `tools/qa_installer.sh <game folder>`
   runs `tools/test_installer.ps1` on disposable Windows fixtures. Release notes: `docs/RELEASE-NOTES-<version>.md`.
 - One-file setup, build check, signing: `dist/installer.c` + `dist/setup-core.h` (the payload container, its hash and names; `tools/test_setup_core.sh`), `tools/pack_payload.py`, `tools/build_setup.sh`,
   `tools/release.sh` (`SIGN_CMD`, see `docs/SIGNING.md`), `dist/install-linux.sh` (`tools/test_install_linux.sh`), `common/buildid.h` (the exe fingerprint the proxy and launcher check; `tools/buildid_of.py`

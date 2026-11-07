@@ -17,7 +17,8 @@
 #   SIGN_VERIFY_CMD  optional, same placeholders: a real verification, e.g. 'signtool.exe verify /pa {win}'. A structural check (tools/pe_signature.py:
 #                    the file carries a certificate block) always runs after signing.
 # Order matters: the parts are signed first, THEN hashed and embedded in the one-file setup, THEN the setup itself is signed, THEN the zip is built.
-# Publishing is a separate step (ask the owner first): gh release create <version> --prerelease <the zip, the Setup.exe and their .sha256 files>
+# Publishing is a separate step (ask the owner first): the build ends by printing the exact `gh release create` command with every asset
+# (the Setup.exe, the zip, their .sha256 files, the Vortex extension, the MO2 plug-in) and writes it to local/release/PUBLISH-<version>.txt.
 set -euo pipefail
 here="$(cd "$(dirname "$0")/.." && pwd)"
 ver="${1:-$(git -C "$here" describe --tags --always --dirty)}"
@@ -53,7 +54,7 @@ fi
 # the mod version goes into the VERSIONINFO of every binary (and MOD_VERSION): the release version, not `git describe`
 make -s -C "$here/proxy" VERSION="$ver"
 make -s -C "$here/launcher" launcher VERSION="$ver"
-rm -rf "$stage" "$single" "$out/$name.zip" "$out/$name.zip.sha256"
+rm -rf "$stage" "$single" "$out/$name.zip" "$out/$name.zip.sha256" "$out/PUBLISH-$ver.txt"
 mkdir -p "$stage/witness_models" "$stage/steam-input" "$single"
 cp "$here/proxy/dsound.dll" "$stage/"
 cp "$here/launcher/build/witness_launcher.exe" "$stage/"
@@ -93,7 +94,7 @@ z.close()' "$name")
 # one version everywhere: GitHub Releases is canonical; Nexus gets this very zip under the same version string (a copy note, nothing is uploaded)
 python3 -I "$here/tools/mod_manifest.py" --nexus-note "$out/$name.zip" > "$out/NEXUS-$ver.txt"
 # the mod manager plug-ins, as release assets next to the zip (Vortex extension zip, MO2 basic_games plug-in); nothing is uploaded here
-python3 -I "$here/modmanagers/vortex/build_extension.py" "$out" > /dev/null
+vortex="$(python3 -I "$here/modmanagers/vortex/build_extension.py" "$out")"      # prints the zip it wrote
 cp "$here/modmanagers/mo2/game_thewitness.py" "$out/"
 check=(python3 -I "$here/tools/check_release_package.py" "$out/$name.zip" --single "$single/Witness-Coop-Setup.exe")
 [ -n "${SIGN_CMD:-}" ] && check+=(--require-signed)
@@ -104,3 +105,13 @@ echo "$out/$name.zip ($(du -h "$out/$name.zip" | cut -f1)); symbols for crash re
 echo "$out/NEXUS-$ver.txt (copy note for Nexus Mods)"
 echo "$out/game-thewitness-*.zip (Vortex extension), $out/game_thewitness.py (MO2 plug-in)"
 echo "$single/Witness-Coop-Setup.exe ($(du -h "$single/Witness-Coop-Setup.exe" | cut -f1)) <- the main download"
+# the publish command, with every asset this build made (the plug-ins too: the release notes promise them); nothing is uploaded here
+assets=("$single/Witness-Coop-Setup.exe" "$single/Witness-Coop-Setup.exe.sha256" "$out/$name.zip" "$out/$name.zip.sha256" "$vortex" "$out/game_thewitness.py")
+[ "${RELEASE_MUT_NO_PLUGINS:-}" = 1 ] && assets=("${assets[@]:0:4}")      # mutant for tools/test_release_assets.sh: the old command, without the plug-ins
+for a in "${assets[@]}"; do [ -f "$a" ] || { echo "release asset missing: $a" >&2; exit 1; }; done
+publish=(gh release create "$ver" --title "The Witness Co-op $ver")
+[ -f "$here/docs/RELEASE-NOTES-$ver.md" ] && publish+=(--notes-file "$here/docs/RELEASE-NOTES-$ver.md")
+[[ "$ver" == *-* ]] && publish+=(--prerelease)      # a pre-release part (v0.2.0-beta.1): the updater offers it only to pre-release players (docs/UPDATER.md)
+printf '%q ' "${publish[@]}" "${assets[@]}" | sed 's/ $//' > "$out/PUBLISH-$ver.txt"; echo >> "$out/PUBLISH-$ver.txt"
+echo "To publish (ask the owner first; $out/PUBLISH-$ver.txt):"
+cat "$out/PUBLISH-$ver.txt"

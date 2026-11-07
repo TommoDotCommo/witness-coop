@@ -343,8 +343,9 @@ Microsoft's false-positive submission). `tools/qa_installer.sh <folder of the su
 fixtures (install, update, repair, refusals in plain words, uninstall, the v0.1.0-alpha layout migrated, interrupted and resumed, another mod's `dsound.dll`
 chained), the one-file setup (hash, planted links, exclusive folder, zip location, a real run), `install-linux.sh` (with fixture Proton prefixes), and the mutants (an unknown exe
 installing, an unchecked payload hash, a followed link, a reused folder, a missing zip message, a file overwritten without a backup, an uninstall removing an unowned file, the
-game's Ansel DLL put back unverified, the old proxy left behind, the chain file ignored, the Proton override written for the wrong exe or left behind on uninstall) that must fail. `tools/test_release_signing.sh` tests the signing hook with a stand-in signer. Publishing is `gh release create v0.x.y --prerelease <the Setup.exe, the zip and their .sha256>`
-(the notes go in `docs/RELEASE-NOTES-v0.x.y.md`). The launcher's updater only accepts a release with the exact asset names and tag shape in [docs/UPDATER.md](UPDATER.md).
+game's Ansel DLL put back unverified, the old proxy left behind, the chain file ignored, the Proton override written for the wrong exe or left behind on uninstall) that must fail. `tools/test_release_signing.sh` tests the signing hook with a stand-in signer. Publishing: the build ends by printing the exact `gh release create`
+command (also in `local/release/PUBLISH-v0.x.y.txt`) with every asset: the Setup.exe, the zip, their `.sha256`, the Vortex extension and the MO2 plug-in, `--prerelease` for a version with a
+pre-release part, and the notes from `docs/RELEASE-NOTES-v0.x.y.md`; `tools/test_release_assets.sh` checks that command (mutant: the old one without the plug-ins). The launcher's updater only accepts a release with the exact asset names and tag shape in [docs/UPDATER.md](UPDATER.md).
 
 ## Try it (two copies on one PC)
 

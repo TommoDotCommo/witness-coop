@@ -9,7 +9,8 @@ the reason is in the launcher's log as `update: check failed, code N`). Nothing 
 
 1. `tools/release.sh v0.x.y` (signed if `SIGN_CMD` is set, see SIGNING.md). It writes `local/release/witness-coop-v0.x.y.zip` and `witness-coop-v0.x.y.zip.sha256`, and
    `witness-coop-v0.x.y-single/Witness-Coop-Setup.exe` (+ `.sha256`).
-2. `gh release create v0.x.y --title ... --notes-file docs/RELEASE-NOTES-v0.x.y.md [--prerelease] <the zip> <the zip's .sha256> <Setup.exe> <Setup.exe's .sha256>` (ask the owner first: it is public).
+2. Run the `gh release create` command the build printed (also in `local/release/PUBLISH-v0.x.y.txt`): the title, the notes from `docs/RELEASE-NOTES-v0.x.y.md`, `--prerelease` for a
+   version with a pre-release part, and every asset (Setup.exe, the zip, their `.sha256`, the Vortex extension, the MO2 plug-in). Ask the owner first: it is public.
 
 ## The rules the updater applies
 
