@@ -93,6 +93,29 @@ m = wnav.Map(); m.integrate(ground(m, 0, 4, 0, 4, 0.0) + [(2.1, 2.1, z / 4) for 
 before = m.walkable(wnav.cell_of(2.1, 2.1), 0.0); m.stand(2.1, 2.1, 0.0); after = m.walkable(wnav.cell_of(2.1, 2.1), 0.0)
 check('stand', before[2] > 1 and after[0] and after[2] == 1, 'before %s after %s' % (before, after))
 
+# oracle: a map built from the engine's collision (cells flagged ORACLE; no ground = floor -100). A blocked cell is never crossed (not as a soft
+# cell, not as one "not seen yet"), a depth picture does not change it, a door opening clears it, and a player standing in it can walk on
+m = wnav.Map(); OR = wnav.ORACLE
+for cx in range(-2, 42):
+    for cy in range(-2, 42): m.cells[(cx, cy)] = [0.0, 1, OR]
+for cy in range(-2, 30): m.cells[(20, cy)] = [-100.0, 1, OR]      # a wall at x 10..10.5 with its gap at y 15 and up
+p = m.plan((2, 10, E), (18, 10, E), margin=20); ys = cells_x(p or [], 10.25)
+check('oracle', p is not None and m.reached and ys and all(y >= 15 for y in ys), 'crossed the wall at y %s' % ys)
+m.integrate(ground(m, 9.5, 10.6, 0, 14, 0.0))      # a depth picture that sees open floor where the engine says wall
+check('oracle_look', m.steps((20, 10), 0.0, wnav.UP) == [], 'a depth picture opened the engine wall: %s' % m.steps((20, 10), 0.0, wnav.UP))
+m2 = wnav.Map(); m2.cells[(0, 0)] = [-100.0, 1, OR]; m2.cells[(5, 5)] = [-100.0, 1, OR]
+n_ = m2.unbump_near([(0.25, 0.25)], 1.0)
+check('oracle_door', n_ == 1 and (0, 0) not in m2.cells and (5, 5) in m2.cells, '%d cleared, left %s' % (n_, sorted(m2.cells)))
+import tempfile
+dd = tempfile.mkdtemp(); fa, fb = os.path.join(dd, 'a.bin'), os.path.join(dd, 'b.bin')
+open(fa, 'wb').write(wnav.REC.pack(3, 3, 10.0, 1, 0)); open(fb, 'wb').write(wnav.REC.pack(3, 3, -100.0, 1, OR))      # what was seen (a floor at 10) and the engine's no-ground
+res_ = []
+for order in ((fa, fb), (fb, fa)):
+    mm = wnav.Map(); [mm.load(f) for f in order]; res_.append(mm.steps((3, 3), 10.0, wnav.UP))
+check('oracle_merge', res_ == [[], []], 'steps into a cell the engine says has no ground after merging maps, either order: %s' % res_)
+m.stand(10.25, 5.25, 0.0)
+check('oracle_stand', bool(m.steps((20, 10), 0.0, wnav.UP)), 'the player stands in a wall cell and cannot walk on: %s' % m.steps((20, 10), 0.0, wnav.UP))
+
 # depth: a picture of flat ground at z 0 from a camera 1.65 m up, looking 0.3 rad down
 W, H, near, cam = 64, 36, 0.06, (3.0, -2.0, 1.65, 0.7, -0.3, 54.0, 16 / 9)
 cx, cy, cz, th, ph, vf, asp = cam
@@ -217,6 +240,10 @@ sys.exit(1 if fails else 0)
 '''
 
 MUTANTS = [      # (file text, replacement): each removes one protection
+    ("if old[2] & ORACLE: continue      # the engine's own answer", "if False: continue      # the engine's own answer"),      # a depth picture overwrites the engine's wall
+    ("if r[2] & ORACLE and not r[2] & WALKED:", "if False:"),      # the engine's no-ground cell is read as never seen (crossed at triple cost) or soft
+    ("if rec and rec[2] & ORACLE and rec[0] < SEA and not rec[2] & WALKED and", "if False and"),      # a door opening leaves the engine's wall in place
+    ("if fl & ORACLE or old[2] & ORACLE:", "if False:"),      # merging maps lets what was seen win over the engine
     ("and abs(across) <= side and feet + BAND[0]", "and abs(across) <= 0.3 and feet + BAND[0]"),      # only the cell ahead is bumped at a wall
     ("if -0.2 <= ahead <= reach and", "if ahead <= reach and"),      # what is behind counts as pressed against too
     ("return any(math.dist(s[:2], q[:2]) < r for s in stuck_at)", "return True"),      # the whole wall goes at the first stuck
