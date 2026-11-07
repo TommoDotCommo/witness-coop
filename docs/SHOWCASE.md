@@ -1,7 +1,7 @@
 # Showcase
 
 Co-op for **The Witness**: you and your friends in the same world, seeing each other, talking, drawing and racing. These are pictures of the game
-running with the mod, up to eight players at a time. [How to install and play](../README.md) · [All features](../features.md)
+running with the mod, up to eight players at a time. [How to install and play](../README.md)
 
 ![Eight players in the orchard: one thinks at a puzzle, one points at the row, one sits on the wall, one waves, one walks off toward the pink trees, one dances and one points the trees out in chat](showcase/orchard.jpg)
 

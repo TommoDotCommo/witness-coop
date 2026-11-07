@@ -8,7 +8,7 @@ Each player runs their own copy of the game. The mod keeps the worlds in step.
 
 [![Eight players in the orchard, each in their own colours, by the puzzle row and the pink trees](docs/showcase/orchard.jpg)](docs/SHOWCASE.md)
 
-More pictures: [the showcase](docs/SHOWCASE.md). Everything you can do: [features](features.md).
+More pictures: [the showcase](docs/SHOWCASE.md).
 
 > **This is a beta.** Expect a few rough edges, and please [report what you find](#reporting-a-bug).
 

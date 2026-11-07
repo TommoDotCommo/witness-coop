@@ -10,7 +10,7 @@ prepare a reviewable diff before asking to publish. Never force-push.
 
 ## Repository map
 
-- `README.md`, `features.md`, `docs/SHOWCASE.md`, `dist/README.txt`: the player's documents (install, play, keys, what is shared). Write them for players:
+- `README.md`, `docs/SHOWCASE.md`, `dist/README.txt`: the player's documents (install, play, keys, what is shared). Write them for players:
   no test names, file paths or internals, and no statements about what is or is not tested.
 - `docs/DEVELOPMENT.md`: how the mod works, the dev setup, architecture, offsets, QA results and feature checks (the README until the beta).
 - `proxy/`: C++ source of the 64-bit `dsound.dll` proxy that the game loads from its own folder (it forwards to the system `dsound.dll`).
