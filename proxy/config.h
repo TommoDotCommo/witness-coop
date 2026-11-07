@@ -98,6 +98,7 @@ struct Cfg {
     bool noLineDepth = false;      // twin: remote lines are drawn without the depth test (they show through walls)
     bool noTeleportHold = false;   // twin: the menu teleport does not hold the player (the old 12-frame write): far panels end at the spawn point
     bool noTargetDispatch = false; // twin: a remote solve does not run the game's target dispatcher for other target types
+    bool noBridgeAdvance = false;  // twin no_bridge_advance=1: a remote solve does not tell the panel's Bridge (Treehouse bridges stay short)
     std::wstring diagDir;        // diag_dir=instance -> <dll folder>\witness-coop-logs (not "logs": the game keeps its own logs there) ; diag_dir=<path> ; empty: %LOCALAPPDATA%\witness-coop\logs (diag.cpp)
     int maxLogMb = 100;          // max_log_mb=N: the logs folder is pruned to this size (a crashed session is never pruned)
     bool noCrashHandler = false; // crash_handler=0: no crash marker, no dump (a test mutant: the injected crash must then leave nothing)

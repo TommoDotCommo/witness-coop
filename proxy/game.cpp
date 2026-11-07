@@ -39,6 +39,7 @@ extern HMODULE g_selfModule();
 static const uintptr_t kGlobals = 0x62D0A0, kDoorTypeInfo = 0x62DE70, kDoorOpenStart = 0x8E4B0;
 static const uintptr_t kPanelTypeInfo = 0x62E670, kPanelPowerOn = 0xC2890;
 static const uintptr_t kCableTypeInfo = 0x62EB10, kCablePowerOn = 0x175EE0;
+static const uintptr_t kBridgeTypeInfo = 0x62DC30, kBridgeAdvance = 0x84910;      // Bridge: the Treehouse bridges that grow a section per solved panel
 typedef void(__fastcall* DoorOpenFn)(void* door, float amount);
 
 struct Cmd { int type; unsigned id; float amount; unsigned vk, scan; bool down; int dx, dy; unsigned bf; };   // type 0 door, 1 key, 2 mouse, 3 cable
@@ -99,9 +100,10 @@ void GameRunQueued() {
         if (batch[i].type == 7) { auto social=SocialState(); CoopDumpStatus(ModelGpuStats().submittedPlayers, &social); continue; }
         if (batch[i].type == 1) { InputKey(batch[i].vk, batch[i].scan, batch[i].down); continue; }
         if (batch[i].type == 2) { InputMouse(batch[i].dx, batch[i].dy, batch[i].bf); continue; }
-        if (batch[i].type == 4 || batch[i].type == 5) {      // test commands: 'solve' makes the panel solved as a player's solve would (fields + dispatcher), 'dispatch' only runs the dispatcher
+        if (batch[i].type == 4 || batch[i].type == 5) {      // test commands: 'solve' makes the panel solved as a player's solve would (fields + dispatcher + its Bridge), 'dispatch' only runs the dispatcher
             if (batch[i].type == 5) GameMarkPanelSolved(batch[i].id);
-            char m[100]; snprintf(m, sizeof m, "game: %s %#x -> dispatcher %s", batch[i].type == 5 ? "solve" : "dispatch", batch[i].id, GameDispatchTargetNow(batch[i].id) ? "called" : "not called"); Log(m); continue;
+            bool dispatched = GameDispatchTargetNow(batch[i].id), bridge = batch[i].type == 5 && GameBridgeAdvanceNow(batch[i].id);
+            char m[120]; snprintf(m, sizeof m, "game: %s %#x -> dispatcher %s%s", batch[i].type == 5 ? "solve" : "dispatch", batch[i].id, dispatched ? "called" : "not called", bridge ? ", bridge told" : ""); Log(m); continue;
         }
         if (batch[i].type == 6) { char m[100]; snprintf(m, sizeof m, "game: cable %#x power-off %s", batch[i].id, GameCableOffNow(batch[i].id) ? "called" : "refused"); Log(m); continue; }
         if (batch[i].type == 3) { char m[100]; snprintf(m, sizeof m, "game: cable %#x power-on %s", batch[i].id, GameCablePowerOnNow(batch[i].id) ? "called" : "refused"); Log(m); continue; }
@@ -292,6 +294,24 @@ bool GameDispatchTargetNow(unsigned panelId, bool any) {
     const unsigned char prologue[] = {0x85, 0xC9, 0x0F, 0x84, 0x89, 0x01, 0x00, 0x00, 0x57, 0x48, 0x83, 0xEC, 0x20};
     if (IsBadReadPtr(fn, sizeof prologue) || memcmp(fn, prologue, sizeof prologue)) return false;
     ((void(__fastcall*)(unsigned, void*))(fn))(target, (void*)e);
+    return true;
+}
+
+// After its target dispatch, the game's own solve handler (build 11370412: exe+0xBF82E) tells the panel's Bridge (+0x2C0, an engine id, type Bridge)
+// that this panel is solved: exe+0x84910(bridge, the panel's engine id at +0x10). That grows the next section of a Treehouse bridge and carries the
+// next panel out to its place. The function checks that the panel is the bridge's current tip and otherwise does nothing.
+bool GameBridgeAdvanceNow(unsigned panelId) {
+    uintptr_t e = panelId < 0x40000 ? GameEntity(panelId) : 0;
+    if (!e || IsBadReadPtr((void*)(e + 8), 8) || *(uintptr_t*)(e + 8) != Base() + kPanelTypeInfo || IsBadReadPtr((void*)(e + 0x2C0), 4)) return false;
+    uintptr_t glob = *(uintptr_t*)(Base() + kGlobals); if (!glob || IsBadReadPtr((void*)(glob + 8), 4)) return false;
+    unsigned link = *(unsigned*)(e + 0x2C0); if (!link) return false;
+    unsigned idx = link - *(unsigned*)(glob + 8);
+    uintptr_t b = idx < 0x40000 ? GameEntity(idx) : 0;
+    if (!b || IsBadReadPtr((void*)(b + 8), 8) || *(uintptr_t*)(b + 8) != Base() + kBridgeTypeInfo) return false;
+    const unsigned char* fn = (const unsigned char*)(Base() + kBridgeAdvance);
+    const unsigned char prologue[] = {0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24, 0x10, 0x57, 0x48, 0x83, 0xEC, 0x20};
+    if (IsBadReadPtr(fn, sizeof prologue) || memcmp(fn, prologue, sizeof prologue)) return false;
+    ((void(__fastcall*)(void*, unsigned))(fn))((void*)b, *(unsigned*)(e + 0x10));
     return true;
 }
 

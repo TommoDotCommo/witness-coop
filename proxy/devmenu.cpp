@@ -269,7 +269,7 @@ void ProgressStat() {      // test command: every solved panel (hex ids, 40 per 
 bool Do(const char* what, int pi) {      // one action on panel index pi, by name (the buttons and the 'menudo' test command)
     if (pi < 0 || pi >= (int)g_pn.size()) return false; Pn& p = g_pn[pi]; uintptr_t te = p.target >= 0 ? GameEntity(p.target) : 0; const char* tt = te ? TypeName(te) : "";
     if (!strcmp(what, "teleport")) TeleportToPanel(p);
-    else if (!strcmp(what, "solve")) { if (!p.solved) g_forced.insert(p.id); ModProgress(); GameMarkPanelSolved(p.id); GameDispatchTargetNow(p.id, true); Msg("solved panel %#x and ran its target", p.id); }
+    else if (!strcmp(what, "solve")) { if (!p.solved) g_forced.insert(p.id); ModProgress(); GameMarkPanelSolved(p.id); GameDispatchTargetNow(p.id, true); GameBridgeAdvanceNow(p.id); Msg("solved panel %#x and ran its target", p.id); }
     else if (!strcmp(what, "power")) { ModProgress(); GamePanelPowerOnNow(p.id); Msg("powered panel %#x", p.id); }
     else if (!strcmp(what, "run") && te) { ModProgress(); GameDispatchTargetNow(p.id, true); Msg("ran the target of %#x", p.id); }
     else if (!strcmp(what, "door") && te && !strcmp(tt, "Door")) { ModProgress(); GameDoorOpenNow((unsigned)p.target, 1.0f); Msg("opened door %#x", (unsigned)p.target); }
@@ -498,7 +498,7 @@ void DevMenuTick() {      // every frame, open or not: test commands, saves, the
     ProcessCmds(); StartProgressTick(); SaveTick(GetTickCount());
     { static char last[200]; if (strcmp(last, SaveStatus())) { snprintf(last, sizeof last, "%s", SaveStatus()); if (last[0]) Msg("%s", last); } }
     if (!g_solveQ.empty()) ModProgress();
-    for (int k = 0; k < 8 && !g_solveQ.empty(); k++) { int i = g_solveQ.back(); g_solveQ.pop_back(); g_forced.insert(g_pn[i].id); GameMarkPanelSolved(g_pn[i].id); GameDispatchTargetNow(g_pn[i].id, true); if (g_solveQ.empty()) Msg("solved the panels of the chosen spots"); }
+    for (int k = 0; k < 8 && !g_solveQ.empty(); k++) { int i = g_solveQ.back(); g_solveQ.pop_back(); g_forced.insert(g_pn[i].id); GameMarkPanelSolved(g_pn[i].id); GameDispatchTargetNow(g_pn[i].id, true); GameBridgeAdvanceNow(g_pn[i].id); if (g_solveQ.empty()) Msg("solved the panels of the chosen spots"); }
     if (g_solveQ.empty() && !g_doorQ.empty()) {      // a moment after the last solve: open the doors the data says are open that the solves did not open
         if (!g_doorAt) g_doorAt = GetTickCount() + 1500;
         else if (GetTickCount() >= g_doorAt) { Refresh(); std::set<unsigned> openNow; for (auto& d : g_dr) if (d.open) openNow.insert(d.id); unsigned n = 0; for (unsigned id : g_doorQ) if (!openNow.count(id) && GameEntity(id)) { ModProgress(); GameDoorOpenNow(id, 1.0f); ++n; } g_doorQ.clear(); char m[100]; snprintf(m, sizeof m, "progress: %u doors opened by hand", n); Log(m); }

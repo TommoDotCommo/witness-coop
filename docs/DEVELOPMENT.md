@@ -50,7 +50,12 @@ Chat, pings, emotes, drawing, voice (with channels: proximity, an open line, one
   sent back.
 - **Optional Back TV ("POV TV"), experimental, off by default.** The whole TV family (back TV, sky TV, audience seats, TV camera consent) runs only with `experimental_tv=1` (launcher: Settings, Launcher, *Experimental: TV features*; applies at the next start). A small CRT TV strapped to the adventurer's back displaying that player's point of view to nearby players as a 128x96 snapshot stream (5 Hz, RLE compressed) with dynamic harness sway, antenna wobble, and phosphor power-on/off animations. Double opt-in: viewer toggle (`pov_tv=1`, F10) and streamer consent (`pov_tv_consent=1`, F11) default off; on-screen HUD indicator signals broadcasting. See [POV TV design and verification](POV_TV.md).
 
-Not done: power-off switching by a real in-game lever, bridges and moving platforms, crouch/prone poses (the game has none), lighting that matches
+- **Treehouse bridges.** After its target dispatch the game's solve handler tells the panel's `Bridge` (`+0x2C0`) that the panel is solved
+  (exe+0x84910, the panel's engine id), which grows the next section and carries the next panel out. A remote solve does the same
+  (`GameBridgeAdvanceNow`; `tools/qa.sh bridge`, twin `no_bridge_advance=1`). Before 2026-11-07 the other game had the panel solved and the next one
+  powered but no bridge to reach it.
+
+Not done: power-off switching by a real in-game lever, the other moving parts a solve drives by its behaviour name (`+0x58`: the game's exe+0xB7F80, not run on a remote solve), crouch/prone poses (the game has none), lighting that matches
 the game's, models with several textures or materials. Sixteen live clients and play between two real PCs have not been run by the suite.
 
 ## Quick guide (hold F1)

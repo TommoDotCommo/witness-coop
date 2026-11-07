@@ -72,6 +72,7 @@ public:
     void applyPanelSolved(unsigned id) override {   // the fields a real solve sets; the door itself is opened by its own event
         GameMarkPanelSolved(id);
         if (!GetCfg().noTargetDispatch) GameDispatchTargetNow(id);       // targets without a dedicated event (laser, plate, gauge, ...) react as in a native solve
+        if (!GetCfg().noBridgeAdvance) GameBridgeAdvanceNow(id);         // then its Bridge grows the next section (Treehouse), as in a native solve
     }
     bool applyDoorOpen(unsigned id) override { return GameDoorOpenNow(id, 1.0f); }
     bool applyPanelUnsolved(unsigned id) override { return GameMarkPanelUnsolved(id); }
