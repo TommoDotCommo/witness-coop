@@ -20,6 +20,7 @@ What it does, and what was measured (build 11370412, 1920x1080, see NOTES.md of 
 import os, sys, math, struct, time, json
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
 from wcontrol import Control
+import wrounds
 exec(compile(open(os.path.join(HERE, 'wlib.py')).read(), 'wlib.py', 'exec'))
 pid, gdir, eid = int(sys.argv[1]), sys.argv[2], int(sys.argv[3], 16)
 path = [int(v) for v in sys.argv[4].split(',')]
@@ -49,11 +50,36 @@ HELD = False    # the whole line was already held for a look (WDRAW_HOLD_BEFORE_
 def done(solved, why, traced=0, dist=0.0):
     if not solved and traced >= 1 and os.environ.get('WDRAW_HOLD_ON_FAIL') and not HELD:      # (test hook: a line that got part of the way stays on the panel for this many seconds, so a QA scenario can look at it from the other game)
         print('HOLD %d %s' % (traced, why), flush=True); time.sleep(float(os.environ['WDRAW_HOLD_ON_FAIL']))
+    drawn_ = drawn_edges() if not solved else []      # (read before leaving the puzzle: it forgets the line)
     if not solved: c.send(['shot fail_%x' % eid], 0.8)      # what the game showed, taken while still there
     leave_puzzle()                                           # leave the puzzle if it is still entered (nothing happens otherwise)
     c.send(['hover off'], 0.2)
-    print(json.dumps({'id': eid, 'solved': solved, 'why': why, 'traced': traced, 'dist': round(dist, 2), 'seq': sequence(), 'want': path, 'moves': MOVES}), flush=True); sys.exit(0 if solved else 1)
+    print(json.dumps({'id': eid, 'solved': solved, 'why': why, 'traced': traced, 'dist': round(dist, 2), 'seq': sequence(), 'want': path, 'drawn': drawn_, 'moves': MOVES}), flush=True); sys.exit(0 if solved else 1)
 
+def drawn_edges():
+    """The line as the game holds it: (index_a, index_b) of every traced-edge record (at most 60), to tell a line that took another route from the
+    one that was wanted (the traced count only says how many nodes were reached). [] when unreadable."""
+    n_ = traced(); ptr = p.u64(e + 0x230)
+    if not ptr or n_ < 1 or n_ > 60: return []
+    try: return [list(struct.unpack('<2I', p.rd(ptr + k * 0x34, 8))) for k in range(n_)]
+    except (struct.error, TypeError): return []
+def orientation_refuted():
+    """The first traced-edge record starts at the path's first node but ends at another node than the path's second: the line took another edge, so
+    the screen orientation guessed for the panel is wrong (a diamond panel, Monastery Outside 1, was drawn along a mirror image of the path for all 6
+    edges: the counts matched, the game did not accept it). Remembers the orientation so the next try starts from its mirror images. Node numbers
+    that are not the panel's own (Shutters Control reads 6 -> 9 as (2, 5)) do not start at the path's first node and so never refute."""
+    de = drawn_edges(); ptr = p.u64(e + 0x230)
+    if not de or de[0][0] != path[0] or de[0][1] == path[1] or de[0][1] >= n: return False
+    raw = p.rd(ptr + 0x10, 4) if ptr else None
+    if not raw or struct.unpack('<f', raw)[0] < 0.2: return False      # (a line that has not gone anywhere says nothing about which way it was going)
+    if kcache_path:
+        bad = kcache.setdefault('bad%x' % eid, [])
+        cur = [AX, SX, SY, round(math.degrees(ROLL))]
+        if cur not in bad: bad.append(cur)
+        for k_ in ('w%x' % eid, 'r%x' % eid, ckey): kcache.pop(k_, None)      # (what the wrong guess taught the cache about this panel)
+        try: json.dump(kcache, open(kcache_path, 'w'))
+        except Exception: pass
+    return True
 def is_solved(): return p.u32(e + 0x294) == 0x3f800000 and p.u32(e + 0x298) == 1
 def traced(): return p.u32(e + 0x228)
 def edge_progress():
@@ -68,6 +94,19 @@ def first_t():      # how far the line has got along its first edge (traced-edge
     ptr = p.u64(e + 0x230)
     return struct.unpack('<f', p.rd(ptr + 0x10, 4))[0] if ptr else 1.0
 def state(): return p.u32(e + 0x280)
+def start_ok():
+    """True when the line that just started is on the node the path begins with (the first traced-edge record's index_a is the start node).
+    A panel with several start circles (the symmetry panels have four): a wrong panel size or offset hits another one, a line starts there all
+    the same, and the path drawn from it is not the solution (Symmetry Left 3 failed this way at sizes 0.7 and 0.95 m, accepted at 0.567 m).
+    Only a record naming another start node counts as wrong: on some panels the records' node numbers are not the panel's own (Shutters Control),
+    and Shutters Control's two start circles were told apart wrongly (its line started at W 1.35 m as before and was refused): only a panel with three or
+    more start circles is judged (the symmetry panels have four). Unreadable records count as fine."""
+    ptr = p.u64(e + 0x230)
+    if not ptr or traced() < 1: return True
+    raw = p.rd(ptr, 4)
+    if not raw or len(raw) < 4: return True
+    ia = struct.unpack('<I', raw)[0]
+    return ia == path[0] or ia not in START_NODES or len(START_NODES) < 3
 if not e or p.type_of(e) != TI_PANEL: done(False, 'not a panel')
 REDRAW = bool(os.environ.get('WDRAW_REDRAW'))      # draw again over a solved panel (another solution: a panel whose other exit powers something else)
 if is_solved() and not REDRAW: done(True, 'already solved')
@@ -76,6 +115,7 @@ if is_solved() and not REDRAW: done(True, 'already solved')
 n = p.u32(e + 0x3b4); m_ = p.u32(e + 0x3b8)
 dots = struct.unpack('<%df' % (2 * n), p.rd(p.u64(e + 0x3c0), 8 * n))
 conn_a = struct.unpack('<%dI' % m_, p.rd(p.u64(e + 0x3d0), 4 * m_)); conn_b = struct.unpack('<%dI' % m_, p.rd(p.u64(e + 0x3d8), 4 * m_))
+START_NODES = {i for i, f_ in enumerate(struct.unpack('<%dI' % n, p.rd(p.u64(e + 0x3c8), 4 * n))) if f_ & 2 and not f_ & 1} if n < 500 else set()      # (the nodes that are a start circle)
 neigh = {}
 for a_, b_ in zip(conn_a, conn_b): neigh.setdefault(a_, []).append(b_); neigh.setdefault(b_, []).append(a_)
 px_, py_, pz_ = struct.unpack('<3f', p.rd(e + 0x24, 12))
@@ -231,7 +271,17 @@ def depth_ratio():
 def other_standing_points():
     """Where else to stand: other distances along the panel's normal (the first try, 3 m, may be inside a wall or over a drop)."""
     nx, ny = NORMAL[0], NORMAL[1]; nn = math.hypot(nx, ny) or 1.0; nx, ny = nx / nn, ny / nn
-    return [(px_ + d_ * nx, py_ + d_ * ny) for d_ in (2.0, 4.0, 1.6, 5.0, 2.5, 3.5)]
+    pts = [(px_ + d_ * nx, py_ + d_ * ny) for d_ in (2.0, 4.0, 1.6, 5.0, 2.5, 3.5)]
+    # then anywhere round the panel the walking map says has a floor and a clear line to the panel's middle (not only straight out from it)
+    try:
+        global walker
+        import wnav, wlos
+        if walker is None: walker = wnav.Walker(p, c, gdir, log=dbg)
+        near = wlos.spread(wlos.standing_places(walker.map.cells, (px_, py_, pz_), NORMAL))
+        stamp('map: %d places with a clear line to the panel' % len(near))
+        pts = pts[:2] + [(x_, y_) for x_, y_, _ in near] + pts[2:]      # (two straight-out tries, then the places the map vouches for, then the rest)
+    except Exception as e_: stamp('standing places from the map skipped: %r' % e_)
+    return pts[:8]      # (each place costs a walk of up to two minutes or a teleport: a panel that cannot be seen from eight is reported, not chased for ever; one panel spent 12 minutes on them)
 
 def centre_on_panel():
     """The panel's middle may not be its entity's origin (Quarry Boat Spawn sits well below where the camera aims): find it on the screen in the
@@ -260,7 +310,10 @@ if FLAT and not TAUGHT: pos = stand_beside_flat(); dist = math.dist(pos, (px_, p
 r_ = 1.0 if TAUGHT else depth_ratio(); stamp('view check: depth ratio %.2f' % r_)
 if not 0.7 < r_ < 1.45:
     ok_view = False
-    for (hx, hy) in other_standing_points():
+    try:      # first look for the panel in the depth grid and turn onto it: a panel whose middle is far from its origin (Swamp's Sliding Bridge, drawn below the screen centre) reads as blocked at the centre
+        centre_on_panel(); r_ = depth_ratio(); stamp('view check after re-centring: depth ratio %.2f' % r_); ok_view = 0.7 < r_ < 1.45
+    except Exception as e_: stamp('re-centring skipped: %r' % e_)
+    for (hx, hy) in ([] if ok_view else other_standing_points()):
         hover_to(hx, hy, pz_ + 0.2, math.atan2(py_ - hy, px_ - hx), 'the walk did not get to another place to see the panel from')
         cx, cy, cz = p.camera()[0]
         if math.hypot(cx - px_, cy - py_) > 12: continue            # put back at the spawn point: nothing to stand on there
@@ -367,9 +420,12 @@ if ckey in kcache:
 else: class_cands = None
 started = None
 FORCE = os.environ.get('WDRAW_FORCE')      # test: W,dy,AX,SX,SY, only this one
-ROLL0 = ROLL; ROLL_CANDS = [(w2, dy2) for dy2 in (0, 12, -12, 24, -24) for w2 in (1.88, 1.75, 2.0, 1.6, 2.15, 1.45, 1.3)]
+ROLL0 = ROLL
 if 'r%x' % eid in kcache: ROLL0 = ROLL = math.radians(kcache['r%x' % eid]); cands.insert(0, tuple(kcache['w%x' % eid][:2])) if 'w%x' % eid in kcache else None
-ROUNDS = [(1.0, 1, 1), (1.0, 1, 1), (1.4, -1, -1), (1.0, 1, 1, 45), (1.0, -1, -1, 45)] + [(ax_, sx_, sy_) for ax_ in (1.0, 1.45, 0.7, 2.0, 0.5) for (sx_, sy_) in ((-1, -1), (1, 1), (1, -1), (-1, 1)) if (ax_, sx_, sy_) != (1.0, 1, 1)]
+# An orientation the first edge refuted on an earlier try (the line ran along another edge than the path's first one: the panel is shown turned and
+# the guess was the mirror of it) is not tried again, and its mirror images come first. [ax, sx, sy, roll in degrees], remembered in the cache.
+BAD_ORIENT = [tuple(b) for b in kcache.get('bad%x' % eid, [])]
+ROUNDS = wrounds.orientation_rounds([] if TAUGHT else BAD_ORIENT, round(math.degrees(ROLL0)))
 if FORCE:
     fw, fdy, fax, fsx, fsy = [float(v) for v in FORCE.split(',')]; ROUNDS = [(fax, int(fsx), int(fsy))] * 2; cands = [(fw, int(fdy))]; cached_ax = None
 OLD_TRACED = traced()      # (a redraw: the solved line's count)
@@ -379,7 +435,7 @@ for attempt, rd_ in enumerate(ROUNDS):
     ax_, sx_, sy_ = rd_[:3]; TANCHOR = attempt if TAUGHT else 0; ROLL = math.radians(rd_[3]) if len(rd_) > 3 else ROLL0
     ROUND_END = (time.time() - T_START) + 70      # each round gets its own budget; the whole search is capped below
     if time.time() - T_START > float(os.environ.get('WDRAW_START_BUDGET') or 230) and attempt > 2: break      # the whole search for a start circle is capped: a panel without one is reported, not chased (WDRAW_START_BUDGET seconds)
-    AX = cached_ax if (attempt == 0 and cached_ax) else ax_; SX, SY = cached_flip if attempt == 0 else (sx_, sy_)
+    AX = cached_ax if (attempt == 0 and cached_ax and not BAD_ORIENT) else ax_; SX, SY = cached_flip if (attempt == 0 and not BAD_ORIENT) else (sx_, sy_)
     for _ in range(3):
         c.click(settle=1.0)                          # enter: the cursor appears at the screen centre
         if not probe_free_look(): break              # entered (the cursor moved, the view did not)
@@ -394,7 +450,7 @@ for attempt, rd_ in enumerate(ROUNDS):
             last_v = v_
         CAM = cam_basis()
     cur = (0.0, 0.0)
-    for w_, dy_ in (class_cands if (attempt == 0 and class_cands) else cands if (attempt < 2 or FORCE or TAUGHT) else ROLL_CANDS if len(rd_) > 3 else [(w2, dy2) for dy2 in (0, 12, -12, 24, -24, 36, -36) for w2 in ((0.70, 0.66, 0.74, 0.62, 0.78, 0.58, 0.82) if attempt == 2 else (0.567, 0.645, 0.70, 0.76, 0.82, 0.88, 0.95, 1.05))]):
+    for w_, dy_ in (class_cands if (attempt == 0 and class_cands) else wrounds.candidates(rd_, attempt, cands, bool(FORCE or TAUGHT)) or [(w2, dy2) for dy2 in (0, 12, -12, 24, -24, 36, -36) for w2 in ((0.70, 0.66, 0.74, 0.62, 0.78, 0.58, 0.82) if rd_[0] == 1.4 else (0.567, 0.645, 0.70, 0.76, 0.82, 0.88, 0.95, 1.05))]):
         if time.time() - T_START > ROUND_END: break
         W = w_
         sx, sy = node_px(path[0]); sy += dy_
@@ -406,7 +462,15 @@ for attempt, rd_ in enumerate(ROUNDS):
         c.send(['button L down', 'button L up'], 0.14)      # press and release on the start circle: the line starts
         # A redraw: the solved line's count stays until a new line starts, and state 3 shows up just from entering a solved panel, so only the count
         # changing from what the old line had (a new line counts 1) says the click started it.
-        if (not REDRAW and (traced() >= 1 or state() == 3)) or (REDRAW and traced() >= 1 and (traced() != OLD_TRACED or first_t() < 0.99)): started = (w_, dy_); break
+        if (not REDRAW and (traced() >= 1 or state() == 3)) or (REDRAW and traced() >= 1 and (traced() != OLD_TRACED or first_t() < 0.99)):
+            if start_ok(): started = (w_, dy_); break
+            stamp('the line started on another start circle than node %d at W %.3f dy %d: leave and look again' % (path[0], w_, dy_))
+            rclick()
+            for _ in range(3):
+                c.click(settle=1.0)
+                if not probe_free_look(): break
+                rclick()
+            cur = (0.0, 0.0)
     if started: break
     rclick()
 def depth_grid(box):
@@ -454,6 +518,7 @@ def start_from_box():
             cur = (cur[0] + round(ddx / n_) * n_ / COUNTS_PER_PX, cur[1] + round(ddy / n_) * n_ / COUNTS_PER_PX)
             c.send(['button L down', 'button L up'], 0.14)
             if (not REDRAW and (traced() >= 1 or state() == 3)) or (REDRAW and traced() >= 1 and (traced() != OLD_TRACED or first_t() < 0.99)):
+                if not start_ok(): stamp('box start: the line started on another start circle'); break
                 stamp('box start: line started at %.3f %.3f (reading %.2f %.2f)' % (sx, sy, fu, fv)); return True
         rclick()
     return False
@@ -625,12 +690,16 @@ for i in range(1, len(path)):
             ep = edge_progress()
             if ep and ep[1] == path[i] and 0.1 < ep[0] < 0.9: step = min(40.0, max(2.0, 0.7 * (1 - ep[0]) * used / ep[0]))
         mouse(vx, vy, step); used += step
-    else: done(False, 'stuck before node %d (path index %d)' % (path[i], i), traced(), dist)
+    else:
+        if i == 1 and not TAUGHT and not STEER: orientation_refuted()      # (a line that went along another edge than the first one: remembered, the next try mirrors)
+        done(False, 'stuck before node %d (path index %d)' % (path[i], i), traced(), dist)
     if traced() > i + 1: done(False, 'overshot node %d: the line ran past it (traced %d, wanted %d)' % (path[i], traced(), i + 1), traced(), dist)
     if not straight_on(path[i], vx, vy): mouse(vx, vy, 2)      # the count flips as the tip reaches the node: a hair further so a turn is taken at the node, not before it
     if gain.get(axis_) is None and norm > 14: gain[axis_] = used / norm
     if norm > 14: per_px = used / norm
     dbg('segment', path[i - 1], '->', path[i], 'counts %.0f' % used, 'per px', per_px and round(per_px, 2), 'traced', traced())
+    if i == 1 and not TAUGHT and not STEER and orientation_refuted():
+        done(False, 'the line ran along another edge than node %d -> %d (the panel is shown turned or mirrored, not as guessed)' % (path[0], path[1]), traced(), dist)
 
 # ---- finishing ------------------------------------------------------------------------------------------------------------------------------
 stamp('path drawn'); c.send(['mouse 0 0'], 0.6)

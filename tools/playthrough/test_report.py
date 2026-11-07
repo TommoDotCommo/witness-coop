@@ -36,13 +36,15 @@ for h, k in want.items():
     if h in got and got[h]['kind'] != k: bad.append('%s is %s, want %s' % (h, got[h]['kind'], k))
 if '0x9d9b' in got and got['0x9d9b']['checkpoint'] != '/saves/one.witness_campaign': bad.append('0x9d9b save %r' % got['0x9d9b']['checkpoint'])
 if '0x28998' in got and got['0x28998']['checkpoint'] != os.path.join(b, 'checkpoint.witness_campaign'): bad.append('0x28998 save %r' % got['0x28998']['checkpoint'])
+if report.kind('the line ran along another edge than node 0 -> 1 (the panel is shown turned or mirrored, not as guessed)') != 'turned panel': bad.append('kind() turned panel')
 if report.kind('steering: overshot node 17') != 'wrong line' or report.kind('teleport refused and the player could not be held there') != 'movement': bad.append('kind()')
 print('; '.join(bad) or 'blockers as expected: %d' % len(got)); sys.exit(1 if bad else 0)
 '''
 
 MUTANTS = [
     ("        if h in solved or len(whys) < 2: continue", "        if len(whys) < 2: continue"),                                # a panel solved in another run is still listed
-    ("    if 'cannot be seen' in why: return 'cannot be seen'", "    pass"),                                                           # not-seen lumped in
+    ("    if 'cannot be seen' in why: return 'cannot be seen'", "    pass"),
+    ("    if 'another edge' in why: return 'turned panel'", "    if False: return 'turned panel'"),                                  # a line along another edge is lumped into wrong line                                                           # not-seen lumped in
     ("        save = own if os.path.exists(own) else (start[len('resumed from '):] if start.startswith('resumed from ') else '')", "        save = start"),      # wrong save
     ("                n = 2 if e['kind'] != 'failed' else 1      # (no solver, unpowered: logged once, they block at once)", "                n = 1"),   # a no-solver panel is dropped
 ]
