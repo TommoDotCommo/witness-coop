@@ -61,13 +61,6 @@ To uninstall by hand, delete those three things again (and rename `dsound.chain.
   `plugins/basic_games/games/` folder and restart MO2. MO2 isn't reliable at loading DLLs from the game's root folder,
   so if the launcher says co-op isn't loaded, use the Root Builder plug-in or copy the three files in by hand.
 
-### Coming from the alpha (v0.1.0-alpha)
-
-Just run the new Setup. The alpha replaced the game's `AnselSDK64.dll`; Setup checks that the original is intact,
-puts it back and installs the new layout. If you'd rather do it by hand: delete `AnselSDK64.dll`, rename
-`AnselSDK64_real.dll` to `AnselSDK64.dll` (or let Steam's "Verify integrity of game files" restore it), then copy in
-the new files.
-
 ### Uninstall
 
 Run `Witness-Coop-Setup.exe` again and choose **Uninstall**. It removes only the files it installed and puts back
@@ -115,20 +108,20 @@ everything that's been solved once it has loaded.
 Hold **F1** in the game or the launcher to see every key, including any you've changed. The co-op keys use the same
 defaults as the other mods made with the [Co-op Anything](https://github.com/cranebeaker/coop-anything) playbook.
 
-| Key | What it does |
-|---|---|
-| `T` | Chat (Enter sends, Esc cancels) |
-| `V` or middle mouse | Ping the spot you're looking at. Everyone sees a marker with your name and the distance |
-| `B` or mouse side button | Push to talk |
-| `Y` | Next voice channel: proximity, open line, or private to one player |
-| Hold `H` | Emote wheel. Move the mouse to pick, let go to play it. `Tab` changes page |
-| Hold `X` | Draw on the world in your colour (`Shift`+`X` clears your drawings, mouse wheel changes colour) |
-| `Z` | Drawing canvas: a pen you move across the screen for precise lines on a panel (Backspace undoes) |
-| Hold `Tab` | Player panel: mute, set volume, watch someone's view, leave |
-| `[` and `]` | Watch the previous or next player's view |
-| `F9` | Size of the picture of another player's screen: small, large, off |
-| `F3` | Faster mouse while tracing a puzzle (toggle) |
-| `F2` | Mark a problem for a bug report (see [below](#reporting-a-bug)) |
+| Key                      | What it does                                                                                     |
+| ------------------------ | ------------------------------------------------------------------------------------------------ |
+| `T`                      | Chat (Enter sends, Esc cancels)                                                                  |
+| `V` or middle mouse      | Ping the spot you're looking at. Everyone sees a marker with your name and the distance          |
+| `B` or mouse side button | Push to talk                                                                                     |
+| `Y`                      | Next voice channel: proximity, open line, or private to one player                               |
+| Hold `H`                 | Emote wheel. Move the mouse to pick, let go to play it. `Tab` changes page                       |
+| Hold `X`                 | Draw on the world in your colour (`Shift`+`X` clears your drawings, mouse wheel changes colour)  |
+| `Z`                      | Drawing canvas: a pen you move across the screen for precise lines on a panel (Backspace undoes) |
+| Hold `Tab`               | Player panel: mute, set volume, watch someone's view, leave                                      |
+| `[` and `]`              | Watch the previous or next player's view                                                         |
+| `F9`                     | Size of the picture of another player's screen: small, large, off                                |
+| `F3`                     | Faster mouse while tracing a puzzle (toggle)                                                     |
+| `F2`                     | Mark a problem for a bug report (see [below](#reporting-a-bug))                                  |
 
 You can change any of these in the launcher under **Settings > Controls**.
 
@@ -230,15 +223,6 @@ The mod doesn't collect anything about you. What does leave your PC:
 
 When the launcher comes to the front it looks at your clipboard for a Witness invite, so it can offer to join. Nothing
 from the clipboard is kept or sent.
-
-## Known issues
-
-- Only Steam build 11370412 of The Witness is supported. A game update switches co-op off until the mod is updated.
-- If another mod also uses `dsound.dll`, it's loaded, but a mod that replaces DirectSound completely won't work
-  alongside co-op.
-- The release isn't code-signed yet, so expect the Windows warning described under [Install](#install).
-- The experimental back TV and handheld radio are off by default. You can turn them on in **Settings > Launcher**
-  if you want to try them.
 
 ## Credits and licence
 
