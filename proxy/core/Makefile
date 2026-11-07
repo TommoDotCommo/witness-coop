@@ -8,7 +8,7 @@ HUB := $(patsubst %/tools/fuzz/src,%,$(HUB))
 FUZZ = $(HUB)/tools/fuzz
 BUILD = build
 CXXF = -std=c++17 -O2 -Wall -Wextra
-TESTS = oracle-cell pov ping-names social-sync line-sync group-sync apply-retry power-sync reload-sync cable-sync cable-off race-isolation resend-count unsolve-sync propagation-latency peers thirdperson
+TESTS = oracle-cell pov ping-names social-sync line-sync solve-react group-sync apply-retry power-sync reload-sync cable-sync cable-off race-isolation resend-count unsolve-sync propagation-latency peers thirdperson
 
 $(BUILD)/sync_core.o: sync_core.cpp sync_core.h line_precision.h appearance.h emotes.h pov.h ../radio/radio.h
 	@mkdir -p $(BUILD)

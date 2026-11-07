@@ -1,7 +1,7 @@
 # The Witness Co-op v0.2.0-beta.1
 
 A co-op mod for The Witness. You and your friends walk the same island, see each other, and share progress: when one
-of you solves a panel it's solved for everyone, and the doors and cables it powers open and light up in every game.
+of you solves a panel it's solved for everyone, and the doors, bridges, elevators and water it sets going move in every game.
 You can talk, chat, point at things and emote, or race each other instead.
 
 ![Eight players in the orchard](https://raw.githubusercontent.com/TommoDotCommo/witness-coop/main/docs/showcase/orchard.jpg)
@@ -26,7 +26,6 @@ in the [showcase](https://github.com/TommoDotCommo/witness-coop/blob/main/docs/S
 
 - **Windows may say "Windows protected your PC"**, because the files aren't code-signed yet. Click More info, then
   Run anyway.
-- Bridges and moving platforms aren't shared between players yet.
 - A mod that replaces DirectSound completely won't work alongside co-op.
 
 ## It's a beta

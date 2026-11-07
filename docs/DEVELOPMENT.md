@@ -54,8 +54,31 @@ Chat, pings, emotes, drawing, voice (with channels: proximity, an open line, one
   (exe+0x84910, the panel's engine id), which grows the next section and carries the next panel out. A remote solve does the same
   (`GameBridgeAdvanceNow`; `tools/qa.sh bridge`, twin `no_bridge_advance=1`). Before 2026-11-07 the other game had the panel solved and the next one
   powered but no bridge to reach it.
+- **A remote solve does what the solver's solve did.** The game's solve handler, after the solved fields, runs exe+0xB7F80: about 70
+  behaviours chosen by the panel's name (`+0x58`): the Swamp's sliding and rotating bridges and floodgate, the Quarry ramps and lifters, the
+  windmill, the Town's coloured lights, the Desert's water levels, elevators, the Monastery shutters... It returns whether the panel's
+  target is then dispatched. Several read the line that was drawn (`+0x228` count, `+0x230` records of 13 dwords): which exit a sliding
+  bridge or floodgate control was left by. So a remote solve (state.cpp `applyPanelSolvedLine`) first writes the solver's final line into the
+  panel's trace buffer (grown with the game's own allocator, exe+0x2E7FA0; the line is not sent back as this player's), then marks the panel,
+  runs the reactions, dispatches the target only when they ask for it, and tells the Bridge. Left out on a remote solve: the ending and
+  final elevator, the theatre videos, the boat, the timed challenge and the sound-room birds (`RemoteReactSkipped`). A solve event carries a
+  bit when the solver has a finished line, and the receiver waits up to 1.5 s for that line (`kLineWaitMs`). What the reactions change at
+  once (a linked panel, a door told to move, a cable) is taken as remote by the core (`marks`/`absorb`), not sent back.
+  Doors are reported when they are told to move (`+0x1D4`), not when they arrive (`+0x1D0`): a sliding bridge took 40 s and the Caves
+  elevator 12 s to reach the other game before. A cable still fading in keeps its known state, so a remote one is not sent back once lit.
+  Tests: `make -C proxy/core test` (`solve-react`: line, no echo, door at once, no wait without a line, fading cable; twins
+  `noSolveLine`, `noReactEchoGuard`, `doorDetectByPosition`, `noCableFadeHold`), `tools/qa.sh react` (the line reaches the other panel's trace;
+  the Swamp rotating bridge and the Town lights; twins `no_remote_line_write=1`, `no_remote_react=1`). What a remote solve still misses can be
+  measured: `tools/qa.sh probe tools/react_sweep.py [hexid ...]` solves each named panel the game's own way on A (the test-only command
+  `nativesolve`) and lists every entity field that changed in one game and not the other (`tools/win/wreact_sweep.py`).
 
-Not done: power-off switching by a real in-game lever, the other moving parts a solve drives by its behaviour name (`+0x58`: the game's exe+0xB7F80, not run on a remote solve), crouch/prone poses (the game has none), lighting that matches
+- **The teleport hold yields to the game's emergency reset.** The hold (`GameHover`, used by the dev menu's teleport and the `hover` command)
+  writes the player's position about every millisecond. A player held inside the world's geometry is reset by the game to the nearest reset
+  marker; holding against that made the game reset every frame (thousands of `emergency reset player` lines in its log) and twice it crashed
+  rebuilding the ground at the marker (exe+0x2D03EC). The hold now lets go when the game moves the player more than 1.5 m sideways
+  (`tools/qa.sh hover`: the player ends away from the bad spot and the resets stop; twin `hover_fights_reset=1`, it stays pinned).
+
+Not done: power-off switching by a real in-game lever, crouch/prone poses (the game has none), lighting that matches
 the game's, models with several textures or materials. Sixteen live clients and play between two real PCs have not been run by the suite.
 
 ## Quick guide (hold F1)

@@ -221,10 +221,12 @@ SCENARIOS = [   # name, extra cfg for A, extra cfg for B, check(a_stats, b_stats
   ('MUTANT: partner view without pictures', 'no_partner_video=1', '', lambda a, b, ok: (not ok, 'B must receive no picture')),
   ('preset apply', '', '', lambda a, b, ok: (ok and b.get('ep', 9) == 0, 'a list-only preset made from forced progress brings a fresh game to that progress, and the other game follows')),
   ('preset apply during start-up', '', '', lambda a, b, ok: (ok and b.get('ep', 9) == 0, "the preset is applied as soon as the fresh worlds are stable, inside the start-up window: the doors, power and cables the game turns on in response reach the other game too")),
-  ('MUTANT: preset apply during start-up, reaction not shared', 'no_mod_apply_share=1', '', lambda a, b, ok: (not ok, "with the mod's apply taken for start-up noise, what the game turns on in response must stay on A only")),
+  # (these two keep the doors reported on arrival, door_detect_position=1: told-to-move doors fall inside the 5 s cascade after a local solve and are
+  #  shared that way too, which would hide the start-up-window protection these mutants switch off)
+  ('MUTANT: preset apply during start-up, reaction not shared', 'no_mod_apply_share=1\ndoor_detect_position=1', '', lambda a, b, ok: (not ok, "with the mod's apply taken for start-up noise, what the game turns on in response must stay on A only")),
   ('save point restore', '', '', lambda a, b, ok: (ok, 'a save point (the game save plus the progress list) brings a fresh game back to the saved progress, and the other game follows')),
   ('MUTANT: save point restore without the save file', 'no_restore_copy=1', '', lambda a, b, ok: (not ok, 'the natural progress in the game save must be missing after the restore, and everything else (what the game turned on in response to the list) identical')),
-  ('MUTANT: save point restore without the save file, reaction not shared', 'no_restore_copy=1\nno_mod_apply_share=1', '', lambda a, b, ok: (not ok, "with the list taken for start-up noise, the doors, power and cables the game turns on in response must stay on A only")),
+  ('MUTANT: save point restore without the save file, reaction not shared', 'no_restore_copy=1\nno_mod_apply_share=1\ndoor_detect_position=1', '', lambda a, b, ok: (not ok, "with the list taken for start-up noise, the doors, power and cables the game turns on in response must stay on A only")),
   ('MUTANT: save point restore with the load gap ignored', 'reload_gap_ignored=1', '', lambda a, b, ok: (not ok, "A's load must not be seen while its world is down: the rescan folds the loaded progress into a silent baseline and B never gets it")),
   ('MUTANT: panel power chain disabled', 'no_panel_power=1', '', lambda a, b, ok: (not ok, 'target panel must remain dark on B')),
 ]

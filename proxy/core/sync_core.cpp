@@ -20,7 +20,9 @@ constexpr uint32_t kGroupPose = 0x37505457, kGroupEv = 0x37455457, kGroupAck = 0
 constexpr size_t kGroupEvLen = 44;
 constexpr size_t kPoseLen = 40, kEvLen = 32, kAckLen = 24;                                    // with the 4-byte checksum
 constexpr uint32_t kSnapBit = 0x100;      // set in an event's kind word when it is part of a full-state snapshot
+constexpr uint32_t kLineBit = 0x200;      // set on a live solve when the solver has a finished line for the panel: the receiver waits for that line
 constexpr uint64_t kConflictMs = 1000, kSuppressMs = 5000, kSettleMs = 15000, kCascadeMs = 5000;
+constexpr uint64_t kLineWaitMs = 1500;      // a remote solve waits this long at most for the solver's final line (it travels apart from the event)
 
 uint32_t sum32(const uint8_t* p, size_t n) { uint32_t h = 2166136261u; for (size_t i = 0; i < n; ++i) { h ^= p[i]; h *= 16777619u; } return h; }
 void put32(Bytes& b, uint32_t v) { for (int i = 0; i < 4; ++i) b.push_back(uint8_t(v >> (8 * i))); }
@@ -74,7 +76,9 @@ void SyncCore::emit(uint8_t kind, unsigned id, bool resync) {
         if (!resync) cableVersion_[id] = {++clock_, unsigned(id_)};
         version = cableVersion_[id];
     }
-    if (sent_.size() < capacity) { sent_.push_back({nextSeq_++, uint32_t(kind) | (resync ? kSnapBit : 0u), id, false, false, {}, {}, version}); st_.sent++; }
+    uint32_t lineBit = 0;
+    if (kind == EV_PANEL_SOLVED && !resync) { auto li = lines_.find(id); if (li != lines_.end() && li->second.final && !li->second.pts.empty()) lineBit = kLineBit; }
+    if (sent_.size() < capacity) { sent_.push_back({nextSeq_++, uint32_t(kind) | (resync ? kSnapBit : 0u) | lineBit, id, false, false, {}, {}, version}); st_.sent++; }
     if (h_.onEmit) h_.onEmit(kind, id, resync);
 }
 
@@ -162,13 +166,13 @@ void SyncCore::onPacket(const uint8_t* d, size_t n, uint64_t now) {
     auto& peerEpoch_ = peer.epoch;
     auto& peerApplied_ = peer.applied;
     if (magic == kMagicEv && n == (fixedRoster_ ? kGroupEvLen : kEvLen)) {
-        uint32_t from = get32(d + 4), seq = get32(d + 16), kind = get32(d + 20), entity = get32(d + 24); bool snap = (kind & kSnapBit) != 0; kind &= 0xFF; uint64_t epoch = get64(d + 8);
+        uint32_t from = get32(d + 4), seq = get32(d + 16), kind = get32(d + 20), entity = get32(d + 24); bool snap = (kind & kSnapBit) != 0, hasLine = (kind & kLineBit) != 0; kind &= 0xFF; uint64_t epoch = get64(d + 8);
         if (int(from) == id_ || (kind != EV_PANEL_SOLVED && kind != EV_DOOR_OPENED && kind != EV_PANEL_POWERED && kind != EV_CABLE_LIT && kind != EV_CABLE_OFF && kind != EV_PANEL_UNSOLVED && kind != EV_DOOR_CLOSED) || entity >= kMaxEntityId) return;
         if (epoch < peerEpoch_) { st_.ooo++; if (h_.onRejected) h_.onRejected(uint8_t(kind), entity, epoch, seq, "stale epoch"); return; }   // a delayed packet of an earlier run
         if (epoch > peerEpoch_) { peerEpoch_ = epoch; if (!f_.noEpochReset) peerApplied_ = 0; }
         bool ordered = false, dup = false;
-        if (seq == peerApplied_ + 1 && recvQ_.size() < 1024) { recvQ_.push_back({uint8_t(kind), entity, epoch, seq, snap, version}); peerApplied_ = seq; ordered = true; }
-        else if (f_.applyOutOfOrder && seq > peerApplied_ + 1 && recvQ_.size() < 1024) { recvQ_.push_back({uint8_t(kind), entity, epoch, seq, snap, version}); peerApplied_ = seq; ordered = true; }
+        if (seq == peerApplied_ + 1 && recvQ_.size() < 1024) { recvQ_.push_back({uint8_t(kind), entity, epoch, seq, snap, version, from, now ? now : 1, hasLine}); peerApplied_ = seq; ordered = true; }
+        else if (f_.applyOutOfOrder && seq > peerApplied_ + 1 && recvQ_.size() < 1024) { recvQ_.push_back({uint8_t(kind), entity, epoch, seq, snap, version, from, now ? now : 1, hasLine}); peerApplied_ = seq; ordered = true; }
         else if (seq <= peerApplied_) {
             dup = true;
             if (f_.noDedupe && recvQ_.size() < 1024) recvQ_.push_back({uint8_t(kind), entity, epoch, seq, snap, version});    // twin: duplicates reach the apply step
@@ -353,7 +357,7 @@ void SyncCore::baseline(bool full) {
         if (full && powered && !f_.noPanelPower) emit(EV_PANEL_POWERED, id, true);
     }
     for (unsigned id : doors_) {
-        bool o = w_->entityExists(id) && w_->doorOpen(id);
+        bool o = w_->entityExists(id) && doorState(id);
         if (o) knownDoor_.insert(id); else knownDoor_.erase(id);
         if (full && o) emit(EV_DOOR_OPENED, id, true);
     }
@@ -494,6 +498,9 @@ void SyncCore::pollState(uint64_t now) {
         if (!w_->entityExists(id)) continue;
         bool lit = groupIntent ? w_->cableRequested(id) : w_->cableLit(id);
         bool known = knownCable_.count(id) != 0;
+        // Switched on but still fading in (some take seconds): the state stays what it was. A local switch-on is still reported when it is fully
+        // lit; a remote one (known since it was applied) is not mistaken for new once the echo guard has run out.
+        if (!groupIntent && !f_.noCableFadeHold && !lit && w_->cableRequested(id)) lit = known;
         auto sp = suppressCable_.find(id);
         bool suppressed = sp != suppressCable_.end() && now < sp->second;
         // The render-thread applier already updated knownCable_ to the remote requested level. A different
@@ -513,7 +520,7 @@ void SyncCore::pollState(uint64_t now) {
     }
     for (unsigned id : doors_) {
         if (!w_->entityExists(id)) continue;
-        bool o = w_->doorOpen(id); bool known = knownDoor_.count(id) != 0;
+        bool o = doorState(id); bool known = knownDoor_.count(id) != 0;
         auto sp = suppressDoor_.find(id);
         if (sp != suppressDoor_.end() && now < sp->second) { if (o) knownDoor_.insert(id); else knownDoor_.erase(id); continue; }
         bool cascade = anyLocalSolve_ && now < lastLocalSolveAt_ + kCascadeMs;
@@ -532,6 +539,31 @@ void SyncCore::pollState(uint64_t now) {
         char l[320]; std::snprintf(l, sizeof l, "state: emitted panels %u doors %u, applied panels %u doors %u | net sent %u resent %u in-order %u dup %u ooo %u acked %u | power emitted %u applied %u | cable emitted %u applied %u",
             st_.emittedPanels, st_.emittedDoors, st_.appliedPanels, st_.appliedDoors, st_.sent, st_.resent, st_.inOrder, st_.dup, st_.ooo, st_.acked, st_.emittedPowers, st_.appliedPowers, st_.emittedCables, st_.appliedCables); log(l);
     }
+}
+
+bool SyncCore::doorState(unsigned id) { return f_.doorDetectByPosition ? w_->doorOpen(id) : w_->doorRequested(id); }
+bool SyncCore::cableState(unsigned id) { return fixedRoster_ && !f_.noGroupCableIntent ? w_->cableRequested(id) : w_->cableLit(id); }
+
+SyncCore::WorldMarks SyncCore::marks() {
+    WorldMarks m; m.panels.reserve(panels_.size()); m.doors.reserve(doors_.size()); m.cables.reserve(cables_.size());
+    for (unsigned id : panels_) m.panels.push_back(!w_->entityExists(id) ? 0 : uint8_t((w_->panelSolved(id) ? 1 : 0) | (w_->panelPowered(id) ? 2 : 0)));
+    for (unsigned id : doors_) m.doors.push_back(w_->entityExists(id) && doorState(id) ? 1 : 0);
+    for (unsigned id : cables_) m.cables.push_back(w_->entityExists(id) && (cableState(id) || w_->cableRequested(id)) ? 1 : 0);
+    return m;
+}
+
+void SyncCore::absorb(const WorldMarks& before, uint64_t now) {
+    WorldMarks after = marks(); unsigned n = 0;
+    for (size_t i = 0; i < panels_.size() && i < before.panels.size(); ++i) {
+        unsigned id = panels_[i]; uint8_t b = before.panels[i], a = after.panels[i];
+        if ((a ^ b) & 1) { if (a & 1) knownPanel_.insert(id); else knownPanel_.erase(id); suppressPanel_[id] = now + kSuppressMs; ++n; }
+        if ((a ^ b) & 2) { if (a & 2) knownPower_.insert(id); else knownPower_.erase(id); suppressPower_[id] = now + kSuppressMs; ++n; }
+    }
+    for (size_t i = 0; i < doors_.size() && i < before.doors.size(); ++i)
+        if (after.doors[i] != before.doors[i]) { unsigned id = doors_[i]; if (after.doors[i]) knownDoor_.insert(id); else knownDoor_.erase(id); suppressDoor_[id] = now + kSuppressMs; ++n; }
+    for (size_t i = 0; i < cables_.size() && i < before.cables.size(); ++i)
+        if (after.cables[i] != before.cables[i]) { unsigned id = cables_[i]; if (after.cables[i]) knownCable_.insert(id); else knownCable_.erase(id); suppressCable_[id] = now + kSuppressMs; ++n; }
+    if (n) { char l[100]; std::snprintf(l, sizeof l, "state: the remote solve's reactions changed %u entities here (taken as remote)", n); log(l); }
 }
 
 void SyncCore::modProgressApplied(uint64_t now) {
@@ -585,8 +617,21 @@ void SyncCore::applyRemote(uint64_t now) {
                 if (h_.onRejected) h_.onRejected(r.kind, r.entity, r.epoch, r.seq, "already solved");
                 continue;
             }
+            // The solver's final line: the game's reactions to a solve read it (which exit a sliding bridge or floodgate control was left by).
+            // It is sent apart from the event; a live solve waits a little for it, a snapshot entry (an old solve) does not.
+            static const std::vector<LinePoint> kNoLine;
+            const std::vector<LinePoint>* line = &kNoLine; bool fine = false;
+            if (!f_.noSolveLine) {
+                auto pi = peers_.find(r.from);
+                if (pi != peers_.end()) { auto li = pi->second.lines.find(r.entity); if (li != pi->second.lines.end() && li->second.final && !li->second.pts.empty()) { line = &li->second.pts; fine = li->second.fine; } }
+                if (line == &kNoLine && r.hasLine && r.at && now < r.at + kLineWaitMs) { recvQ_.push_back(r); continue; }
+            }
             if (!f_.noEchoGuard) { knownPanel_.insert(r.entity); suppressPanel_[r.entity] = now + kSuppressMs; }    // echo guard first
-            w_->applyPanelSolved(r.entity);
+            // Applying a solve runs the game's own reactions: a linked panel solves, a door is told to open, a cable or a panel powers. They
+            // happened on the solver's side too and reach here as its events, so what changes during the call is taken as remote, not sent back.
+            WorldMarks before; if (!f_.noReactEchoGuard) before = marks();
+            w_->applyPanelSolvedLine(r.entity, *line, fine);
+            if (!f_.noReactEchoGuard) absorb(before, now);
             st_.appliedPanels++;
             if (h_.onApplied) h_.onApplied(r.kind, r.entity, r.epoch, r.seq);
             std::snprintf(l, sizeof l, "state: remote panel %#x applied as solved", r.entity); log(l);

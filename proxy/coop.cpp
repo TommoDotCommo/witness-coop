@@ -156,6 +156,10 @@ static DWORD WINAPI NetThread(LPVOID) {
         if (sscanf(line, "no_cable_off=%d", &v) == 1) flags.noCableOff = v;
         if (sscanf(line, "no_unsolve_sync=%d", &v) == 1) flags.noUnsolveSync = v;
         if (sscanf(line, "no_door_close_sync=%d", &v) == 1) flags.noDoorCloseSync = v;
+        if (sscanf(line, "no_solve_line=%d", &v) == 1) flags.noSolveLine = v;
+        if (sscanf(line, "no_react_echo_guard=%d", &v) == 1) flags.noReactEchoGuard = v;
+        if (sscanf(line, "door_detect_position=%d", &v) == 1) flags.doorDetectByPosition = v;
+        if (sscanf(line, "no_cable_fade_hold=%d", &v) == 1) flags.noCableFadeHold = v;
         if (sscanf(line, "open_dedupe_by_position=%d", &v) == 1) flags.openDedupeByPosition = v;
         if (sscanf(line, "no_off_snapshot=%d", &v) == 1) flags.noOffSnapshot = v;
         if (sscanf(line, "no_cable_arbiter=%d", &v) == 1) flags.noCableArbiter = v;

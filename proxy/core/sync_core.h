@@ -44,6 +44,8 @@ public:
     virtual bool panelPowered(unsigned) { return false; }                       // requested power-on, not the interpolated brightness
     virtual bool applyPanelPower(unsigned) { return false; }                    // render thread only; false: retry later
     virtual void applyPanelSolved(unsigned id) = 0;                             // render thread only
+    // A remote solve with the line the solver drew (empty when none arrived): the game's reactions read it (which way a sliding bridge goes).
+    virtual void applyPanelSolvedLine(unsigned id, const std::vector<LinePoint>& line, bool fine) { (void)line; (void)fine; applyPanelSolved(id); }      // fine: the points' unit (line_precision.h)
     virtual bool applyDoorOpen(unsigned id) = 0;                                // render thread only (calls the game's door function)
     // Progress that undoes itself and must be undone on the other side too: a timer panel resets (the Shadows door timers), a door shuts.
     virtual bool applyPanelUnsolved(unsigned) { return false; }                 // render thread only; false: retry later
@@ -73,6 +75,10 @@ struct Flags {   // all off by default
     bool noCableOff = false;    // twin: a cable that goes dark stays lit on the peer
     bool noUnsolveSync = false; // twin: a panel that un-solves (a timer ran out) stays solved on the peer
     bool noDoorCloseSync = false; // twin: a door that shuts stays open on the peer
+    bool noSolveLine = false;     // twin: a remote solve is applied without waiting for (and passing on) the solver's final line
+    bool noReactEchoGuard = false; // twin: what applying a remote solve changes at once (a door starting, a linked panel, a cable) is sent back as local
+    bool noCableFadeHold = false;  // twin: a cable still fading in after a remote switch-on is forgotten when the echo guard ends, and sent back when it is fully lit
+    bool doorDetectByPosition = false; // twin: a local door counts as opened only when it has finished moving (+0x1D0), not when it is told to (+0x1D4)
     bool openDedupeByPosition = false; // twin: a door told to shut but still standing open counts as open, so an open right after the close is dropped (one world kept 0x14724 shut)
     bool noOffSnapshot = false; // twin: snapshots do not tell a fresh peer about cables that were switched off
     bool noSnapReassert = false; // twin: a peer's snapshot that relights a cable this player switched off is ignored but not corrected
@@ -171,10 +177,17 @@ private:
     using Version = std::pair<uint64_t, unsigned>;  // Lamport clock, then player id
     uint64_t clock_ = 0; std::map<unsigned, Version> cableVersion_;
     struct Sent { uint32_t seq, kind, entity; bool acked, sentOnce; std::set<unsigned> acknowledgers, attempted; Version version; };
-    struct Recv { uint8_t kind; uint32_t entity; uint64_t epoch; uint32_t seq; bool snap = false; Version version = {}; };   // snap: part of the sender's full-state snapshot
+    struct Recv { uint8_t kind; uint32_t entity; uint64_t epoch; uint32_t seq; bool snap = false; Version version = {}; uint32_t from = 0; uint64_t at = 0; bool hasLine = false; };   // from: the sender; at: when it arrived; hasLine: the sender has a finished line for this solve   // snap: part of the sender's full-state snapshot
     struct Guard;                                          // scoped lock
     void emit(uint8_t kind, unsigned id, bool resync);
     void baseline(bool full);
+    // What a remote solve changes at once (the game's reactions), taken as remote: the detector's view of every tracked entity before the call,
+    // and after it the changed ones are recorded as known and get the echo guard.
+    struct WorldMarks { std::vector<uint8_t> panels, doors, cables; };
+    WorldMarks marks();
+    void absorb(const WorldMarks& before, uint64_t now);
+    bool doorState(unsigned id);       // the detector's door state: told to open (+0x1D4), or with the twin, finished opening
+    bool cableState(unsigned id);      // the detector's cable state (requested in a group, lit otherwise)
     bool reloadSeen(uint64_t now);
     bool scanWorld();
     uint64_t signature();

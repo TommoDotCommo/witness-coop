@@ -125,7 +125,8 @@ Change keys in the launcher under Settings > Controls.
 What's shared
 -------------
 Solved panels, puzzle lines as they're drawn, doors opening and closing, panels
-powering on, cables and lasers. Bridges and moving platforms aren't shared yet.
+powering on, cables and lasers, and what a puzzle moves: bridges, elevators,
+ramps, water levels. Each player rides their own boat.
 In a race nothing is shared, on purpose.
 
 

@@ -50,6 +50,11 @@ const Cfg& GetCfg() {
             else if (sscanf(line, "no_power_link=%d", &v) == 1) r.noPowerLink = v != 0;
             else if (sscanf(line, "no_target_dispatch=%d", &v) == 1) r.noTargetDispatch = v != 0;
             else if (sscanf(line, "no_bridge_advance=%d", &v) == 1) r.noBridgeAdvance = v != 0;
+            else if (sscanf(line, "no_remote_react=%d", &v) == 1) r.noRemoteReact = v != 0;
+            else if (sscanf(line, "no_remote_line_write=%d", &v) == 1) r.noRemoteLineWrite = v != 0;
+            else if (sscanf(line, "native_line_overlay=%d", &v) == 1) r.nativeLineOverlay = v != 0;
+            else if (sscanf(line, "hover_fights_reset=%d", &v) == 1) r.hoverFightsReset = v != 0;
+            else if (sscanf(line, "hover_diag=%d", &v) == 1) r.hoverDiag = v != 0;
             else if (sscanf(line, "old_projection=%d", &v) == 1) r.oldProjection = v != 0;
             else if (sscanf(line, "no_line_draw=%d", &v) == 1) r.noLineDraw = v != 0;
             else if (sscanf(line, "no_line_mirror=%d", &v) == 1) r.noLineMirror = v != 0;

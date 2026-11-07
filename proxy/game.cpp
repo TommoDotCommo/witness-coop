@@ -100,6 +100,7 @@ void GameRunQueued() {
         if (batch[i].type == 7) { auto social=SocialState(); CoopDumpStatus(ModelGpuStats().submittedPlayers, &social); continue; }
         if (batch[i].type == 1) { InputKey(batch[i].vk, batch[i].scan, batch[i].down); continue; }
         if (batch[i].type == 2) { InputMouse(batch[i].dx, batch[i].dy, batch[i].bf); continue; }
+        if (batch[i].type == 30) { int r = -1; bool ok = GameNativeSolveNow(batch[i].id, &r); char m[100]; snprintf(m, sizeof m, "game: nativesolve %#x -> %s, react %d", batch[i].id, ok ? "called" : "refused", r); Log(m); continue; }
         if (batch[i].type == 4 || batch[i].type == 5) {      // test commands: 'solve' makes the panel solved as a player's solve would (fields + dispatcher + its Bridge), 'dispatch' only runs the dispatcher
             if (batch[i].type == 5) GameMarkPanelSolved(batch[i].id);
             bool dispatched = GameDispatchTargetNow(batch[i].id), bridge = batch[i].type == 5 && GameBridgeAdvanceNow(batch[i].id);
@@ -148,6 +149,7 @@ static DWORD WINAPI CmdThread(LPVOID) {
             else if (sscanf(line, "menuat %d %d", &dx, &dy) == 2) DevMenuSetCursor((float)dx, (float)dy);
             else if (sscanf(line, "menu %15s", a) == 1) { if (!strcmp(a, "map")) DevMenuSetPage(0); else if (!strcmp(a, "nearby")) DevMenuSetPage(1); else if (!strcmp(a, "toggle")) DevMenuToggle(); else if (!strcmp(a, "saves")) DevMenuSetPage(2); }
             else if (sscanf(line, "cable %x", &id) == 1) GameEnqueueCablePower(id);
+            else if (sscanf(line, "nativesolve %x", &id) == 1) { Cmd c = {30, id, 0, 0, 0, false, 0, 0, 0}; EnterCriticalSection(&g_lock); if (g_n < 64) g_q[g_n++] = c; LeaveCriticalSection(&g_lock); }
             else if (sscanf(line, "solve %x", &id) == 1 || sscanf(line, "dispatch %x", &id) == 1) { Cmd c = {line[0] == 's' ? 5 : 4, id, 0, 0, 0, false, 0, 0, 0}; EnterCriticalSection(&g_lock); if (g_n < 64) g_q[g_n++] = c; LeaveCriticalSection(&g_lock); }
             else if (!strncmp(line, "chat ", 5) || !strncmp(line, "typing ", 7) || !strncmp(line, "typetext ", 9) || !strncmp(line, "ping", 4) || !strncmp(line, "socialstat", 10) || !strncmp(line, "emote ", 6) || !strncmp(line, "wheel ", 6) || !strncmp(line, "canvas ", 7) || !strncmp(line, "reticle ", 8) || !strncmp(line, "drawstat", 8) || !strncmp(line, "drawclear", 9)) SocialCommand(line);
             else if (!strncmp(line, "pad ", 4) || !strncmp(line, "padstat", 7)) PadCommand(line);
@@ -315,6 +317,41 @@ bool GameBridgeAdvanceNow(unsigned panelId) {
     return true;
 }
 
+// TEST ONLY (command `nativesolve <id>`, the solve sweep): a solve as the game's own handler finishes one (build 11370412, exe+0xBF592..0xBF869):
+// the solved fields, then exe+0xB7F80(panel, solve context, &out), the per-name reactions (+0x58: rotating bridges, ramps, shutters, water...),
+// which returns whether the target is dispatched; then the dispatcher for any target type and the panel's Bridge. No context is passed (only the
+// hub_bird_* panels read it). A remote solve does not run exe+0xB7F80: comparing the two games after this finds what that misses.
+// Behaviours a remote solve does not run here: the ending and the final elevator, the theatre's full-screen videos, the boat (each player's own
+// ride), the timed challenge (its panels are random per game), and the sound-room birds (they need the solve context, which only a live solve has).
+static bool RemoteReactSkipped(const char* name) {
+    for (const char* p : {":endgame", "video_", "boat_", "lotus_start", "hub_bird_"}) if (!strncmp(name, p, strlen(p))) return true;
+    return false;
+}
+bool GameReactNow(unsigned panelId, bool remote, int* go) {
+    uintptr_t e = panelId < 0x40000 ? GameEntity(panelId) : 0;
+    if (!e || IsBadReadPtr((void*)(e + 8), 8) || *(uintptr_t*)(e + 8) != Base() + kPanelTypeInfo || IsBadReadPtr((void*)(e + 0x58), 8)) return false;
+    const char* name = *(const char**)(e + 0x58); char nm[48] = {};
+    if (name && !IsBadReadPtr(name, 1)) for (int i = 0; i + 1 < (int)sizeof nm && !IsBadReadPtr(name + i, 1) && name[i]; i++) nm[i] = name[i];
+    if (remote && RemoteReactSkipped(nm)) return false;
+    const unsigned char* fn = (const unsigned char*)(Base() + 0xB7F80);
+    const unsigned char prologue[] = {0x4C, 0x89, 0x44, 0x24, 0x18, 0x48, 0x89, 0x54, 0x24, 0x10, 0x48, 0x89, 0x4C, 0x24, 0x08, 0x55};
+    if (IsBadReadPtr(fn, sizeof prologue) || memcmp(fn, prologue, sizeof prologue)) return false;
+    void* out = nullptr;
+    bool r = ((bool(__fastcall*)(void*, void*, void**))(fn))((void*)e, nullptr, &out);
+    if (go) *go = r ? 1 : 0;
+    return true;
+}
+bool GameNativeSolveNow(unsigned panelId, int* reacted) {
+    uintptr_t e = panelId < 0x40000 ? GameEntity(panelId) : 0;
+    if (!e || IsBadReadPtr((void*)(e + 8), 8) || *(uintptr_t*)(e + 8) != Base() + kPanelTypeInfo) return false;
+    GameMarkPanelSolved(panelId);
+    int go = 1; if (!GameReactNow(panelId, false, &go)) return false;
+    if (reacted) *reacted = go;
+    if (go) GameDispatchTargetNow(panelId, true);
+    GameBridgeAdvanceNow(panelId);
+    return true;
+}
+
 bool GameCableOffNow(unsigned id) {
     uintptr_t e = id < 0x40000 ? GameEntity(id) : 0;
     if (!e || IsBadReadPtr((void*)(e + 8), 8) || *(uintptr_t*)(e + 8) != Base() + kCableTypeInfo) return false;
@@ -338,29 +375,39 @@ void GameEnqueueCableOff(unsigned id) {
 // not enough. This thread writes the player's position about every millisecond until it is switched off (hover off, another teleport, a
 // real W/A/S/D press, or the time limit), which holds the player where it was put. Angles are not written: mouse look still works.
 static bool OwnForeground() { DWORD p = 0; GetWindowThreadProcessId(GetForegroundWindow(), &p); return p == GetCurrentProcessId(); }      // a real key press only counts while this game has the focus (bots inject input, and never touch it)
-static volatile LONG g_hovOn; static float g_hov[3]; static volatile DWORD g_hovUntil;
+static volatile LONG g_hovOn, g_hovGen; static float g_hov[3]; static volatile DWORD g_hovUntil;
 static DWORD WINAPI HoverThread(LPVOID) {
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
-    DWORD checked = 0; volatile float* fp = nullptr;
+    DWORD checked = 0; volatile float* fp = nullptr; LONG gen = -1; bool placed = false; float drift = 0; unsigned long long spins = 0, seen = 0;
     for (;;) {
         if (!g_hovOn) { fp = nullptr; Sleep(10); continue; }
+        if (gen != g_hovGen) { gen = g_hovGen; placed = false; drift = 0; spins = seen = 0; }
         DWORD now = GetTickCount();
         if (now - checked >= 40) {       // the stop conditions are checked 25 times a second; the write below spins
             checked = now;
             uintptr_t pl = GameEntity(0x1E465); fp = (pl && !IsBadWritePtr((void*)(pl + 0x24), 12)) ? (volatile float*)(pl + 0x24) : nullptr;      // looked up 25 times a second, not on every write (IsBad*Ptr in a spin is risky)
             if ((LONG)(now - g_hovUntil) > 0 || (OwnForeground() && ((GetAsyncKeyState('W') | GetAsyncKeyState('A') | GetAsyncKeyState('S') | GetAsyncKeyState('D')) & 0x8000))) { g_hovOn = 0; Log("game: hover off"); continue; }
+            if (GetCfg().hoverDiag && (now / 1000) != ((now - 40) / 1000)) { char m[140]; snprintf(m, sizeof m, "hoverdiag: max sideways drift %.2f m, %llu writes, %llu moved by the game, fp %p", drift, spins, seen, (void*)fp); Log(m); }
         }
         // The game snaps the player to the ground under it once per frame (to the lowest level where no collision is loaded), and builds the
         // camera from the player a little later in the same frame: a write every millisecond left a visible share of frames underground.
         // Spinning keeps the gap between the snap and our write to microseconds.
-        if (fp) { fp[0] = g_hov[0]; fp[1] = g_hov[1]; fp[2] = g_hov[2] - 1.69f; }
+        // The game's emergency reset (a player inside the world's geometry or below it) puts the player back at the island's start. Holding
+        // the player against it made the game reset again every frame, thousands of times, until it crashed rebuilding the ground there
+        // (exe+0x2D03EC, seen twice on 2026-11-07). The hold only lets the game change the height (its snap to the ground); once the player has
+        // been placed, a sideways move of more than 1.5 m is the game moving the player (to the nearest reset marker, often a few metres away): let go.
+        if (fp && placed) { float d = fmaxf(fabsf(fp[0] - g_hov[0]), fabsf(fp[1] - g_hov[1])); if (d > drift) drift = d; if (d > 0.01f) ++seen; }
+        if (fp && placed && !GetCfg().hoverFightsReset && (fabsf(fp[0] - g_hov[0]) > 1.5f || fabsf(fp[1] - g_hov[1]) > 1.5f)) {
+            g_hovOn = 0; Log("game: hover off (the game reset the player)"); continue;
+        }
+        if (fp) { fp[0] = g_hov[0]; fp[1] = g_hov[1]; fp[2] = g_hov[2] - 1.69f; placed = true; ++spins; }
         YieldProcessor();
     }
 }
 void GameHover(float x, float y, float z, float yaw, float pitch, unsigned seconds) {
     if (GetCfg().noTeleportHold) { GameTeleport(x, y, z + 8.0f, yaw, pitch); return; }      // twin: the old drop from above
     static bool started; if (!started) { started = true; CreateThread(nullptr, 0, HoverThread, nullptr, 0, nullptr); }
-    g_hov[0] = x; g_hov[1] = y; g_hov[2] = z; g_hovUntil = GetTickCount() + seconds * 1000; InterlockedExchange(&g_hovOn, 1);
+    g_hov[0] = x; g_hov[1] = y; g_hov[2] = z; g_hovUntil = GetTickCount() + seconds * 1000; InterlockedIncrement(&g_hovGen); InterlockedExchange(&g_hovOn, 1);
     GameTeleport(x, y, z, yaw, pitch);      // the angles (and the camera for a few frames)
 }
 void GameHoverOff() { InterlockedExchange(&g_hovOn, 0); }

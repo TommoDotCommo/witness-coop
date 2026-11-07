@@ -18,6 +18,9 @@
 #include "config.h"
 
 void Log(const char* msg);
+// panels whose trace a remote solve wrote (the game draws that line itself, so the overlay does not draw it again); cleared when this player traces there
+static volatile unsigned char g_nativeLine[0x40000];
+bool StateNativeLine(unsigned panel) { return panel < 0x40000 && g_nativeLine[panel] && !GetCfg().nativeLineOverlay; }
 
 static const uintptr_t kGlobals = 0x62D0A0, kDoorTI = 0x62DE70, kPanelTI = 0x62E670, kCableTI = 0x62EB10;
 static const int kSolvedF = 0x294, kEver = 0x298, kPanelState = 0x280, kDoorPower = 0x1D0;
@@ -69,6 +72,48 @@ public:
     bool doorOpen(unsigned id) override { uintptr_t e = GameEntity(id); return e && DoorOpen(e); }
     bool panelPowered(unsigned id) override { uintptr_t e = GameEntity(id); return e && Rd32(e + 0x2A4) == kOne; }
     bool applyPanelPower(unsigned id) override { return GamePanelPowerOnNow(id); }
+    // A remote solve with the solver's line: the line goes into this panel's trace buffer first (the game's reactions read it, and the panel shows
+    // it as solved), then the solve is finished as the game's own handler does: the solved fields, the reactions (exe+0xB7F80), the target when the
+    // reactions ask for it (a door, cable or panel target has its own event), the panel's Bridge. Whatever that changes at once is taken as remote
+    // by the core. Twin no_remote_react=1: the solved fields, the dispatcher and the Bridge only, as before 2026-11-07.
+    void applyPanelSolvedLine(unsigned id, const std::vector<witness::LinePoint>& line, bool fine) override {
+        if (GetCfg().noRemoteReact) { applyPanelSolved(id); return; }
+        if (!line.empty() && !GetCfg().noRemoteLineWrite) WriteLine(id, line, fine);
+        GameMarkPanelSolved(id);
+        int go = 1; bool reacted = GameReactNow(id, true, &go);
+        if (!GetCfg().noTargetDispatch && (!reacted || go)) GameDispatchTargetNow(id);
+        if (!GetCfg().noBridgeAdvance) GameBridgeAdvanceNow(id);
+    }
+    // The trace buffer as the game's own tracing leaves it: count +0x228, capacity +0x22C, records +0x230 of 13 dwords (node a, node b, the
+    // panel's engine id twice, 1.0 drawn, 1.0, world position of a, of b, 0). Grown with the game's own allocator (exe+0x2E7FA0), so the game can
+    // grow or free it later. What is written is remembered so this game does not send the line back as its own.
+    void WriteLine(unsigned id, const std::vector<witness::LinePoint>& pts, bool fine) {
+        uintptr_t e = GameEntity(id); if (!e || pts.size() < 2 || pts.size() > 400) return;
+        static const unsigned char reservePro[] = {0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x6C, 0x24, 0x10, 0x48, 0x89};
+        const unsigned char* rf = (const unsigned char*)(Base() + 0x2E7FA0);
+        if (IsBadReadPtr(rf, sizeof reservePro) || memcmp(rf, reservePro, sizeof reservePro)) return;
+        float pp[3], qq[4]; if (!Rd(e + 0x24, pp, 12) || !Rd(e + 0x34, qq, 16)) return;
+        wframe::Q q = {qq[0], qq[1], qq[2], qq[3]};
+        std::vector<std::array<float, 3>> world(pts.size());
+        for (size_t i = 0; i < pts.size(); ++i) {
+            float local[3]; for (int k = 0; k < 3; ++k) local[k] = float(pts[i].d[k]) * witness::LineUnit(fine);
+            wframe::ToWorld(pp, q, local, world[i].data());
+        }
+        int n = int(pts.size()) - 1; uint32_t eng = Rd32(e + 0x10);
+        int* count = (int*)(e + 0x228); int* cap = (int*)(e + 0x22C); void** data = (void**)(e + 0x230);
+        if (IsBadWritePtr(count, 16)) return;
+        if (*cap < n || !*data) ((void(__fastcall*)(void*, void*, int, int))(rf))(data, cap, n < 16 ? 16 : n, 0x34);
+        if (*cap < n || !*data) { if (*cap < n) *cap = n; }      // (the reserve sets the capacity; this only guards a build that does not)
+        if (!*data || IsBadWritePtr(*data, size_t(n) * 0x34)) return;
+        uint32_t* r = (uint32_t*)*data; const uint32_t one = kOne;
+        for (int i = 0; i < n; ++i, r += 13) {
+            r[0] = pts[i].node; r[1] = pts[i + 1].node; r[2] = eng; r[3] = eng; r[4] = one; r[5] = one;
+            memcpy(r + 6, world[i].data(), 12); memcpy(r + 9, world[i + 1].data(), 12); r[12] = 0;
+        }
+        *count = n;
+        written_[id] = std::vector<uint32_t>((uint32_t*)*data, (uint32_t*)*data + size_t(n) * 13);
+        g_nativeLine[id] = 1;
+    }
     void applyPanelSolved(unsigned id) override {   // the fields a real solve sets; the door itself is opened by its own event
         GameMarkPanelSolved(id);
         if (!GetCfg().noTargetDispatch) GameDispatchTargetNow(id);       // targets without a dedicated event (laser, plate, gauge, ...) react as in a native solve
@@ -92,6 +137,7 @@ public:
             uintptr_t ptr = 0; if (!Rd(e + 0x230, &ptr, 8) || !ptr) continue;
             std::vector<uint32_t> rec(size_t(n) * 13); if (!Rd(ptr, rec.data(), rec.size() * 4)) continue;
             float pp[3], qq[4]; if (!Rd(e + 0x24, pp, 12) || !Rd(e + 0x34, qq, 16)) continue;
+            { auto w = written_.find(id); if (w != written_.end()) { if (w->second == rec) continue; written_.erase(w); g_nativeLine[id] = 0; } }      // a line a remote solve wrote: not this player's, not sent back
             Frame& fr = frames_[id]; if (fr.rec != rec) { fr.rec = rec; memcpy(fr.pos, pp, 12); memcpy(fr.q, qq, 16); }      // the trace changed: the panel is where the trace was written
             if (GetCfg().lineOldAnchor) { memcpy(fr.pos, pp, 12); fr.q[0] = fr.q[1] = fr.q[2] = 0; fr.q[3] = 1; }      // (mutant: the old way, world offsets from where the panel is now)
             wframe::Q q = {fr.q[0], fr.q[1], fr.q[2], fr.q[3]};
@@ -132,7 +178,8 @@ public:
         ang[0] = a[0]; ang[1] = a[1]; return true;
     }
 private:
-    struct Frame { float pos[3] = {}, q[4] = {0, 0, 0, 1}; std::vector<uint32_t> rec; }; std::map<unsigned, Frame> frames_;      // the pose of each panel when its trace last changed
+    struct Frame { float pos[3] = {}, q[4] = {0, 0, 0, 1}; std::vector<uint32_t> rec; }; std::map<unsigned, Frame> frames_;
+    std::map<unsigned, std::vector<uint32_t>> written_;      // traces a remote solve wrote (the solver's line), until this player draws there      // the pose of each panel when its trace last changed
     std::vector<uintptr_t> tbl_; std::vector<unsigned> cables_, panelIds_;
 };
 

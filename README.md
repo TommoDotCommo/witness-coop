@@ -147,11 +147,12 @@ under **Settings > Players and interface**.
 ## What's shared and what isn't
 
 Shared between everyone: solved panels, the lines you draw on a panel (other players see your line as you trace it),
-doors opening and closing, panels powering on, cables lighting up, and lasers turning on. Timed puzzles that reset
-themselves reset for everyone.
+doors opening and closing, panels powering on, cables lighting up, lasers turning on, and what a puzzle moves: bridges,
+elevators, ramps, water levels, the windmill and the like, which start moving in every game at the same moment. Timed
+puzzles that reset themselves reset for everyone.
 
-Not shared yet: bridges and moving platforms. You'll each have to move those in your own world. If anything else ends
-up different between your games, press **F2** and [report it](#reporting-a-bug).
+Each player calls and rides their own boat, and plays the theatre's videos for themselves. If anything else ends up
+different between your games, press **F2** and [report it](#reporting-a-bug).
 
 **Race mode** shares nothing on purpose. Everyone plays their own world while still seeing, chatting and talking to
 each other. A countdown starts everyone at the same moment, and the first to the goal wins (a chosen panel, such as the

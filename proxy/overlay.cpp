@@ -209,6 +209,7 @@ static unsigned BuildLineVerts(const float cam[3], std::vector<LineVert>& out) {
     }
     unsigned lines = 0; g_mirroredLines = 0;
     for (const auto& r : CoopGetRemoteLines()) {
+        if (r.final && StateNativeLine(r.panel)) continue;      // the solver's finished line is in this panel's own trace: the game draws it, moving with the panel
         uintptr_t e = r.panel < 0x40000 ? GameEntity(r.panel) : 0; if (!e || !Readable((void*)(e + 0x24), 12)) continue;
         const float* pp = (const float*)(e + 0x24); float col[3]; PlayerColor(r.from, col); bool any = false;
         if (!Readable((void*)(e + 0x34), 16)) continue; const float* qp = (const float*)(e + 0x34); wframe::Q pq = {qp[0], qp[1], qp[2], qp[3]};      // this game's panel, where it is now and how it is turned (a door may have swung it): the line is in the panel's frame
