@@ -77,4 +77,28 @@ inline void AppearanceTint(const Appearance& raw, unsigned group, float out[3]) 
     };
     for (int k = 0; k < 3; ++k) out[k] = palette[group - 1][c - 1][k];
 }
+// The coat's choices are colours, not multipliers: its authored teal has almost no red, so no bounded multiplier makes it rust or olive
+// (before 2026-11-07 "Rust" and "Olive" both rendered teal; only "Blue" looked different). A recoloured material keeps its own
+// luminance (weave, shading, the darker hem) and takes the hue of the chosen colour. Linear RGB; mirrored in models/src/appearance.py.
+constexpr float kLuma[3] = {0.2126f, 0.7152f, 0.0722f};
+inline bool AppearanceRecolour(const Appearance& raw, unsigned group, float out[3]) {
+#ifdef WA_MUT_COAT_MULTIPLY
+    (void)raw; (void)group; (void)out; return false;
+#endif
+    static constexpr float coat[3][3] = {{0.45f, 0.10f, 0.04f}, {0.06f, 0.13f, 0.45f}, {0.22f, 0.24f, 0.06f}};      // rust, blue, olive
+    const auto a = ClampAppearance(raw);
+    if (group != 4 || !a.choice[3]) return false;
+    for (int k = 0; k < 3; ++k) out[k] = coat[a.choice[3] - 1][k];
+    return true;
+}
+// What the renderer does to one linear base colour of a group (the shader's Palette): recolour, or multiply by the tint.
+inline void AppearanceApply(const float lin[3], const Appearance& a, unsigned group, float out[3]) {
+    float t[3];
+    if (AppearanceRecolour(a, group, t)) {
+        float l = lin[0] * kLuma[0] + lin[1] * kLuma[1] + lin[2] * kLuma[2], lt = t[0] * kLuma[0] + t[1] * kLuma[1] + t[2] * kLuma[2];
+        for (int k = 0; k < 3; ++k) out[k] = t[k] * l / std::max(lt, 1e-4f);
+        return;
+    }
+    AppearanceTint(a, group, t); for (int k = 0; k < 3; ++k) out[k] = lin[k] * t[k];
+}
 } // namespace witness

@@ -12,6 +12,7 @@ variants = {
     'length': ('WA_MUT_LENGTH', source),
     'version': ('WA_MUT_VERSION', source),
     'reserved': ('WA_MUT_RESERVED', source),
+    'coat-multiply': ('WA_MUT_COAT_MULTIPLY', source),
     'no-send': ('', source.replace('EncodeAppearance(pres_.appearance)', 'EncodeAppearance({})')),
     'no-expose': ('', source.replace('pose.appearance = p.second.pres.appearance;', 'pose.appearance = {};')),
     'stale': ('', source.replace('if (!newer && !f_.noPresenceSeq) return;', 'if (false && !newer && !f_.noPresenceSeq) return;')),

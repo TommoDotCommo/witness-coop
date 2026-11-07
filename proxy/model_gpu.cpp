@@ -81,12 +81,15 @@ Texture2D tex : register(t0); SamplerState smp : register(s0);
 Texture2DMS<float> sceneMS : register(t1); Texture2D<float> scene1 : register(t2);
 Texture2D texN : register(t3); Texture2D texM : register(t4); Texture2D<float> mask : register(t5); Texture2D<float> ownDepth : register(t6);
 struct VIn { float3 p : POSITION; float3 n : NORMAL; float2 uv : TEXCOORD0; uint4 j : BLENDINDICES; float4 w : BLENDWEIGHT; float4 c : COLOR0; float group : TEXCOORD2; };
-struct VOut { float4 pos : SV_POSITION; float3 n : NORMAL; float2 uv : TEXCOORD0; float dist : TEXCOORD1; float4 c : COLOR0; float3 appearance : TEXCOORD2; float3 wp : TEXCOORD3; float group : TEXCOORD4; };
+struct VOut { float4 pos : SV_POSITION; float3 n : NORMAL; float2 uv : TEXCOORD0; float dist : TEXCOORD1; float4 c : COLOR0; float4 appearance : TEXCOORD2; float3 wp : TEXCOORD3; float group : TEXCOORD4; };
 VOut VS(VIn v) {
   float4x4 skin = bones[v.j.x] * v.w.x + bones[v.j.y] * v.w.y + bones[v.j.z] * v.w.z + bones[v.j.w] * v.w.w;
   float4 lp = mul(skin, float4(v.p, 1)); float3 ln = mul((float3x3)skin, v.n);
   VOut o; float4 wp = mul(model, lp); o.pos = mul(viewProj, wp); o.dist = o.pos.w; o.n = mul((float3x3)model, ln); o.uv = v.uv; o.c = v.c; o.wp = wp.xyz; o.group = v.group;
-  o.appearance = appearance[min(8u, (uint)(max(0.0, v.group) + 0.5))].rgb; return o; }
+  o.appearance = appearance[min(8u, (uint)(max(0.0, v.group) + 0.5))]; return o; }
+float3 Palette(float3 lin, float4 a) {      // appearance.w 1: recolour to a.rgb at this texel's own luminance (the coat); else multiply (witness::AppearanceApply)
+  const float3 L = float3(0.2126, 0.7152, 0.0722);
+  return a.w > 0.5 ? a.rgb * (dot(lin, L) / max(dot(a.rgb, L), 1e-4)) : lin * a.rgb; }
 float3 ToLin(float3 c) { return lerp(c / 12.92, pow(max(c, 0.0) + 0.055, 2.4) / pow(1.055, 2.4), step(0.04045, c)); }
 float3 Shoulder(float3 x) { float r = 1.0 - SHOULDER_KNEE; return lerp(x, SHOULDER_KNEE + r * (1.0 - exp(-(max(x, SHOULDER_KNEE) - SHOULDER_KNEE) / r)), step(SHOULDER_KNEE, x)); }      // linear light rolls off smoothly toward 1 above the knee instead of clipping
 float3 ToSrgb(float3 l) { return lerp(l * 12.92, 1.055 * pow(max(l, 0.0), 1.0 / 2.4) - 0.055, step(0.0031308, l)); }
@@ -102,10 +105,10 @@ float4 PS(VOut i) : SV_TARGET {
   float3 c;
   if (look.z < 0.5) {      // the old flat shading, in display space (the identity palette keeps the exact old path)
     float3 b = base;
-    if (any(i.appearance != float3(1, 1, 1))) b = ToSrgb(ToLin(base) * i.appearance);
+    if (any(i.appearance != float4(1, 1, 1, 0))) b = ToSrgb(Palette(ToLin(base), i.appearance));
     float d = saturate(dot(n, normalize(light.xyz))); c = b * tint.rgb * (light.w + (1 - light.w) * d);
   } else {
-    float3 lin = ToLin(base) * i.appearance;      // the palette multiplies in linear light
+    float3 lin = Palette(ToLin(base), i.appearance);      // the palette works in linear light
     float3 V = normalize(camPos.xyz - i.wp); float3 L = normalize(light.xyz);
     if (dot(n, V) < 0) n = -n;      // drawn without culling: a face seen from behind (inside an open coat) lights as it faces us
     float4 mm = i.c.a > 0.5 && shadow.w < 0.5 ? texM.Sample(smp, i.uv) : float4(1, 0.6, 0, 1);      // shadow.w: 1 ignores the material map (diagnostic)
@@ -532,7 +535,8 @@ bool ModelGpuDraw(ID3D11RenderTargetView* rtv, UINT w, UINT h, const wm::Cam& ca
         float n = cam.nearZ, f = cam.farZ; fc.shadow[1] = f / (f - n); fc.shadow[2] = -f * n / (f - n);
     }
     for (unsigned group = 0; group <= witness::kAppearanceFeatures; ++group)
-        witness::AppearanceTint(extra ? extra->appearance : witness::Appearance{}, group, fc.appearance[group]);
+    {   witness::Appearance ap = extra ? extra->appearance : witness::Appearance{};
+        witness::AppearanceTint(ap, group, fc.appearance[group]); fc.appearance[group][3] = witness::AppearanceRecolour(ap, group, fc.appearance[group]) ? 1.0f : 0.0f; }
     float feet[3] = {g_avatar->pos()[0], g_avatar->pos()[1], g_avatar->pos()[2] - wm::kCameraEye};
     if(extra && extra->seated) feet[2]=wtv::seatModelGround(g_avatar->pos()[2]);
     wm::ModelMatrix(feet, g_avatar->yaw(), g_L->fit, g_L->yaw, fc.model); fc.shadow[0] = feet[2] + 0.01f;

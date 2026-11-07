@@ -20,6 +20,10 @@ TINTS = (
     ((.45,.50,.55),(1.50,1.20,.80),(.70,.95,.70)),
     ((.45,.50,.55),(1.40,1.30,1.10),(.55,.95,.65)),
 )
+# The coat's choices are colours (linear RGB), not multipliers: a recoloured material keeps its luminance and takes the hue.
+# Mirrors witness::AppearanceRecolour in proxy/core/appearance.h (the teal coat cannot be multiplied into rust or olive).
+RECOLOUR = {4: ((.45, .10, .04), (.06, .13, .45), (.22, .24, .06))}
+LUMA = (.2126, .7152, .0722)
 def material_group(name):
     return next((i + 1 for i, names in enumerate(GROUPS) if name in names), 0)
 
@@ -39,4 +43,8 @@ def tint_colour(rgb, material, choices):
     group = material_group(material)
     if not group or not choices[group - 1]:
         return list(rgb)
+    if group in RECOLOUR:
+        target = RECOLOUR[group][choices[group - 1] - 1]
+        scale = sum(v * w for v, w in zip(rgb, LUMA)) / sum(v * w for v, w in zip(target, LUMA))
+        return [v * scale for v in target]
     return [v * t for v, t in zip(rgb, TINTS[group - 1][choices[group - 1] - 1])]

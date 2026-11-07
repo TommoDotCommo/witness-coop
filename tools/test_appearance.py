@@ -28,11 +28,16 @@ cpp = '''#include "appearance.h"
 int main() { for (unsigned g = 0; g <= 9; ++g) for (unsigned c = 0; c < 4; ++c) {
     witness::Appearance a; a.choice.fill(c); float t[3]; witness::AppearanceTint(a,g,t);
     std::printf("%u %u %.8f %.8f %.8f\\n", g,c,t[0],t[1],t[2]);
-} }'''
+}
+  for (unsigned c = 1; c < 4; ++c) { witness::Appearance a; a.choice[3] = c; const float rgb[3] = {.2f,.3f,.4f}; float o[3]; witness::AppearanceApply(rgb,a,4,o);
+    std::printf("apply %u %.8f %.8f %.8f\\n", c,o[0],o[1],o[2]); } }'''
 with tempfile.TemporaryDirectory(prefix='appearance-palette-') as tmp:
     p = Path(tmp); (p/'test.cpp').write_text(cpp)
     subprocess.run(['g++','-std=c++17','-I',str(ROOT/'proxy/core'),str(p/'test.cpp'),'-o',str(p/'test')],check=True)
     for line in subprocess.check_output([str(p/'test')],text=True).splitlines():
+        if line.startswith('apply'):      # the coat's recolour: the runtime and the generator give the same colour
+            _, choice, *got = line.split(); want = a.tint_colour([.2,.3,.4], 'coat', [0,0,0,int(choice),0,0,0,0])
+            assert all(abs(float(x)-y) < 1e-5 for x,y in zip(got,want)), line; continue
         group, choice, *tint = line.split(); group, choice = int(group), int(choice)
         expected = a.TINTS[group-1][choice-1] if 1 <= group <= 8 and choice else (1,1,1)
         assert all(abs(float(x)-y) < 1e-6 for x,y in zip(tint,expected)), line

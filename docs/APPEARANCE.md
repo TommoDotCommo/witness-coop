@@ -34,6 +34,13 @@ unmapped materials retain their authored appearance. Palette zero uses an exact
 identity multiplier. Runtime operations convert the baked sRGB colour to linear
 RGB for tinting and back before the existing lighting path.
 
+The coat is recoloured rather than multiplied: its authored teal has almost no
+red, so no bounded multiplier turns it rust or olive. A coat choice is a target
+colour; every texel keeps its own luminance (weave, shading, the darker hem) and
+takes that colour's hue (`witness::AppearanceRecolour` / `AppearanceApply` in
+`proxy/core/appearance.h`, `Palette` in the model shader, `RECOLOUR` in
+`models/src/appearance.py`). The other features still multiply.
+
 ## Wire contract
 
 Presence uses protocol v6, with distinct v7 tags for group pose/events/ACKs. All

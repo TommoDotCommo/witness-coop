@@ -43,6 +43,16 @@ int main() {
         if (!choice || !group || group > 8) for (float t : tint) REQUIRE(t == 1);
         else REQUIRE(tint[0] != 1 || tint[1] != 1 || tint[2] != 1);
     }
+    {   // the coat's choices read as their names on the authored teal coat (sRGB 40,140,130): rust is red, blue is blue, olive is yellow-green, at the same luminance
+        const float teal[3] = {0.0213f, 0.2623f, 0.2232f}; float l0 = teal[0] * kLuma[0] + teal[1] * kLuma[1] + teal[2] * kLuma[2];
+        Appearance c; float o[3];
+        c.choice[3] = 1; AppearanceApply(teal, c, 4, o); REQUIRE(o[0] > 2 * o[1] && o[0] > 4 * o[2]);      // rust
+        c.choice[3] = 2; AppearanceApply(teal, c, 4, o); REQUIRE(o[2] > 2 * o[1] && o[2] > 4 * o[0]);      // blue
+        c.choice[3] = 3; AppearanceApply(teal, c, 4, o); REQUIRE(o[0] > 2.5f * o[2] && o[1] > 2.5f * o[2] && o[0] > .8f * o[1]);      // olive
+        for (uint8_t k = 1; k < 4; ++k) { c.choice[3] = k; AppearanceApply(teal, c, 4, o); REQUIRE(std::fabs(o[0] * kLuma[0] + o[1] * kLuma[1] + o[2] * kLuma[2] - l0) < 1e-4f * 10); }
+        c.choice[3] = 0; AppearanceApply(teal, c, 4, o); REQUIRE(o[0] == teal[0] && o[1] == teal[1] && o[2] == teal[2]);      // the original stays exact
+        c.choice[3] = 1; c.choice[4] = 2; AppearanceApply(teal, c, 5, o); float t[3]; AppearanceTint(c, 5, t); REQUIRE(o[1] == teal[1] * t[1]);      // the other groups still multiply
+    }
     W world; std::vector<Bytes> wire; Hooks h; h.send = [&](const Bytes& b) { wire.push_back(b); };
     SyncCore sender(1, 1, &world, h), receiver(2, 1, &world, {});
     Presence p; p.appearance.choice = {0,1,2,3,0,1,2,3}; sender.setPresence(p); sender.tick(1000);
