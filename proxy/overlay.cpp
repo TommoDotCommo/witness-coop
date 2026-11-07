@@ -51,6 +51,7 @@ static const uintptr_t kPausedOld = 0x62DAC4;      // the first candidate, WRONG
 #include "social.h"
 #include "povui.h"
 #include "ui/player_panel.h"
+#include "ui/prompts.h"
 #include "ui/tag_layout.h"
 #include "pad.h"
 #include "../common/padlayer.h"
@@ -533,7 +534,7 @@ static void DrawNameTags(float W, float H) {
         }
         now.push_back(t);
     }
-    // the player the crosshair is on: close to the screen centre and not too far; the nearest such player gets the "press V" prompt
+    // the player the crosshair is on: close to the screen centre and not too far; the nearest such player is the one the TV keys act on
     unsigned aimed = 0; float best = 1e9f; std::string aimedName; int aimedPing = -1; float aimedEye[3]={};
     if (TagsWanted() && !GamePaused() && !IsBadReadPtr(cam, 12) && !IsBadReadPtr(ang, 8)) for (const auto& rp : CoopGetRemotes()) if (rp.ageMs < 2000) {
         float body[3] = {rp.pos[0], rp.pos[1], rp.pos[2] - 0.55f}, nx, ny, d[3] = {rp.pos[0] - cam[0], rp.pos[1] - cam[1], rp.pos[2] - cam[2]};
@@ -542,30 +543,18 @@ static void DrawNameTags(float W, float H) {
     }
     g_aimed = g_rosterOpen.load() ? 0 : aimed; g_tvAimed = g_rosterOpen.load() || best>12 ? 0 : aimed;
     VideoUpdatePlayers(PlayerIds());
-    if (aimed && !g_rosterOpen.load()) {
-        float col[3]; PlayerColor(aimed, col); bool watching = VideoWatching() == aimed; float k = std::max(1.0f, H / 1080.0f);
-        char b[96]; snprintf(b, sizeof b, watching ? "[V] stop watching %s" : "[V] watch %s's view", aimedName.empty() ? "player" : aimedName.c_str()); (void)aimedPing;
-        float tw = UiTextWidth(b, k), th = UiLineHeight(k), x = W / 2 - tw / 2, y = H / 2 + 70 * k;
-        (void)th; UiPlayerAnchor(cam,ang,aimedEye,0,NearFadeAlpha(aimed,cam,ang,aimedEye,W/H)); PromptChip(x, y, b, k, Rgba(col[0], col[1], col[2], 1)); UiPlayerAnchorEnd();
-    }
+    (void)aimedName; (void)aimedPing;      // no prompt over an aimed player and no corner reminder to watch (the owner, 2026-11-06): watching is in the player panel
     if((TvSeated() || TvSeatAvailable()) && !GamePaused()) {
-        char b[128]; snprintf(b,sizeof b,TvSeated()?"[%s] stand up; movement exits":"[%s] sit and watch",guide::KeyName(GetCfg().keyTvSeat).c_str());
+        std::string pr=wprompt::Seat(guide::DisplayKey(GetCfg().keyTvSeat),TvSeated()); const char* b=pr.c_str();
         float k=std::max(1.f,H/1080.f),tw=UiTextWidth(b,k);
         PromptChip(W/2-tw/2,H/2+130*k,b,k,uitheme::Accent);
     }
     unsigned deployed=TvDeploymentTarget(),tvTarget=deployed?deployed:g_tvAimed.load();
     if(tvTarget && TvExperimental() && !g_rosterOpen.load()){
         std::string name="player"; for(const auto& r:CoopGetRemotes()) if(r.id==tvTarget && r.name[0]) name=r.name;
-        char b[160]; snprintf(b,sizeof b,deployed?"[%s] retract %s's sky TV":"[%s] deploy %s's sky TV",guide::KeyName(GetCfg().keyTvDeploy).c_str(),name.c_str());
+        std::string pr=wprompt::SkyTv(guide::DisplayKey(GetCfg().keyTvDeploy),name,deployed!=0); const char* b=pr.c_str();
         float k=std::max(1.f,H/1080.f),tw=UiTextWidth(b,k),th=UiLineHeight(k),x=W/2-tw/2,y=H/2+100*k;
         (void)th; (void)tw; if(!deployed) UiPlayerAnchor(cam,ang,aimedEye,0,NearFadeAlpha(aimed,cam,ang,aimedEye,W/H)); PromptChip(x,y,b,k,uitheme::Accent); if(!deployed) UiPlayerAnchorEnd();
-    }
-    if (!aimed && !g_rosterOpen.load() && !VideoWatching() && !GamePaused()) {      // a quiet reminder that the other players' screens can be watched
-        std::vector<unsigned> ids = PlayerIds(); if (!ids.empty()) {
-            float k = std::max(1.0f, H / 1080.0f); char b[96]; std::string nm; if (ids.size() == 1) for (const auto& r : CoopGetRemotes()) if (r.id == ids[0] && r.name[0]) nm = r.name;
-            if (!nm.empty()) snprintf(b, sizeof b, "Hold Tab  watch %s's view", nm.c_str()); else snprintf(b, sizeof b, "Hold Tab  players: watch, mute, volume");
-            float tw = UiTextWidth(b, 0.8f * k), x = W - tw - 24 * k, y = H - 50 * k; (void)tw; PromptChip(x, y, b, 0.8f * k, uitheme::Muted);
-        }
     }
     for (int i = 0; i < 3; ++i) g_camSeen[i] = cam[i];
     g_panelW = (int)W; g_panelH = (int)H;
@@ -575,7 +564,7 @@ static void DrawNameTags(float W, float H) {
         int sel = std::min(g_nav.sel, std::max(0, int(rows.size()) - 1)); g_nav.sel = sel;
         const wpanel::Rect& P = L.panel; float tx = 0.8f * k;
         UiRect(P.x, P.y, P.w, P.h, uitheme::Surface); UiFrame(P.x, P.y, P.w, P.h, uitheme::Border); UiRect(P.x, P.y, 4 * k, P.h, uitheme::Accent);
-        UiText(P.x + 14 * k, P.y + 8 * k, "Players   (hold Tab)", uitheme::Accent, 0.9f * k);
+        UiText(P.x + 14 * k, P.y + 8 * k, "Players", uitheme::Accent, 0.9f * k);
         auto button = [&](const wpanel::Rect& r, const char* label, bool isHot, bool on) {
             if (r.w <= 0) return; UiRect(r.x, r.y, r.w, r.h, isHot ? uitheme::Hover : (on ? uitheme::Selected : uitheme::Raised)); UiFrame(r.x, r.y, r.w, r.h, uitheme::Border);
             float w = UiTextWidth(label, tx); UiText(r.x + std::max(2.f * k, (r.w - w) / 2), r.y + (r.h - UiLineHeight(tx)) / 2, label, uitheme::Text, tx); };
@@ -594,7 +583,7 @@ static void DrawNameTags(float W, float H) {
             button(rr.kick, "Kick", hot.act == wpanel::Act::Kick && hot.id == r.id, false);
             char v[16]; snprintf(v, sizeof v, "%d%%", int(r.volume * 100 + .5f)); UiText(P.x + 168 * k, ty, v, r.muted ? uitheme::Danger : uitheme::Muted, tx);
         }
-        if (rows.empty()) UiText(P.x + 14 * k, L.firstRow + 4 * k, "nobody else is here yet", uitheme::Muted, tx);
+        if (rows.empty()) UiText(P.x + 14 * k, L.firstRow + 4 * k, "Nobody else is here yet", uitheme::Muted, tx);
         float ty = L.togglesY + 2 * k + (wpanel::kButtonH * k - UiLineHeight(tx)) / 2; char vb[40];
         UiText(P.x + 14 * k, ty, "Voice volume", uitheme::Muted, tx); button(L.voiceDown, "-", hot.act == wpanel::Act::VoiceDown, false); button(L.voiceUp, "+", hot.act == wpanel::Act::VoiceUp, false);
         snprintf(vb, sizeof vb, "%d%%", VoiceGlobalVolume()); UiText(L.voiceDown.x + 26 * k, ty, vb, uitheme::Text, tx);
@@ -634,14 +623,14 @@ void OverlayRequestUiCapture(unsigned width, unsigned height, const char* name) 
 }
 static void DrawUiScene(float width, float height, ID3D11RenderTargetView* rtv) {
     UiBegin(width, height); DrawNameTags(width, height); { uintptr_t b0 = (uintptr_t)GetModuleHandleA(nullptr); const float* c0 = (const float*)(b0 + kCamPos); const float* a0 = (const float*)(b0 + kCamAng); if (!IsBadReadPtr(c0, 12) && !IsBadReadPtr(a0, 8)) { ViewCamera(c0, a0); SocialFrame(width, height, c0, a0); } } RaceDraw(width, height); if (DevMenuOpen()) DevMenuDraw(width, height); else DevMenuToast(width, height);
-        if (TvConsent() || TvEnabled()) PromptChip(14, 14, TvConsent() ? "Sharing my TV view   F11 stop   F10 back TV" : "Back TV on   F10 off   F11 share my view", 0.9f * std::max(1.f, height / 1080.f), uitheme::Accent);
+        if (TvConsent() || TvEnabled()) PromptChip(14, 14, TvConsent() ? "Sharing my view   F11: stop   F10: back TV" : "Back TV on   F10: off   F11: share my view", 0.9f * std::max(1.f, height / 1080.f), uitheme::Accent);
         if (VideoViewMode()) {      // the partner's screen, in a corner (F9: small, large, off)
             int vw = 0, vh = 0; unsigned long age = 0; ID3D11ShaderResourceView* srv = VideoRemoteSrv(&vw, &vh, &age); InterlockedIncrement(&g_povBox); if (srv) InterlockedIncrement(&g_povPic);
             float k = (VideoViewMode() == 2 ? 2.0f : 1.0f) * std::max(1.f, height / 1080.f), iw = (vw ? vw : 480) * k, ih = (vh ? vh : 270) * k, x = width - iw - 14, y = 14;
             UiRect(x - 3, y - 3, iw + 6, ih + 6 + UiLineHeight(0.85f), Rgba(0, 0, 0, 0.8f));
-            if (srv) UiImage(x, y, iw, ih, srv); else UiText(x + 10, y + ih / 2 - 10, "waiting for the picture", Rgba(1, 0.8f, 0.5f), 0.9f);
+            if (srv) UiImage(x, y, iw, ih, srv); else UiText(x + 10, y + ih / 2 - 10, "Waiting for the picture...", Rgba(1, 0.8f, 0.5f), 0.9f);
             { const char* nm = "player"; unsigned wid = VideoWatching(); float pc[3] = {1, 0.6f, 0.2f}; PlayerColor(wid, pc); std::vector<RemotePose> rem = CoopGetRemotes(); for (const auto& r : rem) if (r.id == wid && r.name[0]) nm = r.name;
-              char b[96]; snprintf(b, sizeof b, "%s's view%s    [ ] cycle   V clear   F5 list", nm, srv ? (age > 2000 ? "  (stale)" : "") : "  (waiting)"); UiText(x + 2, y + ih + 2, b, Rgba(pc[0], pc[1], pc[2]), 0.85f); }
+              std::string cap = wpanel::PipCaption(nm, srv ? (age > 2000 ? "  (stale)" : "") : "  (waiting)", PadGlyphs()); UiText(x + 2, y + ih + 2, cap.c_str(), Rgba(pc[0], pc[1], pc[2]), 0.85f); }
         }
         GuideDraw(width, height);
         UiEnd(rtv);

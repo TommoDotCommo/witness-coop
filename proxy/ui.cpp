@@ -27,6 +27,7 @@ namespace {
 const int kAtlasW = 1024, kAtlasH = 384, kLineHeight = 24, kPitchWide = 56, kFirst = 32, kLast = 126;
 struct Glyph { float advance, x, y, w, h; } g_glyph[kLast - kFirst + 1];
 bool g_tight;
+float g_capShift;      // screen pixels at scale 1 that glyphs are drawn above their cell, so capitals sit in the middle of the line box (uitext::CapCentreShift)
 const char* kHlsl = R"(
 cbuffer C : register(b0) { float2 scr; float2 pad; float4 anchor; float4 depth; };
 Texture2D<float> scene1 : register(t1); Texture2DMS<float> sceneMS : register(t2);
@@ -152,6 +153,13 @@ bool UiInit(ID3D11Device* dev, ID3D11DeviceContext* ctx) {
     for (int i = 0; i < kAtlasW * kAtlasH; i++) alpha[i] = ((uint8_t*)bits)[i * 4 + 1];
     for (int y = kAtlasH - 4; y < kAtlasH; y++) for (int x = kAtlasW - 4; x < kAtlasW; x++) alpha[y * kAtlasW + x] = 255;
     g_atlasAlpha = alpha;
+    {   // the ink rows of 'H' in its cell: where the capitals are, whatever the face's ascent
+        const Glyph& H = g_glyph['H' - kFirst]; int capTop = -1, capBottom = -2;
+        for (int y = 0; y < (int)H.h; y++) for (int x = 0; x < (int)H.w; x++)
+            if (alpha[((int)H.y + y) * kAtlasW + (int)H.x + x] > 127) { if (capTop < 0) capTop = y; capBottom = y; break; }
+        g_capShift = GetCfg().uiCapShiftOff ? 0.f : uitext::CapCentreShift(capTop, capBottom, 2, (float)kLineHeight);
+        char m[120]; snprintf(m, sizeof m, "ui: capitals in cell rows %d..%d, drawn %.2f px higher at scale 1", capTop, capBottom, g_capShift); Log(m);
+    }
     DeleteObject(font); DeleteObject(bmp); DeleteDC(dc);
     D3D11_TEXTURE2D_DESC td = {}; td.Width = kAtlasW; td.Height = kAtlasH; td.MipLevels = 1; td.ArraySize = 1; td.Format = DXGI_FORMAT_R8_UNORM; td.SampleDesc.Count = 1;
     td.Usage = D3D11_USAGE_IMMUTABLE; td.BindFlags = D3D11_BIND_SHADER_RESOURCE;
@@ -254,7 +262,7 @@ void UiText(float x, float y, const char* s, UiColor c, float sc) {
         int ch = (unsigned char)*s; if (ch < kFirst || ch > kLast) ch = '?';
         const Glyph& g = g_glyph[ch - kFirst];
         if (!g_seg.back().clip && ch != ' ' && (px < 0 || y < 0 || px + g.advance * sc > g_w + .5f || y + 24 * sc > g_h + .5f)) ++g_textOverflow;
-        if (ch != ' ') Quad(px - 2 * sc, y, px + (g.w / 2 - 2) * sc, y + g.h / 2 * sc,
+        if (ch != ' ') Quad(px - 2 * sc, y - g_capShift * sc, px + (g.w / 2 - 2) * sc, y + (g.h / 2 - g_capShift) * sc,
             (g.x + e) / kAtlasW, (g.y + e) / kAtlasH, (g.x + g.w - e) / kAtlasW, (g.y + g.h - e) / kAtlasH, col);
         px += g.advance * sc;
     }

@@ -86,6 +86,7 @@ struct Cfg {
     bool panelMouseBoost = false;  // panel_mouse_boost=1: start with the boost on
     bool noPovRequest = false;     // twin: this game watches a player but never asks for the pictures
     std::string uiFont = "karmina"; // ui_font=karmina|notoserif|segoe: the face of the co-op text; the first two are read from the player's own data-pc.zip at start (common/gamefont.h), Segoe UI when that fails
+    bool uiCapShiftOff = false;    // twin: glyphs drawn at the top of their cell as before 2026-11-06 (capitals 4 px below the middle of every button)
     bool uiTightAtlas = false;     // twin: the old glyph atlas (no room under the glyphs, no clipping): '[' and ']' leave bits over 't' and 'v'
     bool nearFade = true; float nearFadeStart = 1.4f, nearFadeEnd = 0.6f; // camera-to-eye distance, metres
     bool tagsThroughWalls = false; // tags_through_walls=1: mutant/opt-in for player markers without scene occlusion

@@ -22,6 +22,7 @@
 #include "ui/tag_layout.h"
 #include "povui.h"
 #include "guide_ui.h"
+#include "ui/prompts.h"
 #include "input.h"
 #include "model_gpu.h"
 #include "playercolor.h"
@@ -378,9 +379,9 @@ void SocialFrame(float W, float H, const float* cam, const float* ang) {
     if (cfg.voiceMode != 0) {      // my own microphone: what the key does, and a bar that follows the level while it is open
         bool talk = VoiceSpeaking(); int lvl = VoiceMicLevel(); char b[80];
         char chn[64]; VoiceChannelText(chn, sizeof chn);
-        char pre[48]; const char* padKey = PadVoiceButtonName(); std::string key = guide::KeyName(cfg.keyVoice ? cfg.keyVoice : cfg.keyVoiceAlt);
-        if (talk) snprintf(pre, sizeof pre, "MIC  talking"); else if (VoiceModeNow() == 2) snprintf(pre, sizeof pre, "MIC  hold %s to talk", padlayer::Hint(PadGlyphs(), key.c_str(), padKey)); else snprintf(pre, sizeof pre, "MIC  open");
-        snprintf(b, sizeof b, "%s  [%s]", pre, chn);
+        char pre[48]; const char* padKey = PadVoiceButtonName(); std::string key = guide::DisplayKey(cfg.keyVoice ? cfg.keyVoice : cfg.keyVoiceAlt);
+        if (talk) snprintf(pre, sizeof pre, "Mic: talking"); else if (VoiceModeNow() == 2) snprintf(pre, sizeof pre, "Mic: hold %s to talk", padlayer::Hint(PadGlyphs(), key.c_str(), padKey)); else snprintf(pre, sizeof pre, "Mic: open");
+        snprintf(b, sizeof b, "%s   %s", pre, chn);
         float tw = UiTextWidth(b, 0.8f * k), bx = 24 * k, by = H - 50 * k;
         UiRect(bx - 6 * k, by - 4 * k, tw + 90 * k, UiLineHeight(0.8f * k) + 8 * k, Rgba(0, 0, 0, 0.5f)); UiText(bx, by, b, talk ? Rgba(0.5f, 1, 0.6f, 1) : Rgba(0.8f, 0.85f, 0.95f, 1), 0.8f * k);
         UiRect(bx + tw + 10 * k, by + 3 * k, 60 * k, 8 * k, Rgba(0.2f, 0.22f, 0.3f, 0.9f)); UiRect(bx + tw + 10 * k, by + 3 * k, 60 * k * std::min(1.0f, lvl / 600.0f), 8 * k, talk ? Rgba(0.4f, 1, 0.5f, 1) : Rgba(0.5f, 0.55f, 0.7f, 1)); g_micHudDrawn = true;
@@ -433,7 +434,7 @@ void SocialFrame(float W, float H, const float* cam, const float* ang) {
         UiRect(cx - 1.5f * k, cy - 1.5f * k, 3 * k, 3 * k, Rgba(1, 1, 1, 1));
         if (g_canvas) {
             for (int i = 0; i < kInks; ++i) { float c2[3]; InkColor(CoopMyId(), uint8_t(i), c2); float sw = 22 * k, x0 = W / 2 - kInks * sw / 2 + i * sw; UiRect(x0, H - 78 * k, sw - 4 * k, 14 * k, Rgba(c2[0], c2[1], c2[2], 1)); if (i == g_penColor) UiFrame(x0 - 2, H - 80 * k, sw, 18 * k, Rgba(1, 1, 1, 1), 2); }
-            const char* hint = "canvas: move the mouse, hold X to draw, B colour, Backspace undo, Shift+X clear all, Z leaves"; float hw = UiTextWidth(hint, 0.8f * k); UiText(W / 2 - hw / 2, H - 56 * k, hint, Rgba(0.85f, 0.9f, 1, 1), 0.8f * k);
+            const Cfg& kc = GetCfg(); std::string hs = wprompt::Canvas(guide::DisplayKey(kc.keyDraw), guide::DisplayKey(kc.keyColor), guide::DisplayKey(kc.keyCanvas)); const char* hint = hs.c_str(); float hw = UiTextWidth(hint, 0.8f * k); UiText(W / 2 - hw / 2, H - 56 * k, hint, Rgba(0.85f, 0.9f, 1, 1), 0.8f * k);
         }
     }
     if (g_wheel) {      // the emote wheel: eight slots round the middle of the screen, the one the mouse points to lit

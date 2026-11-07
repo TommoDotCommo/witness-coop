@@ -135,5 +135,13 @@ struct Nav {
 inline constexpr const char* kHint = "Up/Down: choose  Enter: watch  M: mute  Left/Right: volume  L: leave  Esc: close";
 inline constexpr const char* kPadHint = "Right stick: point  RT or A: click  Let go of View: close";      // after pad input (K7)
 // The confirmation text before leaving (the standard's I7): what happens to the others.
+// The line under the partner picture (F9): whose view it is and the keys that act on it. Before 2026-11-06 it still named the keys of
+// scheme 1 (V clear, F5 list): V had become ping and F5 the held Tab, so neither did what it said (found by the owner).
+inline std::string PipCaption(const std::string& name, const char* status, bool pad) {
+#ifdef WP_MUT_OLD_PIP_KEYS
+    return name + "'s view" + status + "    [ ] cycle   V clear   F5 list";
+#endif
+    return name + "'s view" + status + (pad ? "    View + D-pad left / right: next player   hold View: players" : "    [ and ]: next player   F9: size / off   hold Tab: players");
+}
 inline std::string LeaveText(bool host) { return host ? "Leave? Everyone returns to the lobby." : "Leave? The others keep playing."; }
 }  // namespace wpanel

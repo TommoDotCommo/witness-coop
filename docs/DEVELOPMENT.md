@@ -59,6 +59,8 @@ Hold **F1** in the game or launcher to show a three-column guide; release it to 
 The in-game guide and menus use a proportional font from a padded 2x atlas: the game's own menu face, Karmina Bold, read at start from the
 player's `data-pc.zip` into memory (`common/gamefont.h`: the member's bytes XOR 0xFF, a private GDI font, nothing written; `make -C common gamefont-test`),
 or Segoe UI when that fails or `ui_font=segoe` is set (the `fontstat` command logs which and why),
+capitals centred in the line box (the atlas puts them low in their cell: the 'H' is measured at start and every glyph drawn that much higher,
+logged as `ui: capitals in cell rows`; `tools/qa.sh ui centre` measures the emote wheel's labels in their buttons at 1080p and 1440p, twin `ui_cap_shift_off=1`),
 measured wrapping, warm surfaces and amber selection borders. Chat wraps to its panel,
 and long input scrolls to keep the cursor visible. `make -C proxy/ui test` checks text
 metrics, wrapping, fitting and guide bounds with three mutants, and the dev map's detail pane

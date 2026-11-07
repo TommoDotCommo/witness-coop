@@ -179,12 +179,12 @@ std::string TryBind(const Cfg& cur, const std::string& config, unsigned vk, Cfg*
 #endif
     const guide::Binding* me = nullptr; for (const auto& b : guide::bindings) if (config == b.config) me = &b;
     if (!me) return "Unknown key setting " + config + ".";
-    for (const auto& b : guide::bindings) if (&b != me && cur.*b.member == key) return guide::KeyName(key) + " is already used for " + b.label + ".";
+    for (const auto& b : guide::bindings) if (&b != me && cur.*b.member == key) return guide::DisplayKey(key) + " is already used for " + b.label + ".";
     Cfg c = cur; c.*me->member = key;
     std::string err = guide::Validate(c);
     if (!err.empty()) {
-        for (const auto& s : guide::shared) if (s.key == key && !guide::OwnsShared(*me, s)) { const char* lab = s.action; for (const auto& b : guide::bindings) if (std::string(b.config) == s.action) lab = b.label; return guide::KeyName(key) + " is kept for " + lab + " in every co-op mod."; }
-        if (guide::Reserved(key)) return guide::KeyName(key) + " is taken by the game or a fixed co-op key.";
+        for (const auto& s : guide::shared) if (s.key == key && !guide::OwnsShared(*me, s)) { const char* lab = s.action; for (const auto& b : guide::bindings) if (std::string(b.config) == s.action) lab = b.label; return guide::DisplayKey(key) + " is kept for " + lab + " in every co-op mod."; }
+        if (guide::Reserved(key)) return guide::DisplayKey(key) + " is taken by the game or a fixed co-op key.";
         return err;
     }
     *out = c; return "";

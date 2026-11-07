@@ -1,6 +1,7 @@
 #include "guide.h"
 #include "movedkeys.h"
 #include "../proxy/bindings.h"
+#include <algorithm>
 #include <cstdlib>
 #include <unistd.h>
 #include <iostream>
@@ -17,10 +18,12 @@ int main() {
         check(c.*b.member == 0x71, "legacy F1 action moves to F2");
         check(guide::Validate(c).empty(), "moved binding is collision free");
         auto cols = guide::Content(c);
-        check(std::count(cols[0].begin(), cols[0].end(), guide::KeyName(c.*b.member) + "  " + b.text) == (guide::IsTvBinding(b) || guide::IsRadioBinding(b) ? 0 : 1),
+        auto rowsFor = [&](const guide::Columns& cs) { std::string r = guide::Row("", b.text), desc = r.substr(r.find('\t')); size_t n = 0;      // the action's row, which names this key
+            for (const auto& l : cs[0]) if (l.size() >= desc.size() && l.compare(l.size() - desc.size(), desc.size(), desc) == 0 && l.find(guide::DisplayKey(c.*b.member)) != std::string::npos) ++n; return n; };
+        check(rowsFor(cols) == (guide::IsTvBinding(b) || guide::IsRadioBinding(b) ? 0u : 1u),
               "guide lists actual configured action exactly once (the experimental TV and radio keys not while their options are off)");
         c.experimentalTv = true; c.experimentalRadio = true; cols = guide::Content(c);
-        check(std::count(cols[0].begin(), cols[0].end(), guide::KeyName(c.*b.member) + "  " + b.text) == 1, "with experimental_tv on every action is listed exactly once");
+        check(rowsFor(cols) == 1, "with experimental_tv on every action is listed exactly once");
         c = Cfg();
     }
     c.keyChat = guide::Help; c.keyPing = 0x71;
@@ -132,30 +135,40 @@ int main() {
     auto defaultCols = guide::Content(Cfg());
     std::string col0Text;
     for (const auto& line : defaultCols[0]) col0Text += line + "\n";
-    check(col0Text.find("H  Hold: emote wheel") != std::string::npos, "guide lists emote binding");
-    check(col0Text.find("R  Hold: radio channel") == std::string::npos, "guide leaves out the radio key (experimental_radio off by default)");
-    { Cfg on; on.experimentalRadio = true; auto oc = guide::Content(on); std::string t; for (const auto& l : oc[0]) t += l + "\n"; check(t.find("R  Hold: radio channel") != std::string::npos, "guide lists the radio key with experimental_radio on"); }
-    check(col0Text.find("F1  Hold: quick guide") != std::string::npos, "guide lists F1 quick guide");
-    check(col0Text.find("F10  Toggle back TV viewer") == std::string::npos, "guide leaves out the TV view key (experimental_tv off by default)");
-    check(col0Text.find("F11  Toggle back TV camera broadcast consent") == std::string::npos, "guide leaves out the TV consent key (experimental_tv off by default)");
-    check(col0Text.find("Tab  Hold: player list") != std::string::npos, "guide lists the player list key");
-    check(col0Text.find("MMB  Ping") != std::string::npos && col0Text.find("XBUTTON1  Hold: push to talk") != std::string::npos, "guide lists the mouse keys");
+    check(col0Text.find("Hold H\tEmote wheel") != std::string::npos, "guide lists emote binding");
+    check(col0Text.find("Hold R\t") == std::string::npos, "guide leaves out the radio key (experimental_radio off by default)");
+    { Cfg on; on.experimentalRadio = true; auto oc = guide::Content(on); std::string t; for (const auto& l : oc[0]) t += l + "\n"; check(t.find("Hold R\tTalk on the radio") != std::string::npos, "guide lists the radio key with experimental_radio on"); }
+    check(col0Text.find("Hold F1\tThis guide") != std::string::npos, "guide lists F1 quick guide");
+    check(col0Text.find("F10\t") == std::string::npos, "guide leaves out the TV view key (experimental_tv off by default)");
+    check(col0Text.find("F11\t") == std::string::npos, "guide leaves out the TV consent key (experimental_tv off by default)");
+    check(col0Text.find("Hold Tab\tPlayer panel") != std::string::npos, "guide lists the player list key");
+    check(col0Text.find("V / Middle mouse\tPing") != std::string::npos && col0Text.find("Hold B / Mouse 4\tPush to talk") != std::string::npos, "guide lists the mouse keys on the row of their action");
     check(col0Text.find("Watch / clear") == std::string::npos, "V no longer watches");
+    std::string allText; for (const auto& col : defaultCols) for (const auto& line : col) allText += line + "\n";
+    {   // a guide for players: their key names, one row per action, nothing stale (2026-11-06 clean-up; mutant GUIDE_MUT_RAW_KEY_NAMES)
+        for (const char* raw : {"MMB", "XBUTTON", "WHEEL", "F5", "V clear", "(second key)", "when PTT enabled"}) check(allText.find(raw) == std::string::npos, "the guide uses no raw or stale key wording");
+        size_t pings = 0, talks = 0; for (const auto& line : defaultCols[0]) { if (line.find("\tPing") != std::string::npos) ++pings; if (line.find("\tPush to talk") != std::string::npos) ++talks; }
+        check(pings == 1 && talks == 1, "an action with a second key has one row");
+        for (const auto& col : defaultCols) for (const auto& line : col) check(std::count(line.begin(), line.end(), '\t') <= 1, "a table row has one key column");
+        std::set<std::string> seen; bool dup = false; for (const auto& col : defaultCols) for (const auto& line : col) if (!line.empty() && !seen.insert(line).second) dup = true;
+        check(!dup, "no line is said twice");
+        auto wrapped = guide::Wrap(defaultCols); bool tabs = false; for (const auto& col : wrapped) for (const auto& line : col) if (line.find('\t') != std::string::npos) tabs = true;
+        check(!tabs, "the launcher's wrapped guide has aligned columns, no tab characters"); }
     // H5/K7: the controller's co-op layer comes from padlayer.h's one table; after pad input it is listed first (mutant GUIDE_MUT_NO_PAD)
     for (const auto& l : padlayer::kLines) if (std::string(l.id) != "voice")
-        check(col0Text.find(std::string(l.buttons) + "  " + l.text) != std::string::npos, "the guide lists every line of the pad layer");
+        check(allText.find(std::string(l.buttons) + "\t" + l.text) != std::string::npos, "the guide lists every line of the pad layer");
     {   auto padCols = guide::Content(Cfg(), true);
         check(!padCols[0].empty() && padCols[0][0].rfind("CONTROLLER", 0) == 0, "after pad input the guide starts with the controller's lines");
-        check(defaultCols[0][0].rfind("MOD KEYS", 0) == 0, "after keys the guide starts with the keys");
+        check(defaultCols[0][0] == "KEYS", "after keys the guide starts with the keys");
         Cfg rs; rs.padVoice = 2; std::string t; auto rsCols = guide::Content(rs, true); for (const auto& line : rsCols[0]) t += line + "\n";
-        check(t.find("Hold right stick click  Push to talk") != std::string::npos, "a stick click chosen for push to talk is listed");
+        check(t.find("Hold right stick click\tPush to talk") != std::string::npos, "a stick click chosen for push to talk is listed");
     }
 
     // the diagnostics marker is F2 unless a binding took it, never one of the bindings, and the guide names it
     check(guide::MarkerKey(Cfg()) == 0x71, "the marker is F2 by default");
-    check(col0Text.find("F2  Mark a problem") != std::string::npos, "guide lists the marker key");
+    check(col0Text.find("F2\tMark a problem") != std::string::npos, "guide lists the marker key");
     { Cfg m; m.keyChat = 0x71; check(guide::MarkerKey(m) == 0x7B, "a binding on F2 moves the marker to F12");
-      auto cols = guide::Content(m); std::string t; for (const auto& line : cols[0]) t += line + "\n"; check(t.find("F12  Mark a problem") != std::string::npos, "the guide names the moved marker");
+      auto cols = guide::Content(m); std::string t; for (const auto& line : cols[0]) t += line + "\n"; check(t.find("F12\tMark a problem") != std::string::npos, "the guide names the moved marker");
       m.keyPing = 0x7B; check(guide::MarkerKey(m) == 0, "no free key: no marker key"); }
     {   // no default or migrated binding may equal the marker key
         Cfg m; for (const auto& b : guide::bindings) m.*b.member = guide::Help; guide::MigrateF1(m);
@@ -196,9 +209,9 @@ int main() {
     {   Cfg m; SetBindingLine(&m, "key_draw=B"); guide::MigrateAll(m); check(m.keyDraw == 'B' && m.keyVoice == 0 && m.keyVoiceAlt == guide::MouseX1, "a player's own B stays; push to talk keeps the side button"); }
     {   // the moved-keys list: default players get every line, written once
         Cfg m; auto n = guide::MovedNotes(m); std::string t; for (auto& l : n) t += l + "\n";
-        check(t.find("Ping a place: P is now V or MMB") != std::string::npos && t.find("Push to talk: N is now B or XBUTTON1") != std::string::npos
+        check(t.find("Ping a place: P is now V or Middle mouse") != std::string::npos && t.find("Push to talk: N is now B or Mouse 4") != std::string::npos
               && t.find("Emote wheel (hold): G is now H") != std::string::npos && t.find("Next voice channel: H is now Y") != std::string::npos
-              && t.find("Ink colour: B is now WHEEL") != std::string::npos && t.find("F5 is now hold Tab") != std::string::npos && t.find("Watch a player: V is now in the player list") != std::string::npos,
+              && t.find("Ink colour: B is now Mouse wheel") != std::string::npos && t.find("F5 is now hold Tab") != std::string::npos && t.find("Watch a player: V is now in the player list") != std::string::npos,
               "moved list names every move");
         char tmpl[] = "/tmp/mkXXXXXX"; std::string d = mkdtemp(tmpl) ? std::string(tmpl) + "/" : "";
         check(movedkeys::WriteOnce(d, n), "first start writes the list"); check(!movedkeys::WriteOnce(d, n), "second start writes nothing");

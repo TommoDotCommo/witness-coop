@@ -83,6 +83,17 @@ inline std::string KeyName(unsigned k) {
     if (k == NextView) return "]";
     return k ? std::string(1, char(k)) : "unbound";
 }
+// A key as the player reads it (KeyName is the spelling in witness_coop.cfg: MMB, XBUTTON1, WHEEL).
+inline std::string DisplayKey(unsigned k) {
+#ifdef GUIDE_MUT_RAW_KEY_NAMES
+    return KeyName(k);
+#endif
+    if (k == MouseMiddle) return "Middle mouse";
+    if (k == MouseX1) return "Mouse 4";
+    if (k == MouseX2) return "Mouse 5";
+    if (k == Wheel) return "Mouse wheel";
+    return KeyName(k);
+}
 inline unsigned ParseKey(std::string s) {
     for (auto& c : s) c = char(std::toupper((unsigned char)c));
     if (s.size() == 1 && std::isalnum((unsigned char)s[0])) return unsigned(s[0]);
@@ -160,8 +171,8 @@ inline void ResolveShared(Cfg& c, std::vector<std::string>* notes = nullptr) {
 inline std::vector<std::string> MovedNotes(const Cfg& c) {
     std::vector<std::string> out;
     for (const auto& m : moved) for (const auto& b : bindings) if (std::string(b.config) == m.config && c.*b.member == b.initial) {
-        std::string t = std::string(b.label) + ": " + KeyName(m.from) + " is now " + KeyName(b.initial);
-        for (const auto& a : bindings) if (std::string(a.config) == std::string(m.config) + "_alt") t += " or " + KeyName(a.initial);
+        std::string t = std::string(b.label) + ": " + DisplayKey(m.from) + " is now " + DisplayKey(b.initial);
+        for (const auto& a : bindings) if (std::string(a.config) == std::string(m.config) + "_alt") t += " or " + DisplayKey(a.initial);
         out.push_back(t);
     }
     out.push_back("Player list: F5 is now hold Tab");
@@ -209,24 +220,29 @@ public:
     bool Open() const { return held.load(); }
 };
 using Columns = std::array<std::vector<std::string>, 3>;
+// Guide lines come in three kinds: a heading (no lower-case letter: "KEYS"), a table row ("key\tdescription": the key column, then what it
+// does; both renderers align the descriptions) and a paragraph (anything else). Every renderer puts a blank line before a heading that is
+// not the first line of its column, between a table row and a paragraph, and after a paragraph.
+inline bool IsHeading(const std::string& l) { return !l.empty() && l.find('\t') == std::string::npos && l.find_first_of("abcdefghijklmnopqrstuvwxyz") == std::string::npos; }
+// One row of the key table: "Hold: emote wheel" becomes "Hold H" / "Emote wheel".
+inline std::string Row(const std::string& keys, std::string text) {
+    std::string key = keys;
+    if (text.rfind("Hold: ", 0) == 0) { key = "Hold " + keys; text = text.substr(6); if (!text.empty()) text[0] = char(std::toupper((unsigned char)text[0])); }
+    return key + "\t" + text;
+}
 // The pad layer's lines (padlayer.h, the one table the launcher's Controls page lists too), with the push-to-talk stick click the player chose.
 inline std::vector<std::string> PadLines(const Cfg& c) {
-    std::vector<std::string> out{"CONTROLLER - co-op buttons on View (Back)"};
+    std::vector<std::string> out{"CONTROLLER"};
     for (const auto& l : padlayer::kLines) {
-        std::string b = l.buttons;
-        if (std::string(l.id) == "voice") { if (!c.padVoice) continue; b = c.padVoice == 1 ? "Hold left stick click" : "Hold right stick click"; out.push_back(b + "  Push to talk"); continue; }
-        out.push_back(b + "  " + l.text);
+        if (std::string(l.id) == "voice") { if (c.padVoice) out.push_back(std::string(c.padVoice == 1 ? "Hold left stick click" : "Hold right stick click") + "\tPush to talk"); continue; }
+        out.push_back(std::string(l.buttons) + "\t" + l.text);
     }
-    out.push_back(std::string("Voice: ") + (c.voiceMode == 3 ? (c.padVoice ? "push to talk on keys and on the stick click" : "open mic after pad input, push to talk after keys") : c.voiceMode == 1 ? "open mic" : c.voiceMode == 2 ? "push to talk" : "off") + ". Drawing stays on the keyboard.");
+    out.push_back(std::string("Voice on a controller: ") + (c.voiceMode == 3 ? (c.padVoice ? "push to talk on keys and on the stick click" : "open mic after controller input, push to talk after keys") : c.voiceMode == 1 ? "open mic" : c.voiceMode == 2 ? "push to talk" : "off") + ". Drawing stays on the keyboard.");
     return out;
 }
-// `pad`: the last input was a pad (K7): the controller's lines come first.
-inline Columns Content(const Cfg& c, bool pad = false) {
-    Columns out; (void)pad;
-#ifndef GUIDE_MUT_NO_PAD
-    if (pad) for (auto& l : PadLines(c)) out[0].push_back(l);
-#endif
-    out[0].push_back("MOD KEYS - your current bindings");
+// The keyboard and mouse keys: the player's bindings (a second key on the same row as the first), then the fixed keys.
+inline std::vector<std::string> KeyLines(const Cfg& c) {
+    std::vector<std::string> out{"KEYS"};
     for (const auto& b : bindings) {
 #ifdef GUIDE_MUT_MISSING_KEY
         if (b.member == &Cfg::keyChat) continue;
@@ -237,77 +253,95 @@ inline Columns Content(const Cfg& c, bool pad = false) {
 #ifndef GUIDE_MUT_RADIO_IN_GUIDE
         if (IsRadioBinding(b) && !c.RadioOn()) continue;      // nor the handheld radio
 #endif
-        out[0].push_back(KeyName(c.*b.member) + "  " + b.text);
+        if (IsAlt(b)) continue;      // listed with its first key
+        std::string keys = c.*b.member ? DisplayKey(c.*b.member) : "";
+        for (const auto& a : bindings) if (std::string(a.config) == std::string(b.config) + "_alt" && c.*a.member) keys += (keys.empty() ? "" : " / ") + DisplayKey(c.*a.member);
+        if (keys.empty()) keys = "unbound";
+        out.push_back(Row(keys, b.text));
     }
-    out[0].push_back("FIXED KEYS");
-    for (const auto& b : fixed) {
+    out.push_back(Row(KeyName(Roster), "Hold: player panel (watch, mute, leave)"));
+    out.push_back(Row(KeyName(PrevView) + " / " + KeyName(NextView), "Watch the previous / next player"));
+    out.push_back(Row(KeyName(Video), "Partner picture: small, large, off"));
+    out.push_back(Row(KeyName(Boost), "Faster mouse while tracing (on / off)"));
 #ifndef GUIDE_MUT_TV_IN_GUIDE
-        if ((b.key == TvView || b.key == TvConsent) && !c.experimentalTv) continue;
+    if (c.experimentalTv)
 #endif
-#ifndef GUIDE_MUT_DEV_IN_GUIDE
-        if ((b.key == DevMenu || b.key == Nearby) && !c.devMenu) continue;      // developer keys only with dev_menu=1 (off in a normal install)
-#endif
-        out[0].push_back(KeyName(b.key) + "  " + b.text);
-    }
-    out[0].push_back(KeyName(MarkerKey(c)) + "  Mark a problem: saves the last minute for a bug report (every player's game marks it)");
-    out[0].push_back("GAME / MENU CONTROLS");
-    out[0].push_back("Game uses your settings. Defaults: WASD move, mouse look / draw, click puzzles, Esc back.");
-    out[0].push_back("Lists: arrows, Enter, Esc. Launcher: Tab / Shift+Tab and Enter.");
+    { out.push_back(Row(KeyName(TvView), "Show the back TV of the nearest player (on / off)")); out.push_back(Row(KeyName(TvConsent), "TV camera: share your view (on / off)")); }
+    if (unsigned m = MarkerKey(c)) out.push_back(Row(KeyName(m), "Mark a problem for a bug report"));
+    out.push_back(Row(KeyName(Help), "Hold: this guide"));
 #ifdef GUIDE_MUT_DEV_IN_GUIDE
     if (true)
 #else
-    if (c.devMenu)
+    if (c.devMenu)      // developer keys only with dev_menu=1 (off in a normal install)
 #endif
-        out[0].push_back("Dev map: wheel zoom, right-drag pan; click a dot. Buttons teleport or act on a puzzle.");
-#ifndef GUIDE_MUT_NO_PAD
-    if (!pad) for (auto& l : PadLines(c)) out[0].push_back(l);
-#endif
-    out[1] = {
-        "PLAY TOGETHER",
-        "Everyone plays their own game on the same island. You see each other as the adventurer, with names, chat, pings and emotes.",
-        "Shared keys (the same in every co-op mod): V or middle mouse pings, B or the mouse side button talks, hold H for emotes, hold Tab for the player panel (watch, mute, volume, leave), [ and ] watch the previous / next player.",
-        "Shared: solved panels, puzzle lines as they are traced, doors, panel power, cables and lasers. A player who joins late catches up. Not shared yet: bridges and moving platforms.",
-        "Players fade when you walk into each other. Watch a player's view to compare clues. Draw on the world, or use the canvas for precise lines on a panel.",
-        c.RadioOn() ? "Voice: players nearby are heard where they stand, far away over a radio. Channels: proximity, radio, open line, or private (one player). The mic line shows yours."
-                    : "Voice: players nearby are heard where they stand, far away over a radio. Channels: proximity, open line, or private (one player). The mic line shows yours.",
-        "Race: nothing is shared, but you still see, chat and talk. Everyone starts on the same GO; first to the goal wins.",
-        "HOST / JOIN - in the launcher",
-        "Over the internet: Host a game, Through Steam, and invite friends in Steam. No ports to open.",
-        "Same network or Tailscale: Host a game, Direct. Friends see it in Join a friend, or paste the invite you copy for them.",
-        "The host picks co-op or race, continue or new game. Everyone ticks Ready and the host starts. After the game you are back in the lobby.",
-        "Saves show who played and how far. A new game can start with chosen areas of the island already solved."
-    };
-    out[2] = {
-        "HOW IT WORKS",
-        "Each player runs their own game with the mod. Moves, voice and chat go to the others directly or through Steam, and shared progress is resent until every game has it.",
-        "Everyone needs Steam build 11370412 of The Witness and the same mod version. The launcher offers updates.",
-        "Your movement and camera stay yours: only progress is shared.",
-        "TROUBLESHOOTING",
-        "Can't connect? Over the internet, use a Steam lobby or Tailscale. In a Direct lobby, Friends can join by says what to fix. Allow the launcher and the game through Windows Firewall.",
-        "Missing progress? Give a freshly loaded world a few seconds. Check you are both in co-op, not a race.",
-        "No voice? Check voice mode, push-to-talk key, microphone, volumes, mute / deafen and your channel. A private channel only reaches that player.",
-        "Slow puzzle cursor? " + KeyName(Boost) + " toggles a faster puzzle mouse. No picture of a player? Choose them in the player panel and wait a moment.",
-        "Something wrong? Press " + KeyName(MarkerKey(c)) + " at once, then Send diagnostics on the launcher's About tab and attach the zip to a bug report.",
-        "Hold F1 here or in game; release to return. The game keeps running. Settings changes apply the next time the game starts."
-    };
+    { out.push_back("DEVELOPER"); out.push_back(Row(KeyName(DevMenu), "Developer menu (Tab: page)")); out.push_back(Row(KeyName(Nearby), "Nearby puzzles"));
+      out.push_back("Dev map: wheel zooms, right-drag pans, click a dot to select it."); }
     return out;
 }
-// Character-cell wrapping for the launcher's monospace guide. The game uses
-// measured glyph advances instead. No elision: every word remains on screen.
+// `pad`: the last input was a pad (K7): the controller's lines come first.
+inline Columns Content(const Cfg& c, bool pad = false) {
+    Columns out;
+#ifdef GUIDE_MUT_NO_PAD
+    pad = false;
+#endif
+    auto add = [](std::vector<std::string>& to, const std::vector<std::string>& from) { to.insert(to.end(), from.begin(), from.end()); };
+    add(out[0], pad ? PadLines(c) : KeyLines(c));
+    out[1] = {
+        "PLAYING TOGETHER",
+        "Everyone plays their own game of the same island. Solved panels, lines as they are traced, doors, power, cables and lasers are shared, and a player who joins late catches up. Bridges and moving platforms are not shared yet.",
+        c.RadioOn() ? "Voice: players nearby sound where they stand, far away as if over a radio. Channels: proximity, radio, open line, or one player."
+                    : "Voice: players nearby sound where they stand, far away as if over a radio. Channels: proximity, open line, or one player.",
+        "Watch a player's view to compare clues. Draw on the world, or use the canvas for precise lines on a panel.",
+        "Race: nothing is shared, but you still see, chat and talk. Everyone starts together; first to the goal wins.",
+        "HOSTING AND JOINING",
+        "Over the internet: Host a game, Through Steam, then invite friends in Steam. No ports to open.",
+        "Same network or Tailscale: Host a game, Direct. Friends find it under Join a friend, or paste the invite you copy for them.",
+        "The host picks co-op or race and the save. Everyone ticks Ready, the host starts, and after the game everyone is back in the lobby.",
+    };
+    add(out[2], pad ? KeyLines(c) : PadLines(c));
+    add(out[2], {
+        "TROUBLESHOOTING",
+        "Can't connect? Use a Steam lobby, or Tailscale for Direct. In the lobby, Friends can join by says what to fix.",
+        "Can't join? Everyone needs the same mod version; the launcher offers updates.",
+        "Progress missing? Give a freshly loaded world a few seconds, and check everyone is in co-op, not a race.",
+        "No voice? Check the voice mode, microphone, volumes, mutes and your channel.",
+        "Something wrong? Press " + KeyName(MarkerKey(c) ? MarkerKey(c) : 0x71) + " right away, then Send diagnostics on the launcher's About tab.",
+        "Settings changed in the launcher apply the next time the game starts.",
+    });
+    return out;
+}
+// Character-cell wrapping for the launcher's monospace guide. The game uses measured glyph advances instead. No elision: every word
+// remains on screen. Table rows become a padded key column; their wrapped descriptions stay in the description column.
+inline std::vector<std::string> WrapWords(const std::string& text, size_t width) {
+    std::vector<std::string> out; std::string line; size_t at = 0;
+    while (at <= text.size()) {
+        size_t end = text.find(' ', at); if (end == std::string::npos) end = text.size();
+        std::string word = text.substr(at, end - at);
+        while (word.size() > width) { if (!line.empty()) { out.push_back(line); line.clear(); } out.push_back(word.substr(0, width)); word.erase(0, width); }
+        if (!line.empty() && line.size() + 1 + word.size() > width) { out.push_back(line); line.clear(); }
+        if (!word.empty()) { if (!line.empty()) line += ' '; line += word; }
+        at = end + 1;
+    }
+    out.push_back(line); return out;
+}
 inline Columns Wrap(const Columns& input, size_t width = 48) {
     Columns out;
-    for (size_t c = 0; c < input.size(); ++c) for (const auto& paragraph : input[c]) {
-        std::string line;
-        size_t at = 0;
-        while (at < paragraph.size()) {
-            size_t end = paragraph.find(' ', at); if (end == std::string::npos) end = paragraph.size();
-            std::string word = paragraph.substr(at, end - at);
-            if (!line.empty() && line.size() + 1 + word.size() > width) { out[c].push_back(line); line.clear(); }
-            if (!line.empty()) line += ' ';
-            line += word; at = end + 1;
+    for (size_t c = 0; c < input.size(); ++c) {
+        size_t keyW = 0;
+        for (const auto& l : input[c]) { auto t = l.find('\t'); if (t != std::string::npos) keyW = std::max(keyW, t + 2); }
+        keyW = std::min(keyW, width / 2);
+        bool afterParagraph = false;
+        for (const auto& l : input[c]) {
+            if (IsHeading(l)) { if (!out[c].empty() && !afterParagraph) out[c].push_back(""); out[c].push_back(l); afterParagraph = false; continue; }
+            auto t = l.find('\t');
+            if (t == std::string::npos) { if (!out[c].empty() && !out[c].back().empty() && !IsHeading(out[c].back())) out[c].push_back(""); for (auto& w : WrapWords(l, width)) out[c].push_back(w); out[c].push_back(""); afterParagraph = true; continue; }
+            auto keys = WrapWords(l.substr(0, t), keyW - 2), desc = WrapWords(l.substr(t + 1), width - keyW);
+            for (size_t i = 0; i < std::max(keys.size(), desc.size()); ++i) {
+                std::string k = i < keys.size() ? keys[i] : "";
+                out[c].push_back(k + std::string(keyW - k.size(), ' ') + (i < desc.size() ? desc[i] : ""));
+            }
+            afterParagraph = false;
         }
-        out[c].push_back(line);
-        if (c != 0) out[c].push_back("");
     }
     return out;
 }

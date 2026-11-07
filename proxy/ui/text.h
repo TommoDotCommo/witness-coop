@@ -46,6 +46,18 @@ std::string Wrap(const char* text, float maxWidth, Measure measure) {
     return out + line;
 }
 
+// How far to draw glyphs above their cell so a line's capital letters sit in the middle of its line box (callers centre text by the
+// line box: y = box.y + (box.h - lineHeight) / 2). capTop / capBottom: the first and last ink rows of 'H' in the glyph cell, in atlas
+// pixels (cellScale atlas pixels per screen pixel at text scale 1). The face's ascent puts the capitals low in the cell: with the game's
+// font they sat 4 px below the middle of every button at scale 1 (found by the owner 2026-11-06).
+inline float CapCentreShift(int capTop, int capBottom, float cellScale, float lineHeight) {
+    if (capBottom < capTop || cellScale <= 0) return 0;
+#ifdef UI_MUT_CAPSHIFT
+    return 0;
+#endif
+    return (capTop + capBottom + 1) / (2 * cellScale) - lineHeight / 2;
+}
+
 inline float ContainedScale(float available, float needed, float wanted, float minimum = 0.0f) {
     if (needed <= 0 || available <= 0) return minimum;
     #ifdef UI_MUT_SCALE

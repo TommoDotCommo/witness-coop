@@ -1,6 +1,7 @@
 #include "text.h"
 #include "theme.h"
 #include "guide_layout.h"
+#include <cmath>
 #include <cstdio>
 #include <string>
 static int failures;
@@ -27,11 +28,20 @@ int main() {
     for (const auto& size : {std::pair<float,float>{1280,720}, {1920,1080}, {2560,1440}, {3440,1440}, {3840,2160}, {1024,768}}) {
         auto layout = uitext::FitGuide(size.first, size.second, guide::Content(Cfg()),
             [&](const char* t, float sc) { return uitext::Width(t, sc, glyphs); });
-        for (const auto& col : layout.columns) {
+        for (size_t c = 0; c < layout.columns.size(); ++c) { const auto& col = layout.columns[c]; float inner = layout.columnWidth - 28 * layout.scale, kw = layout.keyWidth[c];
             check((col.size() * 24 + 94) * layout.scale <= size.second - 24.0f + .01f, "guide rows fit vertically");
-            for (const auto& line : col) check(uitext::Width(line.c_str(), layout.scale, glyphs) <= layout.columnWidth - 28 * layout.scale + .01f, "measured guide lines fit column");
+            for (const auto& line : col) { auto t = line.find('\t');
+                if (t == std::string::npos) check(uitext::Width(line.c_str(), layout.scale, glyphs) <= inner + .01f, "measured guide lines fit column");
+                else check(uitext::Width(line.substr(0, t).c_str(), layout.scale, glyphs) <= kw - 12 * layout.scale + .01f && uitext::Width(line.c_str() + t + 1, layout.scale, glyphs) <= inner - kw + .01f, "a key row's key and description fit their columns"); }
         }
     }
+    // Capitals centred in the line box: the game font's 'H' (ink rows 19..44 of a 2x cell) and Segoe UI's (17..44), line height 24.
+    for (auto rows : {std::pair<int,int>{19, 44}, {17, 44}, {10, 30}}) {
+        float shift = uitext::CapCentreShift(rows.first, rows.second, 2, 24);
+        float top = rows.first / 2.f - shift, bottom = (rows.second + 1) / 2.f - shift;
+        check(std::fabs((top + bottom) / 2 - 12) < 0.01f, "capital letters are centred in the line box");
+    }
+    check(uitext::CapCentreShift(5, 4, 2, 24) == 0, "a glyph without ink moves nothing");
     using namespace uitheme;
     check(Contrast(Text, Surface) >= 7, "primary text has accessible contrast on menu surfaces");
     check(Contrast(Muted, Surface) >= 4.5f, "secondary text has accessible contrast");

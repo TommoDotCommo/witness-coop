@@ -18,17 +18,24 @@ void GuideDraw(float w, float h) {
     UiRect(cardX, cardY, cardW, cardH, uitheme::Surface);
     UiFrame(cardX, cardY, cardW, cardH, uitheme::Border);
     UiRect(cardX, cardY, 4 * sc, cardH, uitheme::Accent);
-    UiText(cardX + 18 * sc, cardY + 12 * sc, "THE WITNESS CO-OP - QUICK GUIDE", uitheme::Text, sc * 1.25f);
-    UiText(cardX + 18 * sc, cardY + 42 * sc, PadGlyphs() ? "Hold View + Y to read / release to return" : "Hold F1 to read / release to return", uitheme::Muted, sc * 0.85f);
-    float topY = cardY + 70 * sc, paneH = cardH - (topY - cardY) - 14 * sc;
+    UiText(cardX + 18 * sc, cardY + 14 * sc, "QUICK GUIDE", uitheme::Accent, sc * 1.25f);
+    { float tw = UiTextWidth("QUICK GUIDE", sc * 1.25f); UiText(cardX + 18 * sc + tw + 14 * sc, cardY + 14 * sc + 5 * sc, "The Witness Co-op", uitheme::Muted, sc); }
+    const char* hint = PadGlyphs() ? "Hold View + Y to keep this open" : "Hold F1 to keep this open";
+    UiText(cardX + cardW - 18 * sc - UiTextWidth(hint, sc * 0.85f), cardY + 20 * sc, hint, uitheme::Muted, sc * 0.85f);
+    float topY = cardY + 58 * sc, paneH = cardH - (topY - cardY) - 14 * sc;
     for (int c = 0; c < 3; ++c) {
-        float x = cardX + 14 + c * cw, y = topY + 10 * sc;
+        float x = cardX + 14 + c * cw, y = topY + 12 * sc, kw = layout.keyWidth[c];
         UiRect(x, topY, cw - 8 * sc, paneH, uitheme::Inset);
         UiFrame(x, topY, cw - 8 * sc, paneH, uitheme::Border);
-        UiRect(x + 1, topY + 1, cw - 10 * sc, 2, Rgba(uitheme::Accent.r, uitheme::Accent.g, uitheme::Accent.b, 0.25f));
         for (const auto& line : cols[c]) {
-            bool heading = !line.empty() && line.find_first_of("abcdefghijklmnopqrstuvwxyz") == std::string::npos;
-            UiText(x + 10 * sc, y, line.c_str(), heading ? uitheme::Accent : uitheme::Text, sc);
+            auto tab = line.find('\t');
+            if (guide::IsHeading(line)) {      // a section: accent title over a faint rule
+                UiText(x + 12 * sc, y, line.c_str(), uitheme::Accent, sc * 0.9f);
+                UiRect(x + 12 * sc, y + row - 3 * sc, cw - 32 * sc, 1, Rgba(uitheme::Accent.r, uitheme::Accent.g, uitheme::Accent.b, 0.3f));
+            } else if (tab != std::string::npos) {      // a key row: the key, then what it does, aligned
+                UiText(x + 12 * sc, y, line.substr(0, tab).c_str(), uitheme::Text, sc);
+                UiText(x + 12 * sc + kw, y, line.c_str() + tab + 1, uitheme::Muted, sc);
+            } else UiText(x + 12 * sc, y, line.c_str(), uitheme::Text, sc);
             y += row;
         }
     }

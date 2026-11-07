@@ -1094,10 +1094,10 @@ LRESULT CALLBACK GuideProc(HWND h, UINT m, WPARAM w, LPARAM l) {
     HFONT font = CreateFontW(-std::max(1, int(20 * layout.scale) - 2), std::max(1, int(10 * layout.scale)), 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
         DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, FIXED_PITCH, L"Consolas");
     HGDIOBJ old = SelectObject(dc, th::Bold()); SetTextColor(dc, th::kWarm);
-    const wchar_t* title = L"THE WITNESS CO-OP - QUICK GUIDE";
+    const wchar_t* title = L"QUICK GUIDE  -  The Witness Co-op";
     { RECT tr = {16, 12, 16, 12}; th::Text(dc, title, -1, &tr, DT_LEFT | DT_TOP | DT_SINGLELINE | DT_NOPREFIX | DT_NOCLIP); }
     SelectObject(dc, th::Small()); SetTextColor(dc, th::kAccent);
-    const wchar_t* hint = L"Hold F1 to read / release to return. Keys reflect current launcher settings.";
+    const wchar_t* hint = L"Hold F1 to keep this open. The keys shown are your current settings.";
     TextOutW(dc, 16, 40, hint, (int)wcslen(hint)); SelectObject(dc, font);
     for (int c = 0; c < 3; ++c) {
         int y = 70;

@@ -63,5 +63,11 @@ int main() {
         o.confirmLeave = true; check(nav.Key(0x0D, 3, rows, o).act == Act::LeaveYes && nav.Key(0x1B, 3, rows, o).act == Act::LeaveNo && nav.Key('M', 3, rows, o).act == Act::None, "the confirmation takes only yes / no");
         Nav e; check(e.Key(0x0D, 0, {}, Options{}).act == Act::None, "Enter with nobody there does nothing"); }
     check(LeaveText(true) == "Leave? Everyone returns to the lobby." && LeaveText(false) == "Leave? The others keep playing.", "the leave confirmation says what happens to the others");
+    {   // the partner picture's caption names only keys that act on it: [ ] cycle (guide::PrevView / NextView), F9 size (guide::Video), the held Tab panel
+        std::string k = PipCaption("Beta", "", false), p = PipCaption("Beta", "  (stale)", true);
+        check(k.rfind("Beta's view", 0) == 0 && p.rfind("Beta's view  (stale)", 0) == 0, "the caption says whose view it is and its state");
+        check(k.find("[ and ]") != std::string::npos && k.find("F9") != std::string::npos && k.find("Tab") != std::string::npos, "the caption names the keys that act on the picture");
+        check(k.find("V ") == std::string::npos && k.find("F5") == std::string::npos, "the caption names no key of the old scheme (V is ping, F5 is the held Tab)");
+        check(p.find("View") != std::string::npos && p.find("[ and ]") == std::string::npos && p.find("F9") == std::string::npos, "with a controller the caption names its buttons"); }
     std::cout << (failures ? "FAILED" : "ALL OK") << '\n'; return failures ? 1 : 0;
 }
