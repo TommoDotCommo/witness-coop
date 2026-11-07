@@ -89,7 +89,9 @@ send(da,['emote 20'])
 expect('laugh has priority over speech',lambda n,r,d:d.get('emote')==20 and d.get('talk',1)<.02)
 send(da,['emote 0'],.5)
 expect('speech resumes after conflict',lambda n,r,d:d.get('talk',0)>.9)
-for channel in ('radio','global','direct:2'):
+send(da,['voicechannel radio'],.3)      # the radio is off by default (experimental_radio): there is no radio channel, A stays on proximity
+expect('no radio channel without experimental_radio: still proximity, hand up',lambda n,r,d:r.get('proximity_speaking') and d.get('talk',0)>.9)
+for channel in ('global','direct:2'):
     send(da,['voicechannel '+channel],.3)
     expect(channel+' cannot raise hand',lambda n,r,d:not r.get('proximity_speaking') and d.get('talk',1)<.02)
 send(da,['key B up','voicechannel proximity'],.5)

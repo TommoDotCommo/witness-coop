@@ -51,7 +51,7 @@ check('A (cfg: the old defaults) got the new defaults', ka and ka['key_ping'] ==
 check('B (cfg: chat on V) kept the player\'s key; its ping is on middle mouse only', kb and kb['key_chat'] == ord('V') and kb['key_ping'] == 0 and kb['key_ping_alt'] == 4, kb)
 for d, who in ((da, 'A'), (db, 'B')):
     f = os.path.join(d, 'moved_keys.txt'); txt = open(f).read() if os.path.exists(f) else ''
-    want = 'Ping a place: P is now V or MMB' if who == 'A' else 'Push to talk: N is now B or XBUTTON1'      # (B's own V is not a moved default: Ping is not listed for it)
+    want = 'Ping a place: P is now V or Middle mouse' if who == 'A' else 'Push to talk: N is now B or Mouse 4'      # (B's own V is not a moved default: Ping is not listed for it)
     check('%s: the moved-keys list was written once, beside the cfg' % who, want in txt and 'Player list: F5 is now hold Tab' in txt and (who == 'B') == ('Ping a place' not in txt) and os.path.exists(os.path.join(d, 'keys_scheme')), txt.splitlines()[:2])
 # 1. the world: A and B near each other so a ping has a surface; both loaded
 send(da, ['menusel c335', 'menudo teleport'], 4.0)
