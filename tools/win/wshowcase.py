@@ -245,7 +245,7 @@ def ghost_scene(vi):
     for g in others:
         if g is not B: g.send(['tp %.3f %.3f %.3f %.4f 0' % (bx - math.cos(th) * 30, by - math.sin(th) * 30, ground, h_o)])      # everybody else out of the picture
     B.send(['tp %.3f %.3f %.3f %.4f 0' % (bx + math.cos(th) * 3.0, by + math.sin(th) * 3.0, ground, h_o)], 3.0); snap(V, 'ghost_solid', 'Another player three metres in front of the camera: drawn solid.')
-    B.send(['tp %.3f %.3f %.3f %.4f 0' % (bx + math.cos(th) * 0.35, by + math.sin(th) * 0.35, ground, h_o)], 3.5); snap(V, 'ghost_overlap', 'The same player standing in the camera player\'s body: it fades to a ghost so the view is not blocked.')
+    B.send(['tp %.3f %.3f %.3f %.4f 0' % (bx + math.cos(th) * 0.95, by + math.sin(th) * 0.95, ground, h_o)], 3.5); snap(V, 'ghost_overlap', 'The same player standing in the camera player\'s body: it fades to a ghost so the view is not blocked.')
 
 def lobby_scene():
     """The lobby of the launcher with two members: A hosts (its player talks with a test voice), B joins with the invite, they chat."""
@@ -367,8 +367,108 @@ def launcher_scene(vi):
         time.sleep(0.5); grab_window(h, 'launcher_newgame', 'New game: tick the parts of the map that are done (or light some lasers, or take a ready-made start); the window says how many panels that is and what else the game needs first. Whatever the game needs before a part is solved with it, in order.')
     p.kill()
 
+def orchard_scene(vi):
+    """The group picture: the orchard just outside the tutorial (the Tree Row puzzles on the left, the pink trees on the right), every player
+    somewhere else in it doing something different. The tutorial is marked solved first (the progress command), otherwise the game puts a
+    player who leaves the start area back at its spawn point."""
+    V = games[vi]; others = [g for k, g in enumerate(games) if k != vi]
+    for g in games: g.send(['progress preset:tutorial'])
+    time.sleep(20.0)
+    cx, cy, h = -152.0, -82.0, math.radians(88)      # the camera: the puzzle row to the left, the field and the pink trees ahead and to the right
+    fx, fy, lx, ly = math.cos(h), math.sin(h), -math.sin(h), math.cos(h)
+    def place(g, x, y, heading):      # dropped from above onto the ground; again from higher when the game put it back at the spawn point
+        for z in (9.0, 14.0, 20.0):
+            g.send(['tp %.3f %.3f %.3f %.4f 0.0' % (x, y, z, heading)], 3.5); (px, py, pz), _ = g.cam()
+            if math.hypot(px - x, py - y) < 2.5: return True
+        print('  player %d did not land at %.1f %.1f' % (g.idx + 1, x, y), flush=True); return False
+    rel = lambda f, l: (cx + fx * f + lx * l, cy + fy * f + ly * l)
+    panel_front = lambda px, py, d: (px + d * math.cos(-0.3919), py + d * math.sin(-0.3919))      # the Tree Row panels face (cos, sin) of -0.39 rad
+    facing_panels, facing_camera = wrap(-0.3919 + math.pi), wrap(h + math.pi)
+    trees = (cx + 45 * math.cos(math.radians(62)), cy + 45 * math.sin(math.radians(62)))      # the pink trees, as the camera sees them
+    toward = lambda p, q: math.atan2(q[1] - p[1], q[0] - p[0])
+    crane = rel(11.0, -7.0)
+    roles = [   # (where: one spot or several to try, heading, what it does)
+        ([panel_front(-160.72, -66.06, 1.6)], facing_panels, 'emote 13'),      # thinking at a puzzle
+        ([panel_front(-159.65, -63.46, 2.6)], facing_panels + 0.35, 'emote 9'),      # pointing at the row
+        ([rel(f, 1.5) for f in (11.5, 12.0, 12.5, 13.0, 13.5)], facing_camera - 0.5, 'emote 14'),      # sitting on the stone wall behind the field: the highest landing
+        ([rel(7.0, -1.0)], facing_camera, 'emote 1'),      # waving at the camera
+        ([rel(14.0, -3.5), rel(13.0, -2.0), rel(15.0, -1.5), rel(12.0, -3.0)], math.radians(60), 'walk'),      # walking off toward the pink trees
+        ([rel(18.0, -9.0)], facing_camera, 'emote 2'),      # dancing over by the trees
+        ([crane], toward(crane, trees), 'emote 9'),      # pointing at the pink trees while saying so
+    ]
+    place(V, cx, cy, h)
+    for g, (spots, heading, act) in zip(others, roles):
+        if act == 'emote 14':      # the wall's top is the highest of these spots
+            best = None
+            for x, y in spots:
+                if place(g, x, y, heading):
+                    z = g.cam()[0][2]
+                    if not best or z > best[0] + 0.05: best = (z, x, y)
+            if best: place(g, best[1], best[2], heading); print('  player %d sits at height %.2f' % (g.idx + 1, best[0]), flush=True)
+            continue
+        for x, y in spots:
+            if place(g, x, y, heading): break
+    time.sleep(3.0)
+    if len(others) > 6: others[6].send(['chat Look at the pink trees!'])
+    for g, (_, _, act) in zip(others, roles):
+        if act == 'walk': g.send(['key W down'])
+    time.sleep(0.4)
+    for g, (_, _, act) in zip(others, roles):
+        if act.startswith('emote'): g.send([act])
+    for k, delay in enumerate((0.7, 0.6, 0.7)):
+        time.sleep(delay); snap(V, 'orchard_%d' % k, 'Eight players in the orchard: one thinks at a puzzle, one points at the row, one sits on the wall, one waves, one walks off toward the pink trees, one dances and one points the trees out in chat. Every adventurer has its own look.')
+    for g, (_, _, act) in zip(others, roles):
+        if act == 'walk': g.send(['key W up'])
+
+def lifestat(g):
+    """The `lifestat` line the proxy logs with each modelstat: the life layer of the last player drawn in game g (as tools/win/wmodel.py reads it)."""
+    import re
+    log = os.path.join(g.dir, 'witness_proxy.log'); n0 = sum(1 for l in open(log, errors='ignore') if l.startswith('lifestat:'))
+    g.send(['modelstat']); t = time.time()
+    while time.time() - t < 4:
+        ls = [l for l in open(log, errors='ignore') if l.startswith('lifestat:')]
+        if len(ls) > n0:
+            return {k: float(v) for k, v in re.findall(r'(\w+) ([-0-9.]+)', ls[-1].split(':', 1)[1])}
+        time.sleep(0.1)
+    return {}
+
+def life_scene(vi):
+    """The adventurer's life layer close up (docs/LIFE.md; published as docs/showcase/adventurer_<name>.jpg, the shot names are short): standing in the garden, glancing at a near viewer, a blink, the Laugh emote, the hat fidget
+    and the projected shadow. Each picture is taken when the drawing game reports that state (lifestat), not after a guessed delay."""
+    assert N == 2, 'the life scene needs exactly two games (tools/showcase.sh 2 life): lifestat reports the last player drawn, which must be the one in front of the camera'
+    V = games[vi]; B = games[1 if vi == 0 else 0]; (bx, by, ground), th, h_o, others = stage(vi)
+    for g in others:
+        if g is not B: g.send(['tp %.3f %.3f %.3f %.4f 0' % (bx - math.cos(th) * 30, by - math.sin(th) * 30, ground, h_o)])      # everybody else out of the picture
+    fx, fy = math.cos(th), math.sin(th)
+    def put(d, face, settle=2.5): B.send(['tp %.3f %.3f %.3f %.4f 0' % (bx + fx * d, by + fy * d, ground, face)], settle)
+    def until(key, test, limit):
+        t = time.time()
+        while time.time() - t < limit:
+            st = lifestat(V)
+            if test(st.get(key, 0)): return True
+            time.sleep(0.25)
+        print('  no %s within %d s' % (key, limit), flush=True); return False
+    put(3.4, h_o + 0.5, 3.0); snap(V, 'adv_garden', 'The adventurer in the garden, lit like the scene around it, with its shadow on the grass.')
+    put(1.9, h_o + 1.1)
+    if until('glancing', lambda v: v >= 1, 15): time.sleep(0.4); snap(V, 'adv_glance', 'Face to face: standing close, the adventurer glances at the player looking at it.')
+    put(2.2, h_o); V.send(['lifeblink'], 0.35); snap(V, 'adv_blink', 'A blink.')
+    time.sleep(1.5); B.send(['emote 20'], 0.9); snap(V, 'adv_laugh', 'The Laugh emote: the brows go up.'); time.sleep(3.0)
+    put(2.4, h_o + 0.3)
+    if until('fidgeting', lambda v: v >= 1, 40): time.sleep(1.0); snap(V, 'adv_fidget', 'Standing still for a while, the adventurer fidgets: it settles its hat, rubs its neck, looks round or shifts its weight (one of them, at random).')
+    # the shadow: on the orchard's bare path (grass hides a shadow), so the tutorial is marked solved first as in the orchard scene
+    for g in games: g.send(['progress preset:tutorial'])
+    time.sleep(20.0)
+    oh = math.radians(88); px, py = -152.0 + 14.0 * math.cos(oh) + 3.5 * math.sin(oh), -82.0 + 14.0 * math.sin(oh) - 3.5 * math.cos(oh)      # the path, where the walker went in the orchard picture
+    for z in (9.0, 14.0):
+        B.send(['tp %.3f %.3f %.3f %.4f 0' % (px, py, z, oh + 1.2)], 3.5)
+        if math.hypot(B.cam()[0][0] - px, B.cam()[0][1] - py) < 2.5: break
+    (bx2, by2, bz2), _ = B.cam(); cam_h = oh
+    V.send(['tp %.3f %.3f %.3f %.4f %.4f' % (bx2 - 4.5 * math.cos(cam_h), by2 - 4.5 * math.sin(cam_h), bz2 - 1.69 + 1.0, cam_h, -0.22)], 4.0)
+    snap(V, 'adv_shadow', 'The adventurer\'s shadow on the ground, cast by the game\'s sun.')
+
 SCENES = [('lineup', lambda: (lineup(0, 'lineup_a', 'Eight players in one group, each drawn as an adventurer (seen by player 1: players 2 to %d).' % N),
                               lineup(1, 'lineup_b', 'The same group seen by player 2: this time player 1 is in the picture.') if N > 2 else None)),
+          ('orchard', lambda: orchard_scene(0)), ('life', lambda: life_scene(0)),
           ('walk', lambda: walkers(0, 'walk', 'The others walking toward the camera: the walk clip of each model, at the speed the other game measured.')),
           ('hero', lambda: hero_scene(1)), ('ghost', lambda: ghost_scene(1)), ('lobby', lambda: lobby_scene()), ('race', lambda: race_scene()), ('pov', lambda: pov_scene(0)), ('devmenu', lambda: devmenu_scene(0)), ('pause', lambda: pause_pair(0)), ('social', lambda: social_scene(0)), ('emote', lambda: emote_scene(0)), ('draw', lambda: draw_scene(0)), ('voice', lambda: voice_scene(0)), ('panel', lambda: panel_scene(0)), ('map', lambda: map_scene(0)), ('launcher', lambda: launcher_scene(0)), ('look', lambda: look_scene(0)), ('emoteself', lambda: emote_self_scene(0)), ('pad', lambda: pad_scene(0))]
 t0 = time.time(); print('showcase: %d games, scenes %s, spot panel 0x%s' % (N, ','.join(want), SPOT), flush=True)

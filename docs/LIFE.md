@@ -2,11 +2,11 @@
 
 ![The adventurer in the garden, lit with its maps, its shadow on the grass](showcase/adventurer_garden.jpg)
 
-| The glance | A blink | The shadow | Settling the hat | Laughing |
+| The glance | A blink | The shadow | A fidget | Laughing |
 |---|---|---|---|---|
-| ![Face to face: the figure looks at the viewer](showcase/adventurer_glance.jpg) | ![Eyes closed](showcase/adventurer_blink.jpg) | ![The projected shadow on the grass](showcase/adventurer_shadow.jpg) | ![The hat fidget](showcase/adventurer_hat_fidget.jpg) | ![The Laugh emote: brows raised](showcase/adventurer_laugh.jpg) |
+| ![Face to face: the figure looks at the viewer](showcase/adventurer_glance.jpg) | ![Eyes closed](showcase/adventurer_blink.jpg) | ![The projected shadow on the ground](showcase/adventurer_shadow.jpg) | ![A fidget: one of four at random (the hat, the neck, a look round, a shift of weight)](showcase/adventurer_fidget.jpg) | ![The Laugh emote: brows raised](showcase/adventurer_laugh.jpg) |
 
-Real pictures of the game with the mod (the `shot` command, two clients on one PC, 2026-10-30).
+Real pictures of the game with the mod (the `shot` command, two clients on one PC, 2026-11-07; `tools/showcase.sh 2 life` takes them, each when the drawing game reports that state).
 
 What a modern character does on its own, with no packet telling it to, and how it is lit. Everything here is
 implemented in the proxy (`proxy/model/life.h`, applied in `proxy/model/model.cpp`, driven and drawn by
@@ -169,7 +169,7 @@ a 10 cm plus 0.5% depth bias avoids flicker at doorways. They stay hidden while 
 unavailable. `tags_through_walls=1` opts into the old marker behavior (default `0`);
 it also supplies the occlusion test mutant. The legacy body/facing markers use this
 check if the character model cannot load; ghost transparency does not bypass body depth.
-The player roster, chat history, partner-view picture, watch reminders, deployed-TV
+The player roster, chat history, partner-view picture, deployed-TV
 controls and race standings remain HUD information. Map player icons stay visible on
 the map for navigation; no separate world-space roster pointer or ghost marker exists.
 Location pings and their edge arrows deliberately remain visible navigation aids: they mark a chosen destination rather than a player's current position.

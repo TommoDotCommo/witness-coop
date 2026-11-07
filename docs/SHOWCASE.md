@@ -1,9 +1,11 @@
 # Showcase
 
 Co-op for **The Witness**: you and your friends in the same world, seeing each other, talking, drawing and racing. These are pictures of the game
-running with the mod, three players at a time. [How to install and play](../README.md) · [All features](../features.md)
+running with the mod, up to eight players at a time. [How to install and play](../README.md) · [All features](../features.md)
 
-![Two players in the garden: name tags with the ping, a voice bar beside the one who is talking](showcase/lineup_a.jpg)
+![Eight players in the orchard: one thinks at a puzzle, one points at the row, one sits on the wall, one waves, one walks off toward the pink trees, one dances and one points the trees out in chat](showcase/orchard.jpg)
+
+Eight players in the orchard, each in their own coat, scarf, hair and skin colours (Settings > Players and interface).
 
 ## The launcher
 
@@ -96,8 +98,8 @@ below, voice volume, name tags, partner picture and Leave. Releasing Tab closes 
 
 ![Watching another player's screen](showcase/pov_watch.jpg)
 
-*Watch* shows the other player's own screen in a box (streamed only because this game asked for it). The line under the box in this picture is the key reminder as the build
-draws it today; it still names the old keys (V clear, F5 list), which the quick guide corrects: the watch keys are `[` and `]`, and Watch is a button in the player panel.
+*Watch* shows the other player's own screen in a box (streamed only because this game asked for it). The line under the box names the keys: `[` and `]` for the
+next player, `F9` to make the box bigger or hide it, and hold `Tab` for the player panel, where Watch is a button.
 
 ### Emotes
 
@@ -138,7 +140,7 @@ as it is drawn.
 
 ![The quick guide](showcase/ui_guide.jpg)
 
-Hold `F1` for the quick guide, in the game and in the launcher: your current bindings, the fixed keys, the pad layer, how it works, troubleshooting.
+Hold `F1` for the quick guide, in the game and in the launcher: your keys as they are bound now (a second key on the same row), the controller layer, playing together, hosting and joining, and troubleshooting.
 
 ### The pause menu
 

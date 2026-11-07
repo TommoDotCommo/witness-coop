@@ -11,6 +11,11 @@ from witness import ROOT, TOOLS, win, real_saves
 SPOT = os.environ.get('SHOWCASE_SPOT', 'c335')       # the panel the players are teleported to: the stone pillar in the garden
 
 NAMES = ['Fox', 'Owl', 'Heron', 'Wren', 'Lynx', 'Otter', 'Moth', 'Crane']      # short names that fit the launcher's player list; no real names
+# Every player a different look (Settings > Players and interface; proxy/core/appearance.h: choices 0-3 for skin, hair, eyes, coat, scarf, trousers, boots, gear).
+# The seven players a group picture shows spread over all four coats (original teal, rust, blue, olive), and no two share their coat and scarf.
+LOOKS = [(0, 0, 0, 0, 0, 0, 0, 0), (1, 3, 1, 2, 2, 1, 2, 1), (2, 2, 2, 3, 1, 2, 1, 2), (3, 1, 3, 0, 3, 3, 3, 3),
+         (0, 2, 1, 1, 0, 1, 2, 0), (2, 3, 2, 3, 2, 2, 0, 1), (1, 1, 3, 1, 1, 3, 1, 3), (3, 0, 0, 2, 3, 0, 3, 2)]
+FEATURES = ('skin', 'hair', 'eyes', 'coat', 'scarf', 'trousers', 'boots', 'gear')
 
 def prepare(c, config):
     d = c.directory
@@ -23,12 +28,18 @@ def prepare(c, config):
     for name in ('adventurer.glb', 'adventurer.glb.txt'):
         gs.replace_copy(Path(ROOT) / 'assets/models' / name, models / name)
     config += 'name=%s\nforce_active=1\ncap_fps=30\ndev_menu=1\nvoice_mute_output=1\n' % (NAMES[(c.id - 1) % len(NAMES)],)
-    config += 'voice_mode=open\nvoice_test_tone=300,900,1700\n' if c.id % 2 == 0 else 'voice_mode=ptt\n'      # the even players are talking (a test voice: no microphone is needed)
+    config += ''.join('appearance_%s=%d\n' % (f, v) for f, v in zip(FEATURES, LOOKS[(c.id - 1) % len(LOOKS)]))
+    config += 'voice_mode=open\nvoice_test_tone=300,900,1700\n' if c.id % 2 == 0 else 'voice_mode=%s\n' % ('off' if c.id == 1 and os.environ.get('SHOWCASE_QUIET_CAMERA') else 'ptt')      # the even players are talking (a test voice: no microphone is needed); a quiet camera has no mic line
     config += os.environ.get('SHOWCASE_CFG_EXTRA', '').replace('\\n', '\n') + '\n'      # e.g. the race: SHOWCASE_CFG_EXTRA='game_mode=race\\nrace_goal=count:3\\nrace_countdown_ms=60000' tools/showcase.sh 2 race
     cfg = d / 'witness_coop.cfg'; cfg.unlink(missing_ok=True); cfg.write_text(config)
     for name in ('witness_cmd.txt', 'witness_proxy.log', 'witness_net.json'): (d / name).unlink(missing_ok=True)
     for leftover in ('shots', 'presets', 'savepoints'): shutil.rmtree(d / leftover, ignore_errors=True)      # pictures and save points of earlier runs
     saves = d / 'appdata/The Witness'
+    lv = saves / 'Launcher.variables'; lv.unlink(missing_ok=True)
+    if c.id != 1 and os.environ.get('SHOWCASE_LOW_OTHERS'):      # only game 1 is the camera of the group pictures: the others on the lowest video options (about half the memory)
+        saves.mkdir(parents=True, exist_ok=True)
+        lv.write_text(':/launcher\nrender_profile 0\nfullscreen false\nvsync false\nhighdpi false\nresolution 1\nmultisampling 0\ncustom_width 1280\ncustom_height 720\n'
+                      'shading_quality 0\nreflection_quality 0\ntexture_quality 0\ntexture_detail 0\ngeometry_detail 0\n')
     if saves.exists():
         for file in saves.iterdir():
             if file.suffix in ('.witness_campaign', '.png') or file.name.endswith('.coop.txt') or file.name == 'coop_progress.txt': file.unlink()
