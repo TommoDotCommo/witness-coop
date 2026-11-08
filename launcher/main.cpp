@@ -654,7 +654,7 @@ int g_fjState[NF_ROWS];      // the panel rows' states as last drawn
 // under it and, when it needs a look, one line of what to do. The whole text (cut short in the row when long) is the row's tooltip and its window text.
 struct FjRow { std::wstring title, result, fix; }; FjRow g_fj[NF_ROWS]; HWND g_fjTips;
 bool FjTall(int st) { return st == NF_WARN; }
-int FjHeight(int st) { return FjTall(st) ? 62 : 42; }
+int FjHeight(int st) { return FjTall(st) ? 66 : 48; }      // (a card is the row less 4; its last line ends 38 or 54 down: room under it, owner 2026-11-08)
 void FjTip(HWND row, const std::wstring& text) {
     if (!g_fjTips) { g_fjTips = CreateWindowExW(WS_EX_TOPMOST, TOOLTIPS_CLASSW, nullptr, WS_POPUP | TTS_NOPREFIX | TTS_ALWAYSTIP, 0, 0, 0, 0, GetParent(row), nullptr, GetModuleHandleW(nullptr), nullptr); SendMessageW(g_fjTips, TTM_SETMAXTIPWIDTH, 0, 420); SendMessageW(g_fjTips, TTM_SETDELAYTIME, TTDT_AUTOPOP, 30000); }
     std::wstring t = text; TOOLINFOW ti = {}; ti.cbSize = sizeof ti; ti.uFlags = TTF_IDISHWND | TTF_SUBCLASS; ti.hwnd = GetParent(row); ti.uId = (UINT_PTR)row; ti.lpszText = &t[0];
