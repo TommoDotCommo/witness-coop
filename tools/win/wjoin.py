@@ -80,7 +80,13 @@ si = subprocess.STARTUPINFO(); si.dwFlags |= subprocess.STARTF_USESHOWWINDOW; si
 procs = []
 try:
     for exe, d, rect in ((exeA, dirA, rectA), (exeB, dirB, rectB)):
-        p = subprocess.Popen([exe, '--dir', d, '--no-activate', '--stat-file', sp(d), '--cmd-file', cp(d)], startupinfo=si); procs.append(p)
+        env = None
+        if pics:      # pictures for the public showcase: Tailscale not found (no tailscale.exe on PATH or under Program Files), so no address or name of this PC is drawn
+            env = dict(os.environ); empty = os.path.join(d, 'no-programs'); os.makedirs(empty, exist_ok=True)
+            env['PATH'] = ';'.join(x for x in env.get('PATH', '').split(';') if x and not os.path.exists(os.path.join(x.strip('"'), 'tailscale.exe')))
+            for k in [k for k in env if k.upper() in ('PROGRAMW6432', 'PROGRAMFILES')]: del env[k]
+            env['PROGRAMW6432'] = env['PROGRAMFILES'] = empty      # (Windows Python keeps the names in upper case)
+        p = subprocess.Popen([exe, '--dir', d, '--no-activate', '--stat-file', sp(d), '--cmd-file', cp(d)], startupinfo=si, env=env); procs.append(p)
         print('LAUNCHERPID %d' % p.pid, flush=True)
     for p, rect in zip(procs, (rectA, rectB)):
         time.sleep(1.0); x, y, w, h = rect.split(); w, h = ('1280', '800') if pics else (w, h); subprocess.run([sys.executable, os.path.join(here, 'wplace.py'), str(p.pid), x, y, w, h], capture_output=True, timeout=30)
@@ -94,6 +100,7 @@ try:
     time.sleep(0.6); a = stat(dirA) or a
     fj = a and a.get('fjrows')
     check('   on screen: all five rows shown at their height, never one with a way in left without room (the first host showed a sliver of Steam, 2026-11-08)', fj and fj[0] == 0 and len(fj[1]) == 5 and all(h >= 40 for h in fj[1]), fj)
+    if pics: check('   pictures: the Tailscale row shows no address or name of this PC', a and 'This PC' not in a['hostrow'].get(2, (0, ''))[1], a and a['hostrow'].get(2))
     check('   the invite is a WIT- code', a and a['invite_code'].startswith('WIT-'), a and a['invite_code'])
     t0 = time.time(); cmd(dirB, 'tab 0', 'choice join')
     b = wait(dirB, lambda s: listed(s), 6.5); dt = time.time() - t0

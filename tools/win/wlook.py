@@ -1,6 +1,6 @@
 # T2 check of how the launcher looks and behaves under the mouse, run with Windows Python: (1) hovering along one tab must not repaint the row of tabs again and again (flicker): 70 mouse moves along one
 # tab may repaint it at most 3 times (the paints are counted by the launcher and written to its state file); (2) on every page no dropdown box may cover another control (a dropdown and a text
-# of the same page must not overlap).     usage: wlook.py <launcher exe> <game dir> <stat file>
+# of the same page must not overlap); controls a page hides (WS_VISIBLE off) are not looked at.     usage: wlook.py <launcher exe> <game dir> <stat file>
 import ctypes, ctypes.wintypes as wt, os, re, subprocess, sys, time
 exe, gdir, statf = sys.argv[1], sys.argv[2], sys.argv[3]
 u = ctypes.WinDLL('user32', use_last_error=True); u.SendMessageW.argtypes = [wt.HWND, wt.UINT, wt.WPARAM, wt.LPARAM]; u.SendMessageW.restype = ctypes.c_ssize_t
@@ -36,6 +36,8 @@ kids = []
 def collect(h, l): kids.append(h); return True
 u.EnumChildWindows(main, collect, 0)
 tab = [h for h in kids if cls(h) == 'SysTabControl32'][0]
+u.GetWindowLongW.argtypes = [wt.HWND, ctypes.c_int]
+shown = [h for h in kids if u.GetWindowLongW(h, -16) & 0x10000000]      # WS_VISIBLE of the control itself: on every page (a page not selected keeps its controls' flag), but not a control its page hides (the race goal outside a race, the Steam hint), which is never laid out
 time.sleep(0.8); p0 = paints()
 r = wt.RECT(); u.GetWindowRect(tab, ctypes.byref(r)); oldpos = wt.POINT(); u.GetCursorPos(ctypes.byref(oldpos)); covered = False
 u.SetCursorPos(r.left + 130, r.top + 17); time.sleep(0.4); pt = wt.POINT(r.left + 160, r.top + 17); covered = u.WindowFromPoint(pt) != tab
@@ -45,7 +47,7 @@ time.sleep(0.8); p1 = paints()
 check('hovering along one tab repaints the row of tabs at most 3 times (70 mouse moves)', not covered and p0 is not None and p1 is not None and p1 - p0 <= 3, 'paints %s -> %s%s' % (p0, p1, ' (another window covers the tab)' if covered else ''))
 # no dropdown covers another control of its page
 by_parent = {}
-for h in kids:
+for h in shown:
     pr = u.GetParent(h); by_parent.setdefault(pr, []).append(h)
 bad = []
 for pr, hs in by_parent.items():
@@ -60,7 +62,7 @@ check('no dropdown box covers a text on any page', not bad, bad[:3])
 # every label and hint fits its box (a text cut off at the edge, or run out of the window, is a defect): measured with the control's own font; a text that is allowed to wrap (tall boxes) is not looked at
 g = ctypes.WinDLL('gdi32'); u.GetDC.restype = wt.HDC; u.GetDC.argtypes = [wt.HWND]; u.ReleaseDC.argtypes = [wt.HWND, wt.HDC]; g.SelectObject.argtypes = [wt.HDC, ctypes.c_void_p]; g.SelectObject.restype = ctypes.c_void_p; u.DrawTextW.argtypes = [wt.HDC, wt.LPCWSTR, ctypes.c_int, ctypes.POINTER(wt.RECT), wt.UINT]
 cut = []
-for h in kids:
+for h in shown:
     if cls(h) != 'Static': continue
     t = ctypes.create_unicode_buffer(300); u.GetWindowTextW(h, t, 300)
     if not t.value: continue

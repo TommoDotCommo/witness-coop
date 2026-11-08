@@ -36,7 +36,7 @@ static std::vector<Row> Build() {
     const std::vector<std::string> q = {"Low", "Medium", "High"};
     // Co-op rules (host): who can see the lobby and the player limit come with the Join list; what to play is chosen in the lobby
     { Row r = Choice_("cfg:lobby_visibility", "Who can see my lobby", kRules, {"Open to my networks", "Invite only"}, "open"); r.values = {"open", "invite"}; r.hostDecides = true;
-      r.hint = "open: listed in friends' Join lists on your network and Tailscale, joinable without a code; invite only: friends need the invite. Steam lobbies stay friends-only"; v.push_back(r); }
+      r.hint = "open: friends on your network or Tailscale see it in Join and need no code; invite only: friends need the invite. Steam lobbies stay friends-only"; v.push_back(r); }
     { Row n = R("note:rules", "Up to 16 players. What to play (co-op or race, new game, parts done) is chosen in the lobby by the host.", kRules, kNote); v.push_back(n); }
     // Players and interface
     { Row r = R("cfg:name", "Your name", kPlayers, kText); r.hint = "shown to the others"; v.push_back(r); }
