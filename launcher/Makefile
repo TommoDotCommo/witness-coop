@@ -55,7 +55,7 @@ VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 $(BUILD)/version.h: FORCE
 	@mkdir -p $(BUILD); printf '#define MOD_VERSION "%s"\n' '$(VERSION)' > $(BUILD)/version.h.new; cmp -s $(BUILD)/version.h.new $(BUILD)/version.h && rm $(BUILD)/version.h.new || mv $(BUILD)/version.h.new $(BUILD)/version.h
 FORCE:
-LMUTANTS = WINDOWS_CAPTION GOAL_ALWAYS STATUS_STAYS FOCUS_TRACE_ALWAYS DARK_BANNER NO_BACKDROP LOUD_BACKDROP UPD_CHOICE_UNSAVED NF_MUT_IGNORE_REPLIES NO_PROBE_ANSWER NO_MONITOR NO_VIDEO_WRITE NO_SAVE_WRITE CFG_DROP LOBBY_NO_CFG LOBBY_NO_RESULT LOBBY_NO_RESTORE LOBBY_NO_VOICE WIDE_COMBOS TAB_REPAINT_ALWAYS LONG_LABELS LOBBY_VERSION_ANY NO_SAVE_ON_CHANGE NO_STEAM_AT_START GUIDE_REARM
+LMUTANTS = WINDOWS_CAPTION GOAL_ALWAYS STATUS_STAYS FOCUS_TRACE_ALWAYS DARK_BANNER NO_BACKDROP LOUD_BACKDROP UPD_CHOICE_UNSAVED NF_MUT_IGNORE_REPLIES NO_PROBE_ANSWER NO_MONITOR NO_VIDEO_WRITE NO_SAVE_WRITE CFG_DROP LOBBY_NO_CFG LOBBY_NO_RESULT LOBBY_NO_RESTORE LOBBY_NO_VOICE WIDE_COMBOS TAB_REPAINT_ALWAYS LONG_LABELS LOBBY_VERSION_ANY NO_SAVE_ON_CHANGE NO_STEAM_AT_START GUIDE_REARM FJ_NO_RELAYOUT
 launcher-mutants: $(addsuffix .exe,$(addprefix $(BUILD)/witness_launcher_,$(LMUTANTS)))
 # finding each other and the hosting checks (C: the shared Windows headers vendored from MDK2 are C)
 NF_HDRS = netfind.h ../common/coop_witness.h ../common/coop_invite.h ../common/coop_discover.h ../common/coop_discover_win.h ../common/launcher_join.h ../common/launcher_host_core.h ../common/launcher_host_win.h joinglue.h

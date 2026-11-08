@@ -279,8 +279,8 @@ The invite code (v1), the probe (CPQ2/CPS2), the Join list model and the router 
 ([common/VENDORED.md](../common/VENDORED.md)). Tests: `python3 tools/test_coop_discovery.py`, `tools/test_coop_join.py`, `tools/test_coop_host.py` (the shared code,
 fuzzed, with 101 source mutants that must fail, the router code against a fake UPnP router and NAT-PMP responder), `make -C launcher joinglue-test lobby-test` (the paste box,
 the probe answer, the invite, invite-only lobbies; mutants), `python3 tools/test_coop_witness.py` (the wiring), and `tools/qa.sh join` (two real launchers, no
-game: B lists A from the LAN within 6 s and joins from the row, then from a pasted code; A shows *Same network* OK; an invite-only lobby is not listed and its code
-still joins; a launcher that ignores the answers must fail it). `tools/qa.sh join pictures` retakes the two launcher pictures with 127.0.0.1 as the address.
+game: B lists A from the LAN within 6 s and joins from the row, then from a pasted code; A shows *Same network* OK and all five *Friends can join by* rows laid out at their height from the moment the lobby opens; an invite-only lobby is not listed and its code
+still joins; a launcher that ignores the answers must fail it, and so must one that does not lay the rows out again when they appear, `FJ_NO_RELAYOUT`). `tools/qa.sh join pictures` retakes the two launcher pictures with 127.0.0.1 as the address.
 
 ### Play over the internet (Steam, no port forwarding)
 

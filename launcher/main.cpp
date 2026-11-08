@@ -470,7 +470,7 @@ wlobby::Settings SettingsFromUi() {
 }
 void PushSettings() { if (g_sess.Active() && g_sess.IsHost()) g_sess.SetSettings(SettingsFromUi()); }
 void PartsInfo() { SetWindowTextW(LB(ID_LB_PARTSINFO), g_lobbySpec.empty() ? L"nothing done yet" : W(g_lobbySpec).c_str()); }
-void RefreshLobbyUi();
+void RefreshLobbyUi(); void HostUiTick(bool now = false);
 void LobbyPartsChosen(const std::string& spec) { g_lobbySpec = spec; PartsInfo(); PushSettings(); }
 nf_settings NetSettings();
 // ---- C: hosting. "Friends can join by" (netfind.c's checks), the invite (joinglue.h MakeInvite)
@@ -491,7 +491,7 @@ void HostLobby() {
     uint16_t gp = (uint16_t)atoi(c.Get("listen", "47001").c_str()); std::string name = c.Get("name", "Player");
     g_sess.SetInviteOnly(c.Get("lobby_visibility", "open") == "invite");
     if (!g_sess.Host(name, gp, (uint16_t)port, c.Get("lobby_advertise"), &err)) { Status(W(err), L"Try again", ID_PRIMARY); return; }
-    HostChecksOpen(port, gp, false);
+    HostChecksOpen(port, gp, false); HostUiTick(true);
     SetWindowTextW(LB(ID_LB_INVITE_SHOW), W(g_sess.Invite()).c_str()); g_chatLog.clear(); SetWindowTextW(LB(ID_LB_LOG), L""); PushSettings(); StartVoice(); RefreshLobbyUi();
 }
 std::vector<std::pair<uint64_t, std::string>> g_friends;
@@ -680,19 +680,25 @@ int TextHeight(HWND h, int width) {      // the height a static's text takes at 
     wchar_t t[600] = {}; GetWindowTextW(h, t, 600); if (!t[0]) return 16; HDC dc = GetDC(h); HGDIOBJ old = SelectObject(dc, (HFONT)SendMessageW(h, WM_GETFONT, 0, 0));
     RECT r = {0, 0, width, 0}; th::Text(dc, t, -1, &r, DT_CALCRECT | DT_WORDBREAK | DT_NOPREFIX); SelectObject(dc, old); ReleaseDC(h, dc); return std::max(16, (int)r.bottom);
 }
-void HostUiTick() {
-    static ULONGLONG at; static bool laidSteam; if (GetTickCount64() - at < 400) return; at = GetTickCount64();
+int FjLaidHeight(int i) { HWND h = LB(ID_LB_FJ0 + i); RECT rc = {}; GetWindowRect(h, &rc); return (GetWindowLongW(h, GWL_STYLE) & WS_VISIBLE) ? (int)(rc.bottom - rc.top) : 0; }
+unsigned g_fjBad;      // (tests) host ticks that left a row with a way in shown without its height
+void HostUiTick(bool now) {      // now: at once (the lobby just opened: the rows appear while every check is still running)
+    static ULONGLONG at; static bool laidSteam; if (!now && GetTickCount64() - at < 400) return; at = GetTickCount64();
     bool host = g_sess.Active() && g_sess.IsHost(), steamHost = host && g_sess.SteamMode(); if (steamHost != laidSteam) { laidSteam = steamHost; LayoutAll(); }
     nf_host_row rows[NF_ROWS]; if (host) nf_host_rows(rows); bool relayout = false;
     for (int i = 0; i < NF_ROWS; ++i) {
         int st = host ? rows[i].state : NF_OFF; bool tall = FjTall(st), wasTall = FjTall(g_fjState[i]); g_fjState[i] = st;
         FjRow r{host ? W(rows[i].title) : L"", host ? W(rows[i].result) : L"", host && rows[i].state == NF_WARN ? W(rows[i].fix) : L""};
         if (r.title != g_fj[i].title || r.result != g_fj[i].result || r.fix != g_fj[i].fix || tall != wasTall) {
+#ifndef WL_MUT_FJ_NO_RELAYOUT
+            if (r.title.empty() != g_fj[i].title.empty()) relayout = true;      // a row appears or goes: the layout gives an empty row no room (owner, 2026-11-08: on the first host only a sliver of Steam showed)
+#endif
             g_fj[i] = r; std::wstring full = r.title.empty() ? L"" : r.title + L": " + r.result + (r.fix.empty() ? L"" : L"\n" + r.fix);
             SetWindowTextW(LB(ID_LB_FJ0 + i), full.c_str()); FjTip(LB(ID_LB_FJ0 + i), full); InvalidateRect(LB(ID_LB_FJ0 + i), nullptr, FALSE); if (tall != wasTall) relayout = true;
         }
     }
     if (relayout) LayoutAll();
+    if (host) for (int i = 0; i < NF_ROWS; ++i) if (!g_fj[i].title.empty() && FjLaidHeight(i) != FjHeight(g_fjState[i])) { ++g_fjBad; break; }
     if (host) { std::string code; if (HostInvite(&code, nullptr)) { std::wstring wc = W(code); wchar_t cur[200] = {}; GetWindowTextW(LB(ID_LB_INVITE_SHOW), cur, 200); if (wc != cur) SetWindowTextW(LB(ID_LB_INVITE_SHOW), wc.c_str()); } }
 }
 void CopyInvite(HWND h) {      // C3: "<name> is hosting The Witness. Join: https://<join page>/#WIT-..." (before the checks found a way in: the old address:port/CODE invite)
@@ -1058,6 +1064,10 @@ void WriteStat() {      // tests: what the lobby is, as text lines, rewritten ev
     o += std::string("guide ") + (g_guideHold.Open() ? "1\n" : "0\n");
     snprintf(b, sizeof b, "guideshows %u\nguidepaints %u\n", g_guideShows, g_guidePaints); o += b;
     snprintf(b, sizeof b, "invite %s\n", g_sess.Invite().c_str()); o += b;
+    {   // the "Friends can join by" rows as laid out (fjbad: host ticks since start that left a row with a way in without its room)
+        std::string hs; for (int i = 0; i < NF_ROWS; ++i) hs += " " + std::to_string(FjLaidHeight(i));
+        snprintf(b, sizeof b, "fjrows bad %u heights%s\n", g_fjBad, hs.c_str()); o += b;
+    }
     { std::string code, msg; bool ok = g_sess.Active() && g_sess.IsHost() && HostInvite(&code, &msg); o += "hostinvite_code " + (ok ? code : std::string("-")) + "\n" + "hostinvite_text " + (ok ? msg : std::string("-")) + "\n";      // (not "invite...": older test parsers read every line that starts so)
       char hd[2048]; hd[0] = 0; if (g_sess.Active() && g_sess.IsHost()) nf_host_dump(hd, sizeof hd); o += hd;
       snprintf(b, sizeof b, "probes answered %u invite_only %d\n", g_sess.ProbesAnswered(), g_sess.InviteOnly() ? 1 : 0); o += b;

@@ -32,6 +32,9 @@ def stat(d):
             m = re.match(r'hostrow (\d) state (\d) (.*)', l)
             if m: r['hostrow'][int(m[1])] = (int(m[2]), m[3])
         elif l.startswith('joinlist '): v = l.split(); r['joinlist'] = {v[i]: v[i + 1] for i in range(1, len(v) - 1, 2)}
+        elif l.startswith('fjrows '):
+            m = re.match(r'fjrows bad (\d+) heights (.*)', l)
+            if m: r['fjrows'] = (int(m[1]), [int(x) for x in m[2].split()])
         elif l.startswith('hostinvite_code '): r['invite_code'] = l[16:].strip()
         elif l.startswith('lobbystatus '): r['status'] = l[12:]
         elif l.startswith('uistatus '): r['ui'] = l[9:]
@@ -86,7 +89,11 @@ try:
     cmd(dirA, 'tab 0', 'choice host', 'host %d' % lport)
     a = wait(dirA, lambda s: s['lobby']['active'] and s['lobby']['host'] and s['hostrow'].get(1, (0,))[0] == 1, 20)
     check('1. A hosts Direct (open to my networks); Friends can join by: Same network OK (its lobby answered on its own LAN address)', a and a['lobby'].get('active') and a['hostrow'].get(1, (0,))[0] == 1 and 'Same network' in a['hostrow'][1][1], a and a['hostrow'])
+    a = wait(dirA, lambda s: len(s['hostrow']) == 5 and all(st != 0 for st, _ in s['hostrow'].values()), 20) or stat(dirA)      # (Tailscale and the firewall answer later: a second or more)
     check('   the other rows are there with a result: Steam (not used), Tailscale, Internet (router port off in this test), Windows Firewall', a and len(a['hostrow']) == 5 and a['hostrow'][0][0] == 3 and a['hostrow'][3][0] == 3 and a['hostrow'][4][0] in (1, 2), a and a['hostrow'])
+    time.sleep(0.6); a = stat(dirA) or a
+    fj = a and a.get('fjrows')
+    check('   on screen: all five rows shown at their height, never one with a way in left without room (the first host showed a sliver of Steam, 2026-11-08)', fj and fj[0] == 0 and len(fj[1]) == 5 and all(h >= 40 for h in fj[1]), fj)
     check('   the invite is a WIT- code', a and a['invite_code'].startswith('WIT-'), a and a['invite_code'])
     t0 = time.time(); cmd(dirB, 'tab 0', 'choice join')
     b = wait(dirB, lambda s: listed(s), 6.5); dt = time.time() - t0
