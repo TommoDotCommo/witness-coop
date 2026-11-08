@@ -58,6 +58,7 @@ static void on_reply(void *ctx, int candidate, uint32_t ip, unsigned port, const
     return;     /* mutant: the Join list ignores every CPS2 answer */
 #endif
     EnterCriticalSection(&lk);
+    if (wc_forget_invite_only(&J.list, reply, ip, port)) cd_expire(&J.list, GetTickCount());      /* the lobby there turned invite only: its open row goes now */
     if (cd_seen(&J.list, reply, route, ip, port, -1, (int)rtt, s->now + rtt, J.version) >= 0 && route >= 0 && route < CD_ROUTES) s->found[route]++;
     LeaveCriticalSection(&lk);
 }

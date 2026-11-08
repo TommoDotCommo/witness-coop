@@ -83,5 +83,19 @@ int main() {
     check("a flood from one address: at most 10 answers", answered == 10, std::to_string(answered));
     check("other traffic is not a probe", !jg::IsProbe((const uint8_t*)"WTL1\x01xxxx", 9) && jg::IsProbe(q, sizeof q));
 
+    // the Join list: a listed lobby that turns invite only goes at the next answer, not after CD_STALE_MS (wc_forget_invite_only)
+    {
+        cd_list l; memset(&l, 0, sizeof l); cd_reply open, inv, other; memset(&open, 0, sizeof open); open.players = 1; open.limit = 16; snprintf(open.name, sizeof open.name, "Fox"); snprintf(open.version, sizeof open.version, "v0.9.0-test");
+        inv = open; inv.name[0] = 0; inv.flags = CD_F_INVITE_ONLY; other = open; snprintf(other.name, sizeof other.name, "Owl");
+        cd_seen(&l, &open, CD_LAN, IP(10, 0, 0, 5), 47100, -1, 1, 1000, "v0.9.0-test"); cd_seen(&l, &other, CD_LAN, IP(10, 0, 0, 6), 47100, -1, 1, 1000, "v0.9.0-test");
+        cd_seen(&l, &open, CD_LAN, IP(10, 0, 0, 5), 47101, -1, 1, 1000, "v0.9.0-test");      // (another lobby of the same name on the next port: a second row)
+        check("three open lobbies listed", l.n == 3, std::to_string(l.n));
+        check("an open answer drops nothing", wc_forget_invite_only(&l, &open, IP(10, 0, 0, 5), 47100) == 0);
+        int dropped = wc_forget_invite_only(&l, &inv, IP(10, 0, 0, 5), 47100); cd_seen(&l, &inv, CD_LAN, IP(10, 0, 0, 5), 47100, -1, 1, 1100, "v0.9.0-test"); cd_expire(&l, 1100);
+        bool fox = false, fox2 = false, owl = false; for (int i = 0; i < l.n; ++i) { fox |= !strcmp(l.r[i].name, "Fox") && l.r[i].port == 47100; fox2 |= !strcmp(l.r[i].name, "Fox") && l.r[i].port == 47101; owl |= !strcmp(l.r[i].name, "Owl"); }
+        check("Fox's lobby turned invite only: its row is gone at once (and nothing nameless is listed)", dropped == 1 && !fox && l.n == 2, std::to_string(l.n));
+        check("the other lobbies (another address, another port) stay", owl && fox2);
+    }
+
     printf(fails ? "FAILED: %d\n" : "ALL OK\n", fails); return fails ? 1 : 0;
 }

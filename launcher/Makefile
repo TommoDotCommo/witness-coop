@@ -143,7 +143,7 @@ test: update-test
 
 # finding each other and the invite (joinglue.h around the shared code in common/, VENDORED.md): game-free, with mutants
 JG_HDRS = joinglue.h ../common/coop_witness.h ../common/coop_invite.h ../common/coop_discover.h ../common/launcher_join.h ../common/launcher_host_core.h
-JOINGLUE_MUTANTS = NO_STEAM_INVITE OLD_FORM_DROPPED WRONG_GAME_ID
+JOINGLUE_MUTANTS = NO_STEAM_INVITE OLD_FORM_DROPPED WRONG_GAME_ID KEEP_INVITE_ONLY_ROW
 $(BUILD)/joinglue-test.exe: joinglue_test.cpp $(JG_HDRS)
 	mkdir -p $(BUILD)
 	$(CXX) -std=c++17 -O2 -Wall -Wextra -I../common -static -o $@ joinglue_test.cpp
