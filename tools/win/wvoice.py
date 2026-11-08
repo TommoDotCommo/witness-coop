@@ -34,6 +34,7 @@ def vstat(d):
     if not b: return None
     m = re.match(r'voicestat: mode (\d) ptt (\d+) transmitting (\d+) sent (\d+) captured (\d+) received (\d+) played (\d+) game_volume ' + F + r' hud_speakers (\d+) hud_mic (\d)(?: channel (\w+) to (\d+))?', b[0])
     r = dict(mode=int(m[1]), ptt=int(m[2]), transmitting=int(m[3]), sent=int(m[4]), received=int(m[6]), game_volume=float(m[8]), hud_speakers=int(m[9]), hud_mic=int(m[10]), channel=m[11], to=int(m[12] or 0), sp={})
+    t = re.search(r'hud_talkers (\d+)', b[0]); r['hud_talkers'] = int(t[1]) if t else -1      # players listed in the voice display (who I hear talking)
     for l in b[1:]:
         m = re.match(r'voicestat: speaker (\d+) talking (\d) prox ' + F + ' radio ' + F + ' pan ' + F + ' rms ' + F + ' tone ' + F + ' ' + F + ' ' + F + r' packets (\d+) concealed (\d+) dropped (\d+)(?: channel (\d+))?', l)
         r['sp'][int(m[1])] = dict(talking=int(m[2]), prox=float(m[3]), radio=float(m[4]), pan=float(m[5]), rms=float(m[6]), tone=[float(m[7]), float(m[8]), float(m[9])], packets=int(m[10]), concealed=int(m[11]), channel=int(m[13] or 0))
@@ -57,7 +58,7 @@ def expect(d, beta):
 def place(d, beta_deg):
     """B stays; A is put d metres from B at beta degrees to B's right; the real positions and heading are read back from both games"""
     (bx, by, bz), (bth, bph) = B.camera(); beta = math.radians(beta_deg); ang = bth - beta
-    send(da, ['hover %.3f %.3f %.3f %.4f 0' % (bx + d * math.cos(ang), by + d * math.sin(ang), bz, bth)], 3.0)      # held in the air where it is put: no ground is needed that far away
+    send(da, ['hover %.3f %.3f %.3f %.4f 0 firm' % (bx + d * math.cos(ang), by + d * math.sin(ang), bz, bth)], 3.0)      # held in the air where it is put: no ground is needed that far away
     (ax, ay, az), _ = A.camera(); (bx, by, bz), (bth, bph) = B.camera()
     dx, dy, dz = ax - bx, ay - by, az - bz; dist = math.sqrt(dx * dx + dy * dy + dz * dz)
     bearing = math.atan2(dx * math.sin(bth) - dy * math.cos(bth), dx * math.cos(bth) + dy * math.sin(bth))
@@ -72,6 +73,8 @@ if mode == 'open':
     check('   no radio yet, and the voice is to the right', sp and sp['radio'] == 0 and abs(sp['pan'] - e[2]) < 0.08 and sp['pan'] > 0.5, sp and (sp['radio'], round(sp['pan'], 2), round(e[2], 2)))
     check('   the whole voice is there (120 Hz, 1 kHz, 5.5 kHz) and loud enough', sp and sp['tone'][0] > 0.01 and sp['tone'][1] > 0.01 and sp['tone'][2] > 0.4 * sp['tone'][1] and sp['rms'] > 0.01, sp and ([round(t, 3) for t in sp['tone']], round(sp['rms'], 3)))
     check('   B sees A as speaking (the flag in A\'s presence)', speaking_seen_by_b() == 1)
+    sa = vstat(da)
+    check('   the voice display: B lists A as talking (B\'s own voice is off: no microphone row); A shows its open mic', s and s['hud_talkers'] == 1 and s['hud_mic'] == 0 and sa and sa['hud_mic'] == 1 and sa['hud_talkers'] == 0, s and sa and (s['hud_talkers'], s['hud_mic'], sa['hud_mic'], sa['hud_talkers']))
     d, beta = place(12.0, -90); time.sleep(1.5); s = vstat(db); e = expect(d, beta); sp = s['sp'].get(1) if s else None
     check('2. 12 m to the left: quieter and in the left ear', sp and abs(sp['prox'] - e[0]) < 0.03 and sp['pan'] < -0.5 and sp['radio'] == 0, sp and (round(sp['prox'], 3), round(e[0], 3), round(sp['pan'], 2), 'd=%.2f' % d))
     d, beta = place(28.0, 0); time.sleep(1.5); s = vstat(db); e = expect(d, beta); sp = s['sp'].get(1) if s else None
@@ -84,6 +87,7 @@ if mode == 'open':
     if RADIO_RANGE > 0:
         d, beta = place(RADIO_RANGE * 1.6, 0); time.sleep(1.5); s = vstat(db); sp = s['sp'].get(1) if s else None; e = expect(d, beta)
         check('5. beyond the radio range (%d m) nothing is heard' % RADIO_RANGE, sp and sp['radio'] < 0.02 and sp['prox'] == 0, sp and (round(sp['radio'], 3), 'd=%.1f' % d))
+        check('   and B\'s voice display lists nobody (A talks, out of earshot)', s and s['hud_talkers'] == 0, s and s['hud_talkers'])
 elif mode == 'channels':
     def hear(label, want_channel, d_m, **kw):
         """what B's mixer makes of A: its channel, the gains, the pan and the tones, at d_m metres"""
@@ -116,13 +120,19 @@ else:
     d, beta = place(5.0, 90); time.sleep(1.0); s0 = vstat(db); sp = s0['sp'].get(1) if s0 else None
     check('1. push to talk, key not held: nothing is sent', not sp or (sp['talking'] == 0 and sp['packets'] == 0), sp and (sp['talking'], sp['packets']))
     check('   and B does not see A as speaking', speaking_seen_by_b() in (0, None))
+    sa = vstat(da)
+    check('   the voice display shows nothing: no "hold B to talk" on A, nobody listed on B', sa and sa['hud_mic'] == 0 and sa['hud_talkers'] == 0 and s0 and s0['hud_talkers'] == 0, sa and s0 and (sa['hud_mic'], sa['hud_talkers'], s0['hud_talkers']))
     send(da, ['key B down'], 1.2); s1 = vstat(db); sp = s1['sp'].get(1) if s1 else None
     check('2. key B held: B hears A', sp and sp['talking'] == 1 and sp['packets'] > 20, sp and (sp['talking'], sp['packets']))
     check('   B sees A as speaking', speaking_seen_by_b() == 1)
+    sa = vstat(da)
+    check('   while the key is held: A shows Mic on, B lists A', sa and sa['hud_mic'] == 1 and s1 and s1['hud_talkers'] == 1, sa and s1 and (sa['hud_mic'], s1['hud_talkers']))
     send(da, ['key B up'], 1.5); s2 = vstat(db); sp2 = s2['sp'].get(1) if s2 else None
     check('3. key released: the transmission ends, B stops hearing A and the speaking flag drops', sp2 and sp2['talking'] == 0 and speaking_seen_by_b() == 0, sp2 and sp2['talking'])
     p1 = sp2['packets'] if sp2 else 0; time.sleep(1.0); s3 = vstat(db)
     check('   and nothing more arrives', s3 and s3['sp'][1]['packets'] == p1, s3 and (s3['sp'][1]['packets'], p1))
+    sa = vstat(da)
+    check('   released: the display is empty again on both', sa and sa['hud_mic'] == 0 and s3 and s3['hud_talkers'] == 0, sa and s3 and (sa['hud_mic'], s3['hud_talkers']))
 if mode == 'open':
     s = vstat(db)
     if s and s['game_volume'] >= 0: check('6. game_volume is set on the game\'s Windows audio session (read back from the system)', abs(s['game_volume'] - GV) < 0.02, s['game_volume'])

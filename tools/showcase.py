@@ -29,7 +29,8 @@ def prepare(c, config):
         gs.replace_copy(Path(ROOT) / 'assets/models' / name, models / name)
     config += 'name=%s\nforce_active=1\ncap_fps=30\ndev_menu=1\nvoice_mute_output=1\n' % (NAMES[(c.id - 1) % len(NAMES)],)
     config += ''.join('appearance_%s=%d\n' % (f, v) for f, v in zip(FEATURES, LOOKS[(c.id - 1) % len(LOOKS)]))
-    config += 'voice_mode=open\nvoice_test_tone=300,900,1700\n' if c.id % 2 == 0 else 'voice_mode=%s\n' % ('off' if c.id == 1 and os.environ.get('SHOWCASE_QUIET_CAMERA') else 'ptt')      # the even players are talking (a test voice: no microphone is needed); a quiet camera has no mic line
+    config += 'voice_mode=open\nvoice_test_tone=300,900,1700\n' if c.id % 2 == 0 else 'voice_mode=%s\n' % ('off' if c.id == 1 and os.environ.get('SHOWCASE_QUIET_CAMERA') else 'ptt')
+    if c.id == 1: config += 'voice_test_tone=220,660\n'      # the camera player talks in the voice pictures (holding B) with a test voice, never this PC's microphone      # the even players are talking (a test voice: no microphone is needed); a quiet camera has no mic line
     config += os.environ.get('SHOWCASE_CFG_EXTRA', '').replace('\\n', '\n') + '\n'      # e.g. the race: SHOWCASE_CFG_EXTRA='game_mode=race\\nrace_goal=count:3\\nrace_countdown_ms=60000' tools/showcase.sh 2 race
     cfg = d / 'witness_coop.cfg'; cfg.unlink(missing_ok=True); cfg.write_text(config)
     for name in ('witness_cmd.txt', 'witness_proxy.log', 'witness_net.json'): (d / name).unlink(missing_ok=True)

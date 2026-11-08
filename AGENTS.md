@@ -37,7 +37,7 @@ prepare a reviewable diff before asking to publish. Never force-push.
 - What a solve does: `proxy/state.cpp` `applyPanelSolvedLine` (the solver's line into the panel, the game's reactions exe+0xB7F80, target, Bridge) and
   `proxy/game.cpp` (`GameReactNow`, `GameBridgeAdvanceNow`, test-only `nativesolve`); tests `make -C proxy/core test` (solve-react), `tools/qa.sh react`, `tools/qa.sh bridge`;
   the sweep `tools/qa.sh probe tools/react_sweep.py` lists what a remote solve still misses (docs/DEVELOPMENT.md).
-  The teleport hold (`GameHover`) lets go when the game resets the player: `tools/qa.sh hover`.
+  The teleport hold (`GameHover`) lets go when the game resets the player: `tools/qa.sh hover`; `hover ... firm` holds through resets, for a test far from any ground (voice, radio).
 - Teaching by a person: `tools/record.sh` (one game, a person solves the panels the bot cannot; `tools/win/wrecord.py` records),
   `tools/playthrough/teach.py` (recordings -> `data/taught.json`: line, node world positions, where they stood), used by `run.py` and
   `wdraw.py` (`WDRAW_TAUGHT`); `python3 tools/playthrough/test_teach.py` (game-free, with mutants).

@@ -1,5 +1,8 @@
 #include "radio/radio.h"
 #include "bindings.h"
+#include "ui/voice_hud.h"
+#include "voice/voice.h"
+std::vector<wvoice::SpeakerStat> VoiceSnapshot();      // voice_audio.cpp: what the mixer heard from each player
 // See social.h.
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -105,7 +108,7 @@ void AddPenPoint(const float p[3], ULONGLONG now) {
     t->pts.insert(t->pts.end(), p, p + 3); g_unsent.insert(g_unsent.end(), p, p + 3); TrimPlayer(CoopMyId());
     if (g_unsent.size() >= 36 || now - g_sentAt > 120) FlushStroke(false, now);
 }
-unsigned g_speakDrawn = 0; bool g_micHudDrawn = false;      // voice: speaker marks over players and the microphone indicator drawn in the last frame (for the tests)
+unsigned g_speakDrawn = 0, g_hudTalkers = 0; bool g_micHudDrawn = false;      // voice: speaker marks over players and the microphone indicator drawn in the last frame (for the tests)
 unsigned g_dotsDrawn = 0, g_bubblesDrawn = 0, g_marksDrawn = 0, g_arrowsDrawn = 0;      // what the last frame drew (for the tests)
 
 std::string NameOf(unsigned id) {
@@ -174,6 +177,7 @@ void Bubbled(float cx, float bottom, const std::vector<std::string>& lines, bool
 
 unsigned SocialSpeakDrawn() { return g_speakDrawn; }
 bool SocialMicHudDrawn() { return g_micHudDrawn; }
+unsigned SocialHudTalkers() { return g_hudTalkers; }
 unsigned SocialInkVerts(const float cam[3], std::vector<LineVert>& out, size_t maxVerts) {      // every stroke as ribbons in the world, turned to face the camera: the line pipeline draws them hidden by walls
     Lock l; unsigned segs = 0; if (GetCfg().noDrawDraw) { g_segsDrawn = 0; return 0; }
     for (const auto& s : g_strokes) {
@@ -310,7 +314,7 @@ void SocialFrame(float W, float H, const float* cam, const float* ang) {
     }
     g_marks.erase(std::remove_if(g_marks.begin(), g_marks.end(), [&](const Mark& m) { return now - m.at > kMarkMs; }), g_marks.end());
     for (auto it = g_bubbles.begin(); it != g_bubbles.end();) { if (it->second.until < now) it = g_bubbles.erase(it); else ++it; }
-    g_dotsDrawn = g_bubblesDrawn = g_marksDrawn = g_arrowsDrawn = 0; g_speakDrawn = 0; g_micHudDrawn = false;
+    g_dotsDrawn = g_bubblesDrawn = g_marksDrawn = g_arrowsDrawn = 0; g_speakDrawn = 0; g_hudTalkers = 0; g_micHudDrawn = false;
     if (GamePaused()) return;
     float k = std::min(W / 1280.f, H / 900.f);
     memcpy(g_camNow, cam, 12); g_angNow[0] = ang[0]; g_angNow[1] = ang[1]; g_scrW = W; g_scrH = H;
@@ -376,15 +380,23 @@ void SocialFrame(float W, float H, const float* cam, const float* ang) {
         if (rp.radioTx && cfg.RadioOn()) UiText(sx + 30 * kk, sy + 4 * kk, "RADIO", Rgba(1,.7f,.3f), kk*.7f);
         UiPlayerAnchorEnd(); ++g_speakDrawn;
     }
-    if (cfg.voiceMode != 0) {      // my own microphone: what the key does, and a bar that follows the level while it is open
-        bool talk = VoiceSpeaking(); int lvl = VoiceMicLevel(); char b[80];
-        char chn[64]; VoiceChannelText(chn, sizeof chn);
-        char pre[48]; const char* padKey = PadVoiceButtonName(); std::string key = guide::DisplayKey(cfg.keyVoice ? cfg.keyVoice : cfg.keyVoiceAlt);
-        if (talk) snprintf(pre, sizeof pre, "Mic: talking"); else if (VoiceModeNow() == 2) snprintf(pre, sizeof pre, "Mic: hold %s to talk", padlayer::Hint(PadGlyphs(), key.c_str(), padKey)); else snprintf(pre, sizeof pre, "Mic: open");
-        snprintf(b, sizeof b, "%s   %s", pre, chn);
-        float tw = UiTextWidth(b, 0.8f * k), bx = 24 * k, by = H - 50 * k;
-        UiRect(bx - 6 * k, by - 4 * k, tw + 90 * k, UiLineHeight(0.8f * k) + 8 * k, Rgba(0, 0, 0, 0.5f)); UiText(bx, by, b, talk ? Rgba(0.5f, 1, 0.6f, 1) : Rgba(0.8f, 0.85f, 0.95f, 1), 0.8f * k);
-        UiRect(bx + tw + 10 * k, by + 3 * k, 60 * k, 8 * k, Rgba(0.2f, 0.22f, 0.3f, 0.9f)); UiRect(bx + tw + 10 * k, by + 3 * k, 60 * k * std::min(1.0f, lvl / 600.0f), 8 * k, talk ? Rgba(0.4f, 1, 0.5f, 1) : Rgba(0.5f, 0.55f, 0.7f, 1)); g_micHudDrawn = true;
+    {   // the voice display, lower left: my microphone while it is live and the players I can hear talking; nothing when nothing happens (ui/voice_hud.h)
+        bool talk = VoiceSpeaking(); char chn[64]; VoiceChannelText(chn, sizeof chn); std::vector<wvhud::Heard> heard;
+        for (const auto& s : VoiceSnapshot()) { wvhud::Heard h; h.id = s.id; h.name = NameOf(s.id); h.talking = s.talking; h.prox = s.prox; h.radio = s.radio; h.playerVolume = VoiceGetPlayerVolume(s.id); heard.push_back(h); }
+        std::vector<wvhud::Row> rows = wvhud::Rows(cfg.voiceMode != 0 ? VoiceModeNow() : 0, talk, chn, heard);
+        float sk = 0.8f * k, lh = UiLineHeight(sk), bx = 24 * k, by = H - 50 * k; int lvl = VoiceMicLevel();
+        for (size_t n = rows.size(); n-- > 0; by -= lh + 14 * k) {      // bottom up: my microphone lowest, the players above it
+            const wvhud::Row& r = rows[n]; float tw = UiTextWidth(r.text.c_str(), sk), lead = 22 * k, extra = r.me ? 70 * k : 0;
+            UiRect(bx - 6 * k, by - 4 * k, lead + tw + extra + 12 * k, lh + 8 * k, Rgba(0, 0, 0, 0.5f));
+            if (r.me) {      // a dot for the microphone (green while my voice goes out), the text, and the level while it is live
+                auto c = r.lit ? Rgba(0.4f, 1, 0.5f, 1) : Rgba(0.8f, 0.85f, 0.95f, 1); UiRect(bx + 2 * k, by + lh / 2 - 4 * k, 8 * k, 8 * k, c); UiText(bx + lead, by, r.text.c_str(), c, sk);
+                float lx = bx + lead + tw + 10 * k; UiRect(lx, by + lh / 2 - 4 * k, 60 * k, 8 * k, Rgba(0.2f, 0.22f, 0.3f, 0.9f)); UiRect(lx, by + lh / 2 - 4 * k, 60 * k * std::min(1.0f, lvl / 600.0f), 8 * k, c); g_micHudDrawn = true;
+            } else {      // three bars moving in the player's colour, then the name
+                float col[3]; PlayerColor(r.id, col);
+                for (int b = 0; b < 3; ++b) { float ph = float(now % 500) / 500.0f * 6.2831853f + b * 2.1f, hgt = (4 + 8 * (0.5f + 0.5f * sinf(ph))) * k; UiRect(bx + b * 6 * k, by + lh / 2 + 6 * k - hgt, 4 * k, hgt, Rgba(col[0], col[1], col[2], 0.95f)); }
+                UiText(bx + lead, by, r.text.c_str(), Rgba(col[0], col[1], col[2], 1), sk); ++g_hudTalkers;
+            }
+        }
     }
     for (const auto& rp : rem) {      // the name of the emote a player is playing, over their head
         auto it = g_remoteEmotes.find(rp.id); if (it == g_remoteEmotes.end() || !it->second.id || !EmoteAlive(it->second.id,now-it->second.start) || rp.ageMs > 2000) continue;

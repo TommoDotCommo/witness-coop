@@ -66,7 +66,7 @@ try:
             check(not entry(snapshot(b, db), 'remotes', 1).get('equipped') and not entry(snapshot(b, db), 'remotes', 1).get('tx'), 'nothing radio-specific reaches B')
             a.send(['voicechannel proximity', 'key B down'], .5)
             (bx, by, bz), _ = B.camera()
-            a.send(['hover %.5f %.5f %.5f %.5f 0' % (bx+1000, by, bz, heading)], 2)
+            a.send(['hover %.5f %.5f %.5f %.5f 0 firm' % (bx+1000, by, bz, heading)], 2)
             far = wait_for(b, db, lambda s: entry(s, 'speakers', 1).get('rms', 0) > .005)
             fs = entry(far, 'speakers', 1); t = fs['tone']
             check(fs['channel'] == 0 and fs['radio'] > .8 and fs['prox'] == 0, 'beyond hearing range the proximity voice still turns into the radio sound')
@@ -87,7 +87,7 @@ try:
         tones = speaker['tone']
         check(tones[1] > .02 and tones[0] < .25*tones[1] and tones[2] < .25*tones[1], 'live synthetic signal is band-limited at B')
         (bx, by, bz), _ = B.camera()
-        a.send(['hover %.5f %.5f %.5f %.5f 0' % (bx+1000, by, bz, heading)], 2)
+        a.send(['hover %.5f %.5f %.5f %.5f 0 firm' % (bx+1000, by, bz, heading)], 2)
         (ax, ay, az), _ = A.camera(); (bx, by, bz), _ = B.camera()
         check(math.dist((ax, ay, az), (bx, by, bz)) > 900, 'process memory confirms large separation')
         far = snapshot(b, db); fs = entry(far, 'speakers', 1)

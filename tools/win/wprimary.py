@@ -1,6 +1,7 @@
 # T2 check, Windows Python: the page's main button keeps its look when the focus moves. Host by the mouse as a player does (Play, Host, Direct, a click on
 # Open lobby, posted to the buttons: the real pointer is not used), then, without hovering anything, Start game must be drawn in the main buttons' yellow.
-# The click gives Open lobby the focus and the dialog keys move the default-button style to it (owner, 2026-11-08: Start game white until hovered).
+# The click gives Open lobby the focus and the dialog keys move the default-button style to it; a new label (WM_SETTEXT) and the keyboard cues (WM_UPDATEUISTATE)
+# make Windows paint its own white button over ours (owner, 2026-11-08: Start game white until hovered). Read from the screen: the window is put on top for a moment.
 # usage: wprimary.py <launcher exe> <folder>      (the folder gets a witness_coop.cfg for a Direct lobby on a free port)
 import ctypes, ctypes.wintypes as wt, os, struct, subprocess, sys, time
 exe, d = sys.argv[1], sys.argv[2]
@@ -32,12 +33,14 @@ def child(top, text):
         return True
     u.EnumChildWindows(top, cb, 0); return out[0] if out else None
 def click(h): u.PostMessageW(h, 0x0201, 1, 0x000a000a); time.sleep(0.05); u.PostMessageW(h, 0x0202, 0, 0x000a000a)
-def pixel(top, ctl, dx, dy):      # the window as it is on screen (PrintWindow, full content), at a point of the control
-    wr = wt.RECT(); u.GetWindowRect(top, ctypes.byref(wr)); w, hh = wr.right - wr.left, wr.bottom - wr.top
-    dc = u.GetWindowDC(top); mdc = g32.CreateCompatibleDC(dc); bmp = g32.CreateCompatibleBitmap(dc, w, hh); g32.SelectObject(mdc, bmp); u.PrintWindow(top, mdc, 2)
-    hdr = struct.pack('<IiiHHIIiiII', 40, w, -hh, 1, 32, 0, w * hh * 4, 0, 0, 0, 0); buf = ctypes.create_string_buffer(w * hh * 4); g32.GetDIBits(mdc, bmp, 0, hh, buf, hdr, 0)
-    g32.DeleteObject(bmp); g32.DeleteDC(mdc); u.ReleaseDC(top, dc)
-    r = wt.RECT(); u.GetWindowRect(ctl, ctypes.byref(r)); i = ((r.top - wr.top + dy) * w + r.left - wr.left + dx) * 4; return buf.raw[i + 2], buf.raw[i + 1], buf.raw[i]
+u.SetWindowPos.argtypes = [wt.HWND, wt.HWND, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, wt.UINT]; g32.GetPixel.argtypes = [wt.HDC, ctypes.c_int, ctypes.c_int]; g32.GetPixel.restype = wt.DWORD
+u.SendMessageW.argtypes = [wt.HWND, wt.UINT, wt.WPARAM, ctypes.c_void_p]
+def pixel(top, ctl, dx, dy):      # the pixel on the screen itself, the window on top for that moment (PrintWindow asks the window to paint again and hides what Windows drew over it)
+    u.SetWindowPos(top, wt.HWND(-1), 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010); time.sleep(0.4)
+    r = wt.RECT(); u.GetWindowRect(ctl, ctypes.byref(r)); dc = u.GetDC(None); c = g32.GetPixel(dc, r.left + dx, r.top + dy); u.ReleaseDC(None, dc)
+    u.SetWindowPos(top, wt.HWND(-2), 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010)
+    return c & 255, (c >> 8) & 255, (c >> 16) & 255
+def yellow(c): return c and c[0] > 200 and c[1] > 150 and c[2] < 130
 ok = True
 def check(name, cond, detail=''):
     global ok; ok = ok and bool(cond); print('CHECK %s %s | %s' % ('ok' if cond else 'FAILED', name, detail), flush=True)
@@ -52,7 +55,13 @@ try:
     st = child(top, 'Start game'); lobby = open(sp, errors='ignore').read() if os.path.exists(sp) else ''
     check('hosting after clicking Direct and Open lobby', 'lobby active 1 host 1' in lobby, [l for l in lobby.splitlines() if l.startswith('lobby ')])
     c = st and pixel(top, st, 10, 6)
-    check('Start game is drawn yellow (the main button) without being hovered', c and c[0] > 200 and c[1] > 150 and c[2] < 130, c)
+    check('Start game is drawn yellow (the main button) without being hovered', yellow(c), c)
+    if st: u.SendMessageW(st, 0x000C, 0, ctypes.c_wchar_p('Start game')); time.sleep(0.3)      # WM_SETTEXT: the lobby relabels it (Waiting for ..., Start game)
+    c = st and pixel(top, st, 10, 6)
+    check('   still yellow after its label is set again (Windows paints its own white button for that)', yellow(c), c)
+    if st: u.SendMessageW(st, 0x0128, (0x2 << 16) | 1, None); time.sleep(0.3)      # WM_UPDATEUISTATE: the keyboard cues, sent to every control when a key is used
+    c = st and pixel(top, st, 10, 6)
+    check('   still yellow after the keyboard cues change (a key press)', yellow(c), c)
 finally:
     p.kill()
 print('ALL OK' if ok else 'FAILED'); sys.exit(0 if ok else 1)

@@ -25,7 +25,8 @@ def main():
     results = []
     print('=== looks: clean build', flush=True); ok = run('witness_launcher.exe'); results.append(('clean', ok)); print('clean: %s' % ('PASS' if ok else 'FAIL'), flush=True)
     for name, exe in (('tabs repaint on every move (flicker)', 'witness_launcher_TAB_REPAINT_ALWAYS.exe'), ('dropdowns 220 wide again', 'witness_launcher_WIDE_COMBOS.exe'), ('a label longer than its box', 'witness_launcher_LONG_LABELS.exe'),
-                      ('the main button by its current style (white Start game after Open lobby)', 'witness_launcher_PRIMARY_BY_STYLE.exe')):
+                      ('the main button by its current style (white Start game after Open lobby)', 'witness_launcher_PRIMARY_BY_STYLE.exe'),
+                      ('Windows paints its own button on a new label or a key press', 'witness_launcher_BUTTON_SELF_PAINT.exe')):
         print('=== looks: MUTANT %s' % name, flush=True); caught = not run(exe); results.append((name, caught)); print('mutant: %s' % ('caught' if caught else 'NOT CAUGHT'), flush=True)
     bad = [n for n, ok in results if not ok]
     print('ALL OK' if not bad else 'FAILED: %s' % bad); return 1 if bad else 0

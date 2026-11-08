@@ -9,6 +9,13 @@ PANEL_MUTANTS = NO_FIT ROW_OFFSET OLD_PIP_KEYS
 TAG_MUTANTS = OVERLAP
 PROMPT_MUTANTS = OLD
 KEY_MUTANTS = NO_IGNORE WHILE_TYPING
+VHUD_MUTANTS = ALWAYS_HINT HEAR_ALL
+build/vhud-test: voice_hud_test.cpp voice_hud.h
+	mkdir -p build
+	$(CXX) $(CXXFLAGS) -o $@ voice_hud_test.cpp
+build/vhud-mutant-%: voice_hud_test.cpp voice_hud.h
+	mkdir -p build
+	$(CXX) $(CXXFLAGS) -DVH_MUT_$* -o $@ voice_hud_test.cpp
 build/key-test: key_repeat_test.cpp key_repeat.h ../../common/guide.h ../../common/bindings.def ../config.h
 	mkdir -p build
 	$(CXX) $(CXXFLAGS) -o $@ key_repeat_test.cpp
@@ -42,7 +49,9 @@ build/detail-mutant-%: detail_test.cpp detail_layout.h text.h
 build/mutant-%: text_test.cpp text.h theme.h guide_layout.h ../../common/guide.h ../../common/bindings.def ../config.h
 	mkdir -p build
 	$(CXX) $(CXXFLAGS) -DUI_MUT_$* -o $@ text_test.cpp
-test: build/text-test $(addprefix build/mutant-,$(MUTANTS)) build/detail-test $(addprefix build/detail-mutant-,$(DETAIL_MUTANTS)) build/panel-test $(addprefix build/panel-mutant-,$(PANEL_MUTANTS)) build/tag-test $(addprefix build/tag-mutant-,$(TAG_MUTANTS)) build/prompt-test $(addprefix build/prompt-mutant-,$(PROMPT_MUTANTS)) build/key-test $(addprefix build/key-mutant-,$(KEY_MUTANTS))
+test: build/text-test $(addprefix build/mutant-,$(MUTANTS)) build/detail-test $(addprefix build/detail-mutant-,$(DETAIL_MUTANTS)) build/panel-test $(addprefix build/panel-mutant-,$(PANEL_MUTANTS)) build/tag-test $(addprefix build/tag-mutant-,$(TAG_MUTANTS)) build/prompt-test $(addprefix build/prompt-mutant-,$(PROMPT_MUTANTS)) build/key-test $(addprefix build/key-mutant-,$(KEY_MUTANTS)) build/vhud-test $(addprefix build/vhud-mutant-,$(VHUD_MUTANTS))
+	build/vhud-test
+	@for m in $(VHUD_MUTANTS); do if build/vhud-mutant-$$m >/dev/null 2>&1; then echo "MUTANT vhud $$m SURVIVED"; exit 1; else echo "mutant vhud $$m killed"; fi; done
 	build/text-test
 	build/panel-test
 	@for m in $(PANEL_MUTANTS); do if build/panel-mutant-$$m >/dev/null 2>&1; then echo "MUTANT panel $$m SURVIVED"; exit 1; else echo "mutant panel $$m killed"; fi; done

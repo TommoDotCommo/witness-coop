@@ -179,18 +179,18 @@ def draw_scene(vi):
 
 def voice_scene(vi):
     """Voice: the even players talk (a test voice instead of a microphone); their speaking marks show beside their heads, and the microphone line at the bottom left."""
-    V = games[vi]; lineup(vi, None, None); time.sleep(1.5)
-    snap(V, 'voice', 'Voice chat: moving bars beside the head of every player who is talking, the microphone line at the bottom left (hold B to talk). Near players are heard in the world, far ones over the radio.')
+    V = games[vi]; lineup(vi, None, None); time.sleep(1.5); V.send(['key B down'], 1.2)      # the camera player talks too (push to talk, a test voice): its microphone row shows
+    snap(V, 'voice', 'Voice chat: moving bars beside the head of every player who is talking; at the bottom left, your microphone while it is on and the players you can hear talking (nothing there when nobody talks). Near players are heard in the world, far ones over the radio.')
     for ch, name, what in (('global', 'voice_global', 'Open line: everybody hears you as you sound, as loud far away as next to you.'), ('direct:2', 'voice_direct', 'One on one: only that player hears you (the voice is not sent to anybody else); the label names them.')):
-        V.send(['voicechannel ' + ch], 1.5); snap(V, name, 'Voice channel (Y steps through them; the label is in the microphone line at the bottom left). ' + what)
-    V.send(['voicechannel proximity'], 0.5)
+        V.send(['voicechannel ' + ch], 1.5); snap(V, name, 'Voice channel (Y steps through them; your microphone row at the bottom left names it while you talk). ' + what)
+    V.send(['key B up', 'voicechannel proximity'], 0.5)
 
 def look_scene(vi):
     """The co-op text in the game's own face: the player strip with a notice and chat lines, the hold-Tab panel, a chat line being typed, the emote wheel, the quick guide."""
     V = games[vi]; lineup(vi, None, None); others = [g for k, g in enumerate(games) if k != vi]
     V.send(['key TAB down'], 0.9); snap(V, 'ui_panel', 'The player panel (hold Tab): colour, name, ping, speaking light and distance per player, with Watch, Mute and volume buttons, then voice volume, name tags, partner picture and Leave.'); V.send(['key TAB up'], 0.5)
     for k, g in enumerate(others): g.send(['chat ' + MESSAGES[k % len(MESSAGES)]])
-    V.send(['notice Fox joined'], 1.0); snap(V, 'ui_hud', 'The co-op text in the font of the game: a notice, chat lines over the players who spoke and in the log at the bottom left, name tags with pings, the microphone line.')
+    V.send(['notice Fox joined'], 1.0); snap(V, 'ui_hud', 'The co-op text in the font of the game: a notice, chat lines over the players who spoke and in the log at the bottom left, name tags with pings, and at the bottom left the players you can hear talking.')
     V.key('T', 0.1, 0.4); V.send(['typetext Meet me at the gate?'], 0.5); snap(V, 'ui_chat', 'Typing a chat line (T).'); V.key('ENTER', 0.1, 0.6)
     V.send(['key F1 down'], 0.9); snap(V, 'ui_guide', 'The quick guide (hold F1): the keys as they are bound now.'); V.send(['key F1 up'], 0.5)
 

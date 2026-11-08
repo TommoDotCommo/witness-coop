@@ -81,8 +81,8 @@ what the other game sends.
 ![Chat, typing dots and pings](showcase/social.jpg)
 
 Players speak: each line floats over its player and is in the log at the bottom left (`T` opens the chat, Enter sends). The player with the three dots over the head is typing.
-The poles with a name and a distance are pings, in the sender's colour; the arrow at the bottom is a ping behind the camera. The line at the bottom left is this player's own
-microphone (`hold B to talk`).
+The poles with a name and a distance are pings, in the sender's colour; the arrow at the bottom is a ping behind the camera. At the bottom left are the players you can hear
+talking, and your own microphone while it is on; when nobody is talking there is nothing there.
 
 ![Notice, chat lines and name tags](showcase/ui_hud.jpg)
 ![Typing a chat line](showcase/ui_chat.jpg)
@@ -119,8 +119,9 @@ When you play an emote yourself, the view moves back behind you and a little abo
 
 ![Proximity: the label says so](showcase/voice.jpg)
 
-Who hears you is the voice channel, shown in the microphone line at the bottom left. `Y` steps through the channels. Proximity (the default) is heard in the world, louder when close,
-and turns into a radio sound far away. The bars beside a name are the players who are talking.
+Who hears you is the voice channel. `Y` steps through the channels, and while you talk your microphone row at the bottom left names the channel when it is not Proximity.
+Proximity (the default) is heard in the world, louder when close, and turns into a radio sound far away. The bars beside a name, and the names at the bottom left, are the players
+you can hear talking. With open mic the bottom left always shows *Open mic*, so you know your microphone is live; with push to talk it shows *Mic on* only while you hold the key.
 
 | Open line | Private |
 |---|---|

@@ -205,7 +205,7 @@ static DWORD WINAPI CmdThread(LPVOID) {
                 else { EnterCriticalSection(&g_lock); if (g_n < 64) g_q[g_n++] = {9, 0, 0, 0, 0, false, 0, 0, 0}; LeaveCriticalSection(&g_lock); }
             }
             else if (!strncmp(line, "hover off", 9)) GameHoverOff();
-            else if (!strncmp(line, "hover ", 6)) { float f[5]; if (sscanf(line, "hover %f %f %f %f %f", &f[0], &f[1], &f[2], &f[3], &f[4]) == 5) GameHover(f[0], f[1], f[2], f[3], f[4], 600); }
+            else if (!strncmp(line, "hover ", 6)) { float f[5]; if (sscanf(line, "hover %f %f %f %f %f", &f[0], &f[1], &f[2], &f[3], &f[4]) == 5) GameHover(f[0], f[1], f[2], f[3], f[4], 600, strstr(line, " firm") != nullptr); }      // "... firm": held through the game's resets (a test far from any ground: voice, radio)
             else if (!strncmp(line, "tp ", 3)) { Tp t = {}; if (sscanf(line, "tp %f %f %f %f %f", &t.v[0], &t.v[1], &t.v[2], &t.v[3], &t.v[4]) == 5) { t.frames = 12; EnterCriticalSection(&g_lock); g_tp = t; g_tpOn = true; LeaveCriticalSection(&g_lock); } }
             else if (!strncmp(line, "stats", 5)) { char m[160]; snprintf(m, sizeof m, "input: posted %u answered %u | GetRawInputData calls: real handles %u, ours %u", InputStats(0), InputStats(1), InputStats(2), InputStats(3)); Log(m); }
             else if (sscanf(line, "button %15s %15s", a, b) == 2) { bool left = !_stricmp(a, "L"), dn = !_stricmp(b, "down"); Cmd c = {2, 0, 0, 0, 0, false, 0, 0, left ? (dn ? 0x1u : 0x2u) : (dn ? 0x4u : 0x8u)}; EnterCriticalSection(&g_lock); if (g_n < 64) g_q[g_n++] = c; LeaveCriticalSection(&g_lock); }
@@ -375,7 +375,7 @@ void GameEnqueueCableOff(unsigned id) {
 // not enough. This thread writes the player's position about every millisecond until it is switched off (hover off, another teleport, a
 // real W/A/S/D press, or the time limit), which holds the player where it was put. Angles are not written: mouse look still works.
 static bool OwnForeground() { DWORD p = 0; GetWindowThreadProcessId(GetForegroundWindow(), &p); return p == GetCurrentProcessId(); }      // a real key press only counts while this game has the focus (bots inject input, and never touch it)
-static volatile LONG g_hovOn, g_hovGen; static float g_hov[3]; static volatile DWORD g_hovUntil;
+static volatile LONG g_hovOn, g_hovGen, g_hovFirm; static float g_hov[3]; static volatile DWORD g_hovUntil;
 static DWORD WINAPI HoverThread(LPVOID) {
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
     DWORD checked = 0; volatile float* fp = nullptr; LONG gen = -1; bool placed = false; float drift = 0; unsigned long long spins = 0, seen = 0;
@@ -397,14 +397,15 @@ static DWORD WINAPI HoverThread(LPVOID) {
         // (exe+0x2D03EC, seen twice on 2026-11-07). The hold only lets the game change the height (its snap to the ground); once the player has
         // been placed, a sideways move of more than 1.5 m is the game moving the player (to the nearest reset marker, often a few metres away): let go.
         if (fp && placed) { float d = fmaxf(fabsf(fp[0] - g_hov[0]), fabsf(fp[1] - g_hov[1])); if (d > drift) drift = d; if (d > 0.01f) ++seen; }
-        if (fp && placed && !GetCfg().hoverFightsReset && (fabsf(fp[0] - g_hov[0]) > 1.5f || fabsf(fp[1] - g_hov[1]) > 1.5f)) {
+        if (fp && placed && !GetCfg().hoverFightsReset && !g_hovFirm && (fabsf(fp[0] - g_hov[0]) > 1.5f || fabsf(fp[1] - g_hov[1]) > 1.5f)) {
             g_hovOn = 0; Log("game: hover off (the game reset the player)"); continue;
         }
         if (fp) { fp[0] = g_hov[0]; fp[1] = g_hov[1]; fp[2] = g_hov[2] - 1.69f; placed = true; ++spins; }
         YieldProcessor();
     }
 }
-void GameHover(float x, float y, float z, float yaw, float pitch, unsigned seconds) {
+void GameHover(float x, float y, float z, float yaw, float pitch, unsigned seconds, bool firm) {
+    InterlockedExchange(&g_hovFirm, firm ? 1 : 0);
     if (GetCfg().noTeleportHold) { GameTeleport(x, y, z + 8.0f, yaw, pitch); return; }      // twin: the old drop from above
     static bool started; if (!started) { started = true; CreateThread(nullptr, 0, HoverThread, nullptr, 0, nullptr); }
     g_hov[0] = x; g_hov[1] = y; g_hov[2] = z; g_hovUntil = GetTickCount() + seconds * 1000; InterlockedIncrement(&g_hovGen); InterlockedExchange(&g_hovOn, 1);

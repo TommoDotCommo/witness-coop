@@ -25,6 +25,7 @@ struct LineVert;
 unsigned SocialInkVerts(const float cam[3], std::vector<LineVert>& out, size_t maxVerts);   // render thread: the ink as ribbons for the line pipeline; returns the number of segments
 unsigned SocialSpeakDrawn();                  // speaker marks drawn in the last frame (tests)
 bool SocialMicHudDrawn();
+unsigned SocialHudTalkers();      // players listed in the voice display in the last frame (tests)
 // the pad layer (pad.cpp, render thread)
 void SocialPadPing();                         // tap View: ping what the crosshair is on
 bool SocialPadChat(bool steamKeyboard);       // View + D-pad down: open the chat line (false: it could not open)

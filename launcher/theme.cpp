@@ -247,6 +247,11 @@ static LRESULT CALLBACK ButtonProc(HWND h, UINT m, WPARAM w, LPARAM l, UINT_PTR,
     case WM_MOUSEMOVE: if (!GetPropW(h, L"hot")) { SetPropW(h, L"hot", (HANDLE)1); TRACKMOUSEEVENT t = {sizeof t, TME_LEAVE, h, 0}; TrackMouseEvent(&t); InvalidateRect(h, nullptr, FALSE); TraceUpdate(h); } break;
     case WM_MOUSELEAVE: SetPropW(h, L"hot", nullptr); InvalidateRect(h, nullptr, FALSE); TraceUpdate(h); break;
     case WM_LBUTTONDOWN: case WM_LBUTTONUP: case BM_SETCHECK: case BM_SETSTYLE: case BM_SETSTATE: case WM_ENABLE: case WM_SETFOCUS: case WM_KILLFOCUS: { LRESULT r = DefSubclassProc(h, m, w, l); InvalidateRect(h, nullptr, FALSE); TraceUpdate(h); return r; }      // (Windows paints the button itself on these: ours again after)
+#ifndef WL_MUT_BUTTON_SELF_PAINT
+    case WM_SETTEXT: case WM_UPDATEUISTATE: {      // Windows paints its own (white) button for these at once and nothing repaints ours (owner, 2026-11-08: Start game white after a label change or a key press): no drawing while it updates, then ours
+        bool vis = (GetWindowLongW(h, GWL_STYLE) & WS_VISIBLE) != 0; if (vis) DefSubclassProc(h, WM_SETREDRAW, FALSE, 0);
+        LRESULT r = DefSubclassProc(h, m, w, l); if (vis) DefSubclassProc(h, WM_SETREDRAW, TRUE, 0); InvalidateRect(h, nullptr, FALSE); return r; }
+#endif
     case WM_TIMER: if (w == kTraceTimer) { InvalidateRect(h, nullptr, FALSE); if (TraceProgress(h) >= 1) KillTimer(h, kTraceTimer); return 0; } break;
     case WM_PAINT: {
         PAINTSTRUCT ps; HDC dc = BeginPaint(h, &ps); RECT rc; GetClientRect(h, &rc);
