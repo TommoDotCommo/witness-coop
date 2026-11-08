@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """T2 scenario for the launcher's looks under the mouse (tools/win/wlook.py): hovering along a tab must not repaint the row of tabs again and again, and no dropdown box covers a text.
-Mutants (builds of the launcher): the tab row repaints on every mouse move (the flicker), the dropdowns are 220 wide again.   usage: qa_looks.py (called by tools/qa.sh looks)"""
+Mutants (builds of the launcher): the tab row repaints on every mouse move (the flicker), the dropdowns are 220 wide again, a label longer than its box,
+the main button chosen by its current style (tools/win/wprimary.py: Start game after a click on Open lobby).   usage: qa_looks.py (called by tools/qa.sh looks)"""
 import os, subprocess, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from witness import TOOLS, ROOT, RUN, PYW, win
@@ -14,13 +15,17 @@ def run(exe):
 def run_locked(exe):
     p = os.path.join(RUN, 'looks_launcher.exe'); subprocess.run(['cp', os.path.join(LDIR, exe), p], check=True)
     r = subprocess.run([PYW, '-I', win(os.path.join(TOOLS, 'win', 'wlook.py')), win(p), win(RUN), win(os.path.join(RUN, 'looks_stat.txt'))], capture_output=True, text=True, timeout=120)
-    print(r.stdout, end=''); return r.returncode == 0 and 'ALL OK' in r.stdout
+    print(r.stdout, end=''); ok = r.returncode == 0 and 'ALL OK' in r.stdout
+    d = os.path.join(RUN, 'looks_primary'); subprocess.run(['rm', '-rf', d])
+    r = subprocess.run([PYW, '-I', win(os.path.join(TOOLS, 'win', 'wprimary.py')), win(p), win(d)], capture_output=True, text=True, timeout=120)      # the main button after Open lobby is clicked
+    print(r.stdout, end=''); return ok and r.returncode == 0 and 'ALL OK' in r.stdout
 
 def main():
     subprocess.run(['make', '-C', os.path.join(ROOT, 'launcher'), 'launcher', 'launcher-mutants'], check=True, capture_output=True)
     results = []
     print('=== looks: clean build', flush=True); ok = run('witness_launcher.exe'); results.append(('clean', ok)); print('clean: %s' % ('PASS' if ok else 'FAIL'), flush=True)
-    for name, exe in (('tabs repaint on every move (flicker)', 'witness_launcher_TAB_REPAINT_ALWAYS.exe'), ('dropdowns 220 wide again', 'witness_launcher_WIDE_COMBOS.exe'), ('a label longer than its box', 'witness_launcher_LONG_LABELS.exe')):
+    for name, exe in (('tabs repaint on every move (flicker)', 'witness_launcher_TAB_REPAINT_ALWAYS.exe'), ('dropdowns 220 wide again', 'witness_launcher_WIDE_COMBOS.exe'), ('a label longer than its box', 'witness_launcher_LONG_LABELS.exe'),
+                      ('the main button by its current style (white Start game after Open lobby)', 'witness_launcher_PRIMARY_BY_STYLE.exe')):
         print('=== looks: MUTANT %s' % name, flush=True); caught = not run(exe); results.append((name, caught)); print('mutant: %s' % ('caught' if caught else 'NOT CAUGHT'), flush=True)
     bad = [n for n, ok in results if not ok]
     print('ALL OK' if not bad else 'FAILED: %s' % bad); return 1 if bad else 0

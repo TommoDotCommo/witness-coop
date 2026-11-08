@@ -246,7 +246,7 @@ static LRESULT CALLBACK ButtonProc(HWND h, UINT m, WPARAM w, LPARAM l, UINT_PTR,
     case WM_ERASEBKGND: return 1;
     case WM_MOUSEMOVE: if (!GetPropW(h, L"hot")) { SetPropW(h, L"hot", (HANDLE)1); TRACKMOUSEEVENT t = {sizeof t, TME_LEAVE, h, 0}; TrackMouseEvent(&t); InvalidateRect(h, nullptr, FALSE); TraceUpdate(h); } break;
     case WM_MOUSELEAVE: SetPropW(h, L"hot", nullptr); InvalidateRect(h, nullptr, FALSE); TraceUpdate(h); break;
-    case WM_LBUTTONDOWN: case WM_LBUTTONUP: case BM_SETCHECK: case WM_ENABLE: case WM_SETFOCUS: case WM_KILLFOCUS: { LRESULT r = DefSubclassProc(h, m, w, l); InvalidateRect(h, nullptr, FALSE); TraceUpdate(h); return r; }
+    case WM_LBUTTONDOWN: case WM_LBUTTONUP: case BM_SETCHECK: case BM_SETSTYLE: case BM_SETSTATE: case WM_ENABLE: case WM_SETFOCUS: case WM_KILLFOCUS: { LRESULT r = DefSubclassProc(h, m, w, l); InvalidateRect(h, nullptr, FALSE); TraceUpdate(h); return r; }      // (Windows paints the button itself on these: ours again after)
     case WM_TIMER: if (w == kTraceTimer) { InvalidateRect(h, nullptr, FALSE); if (TraceProgress(h) >= 1) KillTimer(h, kTraceTimer); return 0; } break;
     case WM_PAINT: {
         PAINTSTRUCT ps; HDC dc = BeginPaint(h, &ps); RECT rc; GetClientRect(h, &rc);
@@ -263,7 +263,12 @@ static LRESULT CALLBACK ButtonProc(HWND h, UINT m, WPARAM w, LPARAM l, UINT_PTR,
             RECT tr = rc; tr.left = 2 * r + 10; SelectObject(mem, g_label); SetTextColor(mem, dis ? kMuted : kText); Text(mem, text, -1, &tr, DT_VCENTER | DT_SINGLELINE | DT_LEFT | DT_END_ELLIPSIS);
             if (GetFocus() == h) { HPEN pen = CreatePen(PS_DOT, 1, kMuted); HGDIOBJ op = SelectObject(mem, pen); SelectObject(mem, GetStockObject(NULL_BRUSH)); Rectangle(mem, rc.left, rc.top, rc.right, rc.bottom); SelectObject(mem, op); DeleteObject(pen); }
         } else {
-            bool primary = type == BS_DEFPUSHBUTTON; COLORREF fill = primary ? (dis ? kSurface2 : (down ? kLine : (hot ? Mix(kWarm, kLine, 0.25f) : kWarm))) : (down ? kSurface : (hot ? kSurface2 : kSurface)), edge = primary ? fill : (dis ? kSurface2 : kMuted);
+#ifdef WL_MUT_PRIMARY_BY_STYLE
+            bool primary = type == BS_DEFPUSHBUTTON;      // (mutant: the style as it is now: the dialog keys take it from a button when another gets the focus)
+#else
+            bool primary = GetPropW(h, L"primary") != nullptr;      // made as the page's main button (BS_DEFPUSHBUTTON); the dialog keys move that style to the focused button (owner, 2026-11-08: Start game white after Open lobby)
+#endif
+            COLORREF fill = primary ? (dis ? kSurface2 : (down ? kLine : (hot ? Mix(kWarm, kLine, 0.25f) : kWarm))) : (down ? kSurface : (hot ? kSurface2 : kSurface)), edge = primary ? fill : (dis ? kSurface2 : kMuted);
             if (!Paint2D(mem, rc, [&](ID2D1RenderTarget* rt) { D2D1_ROUNDED_RECT b = {D2D1::RectF(rc.left + .5f, rc.top + .5f, rc.right - .5f, rc.bottom - .5f), 4, 4}; WithBrush(rt, fill, 1, [&](ID2D1Brush* br) { rt->FillRoundedRectangle(b, br); }); WithBrush(rt, edge, 1, [&](ID2D1Brush* br) { rt->DrawRoundedRectangle(b, br, 1); }); })) {
                 HBRUSH fb = CreateSolidBrush(fill); HPEN pen = CreatePen(PS_SOLID, 1, edge); HGDIOBJ op = SelectObject(mem, pen), obr = SelectObject(mem, fb); RoundRect(mem, rc.left, rc.top, rc.right, rc.bottom, 6, 6); SelectObject(mem, op); SelectObject(mem, obr); DeleteObject(pen); DeleteObject(fb);
             }
@@ -272,14 +277,14 @@ static LRESULT CALLBACK ButtonProc(HWND h, UINT m, WPARAM w, LPARAM l, UINT_PTR,
         }
         BitBlt(dc, 0, 0, rc.right, rc.bottom, mem, 0, 0, SRCCOPY); SelectObject(mem, ob); DeleteObject(bmp); DeleteDC(mem); EndPaint(h, &ps); return 0;
     }
-    case WM_NCDESTROY: KillTimer(h, kTraceTimer); RemovePropW(h, L"tr0"); RemoveWindowSubclass(h, ButtonProc, 1); break;
+    case WM_NCDESTROY: KillTimer(h, kTraceTimer); RemovePropW(h, L"tr0"); RemovePropW(h, L"primary"); RemoveWindowSubclass(h, ButtonProc, 1); break;
     }
     return DefSubclassProc(h, m, w, l);
 }
 
 void Style(HWND h) {
     std::wstring c = ClassOf(h);
-    if (c == L"Button") { SetWindowSubclass(h, ButtonProc, 1, 0); SendMessageW(h, WM_SETFONT, (WPARAM)g_body, TRUE); }
+    if (c == L"Button") { if ((GetWindowLongW(h, GWL_STYLE) & BS_TYPEMASK) == BS_DEFPUSHBUTTON) SetPropW(h, L"primary", (HANDLE)1); SetWindowSubclass(h, ButtonProc, 1, 0); SendMessageW(h, WM_SETFONT, (WPARAM)g_body, TRUE); }
     else if (c == L"Edit") { SetWindowTheme(h, (GetWindowLongW(h, GWL_STYLE) & ES_MULTILINE) ? L"DarkMode_Explorer" : L"", (GetWindowLongW(h, GWL_STYLE) & ES_MULTILINE) ? nullptr : L""); SendMessageW(h, WM_SETFONT, (WPARAM)g_body, TRUE); }
     else if (c == L"ComboBox") { SetWindowTheme(h, L"DarkMode_CFD", nullptr); SendMessageW(h, WM_SETFONT, (WPARAM)g_body, TRUE); }
     else if (c == L"ListBox") { SetWindowTheme(h, L"DarkMode_Explorer", nullptr); SendMessageW(h, WM_SETFONT, (WPARAM)g_body, TRUE); }
