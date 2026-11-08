@@ -16,7 +16,7 @@ RES = os.environ.get('WITNESS_RESOURCES', '')
 RUN = os.path.join(os.environ.get('WITNESS_TMPDIR') or sys.exit('set WITNESS_TMPDIR (a scratch folder on the Windows disk: source local/env.sh)'), OWNER, 'join')
 win = lambda p: subprocess.check_output(['wslpath', '-w', p], text=True).strip()
 
-def folder(name, exe, lport, gport, player, extra=''):
+def folder(name, exe, lport, gport, player, extra='', face=False):
     d = os.path.join(RUN, name)
     for _ in range(20):      # (the last run's launchers may still hold their folder for a moment on the Windows disk)
         shutil.rmtree(d, ignore_errors=True)
@@ -27,11 +27,15 @@ def folder(name, exe, lport, gport, player, extra=''):
     open(os.path.join(d, 'witness_coop.cfg'), 'w').write('id=1\nlisten=%d\nname=%s\nforce_active=1\nlobby_port=%d\nupnp=0\nfind_tailscale=0\nvoice_mode=off\nvoice_mute_output=1\n%s' % (gport, player, lport, extra))
     open(os.path.join(d, 'witness_launcher_update.cfg'), 'w').write('update_check=0\n')      # no GitHub call from a test
     shutil.copy(exe, os.path.join(d, 'witness_launcher_under_test.exe'))
+    src = os.path.join(os.environ.get('WITNESS_DIR1', ''), 'data-pc.zip')
+    if face and os.path.exists(src):      # pictures: the game's archive (a hard link to the leased slot's copy, read only) so the launcher draws in the game's own face
+        try: os.link(src, os.path.join(d, 'data-pc.zip'))
+        except OSError as e: print('no game face for the pictures: %s' % e, flush=True)
     return d
 
 def run(exeA, exeB, lport, mutant=False, pics=''):
     p1 = int(os.environ.get('WITNESS_PORT1', '47001')); nameA = 'Fox' if pics else 'Alpha%04d' % random.randint(0, 9999)
-    dA, dB = folder('A', exeA, lport, p1, nameA, 'lobby_advertise=127.0.0.1\n' if pics else ''), folder('B', exeB, lport, p1 + 1, 'Owl' if pics else 'Beta')
+    dA, dB = folder('A', exeA, lport, p1, nameA, 'lobby_advertise=127.0.0.1\n' if pics else '', bool(pics)), folder('B', exeB, lport, p1 + 1, 'Owl' if pics else 'Beta', '', bool(pics))
     slots = (os.environ.get('WITNESS_SLOTS', '0,1').split(',') + ['0', '1'])[:2]
     rects = [(subprocess.run([RES, 'rect', s], capture_output=True, text=True).stdout.strip() if RES else '') or '0 0 1280 760' for s in slots]
     args = [PYW, '-I', win(os.path.join(ROOT, 'tools', 'win', 'wjoin.py')), win(os.path.join(dA, 'witness_launcher_under_test.exe')), win(dA), win(os.path.join(dB, 'witness_launcher_under_test.exe')), win(dB), str(lport), nameA, rects[0], rects[1]] + (['mutant'] if mutant else ['pictures', win(pics)] if pics else [])

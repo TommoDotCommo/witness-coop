@@ -7,6 +7,14 @@ exec(compile(open(os.path.join(HERE, 'wlib.py')).read(), 'wlib.py', 'exec'))
 exec(compile(open(os.path.join(HERE, 'wimg.py')).read(), 'wimg.py', 'exec'))
 out, want, SPOT, PLAN = sys.argv[1], sys.argv[2].split(','), sys.argv[3], ('' if sys.argv[4] == '-' else sys.argv[4])
 os.makedirs(out, exist_ok=True)
+def launcher_env():
+    """The environment for a launcher in a picture: Tailscale not found (no tailscale.exe on PATH or under Program Files), so no name or address of this PC is drawn."""
+    env = dict(os.environ); empty = os.path.join(out, 'no-programs'); os.makedirs(empty, exist_ok=True)
+    env['PATH'] = ';'.join(x for x in env.get('PATH', '').split(';') if x and not os.path.exists(os.path.join(x.strip('"'), 'tailscale.exe')))
+    for k in [k for k in env if k.upper() in ('PROGRAMW6432', 'PROGRAMFILES')]: del env[k]
+    env['PROGRAMW6432'] = env['PROGRAMFILES'] = empty      # (Windows Python keeps the names in upper case)
+    return env
+
 def wrap(a): return (a + math.pi) % (2 * math.pi) - math.pi
 
 class Game:
@@ -261,7 +269,7 @@ def lobby_scene():
         for f in ('launcher_cmd.txt', 'lobby_stat.txt'):
             try: os.remove(os.path.join(g.dir, f))
             except OSError: pass
-        return subprocess.Popen([exe, '--dir', g.dir, '--no-activate', '--cmd-file', os.path.join(g.dir, 'launcher_cmd.txt'), '--stat-file', os.path.join(g.dir, 'lobby_stat.txt')], startupinfo=si)
+        return subprocess.Popen([exe, '--dir', g.dir, '--no-activate', '--cmd-file', os.path.join(g.dir, 'launcher_cmd.txt'), '--stat-file', os.path.join(g.dir, 'lobby_stat.txt')], startupinfo=si, env=launcher_env())
     def cmd(g, *lines):
         p = os.path.join(g.dir, 'launcher_cmd.txt'); t = time.time()
         while os.path.exists(p) and time.time() - t < 8: time.sleep(0.05)
@@ -269,7 +277,7 @@ def lobby_scene():
     def stat_text(g):
         try: return open(os.path.join(g.dir, 'lobby_stat.txt'), errors='ignore').read()
         except OSError: return ''
-    with open(os.path.join(host.dir, 'witness_coop.cfg'), 'a') as f: f.write('\nlobby_advertise=127.0.0.1\n')      # the invite in the picture shows the loopback address, not this PC's address on the network
+    with open(os.path.join(host.dir, 'witness_coop.cfg'), 'a') as f: f.write('\nlobby_advertise=127.0.0.1\nupnp=0\n')      # (and no router port: a picture never asks the router for anything)      # the invite in the picture shows the loopback address, not this PC's address on the network
     ph, pg = start(hexe, host), start(gexe, guest); time.sleep(3.0)
     cmd(host, 'host %d' % (int(cfgv(host.dir, 'listen', '47000')) + 200)); t0 = time.time(); inv = ''
     while time.time() - t0 < 10 and not inv:
@@ -346,7 +354,7 @@ def launcher_scene(vi):
              (2, 6, 'launcher_launcher', 'Settings, Launcher: show at start, updates, and the experimental options (off by default).'),
              (3, 0, 'launcher_about', 'About: version, updates, the quick guide, Send diagnostics, links, the game folder (a generic path is shown here instead of this PC\'s) and credits.')]
     for page, section, name, caption in pages:
-        p = subprocess.Popen([exe, '--dir', games[vi].dir, '--page', str(page), '--section', str(section), '--no-activate'] + (['--size', '1280', '900'] if name == 'launcher_keys' else []), startupinfo=si); h = None; t0 = time.time()
+        p = subprocess.Popen([exe, '--dir', games[vi].dir, '--page', str(page), '--section', str(section), '--no-activate'] + (['--size', '1280', '900'] if name == 'launcher_keys' else []), startupinfo=si, env=launcher_env()); h = None; t0 = time.time()
         while time.time() - t0 < 10 and not h: h = find(p.pid, 'WitnessLauncher'); time.sleep(0.2)
         time.sleep(0.8)
         if h:
@@ -354,7 +362,7 @@ def launcher_scene(vi):
                 pass
             grab_window(h, name, caption)
         p.kill()
-    p = subprocess.Popen([exe, '--dir', games[vi].dir, '--page', '0', '--new-game-window', '--no-activate'], startupinfo=si); h = None; t0 = time.time()
+    p = subprocess.Popen([exe, '--dir', games[vi].dir, '--page', '0', '--new-game-window', '--no-activate'], startupinfo=si, env=launcher_env()); h = None; t0 = time.time()
     while time.time() - t0 < 10 and not h: h = find(p.pid, 'WitnessNewGame'); time.sleep(0.2)
     time.sleep(0.6)
     if h:      # tick a few areas and ask for three lasers, then say what that comes to
