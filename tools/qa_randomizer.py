@@ -28,7 +28,7 @@ def send(d, *lines):
     time.sleep(1.0)
 def randstat(d):
     send(d, 'randstat'); lines = [l for l in log(d).splitlines() if l.startswith('randstat:')]
-    main = [l for l in lines if ' state ' in l][-1:]
+    main = [l for l in lines if l.startswith('randstat: state ')][-1:]
     st = dict(re.findall(r' (state|fingerprint|entities|ms) (\S+)', main[0])) if main else {}
     peers = {m[0]: (m[1], m[2]) for m in re.findall(r'randstat: peer (\d+) fingerprint (\S+) state (\d+)', '\n'.join(lines[-6:]))}
     return st, peers
