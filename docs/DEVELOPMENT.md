@@ -869,6 +869,12 @@ read-only; `wkeys.py`, `wshot.py`, `wplace.py`, `wfocus.py` and `launch.py` driv
 
 ## Feature checks
 
+Every game-free check of the table below runs at once with `tools/t0.sh` (51 suites, about 2 minutes on 16 CPUs); `tools/t0.sh --changed` runs
+only those a change since main can reach (`tools/t0_select.py` follows includes, imports and the paths scripts and Makefiles name; comments do
+not count), and `tools/t0.sh --uncovered` lists the source files no game-free test reaches: on 2026-11-10, 211 of 619, nearly all of them the
+in-game half of the proxy (`proxy/*.cpp`, tested by the scenarios in the right column), the Windows probes and helpers in `tools/win/`, the
+scenario scripts and the model's build sources.
+
 | Feature | Game-free (T0) | Two real games (T2, `tools/qa.sh <scenario>`) |
 |---|---|---|
 | Chat, typing dots, bubbles, pings | `make -C proxy/core test` (social layer: loss, jitter, restart, corruption; 8 twins) | `social` |

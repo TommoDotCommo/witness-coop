@@ -95,8 +95,10 @@ prepare a reviewable diff before asking to publish. Never force-push.
 - One game without a partner: `tools/solo.sh` (one slot; a start whose cfg has no roster, as from Steam, must scan the world and stay alive;
   `--mutant` sets `late_voice_lock=1`, the lock as before 2026-10-31, and the game must die).
 - Every game-free test at once: `tools/t0.sh` (the make suites and the Python tests side by side, a table of seconds and results; about 2 minutes
-  on 16 CPUs, `--quick` leaves out the three heaviest for about 1.5; words select tests by name). The slow tests run their mutants side by side
-  in processes of their own; a new test with mutants should do the same.
+  on 16 CPUs, `--quick` leaves out the three heaviest for about 1.5; words select tests by name; `--changed[=REF]` runs only the suites a
+  change since main can reach through includes, imports and paths, `tools/t0_select.py`; `--uncovered` lists the source files no test reaches).
+  The slow tests run their mutants side by side in processes of their own; a new test with mutants should do the same. A new Makefile with a
+  `test` target goes into t0.sh's list (`tools/test_t0_select.py` fails otherwise).
 - For documentation changes, check links, paths and `git diff --check`; game runs are unnecessary.
 
 ## Compatibility constraints
