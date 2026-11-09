@@ -631,6 +631,38 @@ game's own, a randomized panel drawn in A solved in B, another seed in B told in
 Run on 2026-11-09: Normal, Expert and Variety pass; with the panel shuffle, checks 1, 2 and 4 pass but the bot (`tools/win/wdraw.py`) could not draw
 any shuffled tutorial panel (the shuffle changes their path width and start size), so a shared solve on a shuffled panel is not checked yet.
 
+### Your puzzles: the puzzle editor
+
+"Your puzzles" (`custom;set:<hash>` in `common/randomizers.h`) puts the player's own puzzles on the game's panels. The parts:
+
+- `common/wpuzzle.h`: a puzzle as jbzdarkid's witnesspuzzles.com engine keeps it (a grid of (2W+1) x (2H+1) corners, edges and cells, y down), his rules
+  (regions, squares, stars, triangles, polyominoes and their negatives, eliminators with negations cancelling negations, dots, gaps, symmetry), his
+  solver with its early region check, what the game cannot show (`Problems`: at most 7 x 7, start points on corners, ends pointing out, mirrored starts
+  and ends), and the text of a set (`Print`/`Parse`, one line per thing; `Hash`, FNV-1a 64 of the text, names it). `common/wpuzzle_json.h`: his JSON
+  (what his editor's Import and Export show, and what a published puzzle's page holds) both ways; his CSS colours go to the nearest of the game's.
+  The port is BSD 3-Clause (`third_party/README.md`). `common/wpuzzle_panels.h`: the panels a puzzle may take (ordinary grid panels of the Tutorial,
+  Outside Tutorial, Symmetry Island, Quarry, Swamp and Town, in the game's order) and `Placement` (a puzzle's own panel, else the next free one).
+- The launcher: `launcher/editor.cpp` (the window: sets, the canvas, tools, Try it, Show a solution, Count solutions with a time limit, Undo, Import
+  of his text or a published puzzle's address over HTTPS, Copy for the web) on `launcher/editor_core.h` (what a click does, the line drawn when
+  trying). The library is `<data folder>/puzzles/sets/<name>.txt`; the Randomizers tab keeps the picked set's name in the cfg (`randomizer_set`), and
+  starting a game writes the set's copy `<data folder>/puzzles/<hash>.txt` (never changed) and `randomizer=custom;set:<hash>`.
+- The lobby (protocol 5): a member without the host's set asks for it 1000 bytes at a time (`SET_ASK`, `SET_PART`; the host sends only the chosen
+  set), keeps it only when its text has that hash, and says so in its HELLO; the host's Start waits until everyone has it.
+- The game: `RunCustom` (`proxy/randomizer/variants/nsv.cpp`) reads the set on the generation thread (`LoadPuzzleSetFile`, `game_randomizer.cpp`),
+  checks its hash, and writes each puzzle with the generator's own panel writer (`Panel::Write`: geometry, symmetry data, gaps, dots, decorations
+  with their colours, the style flags the game checks a line with; symmetry panels' line colours from Symmetry Island 0x0007C). The game then draws
+  and checks the puzzles itself. Every other panel keeps the game's own puzzle.
+
+Tests: `make -C common wpuzzle-test` (600 random puzzles with the solutions his engine finds, `common/tests/wpuzzle_fixture.txt` from
+`tools/wpuzzle_fixture.py`: the same count and first solution, his solution accepted and a shorter line refused, both texts keep each puzzle;
+mutants: a rule off, rotation ignored, the solver's early check blind to eliminators, the set text without rotation). `tools/wpuzzle_diff.py
+<his repository>` compares the two on his published puzzles: on 2026-11-09 the 7454 that the game could show (up to 25 cells) gave the same
+solutions in both. `make -C proxy/randomizer test` writes a set of every kind into the recorded game and reads each panel back with the generator's
+reader (`custom_test.cpp`, mutant: polyominoes upside down; the first Tutorial panels are not fully in the recording, so its puzzles name other
+panels). `make -C launcher editor-test` (clicks, tools, a drawn line; 2 mutants) and `lobby-test` (a set sent over a lossy link, Start waiting,
+a wrong text refused; mutants `START_WITHOUT_PUZZLES`, `SET_UNCHECKED`). `tools/win/weditor_shot.py` takes pictures of the editor (the launcher only).
+Not run yet: a set played in the game (one game or two); a start in the middle of an edge is not offered, as the panel writer cannot make one.
+
 ## Testing every puzzle, or one puzzle
 
 The island has 594 placed panels. `tools/sweep.sh` (resource provider mode: leases two slots, starts both games) and `tools/sweep.py run` teleport to each one with the
@@ -807,7 +839,7 @@ read-only; `wkeys.py`, `wshot.py`, `wplace.py`, `wfocus.py` and `launch.py` driv
 | Emotes | `python3 tools/test_gestures.py` (poses, activity, wire simulator and mutants) | `emote` |
 | Free drawing | core stroke messages | `ink` |
 | Progression and new game | `make -C proxy/progress test` (closure, order, lasers, text, sidecar; 6 mutants) | `progress` (solved panels and open doors read from both games' memory; the save's sidecar) |
-| Built-in randomizers | `make -C proxy/randomizer test` (memory layer, whole runs over a recorded game; 4 mutants), core `world-ready` and `puzzles`, launcher lobby and core | `randomizer` (the same puzzles in both games read from outside, a randomized solve shared, other puzzles told; 1 mutant); one game: `tools/randomizer_solo.sh` |
+| Built-in randomizers | `make -C proxy/randomizer test` (memory layer, whole runs over a recorded game, your own puzzles written and read back; 5 mutants), core `world-ready` and `puzzles`, launcher lobby and core | `randomizer` (the same puzzles in both games read from outside, a randomized solve shared, other puzzles told; 1 mutant); one game: `tools/randomizer_solo.sh` |
 | Launcher | `make -C launcher test` (cfg, video file, options in a save, saves; 5 mutants) | `launcher` (the window driven with window messages, the files on disk, the game it starts: its own log and the save it writes) |
 | Voice / Walkie-talkie (the handheld radio is experimental, `experimental_radio=1`) | `make -C common test` (gating: R does nothing and the guide has no radio while off; 2 mutants), `make -C proxy/voice test` (codec, packets, mix, radio filter, jitter, channels; 12 mutants) and `make -C proxy/radio test` (18 mutants), `make -C proxy/ui test` (the voice display, `ui/voice_hud.h`: only a live microphone and the players heard talking; 2 mutants) | `voice` (proximity gain, pan, fade and radio read from the listener's mixer with real positions; push to talk; the voice display on both games (empty when idle, Mic on while the key is held, who is heard, nobody out of earshot); speaking flag; game volume read back from the system; `voice channels`: every channel at 80 m and 5 m, one on one with a player that is not there, the `H` key; mutants) |
 | See through players | `make -C proxy/ghost test` (body overlap, opaque proximity and puzzle sightlines, smooth vertical edges and restoration; 6 mutants) | `ghost` (B reads rendered alpha while A stays opaque near a puzzle and at 0.65 m, fades during overlap, and stays solid on another level; partial edges and a disabled-fade mutant) |

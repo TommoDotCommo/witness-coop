@@ -92,8 +92,11 @@ that's already going: their world catches up when it loads.
 Randomized puzzles: the launcher's Randomizers tab gives the island new puzzles
 (Sigma's Normal or Expert, Variety or Ascension, Despair or its Symbols, the Symbol
 Shuffler, Emptiness or Puzzle Pack, the Star Randomizer, or the Tutorializer), with a
-seed and a few options. In a lobby the host's choice is everyone's; a continued game
-keeps the puzzles it was started with. The same tab has some Witness Trainer options
+seed and a few options, or your own puzzles: choose Your puzzles, then Open the
+puzzle editor to make sets of puzzles (up to 7 by 7, the game's symbols, symmetry),
+try them, check they can be solved, and import or export them from witnesspuzzles.com.
+In a lobby the host's choice is everyone's (the host's own puzzles are sent to
+everyone); a continued game keeps the puzzles it was started with. The same tab has some Witness Trainer options
 for your own game: walking speed, field of view, a noclip key, no challenge time limit
 and an environmental-puzzle overlay. They are the work of sigma144, jbzdarkid,
 Penguin12335, chuukunn, Dawgup, Parker, hatkirby, NewSoupVi and others (see Licence).
@@ -189,5 +192,6 @@ MIT (LICENSE.txt). This is a fan project, not affiliated with Thekla, Inc., and 
 doesn't include any of the game's files.
 The mod contains other people's work under the MIT licence: the randomizers (sigma144,
 jbzdarkid, Penguin12335, chuukunn, Dawgup, Parker, hatkirby, NewSoupVi and others), the
-Witness Trainer's options (jbzdarkid) and Archipelago's logic for The Witness.
+Witness Trainer's options (jbzdarkid) and Archipelago's logic for The Witness, and under the
+BSD licence the puzzle editor's rules (jbzdarkid's witnesspuzzles.com).
 Their notices are in THIRD-PARTY-NOTICES.txt.

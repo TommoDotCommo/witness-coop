@@ -118,9 +118,19 @@ The launcher's **Randomizers** tab gives the island new puzzles, made by randomi
   every puzzle as much as possible; **Puzzle Pack** makes completely random puzzles (its author warns issues may arise).
 - **Star Randomizer**: each panel keeps its theme, with at least two extra stars.
 - **Tutorializer**: almost every panel becomes the first tutorial puzzle. A joke mode.
+- **Your puzzles**: puzzles you make yourself in the launcher's **puzzle editor**, on the panels you choose (every
+  other panel keeps the game's own).
 
 Each comes with a seed (a number: the same seed gives the same puzzles) and options: a new seed for each new game,
 shuffling which panel is where, colour-blind friendly colours, and faster doors, bridges and elevators.
+
+The puzzle editor (**Open the puzzle editor** on the Randomizers tab, with **Your puzzles** chosen) keeps your puzzles in
+sets. Draw a puzzle on a grid of up to 7 by 7 with the game's symbols: squares and stars in the game's colours,
+eliminators, triangles, polyominoes (turnable or negative), dots, gaps and missing lines, start and end points, and
+symmetry. **Try it** lets you draw a line through it as on a panel, **Show a solution** and **Count solutions** tell you
+whether it can be solved and how many ways. **Import** takes a puzzle from [witnesspuzzles.com](https://witnesspuzzles.com)
+(its address, or the text its editor exports) and **Copy for the web** gives you the text to import there. In a lobby
+the host's puzzles are sent to everyone before the game starts.
 
 In a lobby the host's choice is everyone's, so all of you play the same puzzles; the lobby shows it under **Puzzles**.
 A continued game keeps the puzzles it was started with, and the Saves tab shows them for each save. The puzzles are
@@ -270,7 +280,8 @@ as maintained for Archipelago by NewSoupVi ([sigma144's](https://github.com/sigm
 [Dawgup's Symbol Shuffler](https://github.com/KemSpeedruns/witness-randomizer),
 [Parker's Star Randomizer](https://github.com/MrP4rK3r2/witness-randomizer) and
 [hatkirby's Tutorializer](https://code.fourisland.com/witness-tutorializer), with work by blastron, Jarno458, ReverM and
-others (MIT licence, copyright 2018 jbzdarkid). The Trainer options come from
+others (MIT licence, copyright 2018 jbzdarkid). The puzzle editor's rules, solver and puzzle text are ported from
+[jbzdarkid's witnesspuzzles.com](https://github.com/jbzdarkid/jbzdarkid.github.io) (BSD licence). The Trainer options come from
 [jbzdarkid's Witness Trainer](https://github.com/jbzdarkid/witness-trainer) (MIT licence). The order in which the game needs its panels solved, for a new
 game with parts already done, comes from [Archipelago](https://github.com/ArchipelagoMW/Archipelago)'s logic for The
 Witness (MIT licence). Their licences are in [THIRD-PARTY-NOTICES.txt](dist/THIRD-PARTY-NOTICES.txt), which comes with

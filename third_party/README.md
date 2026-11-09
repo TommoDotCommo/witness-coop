@@ -18,6 +18,12 @@ The Witness Trainer's co-op options (walking speed, field of view, noclip, no ch
 vendored: `proxy/trainer.cpp` ports the parts of [jbzdarkid's Witness Trainer](https://github.com/jbzdarkid/witness-trainer) they need (MIT,
 copyright 2026 jbzdarkid).
 
+The puzzle editor's model, rules, solver and puzzle text (`common/wpuzzle.h`, `common/wpuzzle_json.h`) are not vendored either: they port
+[jbzdarkid's witnesspuzzles.com engine](https://github.com/jbzdarkid/jbzdarkid.github.io) (`engine/puzzle.js`, `validate.js`, `polyominos.js`,
+`solve.js`; BSD 3-Clause, copyright 2017 jbzdarkid; the notice is in `dist/THIRD-PARTY-NOTICES.txt`), keeping his structure and names.
+`tools/wpuzzle_diff.py` checks the port against his JavaScript on the puzzles published there (a clone of his repository, anywhere; it is not
+part of the mod).
+
 ## What is ours
 
 - `witness-randomizer/shim/`: what replaces upstream's files that reach the game or the desktop, shared by every folder. `Memory.h` (upstream's

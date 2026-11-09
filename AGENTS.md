@@ -69,6 +69,11 @@ prepare a reviewable diff before asking to publish. Never force-push.
   fingerprint, `variant.h`/`variants.mk`/`variants/<v>.cpp` each vendored randomizer in a namespace of its own, `generate.cpp` one run, `game_randomizer.cpp` in the game:
   per world, applied in one frame, watchdogs, `World::worldReady`), `proxy/trainer.cpp` (the Witness Trainer's co-op options), `dist/THIRD-PARTY-NOTICES.txt`;
   tests `make -C proxy/randomizer test` (with a world recorded by `tools/randomizer_solo.sh --record`), `tools/qa.sh randomizer` (docs/DEVELOPMENT.md).
+- The puzzle editor ("Your puzzles"): `common/wpuzzle.h` (model, rules and solver ported from jbzdarkid's witnesspuzzles.com, the set text),
+  `common/wpuzzle_json.h` (his JSON), `common/wpuzzle_panels.h` (which panels), `launcher/editor.cpp` + `editor_core.h` (the window), the lobby's
+  set transfer (`launcher/lobby.cpp`, protocol 5), `RunCustom` in `proxy/randomizer/variants/nsv.cpp` (the game); tests `make -C common wpuzzle-test`,
+  `make -C launcher editor-test lobby-test`, `make -C proxy/randomizer test` (custom-test), `tools/wpuzzle_diff.py` (against his engine), pictures
+  `tools/win/weditor_shot.py`.
 - `local/`: ignored private configuration, disposable test copies, release zips (`local/release/`) and QA evidence.
 
 ## Build and validation

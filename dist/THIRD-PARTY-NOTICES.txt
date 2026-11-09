@@ -1,7 +1,8 @@
 The Witness co-op: other people's work in this mod
 ====================================================
 
-The co-op mod itself is under the MIT licence in LICENSE.txt. It contains the work of other projects, also under the MIT licence.
+The co-op mod itself is under the MIT licence in LICENSE.txt. It contains the work of other projects, under the MIT licence or (the
+puzzle editor's rules) the BSD 3-Clause licence.
 Their notices follow, as their licences ask. Thank you to everyone named here.
 
 
@@ -110,6 +111,44 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+
+4. The puzzle editor's rules, solver and puzzle text (the launcher's Randomizers tab, "Your puzzles")
+---------------------------------------------------------------------------------------------------
+
+The editor checks a line, finds solutions and reads and writes puzzles as jbzdarkid's witnesspuzzles.com does: its engine
+(https://github.com/jbzdarkid/jbzdarkid.github.io, engine/puzzle.js, validate.js, polyominos.js and solve.js) is ported to C++ in the mod.
+In the game the puzzles are drawn and checked by the game itself.
+
+BSD 3-Clause License
+
+Copyright (c) 2017, jbzdarkid
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+3. Neither the name of the copyright holder nor the names of its
+   contributors may be used to endorse or promote products derived from
+   this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
 The Witness is by Thekla, Inc. This co-op mod is a fan project, not made or endorsed by Thekla or by the authors above.
