@@ -36,7 +36,7 @@ def main():
                                "--no-shrink", "--out", os.path.join(core, "build", "out"), *extra], capture_output=True, text=True).stdout
     from concurrent.futures import ThreadPoolExecutor      # the clean run and every twin are independent processes: run them side by side
     with ThreadPoolExecutor(max_workers=len(TWINS) + 1) as pool:
-        clean = pool.submit(run); twins = {t: pool.submit(run, "--bug", t) for t in TWINS}
+        clean = pool.submit(run); twins = {t: pool.submit(run, "--bug", t, "--max-fail", "5") for t in TWINS}      # (a twin only has to be caught: five failures name the oracles, the rest of its 500 sessions are time)
         bad = 0
         out = clean.result()
         ok = "RESULT: ALL OK" in out

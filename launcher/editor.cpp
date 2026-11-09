@@ -64,11 +64,20 @@ void FillList() {
     for (size_t k = 0; k < E.set.puzzles.size(); k++) SendMessageW(l, LB_ADDSTRING, 0, (LPARAM)Wd(PuzzleLabel(k)).c_str());
     SendMessageW(l, LB_SETCURSEL, E.cur, 0); SendMessageW(l, WM_SETREDRAW, TRUE, 0); InvalidateRect(l, nullptr, TRUE);
 }
+wpz::Look CurLook() {      // how the panel the current puzzle goes on looks in the game
+    if (!Cur()) return wpz::Look();
+    std::vector<unsigned> where = wpz::Placement(E.set); return wpz::PanelLook(where[E.cur]);
+}
 void ShowProblems() {
     wpz::Puzzle* p = Cur(); if (!p) { Say("This set has no puzzles yet: Add makes one."); return; }
     auto pr = wpz::Problems(*p);
-    if (!pr.empty()) Say("Not ready for the game: " + pr[0] + ".");
-    else Say("Ready. Click to place the tool, right-click to clear; Try it to draw a line.", true);
+    if (!pr.empty()) { Say("Not ready for the game: " + pr[0] + "."); return; }
+    auto hard = wpz::HardToSee(*p, CurLook());
+    if (!hard.empty()) {
+        std::string names; for (size_t i = 0; i < hard.size(); i++) names += (i ? (i + 1 == hard.size() ? " and " : ", ") : "") + hard[i];
+        Say("Ready, but " + names + " symbols are hard to see on this panel: another colour or another panel shows them better.", true); return;
+    }
+    Say("Ready. Click to place the tool, right-click to clear; Try it to draw a line.", true);
 }
 void LoadControls(bool resetUndo = true) {      // the current puzzle into the right-hand controls
     wpz::Puzzle* p = Cur(); E.loading = true;
@@ -175,6 +184,9 @@ void Paint(HDC dc, const RECT& rc) {
     const wpz::Puzzle& p = *pp; Geometry g = Geometry::Fit(p, rc.left, rc.top, rc.right - rc.left, rc.bottom - rc.top, 16);
     int lw = std::max(3, g.step / 3), cell = g.step * 2;
     RECT pr = {g.px(0) - g.step, g.py(0) - g.step, g.px(p.width() - 1) + g.step + 1, g.py(p.height() - 1) + g.step + 1};
+    wpz::Look look = CurLook();      // (the panel's own colours, as in the game)
+    COLORREF kPanel = look.known ? RGB((look.surface >> 16) & 255, (look.surface >> 8) & 255, look.surface & 255) : ped::kPanel;
+    COLORREF kLine = look.known ? RGB((look.line >> 16) & 255, (look.line >> 8) & 255, look.line & 255) : ped::kLine;
     HBRUSH pb = CreateSolidBrush(kPanel); FillRect(dc, &pr, pb); DeleteObject(pb);
     // the lines (edges), with their gaps
     for (int x = 0; x < p.width(); x++) for (int y = 0; y < p.height(); y++) {

@@ -2,6 +2,9 @@
 // The panels the player's own puzzles (common/wpuzzle.h) may replace, in the order the game reaches them: ordinary grid panels whose puzzle is
 // only its line and symbols (no environmental trick, no door control, no pillar, no coloured glass). A puzzle whose panel is 0 takes the first one
 // of these the set has not used yet. Names as the game's progression data has them (proxy/progress/progression.txt).
+#include "wpuzzle.h"
+#include <algorithm>
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -55,6 +58,39 @@ template <class Set> std::vector<unsigned> Placement(const Set& set) {
         if (out[k]) continue;
         while (next < taken.size() && taken[next]) next++;
         if (next < taken.size()) { taken[next] = true; out[k] = Slots()[next].id; }
+    }
+    return out;
+}
+
+// How each of these panels looks in the game: its surface (the panel's background region colour, +0x110) and its grid lines (+0xC0), as 0xRRGGBB,
+// read from the game (build 11370412) on 2026-11-09. The editor paints the puzzle in them, and says when a symbol would be hard to see there.
+struct Look { uint32_t surface = 0x767A84, line = 0x3A3C46; bool known = false; };
+inline Look PanelLook(unsigned id) {
+    struct Group { uint32_t surface, line; std::vector<unsigned> ids; };
+    static const std::vector<Group> groups = {
+        {0xDB9C00, 0x000000, {0x00064, 0x00182, 0x002C2, 0x00293, 0x00295, 0x0A3B5, 0x0A3B2}},
+        {0x4F4CFF, 0x0F0061, {0x018AF, 0x0001B, 0x012C9, 0x0001C, 0x0001D, 0x0001E, 0x0001F, 0x00020, 0x00021, 0x28AC7, 0x28AC8, 0x28ACA, 0x28ACB, 0x28ACC}},
+        {0x009C33, 0x00260A, {0x0005D, 0x0005E, 0x0005F, 0x00060, 0x00061}},
+        {0x787878, 0x262626, {0x00022, 0x00023, 0x00024, 0x00025, 0x00026, 0x0006D, 0x00072, 0x0006F, 0x00070, 0x00071}},
+        {0x737373, 0x262626, {0x00065}},
+        {0x080808, 0x243630, {0x00557, 0x005F1, 0x00620, 0x009F5, 0x0146C, 0x3C12D, 0x03686, 0x014E9, 0x00E0C, 0x01489, 0x0148A, 0x014D9, 0x014E7, 0x014E8, 0x021B3, 0x021B4, 0x021B0, 0x021AF, 0x021AE}},
+        {0x616B00, 0x827D40, {0x00469, 0x00472, 0x00262, 0x00474, 0x00553, 0x0056F, 0x00390, 0x010CA, 0x00983, 0x00984, 0x00986, 0x00985, 0x00987, 0x181A9, 0x00999, 0x0099D, 0x009A0, 0x009A1, 0x00007, 0x00008, 0x00009, 0x0000A}},
+        {0x2B2B2B, 0x1A1A1A, {0x2899C, 0x28A33, 0x28ABF, 0x28AC0, 0x28AC1}},
+    };
+    for (auto& g : groups) for (unsigned i : g.ids) if (i == id) { Look l; l.surface = g.surface; l.line = g.line; l.known = true; return l; }
+    return Look();
+}
+// Symbols whose colour is close to the panel's surface (the yellow polyominoes on the Tutorial's yellow panels were hard to see in the game): their
+// colour names, once each.
+inline std::vector<std::string> HardToSee(const Puzzle& p, const Look& look) {
+    std::vector<std::string> out; if (!look.known) return out;
+    int sr = (look.surface >> 16) & 255, sg = (look.surface >> 8) & 255, sb = look.surface & 255;
+    for (auto& c : p.g) if (c.symbol()) {
+        const Colour* col = ColourByIndex(c.colour); if (!col) continue;
+        int dr = col->r - sr, dg = col->g - sg, db = col->b - sb;
+#ifndef WPZ_MUT_CONTRAST_BLIND
+        if (2 * dr * dr + 4 * dg * dg + 3 * db * db < 9 * 70 * 70 && std::find(out.begin(), out.end(), col->name) == out.end()) out.push_back(col->name);
+#endif
     }
     return out;
 }

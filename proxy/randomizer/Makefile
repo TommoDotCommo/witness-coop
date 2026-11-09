@@ -68,12 +68,14 @@ $(BUILD)/one-run: tests/one_run.cpp world.h $(BUILD)/backend.o $(GLUE) $(LIBS)
 
 BACKEND_MUTANTS = COW_NO_COPY FP_ADDRESSES
 GENERATE_MUTANTS = NO_RESET WATCHDOG_THREAD
-test: $(BUILD)/backend-test $(addprefix $(BUILD)/backend-mut-,$(BACKEND_MUTANTS)) $(BUILD)/generate-test $(addprefix $(BUILD)/generate-mut-,$(GENERATE_MUTANTS)) $(BUILD)/custom-test $(addprefix $(BUILD)/custom-mut-,$(CUSTOM_MUTANTS))
+GEN_SHARDS ?= 4      # the replay as this many parallel processes (each recorded run is independent); its mutants run beside them (tests/generate_par.sh)
+$(BUILD)/generate-par.sh: tests/generate_par.sh
+	mkdir -p $(BUILD); cp tests/generate_par.sh $@; chmod +x $@
+test: $(BUILD)/generate-par.sh $(BUILD)/backend-test $(addprefix $(BUILD)/backend-mut-,$(BACKEND_MUTANTS)) $(BUILD)/generate-test $(addprefix $(BUILD)/generate-mut-,$(GENERATE_MUTANTS)) $(BUILD)/custom-test $(addprefix $(BUILD)/custom-mut-,$(CUSTOM_MUTANTS))
 	$(BUILD)/backend-test
 	@for m in $(BACKEND_MUTANTS); do if $(BUILD)/backend-mut-$$m >/dev/null; then echo "MUTANT $$m SURVIVED (the test cannot fail for it)"; exit 1; else echo "mutant $$m killed"; fi; done
 	@if [ -z "$(WORLDS)" ]; then echo "generate-test: SKIPPED, no recorded game in local/randomizer/ (tools/randomizer_solo.sh --record)"; else \
-	  $(BUILD)/generate-test $(WORLDS) && \
-	  for m in $(GENERATE_MUTANTS); do if $(BUILD)/generate-mut-$$m $(WORLDS) >/dev/null; then echo "MUTANT $$m SURVIVED (the test cannot fail for it)"; exit 1; else echo "mutant $$m killed"; fi; done && \
+	  $(BUILD)/generate-par.sh $(GEN_SHARDS) "$(GENERATE_MUTANTS)" $(WORLDS) && \
 	  $(BUILD)/custom-test $(firstword $(WORLDS)) && \
 	  for m in $(CUSTOM_MUTANTS); do if $(BUILD)/custom-mut-$$m $(firstword $(WORLDS)) >/dev/null; then echo "MUTANT $$m SURVIVED (the test cannot fail for it)"; exit 1; else echo "mutant $$m killed"; fi; done; fi
 clean:

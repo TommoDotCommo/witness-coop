@@ -51,7 +51,8 @@ def shards_that_fit(status, cap):
     return max(0, min(int(slots[1]) // SLOTS_PER_SHARD, int(math.floor(spare / GB_PER_SHARD)), cap))
 
 def suite_names(only=()):
-    with open(os.path.join(HERE, 'suite.py')) as f: names = re.findall(r"^  \('([^']+)'", f.read(), re.M)
+    with open(os.path.join(HERE, 'suite.py')) as f: text = f.read()
+    names = re.findall(r"^  \('([^']+)'", text, re.M) + re.findall(r"^  '([^']+)': \[", text, re.M)      # (then the whole-script scenarios, EXTERNAL)
     return [n for n in names if not only or any(o in n for o in only)]
 
 TIME_RE = re.compile(r'^TIME\t(.+)\t([0-9.]+)\t(PASS|FAIL)$')

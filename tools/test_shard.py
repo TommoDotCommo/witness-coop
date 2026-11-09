@@ -28,6 +28,7 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(suite_names(['baseline']), ['baseline'])
         self.assertEqual(len(suite_names(['late join'])), 2)      # the scenario and its mutant
         self.assertEqual(suite_names(['no such scenario']), [])
+        self.assertEqual(len(suite_names(['your puzzles'])), 6)      # the whole-script scenarios (suite.py EXTERNAL) are in the queue too
     def test_unknown_scenarios_use_the_fallback(self):
         self.assertEqual(sorted(len(b) for b in plan(['x', 'y', 'z', 'w'], {}, 2)), [2, 2])
     def test_table_covers_the_suite(self):

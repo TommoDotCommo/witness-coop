@@ -9,13 +9,23 @@
 #include "../generate.h"
 #include "../world.h"
 
+// Options (before the worlds): --shard i/n replays only every n-th recorded run starting at the i-th (1-based; the Makefile runs the shards as
+// parallel processes: the generator keeps global state, so not threads); --fail-fast stops at the first difference (for mutants, which only
+// need to fail once).
 int main(int argc, char** argv) {
-    int fails = 0, runs = 0;
-    for (int a = 1; a < argc; a++) {
+    int fails = 0, runs = 0, shardI = 1, shardN = 1, a = 1; bool failFast = false;
+    for (; a < argc && argv[a][0] == '-'; a++) {
+        if (!strcmp(argv[a], "--shard") && a + 1 < argc) { if (sscanf(argv[++a], "%d/%d", &shardI, &shardN) != 2 || shardN < 1 || shardI < 1 || shardI > shardN) { std::printf("FAIL: --shard i/n\n"); return 1; } }
+        else if (!strcmp(argv[a], "--fail-fast")) failFast = true;
+    }
+    int recIndex = 0;
+    for (; a < argc; a++) {
         wrand::ReplayRaw world; std::vector<wrand::RecordedRun> recorded;
         if (!wrand::LoadWorld(argv[a], &world, &recorded)) { std::printf("FAIL %s: not a recorded world\n", argv[a]); fails++; continue; }
         std::printf("%s: %zu entities, %zu ranges, %zu bytes, %zu runs\n", argv[a], world.ents.size(), world.mem.ranges().size(), world.mem.bytes(), recorded.size());
         for (const auto& rec : recorded) {
+            if (recIndex++ % shardN != shardI - 1) continue;
+            if (failFast && fails) break;
             if (!rec.fingerprint) { std::printf("  %-44s the game's run failed: skipped\n", rec.spec.c_str()); continue; }
             wrand::Spec spec = wrand::ParseSpec(rec.spec);
             uint64_t first = 0;

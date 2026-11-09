@@ -33,5 +33,11 @@
  "MUTANT: save point restore without the save file": 175,
  "MUTANT: save point restore without the save file, reaction not shared": 172,
  "MUTANT: save point restore with the load gap ignored": 163,
- "MUTANT: panel power chain disabled": 75
+ "MUTANT: panel power chain disabled": 75,
+ "your puzzles in the game": 1100,
+ "MUTANT: your puzzles with polyominoes upside down": 420,
+ "your puzzles sent by the lobby": 65,
+ "MUTANT: your puzzles never sent by the lobby": 68,
+ "your puzzles alone, continued": 330,
+ "MUTANT: your puzzles changed under a continued game": 330
 }

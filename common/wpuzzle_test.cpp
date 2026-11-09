@@ -2,6 +2,7 @@
 // (tests/wpuzzle_fixture.txt, tools/wpuzzle_fixture.py), a drawn line checked, the set text and witnesspuzzles.com's JSON both ways.
 // Mutants (Makefile wpuzzle-test): a rule switched off, the solver's early region check blind to eliminators, the set text without rotation.
 #include "wpuzzle_json.h"
+#include "wpuzzle_panels.h"
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -67,6 +68,16 @@ static void Basics() {
     // problems
     wpz::Puzzle q = wpz::NewPuzzle(3, 3); q.at(0, 6).start = false;
     CHECK(!wpz::Problems(q).empty(), "no start point is not a problem");
+    {      // how the panels look: every offered panel has its colours, and a symbol close to the surface is named
+        int unknown = 0; for (auto& sl : wpz::Slots()) if (!wpz::PanelLook(sl.id).known) unknown++;
+        CHECK(unknown == 0, "%d offered panels have no colours", unknown);
+        wpz::Puzzle y = wpz::NewPuzzle(3, 3); y.at(1, 1) = wpz::Cell{wpz::kPoly, 8, 0, 0x1}; y.at(3, 3) = wpz::Cell{wpz::kSquare, 1};
+        auto tut = wpz::HardToSee(y, wpz::PanelLook(0x00293)), sym = wpz::HardToSee(y, wpz::PanelLook(0x00022)), quarry = wpz::HardToSee(y, wpz::PanelLook(0x00557));
+        CHECK(tut.size() == 1 && tut[0] == "yellow", "yellow on the Tutorial's yellow is not named hard to see");
+        CHECK(sym.empty(), "symbols on Symmetry Island's grey are named hard to see");
+        CHECK(quarry.size() == 1 && quarry[0] == "black", "black on the Quarry's black is not named hard to see");
+        CHECK(wpz::HardToSee(y, wpz::Look()).empty(), "a panel of unknown look names symbols");
+    }
     { wpz::Puzzle g = wpz::NewPuzzle(3, 3); g.at(4, 0).gap = wpz::kGapBreak; CHECK(!wpz::Problems(g).empty(), "a gap on a corner is not a problem (the game shows none there)");
       g.at(4, 0).gap = wpz::kGapNone; g.at(3, 0).gap = wpz::kGapBreak; CHECK(wpz::Problems(g).empty(), "a gap on a line is a problem"); }
     q = wpz::NewPuzzle(3, 3); q.sym = wpz::kSymX;

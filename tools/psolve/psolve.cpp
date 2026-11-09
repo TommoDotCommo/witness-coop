@@ -190,10 +190,19 @@ static bool regionValidRaw(const vector<int>& cellsIdx, const vector<int>& triOk
     vector<char> erased(total, 0);
     function<bool(int)> go = [&](int k) -> bool {
         if (k == ne) {
-            vector<Elem> rest; for (size_t i = 0; i < els.size(); i++) if (!erased[i]) { if (ctype(els[i].v) == T_ERASER) continue; rest.push_back(els[i]); }
-            // erasers that erased nothing remain: they are valid only if every eraser erased something (a spare eraser is wrong)
-            for (int t = 0; t < T; t++) if (!erased[els.size() + t] && triBad[t]) return false;
-            return checkNoErasers(rest, cellsIdx);
+            auto validWith = [&](int keep) {      // the region with what the erasers erased, except `keep` (-1: nothing kept back)
+                vector<Elem> rest; for (size_t i = 0; i < els.size(); i++) if (!erased[i] || (int)i == keep) { if (ctype(els[i].v) == T_ERASER) { if ((int)i == keep) return false; continue; } rest.push_back(els[i]); }
+                // erasers that erased nothing remain: they are valid only if every eraser erased something (a spare eraser is wrong)
+                for (int t = 0; t < T; t++) if ((!erased[els.size() + t] || (int)els.size() + t == keep) && triBad[t]) return false;
+                return checkNoErasers(rest, cellsIdx);
+            };
+            if (!validWith(-1)) return false;
+            // and each erasure was needed: put back what one eraser took and the region is wrong again (the game, like witnesspuzzles.com, refuses
+            // an eraser that took a symbol that was fine: seen in the game on 2026-11-09, tools/qa_custom.py's eliminator puzzle)
+            // (only with one eraser in the region: with several, an erasure is fine when the symbol was wrong before any eraser, which this does not
+            // model, so those keep the looser rule rather than refuse a line the game takes)
+            if (ne == 1 && !mut("eraser_needed")) for (int i = 0; i < total; i++) if (erased[i] && validWith(i)) return false;
+            return true;
         }
         for (int i = 0; i < total; i++) {
             if (erased[i]) continue; if (i < (int)els.size() && i == erasers[k]) continue;

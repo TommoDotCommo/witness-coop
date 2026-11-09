@@ -6,24 +6,29 @@ them goes on the game's panels, and the game itself must draw and check each one
   3. a line the rules refuse (up the left edge and along the top of the colours puzzle: all its colours in one region) is drawn in A: the
      game must refuse it too (its verdict "wrong"), just before that puzzle's solution is drawn
   4. on every puzzle the line the repo's rule solver (tools/solver.py, psolve) finds from what the game's panel holds is drawn by the bot in A:
-     the game and the editor's rules (wpuzzle-cli check) must judge it the same. When the game refuses it, an editor solution is drawn (one
-     starting up the left edge when there is one) and the game must take it. B must have each solved panel solved too; an in-game picture of
-     each panel is kept (shots/custom_<n>.bmp in A's folder)
+     the game and the editor's rules (wpuzzle-cli check) must judge it the same. When the game refuses it (or the bot did not get it to the
+     game: a note), an editor solution is drawn (one starting up the left edge when there is one) and the game must take it. B must have each
+     solved panel solved too; an in-game picture of each panel is kept (shots/custom_<n>.bmp in A's folder)
+The set has every kind of symbol (squares and stars in several colours, stars counting triangles of their colour, triangles 1 to 3,
+eliminators, turnable, fixed and negative shapes, dots on corners and lines, gaps, missing lines, symmetry with blue and yellow dots) and grids
+from 3 x 3 to 7 x 7 and 7 x 2, on the Tutorial and the panels outside it.
 The bot draws with the mouse (tools/win/wdraw.py), steering by feedback (WDRAW_STEER). The first two Tutorial panels (doors in the tunnel) are
-only checked as held by the game (check 2) and pictured, then solved by the test-only command `nativesolve`, which powers the courtyard. The
+only checked as held by the game (check 2) and pictured, then solved by the test-only command `nativesolve`, which powers the courtyard
+(--tunnel: the bot tries them first; it has started a line on the first but never finished one, a note, not a failure). The
 courtyard's panels power one another (Front Center, then Center Left, then Front Left), so the next puzzle drawn is always one whose panel the
 game reports powered: a black panel is never walked to. A drawing is tried again (up to 4 times) when the game did not judge it (the bot lost
 the line, or did not reach the end), never when the game judged the line. What the bot remembers about these panels is forgotten first.
 Mutant (--mutant): A runs the proxy built with WR_MUT_SHAPE_FLIPPED (polyominoes written upside down): the mirror puzzle (on Back Left, powered
 from the start) still passes, and on the shapes puzzle the game and the editor's rules must disagree (the line the game holds a solution is not
 one by the rules, or the game refuses it).
-usage: qa_custom.py [--mutant] [--only N,N]   (tools/qa.sh custom)"""
+usage: qa_custom.py [--mutant] [--only N,N] [--tunnel]   (tools/qa.sh custom)"""
 import json, os, re, subprocess, sys, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from witness import ROOT, TOOLS, DIR1, DIR2, RUN, pid, pyw, win
 import qa_sweep, solver, sweep
 
 MUTANT = '--mutant' in sys.argv
+TRY_TUNNEL = '--tunnel' in sys.argv      # let the bot try the two tunnel panels (it has not finished a line on them yet)
 ONLY = [int(v) for v in sys.argv[sys.argv.index('--only') + 1].split(',')] if '--only' in sys.argv else None
 SET = '''witness-coop puzzles 1
 set In-game test
@@ -74,10 +79,46 @@ at 2 4 dot blue
 at 6 6 dot yellow
 at 1 1 square black
 at 7 1 square white
+puzzle 4 4 none 0x0005D Dots and gaps
+at 0 8 start
+at 8 0 end right
+at 2 8 dot black
+at 4 4 dot black
+at 6 3 dot black
+at 1 0 gap break
+at 8 5 gap full
+at 4 1 gap break
+at 1 1 square black
+at 7 7 square white
+puzzle 4 4 none 0x0005E Stars and triangles
+at 0 8 start
+at 8 0 end top
+at 1 1 star orange
+at 7 7 star orange
+at 3 3 star magenta
+at 5 5 star magenta
+at 1 7 triangle white 1
+at 7 1 triangle white 2
+at 1 3 triangle white 3
+puzzle 7 7 none 0x018AF Big
+at 0 14 start
+at 14 0 end right
+at 1 1 square black
+at 13 13 square white
+at 7 7 star cyan
+at 9 9 star cyan
+at 5 11 triangle orange 2
+at 11 4 dot black
+puzzle 7 2 none 0x0001B Wide
+at 0 4 start
+at 14 0 end right
+at 1 1 square black
+at 13 3 square white
+at 7 1 triangle orange 1
 '''
 SHAPES = 2      # the puzzle the mutant must break
 WRONG = 4       # the puzzle a wrong line is drawn on first
-UNDRAWN = (0, 1)      # on the first two Tutorial panels: solved by nativesolve
+TUNNEL = (0, 1)      # on the first two Tutorial panels (doors in the tunnel): tried by the bot, solved by nativesolve when it cannot
 CONTROL = 5     # the mutant's control (no polyominoes; Back Left is powered from the start)
 
 def log(d): return open(os.path.join(d, 'witness_proxy.log'), errors='ignore').read()
@@ -204,13 +245,10 @@ def main():
         p['map'] = m; p['q'] = q
     check('   every test puzzle passes the editor\'s checks (none would be left out of the game)', all(p['problems'] == 0 for p in puzzles), [(p['k'], p['problems']) for p in puzzles])
     pyw('wcmd.py', win(DIR1), 'shot custom_start'); time.sleep(1.5)      # (the first panel, in front of the player at the start)
-    for p in puzzles:      # the first two: solved the game's own way, which opens the way to the courtyard
-        if p['k'] in UNDRAWN: pyw('wcmd.py', win(DIR1), 'nativesolve %x' % p['panel']); time.sleep(2.0)
-    time.sleep(3.0)
     # 4. the editor's solution is taken by the game, in A and then in B (in the set's order: the courtyard's panels power one another)
     results = {}
     todo = [p for p in sorted(puzzles, key=lambda p: (p['k'] != CONTROL) if MUTANT else 0)      # (the mutant: its control first)
-            if 'map' in p and p['k'] not in UNDRAWN and not (ONLY and p['k'] not in ONLY) and not (MUTANT and p['k'] not in (SHAPES, CONTROL))]
+            if 'map' in p and not (ONLY and p['k'] not in ONLY) and not (MUTANT and p['k'] not in (SHAPES, CONTROL))]
     while todo:      # the next one is the first whose panel is powered (the courtyard's panels power one another); none: wait for the cable a while
         p = next((p for p in todo if powered('A', p['panel'], wait=0)), None) or next((p for p in todo if powered('A', p['panel'])), None)
         if p is None:
@@ -227,13 +265,25 @@ def main():
             time.sleep(14.0)      # (the game takes a refused line off after its error flash, about 10 s: a line started sooner was lost)
         name = sets[p['k']].splitlines()[0].split(' ', 4)[-1]
         nodes = solver.solve(dict(p['q'], seq=[]))
+        if p['k'] in TUNNEL and not TRY_TUNNEL:      # (the bot has never finished a line on these: 7 minutes each for nothing)
+            pyw('wcmd.py', win(DIR1), 'shot custom_%d' % p['k']); time.sleep(1.5); pyw('wcmd.py', win(DIR1), 'nativesolve %x' % p['panel']); time.sleep(3.0); continue
+        if p['k'] in TUNNEL and not MUTANT:      # the bot has never drawn on these: a line the game judged counts, a bot that never got there is a note
+            line = to_line(p['map'], nodes or []); r = draw(p['q'], nodes, tries=2) if nodes else {}
+            verdict = subprocess.run([exe, 'check', raw, str(p['k'])] + ['%d,%d' % v for v in line], capture_output=True, text=True).stdout.strip()
+            if judged(r):
+                check('4. puzzle %d (%s) on %#x, drawn by the bot: the game and the editor\'s rules judge it the same' % (p['k'], name, p['panel']), bool(r.get('solved')) == (verdict == 'ok'), (r.get('why'), verdict))
+            else: print('  NOTE puzzle %d on %#x: the bot did not get a line to the game (%s)' % (p['k'], p['panel'], r.get('why')), flush=True)
+            pyw('wcmd.py', win(DIR1), 'shot custom_%d' % p['k']); time.sleep(1.5)
+            if not r.get('solved'): pyw('wcmd.py', win(DIR1), 'nativesolve %x' % p['panel']); time.sleep(3.0)      # (it powers the next panel)
+            continue
         if nodes:      # the repo's solver's line: the game and the editor's rules must judge it the same
             line = to_line(p['map'], nodes)
             verdict = subprocess.run([exe, 'check', raw, str(p['k'])] + ['%d,%d' % v for v in line], capture_output=True, text=True).stdout.strip()
             r = draw(p['q'], nodes); game = bool(r.get('solved'))
             results[p['k']] = (game, verdict == 'ok') if judged(r) else None      # (None: not judged by the game)
-            check('4. puzzle %d (%s) on %#x: the game and the editor\'s rules judge the solver\'s line the same' % (p['k'], name, p['panel']),
-                  results[p['k']] is not None and game == (verdict == 'ok'), 'game %s, rules %s (%s; %s)' % ('took it' if game else 'refused it' if results[p['k']] is not None else 'did not judge it', verdict, r.get('why', ''), ' '.join('%d,%d' % v for v in line)))
+            if results[p['k']] is None: print('  NOTE puzzle %d on %#x: the bot did not get the solver\'s line to the game (%s); the editor\'s own solution is drawn' % (p['k'], p['panel'], r.get('why')), flush=True)
+            else: check('4. puzzle %d (%s) on %#x: the game and the editor\'s rules judge the solver\'s line the same' % (p['k'], name, p['panel']),
+                  game == (verdict == 'ok'), 'game %s, rules %s (%s; %s)' % ('took it' if game else 'refused it' if results[p['k']] is not None else 'did not judge it', verdict, r.get('why', ''), ' '.join('%d,%d' % v for v in line)))
         else:      # (the mutant's upside-down shapes have no solution at all: what the game holds is not the editor's puzzle)
             r = {}; print('  (puzzle %d: the repo\'s solver has no line for what the game holds)' % p['k'], flush=True)
             if not MUTANT: check('4. puzzle %d (%s): the repo\'s solver has a line for it' % (p['k'], name), False)

@@ -88,6 +88,13 @@ def test_poly_pillar():
     path = solver.solve_rules(p); check_path(p, path)
     assert path in ([1, 4, 5, 2], [1, 4, 3, 5, 2]), path
 
+def test_eraser_needed():
+    eraser = 0x502
+    p = grid(3, 3, cells=[SQ_B, eraser, 0, 0])               # nothing for the eraser to cancel: alone it is spare, with the square it took a symbol that was fine
+    assert solver.solve_rules(p) is None, 'an eraser with nothing wrong to cancel was accepted'
+    p = grid(3, 3, cells=[SQ_B, SQ_W, eraser, 0])            # with both colours together it cancels one of them: there is a line
+    path = solver.solve_rules(p); check_path(p, path)
+
 def test_gap_blocks():
     p = grid(3, 3, gaps={(0, 1), (0, 3)})                   # both edges out of the start are gone: no line exists
     assert solver.solve_rules(p) is None
@@ -113,7 +120,7 @@ def run():
 def run_mutants():
     """Every rule switched off in turn (PSOLVE_MUTANT=<rule>) must make at least one test fail."""
     bad = []
-    for rule in ('dots', 'squares', 'stars', 'triangles', 'poly', 'pitch', 'hole', 'poly_wrap'):
+    for rule in ('dots', 'squares', 'stars', 'triangles', 'poly', 'pitch', 'hole', 'poly_wrap', 'eraser_needed'):
         r = subprocess.run([sys.executable, os.path.abspath(__file__)], env={**os.environ, 'PSOLVE_MUTANT': rule}, capture_output=True, text=True)
         print('mutant %-9s %s' % (rule, 'caught' if r.returncode else 'NOT CAUGHT'))
         if r.returncode == 0: bad.append(rule)

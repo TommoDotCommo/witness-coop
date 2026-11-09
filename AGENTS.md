@@ -73,7 +73,7 @@ prepare a reviewable diff before asking to publish. Never force-push.
   `common/wpuzzle_json.h` (his JSON), `common/wpuzzle_panels.h` (which panels), `launcher/editor.cpp` + `editor_core.h` (the window), the lobby's
   set transfer (`launcher/lobby.cpp`, protocol 5), `RunCustom` in `proxy/randomizer/variants/nsv.cpp` (the game); tests `make -C common wpuzzle-test`,
   `make -C launcher editor-test lobby-test`, `make -C proxy/randomizer test` (custom-test), `tools/wpuzzle_diff.py` (against his engine), pictures
-  `tools/win/weditor_shot.py`.
+  `tools/win/weditor_shot.py`; in the game `tools/qa.sh custom`, `solocustom`, `lobbyset` (each with `--mutant` or its mutant; in the full regression).
 - `local/`: ignored private configuration, disposable test copies, release zips (`local/release/`) and QA evidence.
 
 ## Build and validation
@@ -94,6 +94,8 @@ prepare a reviewable diff before asking to publish. Never force-push.
   A scenario whose bot never reached its precondition (game not in the world yet, a click missed under load) is run once more automatically; that is logged as `RETRY`. Report only what you ran.
 - One game without a partner: `tools/solo.sh` (one slot; a start whose cfg has no roster, as from Steam, must scan the world and stay alive;
   `--mutant` sets `late_voice_lock=1`, the lock as before 2026-10-31, and the game must die).
+- Every game-free test at once: `tools/t0.sh` (the make suites and the Python tests side by side, a table of seconds and results; `--quick` leaves out
+  the three that take minutes, about 2 minutes in all; words select tests by name).
 - For documentation changes, check links, paths and `git diff --check`; game runs are unnecessary.
 
 ## Compatibility constraints

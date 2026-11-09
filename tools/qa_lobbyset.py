@@ -3,7 +3,7 @@
 real games. A's library holds a set (the one of tools/qa_custom.py) and A's pick is that set; B has no puzzles. B must get the set from A over the
 network, both games must start with it and apply it with the same fingerprint.
 Mutant: the launcher built with WL_MUT_LOBBY_NO_SET_SEND (the host never answers a request for its set) must fail.
-usage: qa_lobbyset.py [clean]   (tools/qa.sh lobbyset)"""
+usage: qa_lobbyset.py [clean | mutant]   (tools/qa.sh lobbyset; only the clean run, or only the mutant)"""
 import os, shutil, subprocess, sys, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from witness import TOOLS, ROOT, DIR1, DIR2, PYW, RUN, win
@@ -49,7 +49,8 @@ def run(launcher_exe='witness_launcher.exe'):
 
 def main():
     results = []
-    print('=== lobbyset: clean build', flush=True); ok = run(); results.append(('clean', ok)); print('clean: %s' % ('PASS' if ok else 'FAIL'), flush=True)
+    if 'mutant' not in sys.argv[1:]:
+        print('=== lobbyset: clean build', flush=True); ok = run(); results.append(('clean', ok)); print('clean: %s' % ('PASS' if ok else 'FAIL'), flush=True)
     if 'clean' not in sys.argv[1:]:
         print('=== lobbyset: MUTANT the host never sends its set', flush=True); caught = not run('witness_launcher_LOBBY_NO_SET_SEND.exe')
         results.append(('mutant no set sent', caught)); print('mutant: %s' % ('caught' if caught else 'NOT CAUGHT'), flush=True)

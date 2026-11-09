@@ -1302,6 +1302,7 @@ void PollCommands() {      // tests: one command per line in launcher_cmd.txt, t
         else if (cmd == "editortest") ped::EditorTest(arg);      // editortest select <n> | solve | count | try | tool <n>
         else if (cmd == "section") ShowSection(atoi(arg.c_str()));
         else if (cmd == "choice") ChooseTile(ls::ParseChoice(arg));
+        else if (cmd == "newgamedlg") { OpenNewGame(); if (g_ng) SendMessageW(g_ng, WM_COMMAND, ID_NG_OK, 0); }      // tests: New game..., then Start in its dialog (nothing done)
         else if (cmd == "primary") SendMessageW(g_main, WM_COMMAND, ID_PRIMARY, 0);
         else if (cmd == "pad") { unsigned b = 0; int lx = 0, ly = 0; if (sscanf(arg.c_str(), "%x %d %d", &b, &lx, &ly) >= 1) { g_injectOn = true; g_injected.connected = true; g_injected.buttons = (uint16_t)b; g_injected.lx = (int16_t)lx; g_injected.ly = (int16_t)ly; PadPoll(); } }
         else if (cmd == "padoff") { g_injectOn = false; }

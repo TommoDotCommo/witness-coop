@@ -230,6 +230,17 @@ SCENARIOS = [   # name, extra cfg for A, extra cfg for B, check(a_stats, b_stats
   ('MUTANT: save point restore with the load gap ignored', 'reload_gap_ignored=1', '', lambda a, b, ok: (not ok, "A's load must not be seen while its world is down: the rescan folds the loaded progress into a silent baseline and B never gets it")),
   ('MUTANT: panel power chain disabled', 'no_panel_power=1', '', lambda a, b, ok: (not ok, 'target panel must remain dark on B')),
 ]
+# Scenarios that are whole scripts of their own (each starts its games with tools/restart.sh in this shard's lease): passed when the script exits 0
+# (a mutant script exits 0 when its check failed, as it must). They share the queue, the shards and the duration table with the others.
+EXTERNAL = {
+  'your puzzles in the game': ['qa_custom.py'],
+  'MUTANT: your puzzles with polyominoes upside down': ['qa_custom.py', '--mutant'],
+  'your puzzles sent by the lobby': ['qa_lobbyset.py', 'clean'],
+  'MUTANT: your puzzles never sent by the lobby': ['qa_lobbyset.py', 'mutant'],
+  'your puzzles alone, continued': ['qa_solocustom.py', 'clean'],
+  'MUTANT: your puzzles changed under a continued game': ['qa_solocustom.py', 'mutant'],
+}
+SCENARIOS += [(n, None, None, None) for n in EXTERNAL]
 args = sys.argv[1:]; shard = None
 if args and args[0] == '--shard': shard = tuple(map(int, args[1].split('/'))); args = args[2:]      # --shard i/n: run shard i (1-based) of n, for parallel runs under separate resource provider owners
 qfile = None
@@ -253,6 +264,11 @@ while True:
     if not sc: break
     name, ca, cb, check = sc
     print('\n=== %s' % name, flush=True); started = time.time()
+    if name in EXTERNAL:
+        r = subprocess.run([sys.executable, os.path.join(TOOLS, EXTERNAL[name][0])] + EXTERNAL[name][1:], text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        print(r.stdout, end=''); ok = r.returncode == 0 and SAVES0 == real_saves(); secs = time.time() - started
+        print('RESULT: %s  (%s)' % ('PASS' if ok else 'FAIL', 'the script %s exited %d' % (' '.join(EXTERNAL[name]), r.returncode)), flush=True)
+        results.append((name, ok, secs)); print('TIME\t%s\t%.0f\t%s' % (name, secs, 'PASS' if ok else 'FAIL'), flush=True); continue
     late = 'late join' in name
     if late:      # free B from the previous scenario and start A alone
         pb = os.path.join(RUN, 'pidB.txt')

@@ -664,21 +664,32 @@ games in the first live run, so they take the frame of the Tutorial grid panel 0
 problem (`Problems`, mutant `CORNER_GAP`): the game shows none there, while the rules block the corner. `make -C launcher editor-test` (clicks,
 tools, a drawn line; 2 mutants) and `lobby-test` (a set sent over a lossy link, Start waiting, a wrong text refused; mutants
 `START_WITHOUT_PUZZLES`, `SET_UNCHECKED`). `tools/win/weditor_shot.py` takes pictures of the editor (the launcher only).
-In the game: `tools/qa.sh custom` (`tools/qa_custom.py`, two games: a set of six puzzles on the Tutorial's panels). Both games apply it with
-the same fingerprint, and each panel holds its puzzle (size, starts, symbols, read from the game). The bot draws a line the rules refuse (the
-game must say "wrong"), then on each courtyard puzzle the line the repo's rule solver (`tools/psolve`) finds from what the game holds: the game
-and the editor's rules must judge it the same; when the game refuses it, an editor solution is drawn and must be taken; each solve must reach B.
-`--mutant`: A with polyominoes upside down; the game must refuse the editor's solution of the shapes puzzle. The bot steers by feedback
-(`WDRAW_STEER`; its projection misjudged how these panels are turned) and forgets what it remembered about them first; the two tunnel panels are
-checked as held and pictured, then solved with `nativesolve`; the next puzzle drawn is always one whose panel the game reports powered (the
-courtyard's panels power one another), so a black panel is never walked to. On 2026-11-09: PASS (the shapes, eliminator, colours and mirror
-puzzles solved in A and in B 0.4 s later, the wrong line refused), and the mutant caught. The game refused the line on which an eliminator had
-nothing to remove, as jbzdarkid's rules do; `tools/psolve` takes that line (a spare eraser is not an error there), which is a bug of the sweep's
-solver, not of the editor. Seen in the game's pictures: the game draws no gap on a corner (now a problem); a puzzle with symmetry on a panel that is
-not a symmetry panel kept that panel's colours of the solved lines (a pale yellow and a green over blue and yellow dots), so those are copied from
-Symmetry Island too. `tools/qa.sh lobbyset` (`tools/qa_lobbyset.py`, two launchers and two games: B gets A's set over the network, A's Start
-waits for it, and both games apply it with the same fingerprint; launcher mutant `LOBBY_NO_SET_SEND`, caught: Start stays blocked). On
-2026-11-09: PASS. A start in the middle of an edge is not offered, as the panel writer cannot make one.
+In the game: `tools/qa.sh custom` (`tools/qa_custom.py`, two games: a set of ten puzzles with every kind of symbol, grids from 3 x 3 to 7 x 7
+and 7 x 2, on the Tutorial and the panels outside it). Both games apply it with the same fingerprint, and each panel holds its puzzle (size,
+starts, symbols, read from the game). The bot draws a line the rules refuse (the game must say "wrong"), then on each puzzle the line the repo's
+rule solver (`tools/psolve`) finds from what the game holds: the game and the editor's rules must judge it the same; when the game refuses it
+(or the bot never got it to the game, a note), an editor solution is drawn and must be taken; each solve must reach B. `--mutant`: A with
+polyominoes upside down; the game must refuse the editor's solution of the shapes puzzle. The bot steers by feedback (`WDRAW_STEER`) and forgets
+what it remembered about these panels first; the next puzzle drawn is always one whose panel the game reports powered (the courtyard's panels
+power one another), so a black panel is never walked to. The two tunnel panels are checked as held and pictured, then solved with `nativesolve`
+(`--tunnel`: the bot tries them first; it has started a line on the first, never finished one). On 2026-11-10: PASS, every puzzle judged the same
+by the game and the rules (stars counting triangles of their colour, triangles 1 to 3, dots, gaps, missing lines, eliminators, shapes, symmetry,
+7 x 7, 7 x 2), each solve in B 0.4 s later; the mutant caught. Found in the game: an eliminator with nothing to remove is refused by the game,
+as jbzdarkid's rules say; `tools/psolve` took that line and now does not, for a region with one eraser (`eraser_needed`, its mutant). Also seen
+in the game's pictures: no gap is drawn on a corner (now a problem); a symmetry puzzle on a panel that is not a symmetry panel kept that panel's
+colours of the solved lines, so those are copied from Symmetry Island too.
+
+`tools/qa.sh solocustom` (`tools/qa_solocustom.py`, one launcher and one game): New game... with a set picked copies the set under its hash and
+starts the game with it; after a solve and a save the set is changed in the library, and Play solo continues with the set the save was made with
+(the same fingerprint, the solve kept). Mutant: the launcher `CONTINUE_REPICKS`. `tools/qa.sh lobbyset` (`tools/qa_lobbyset.py`, two launchers
+and two games: B gets A's set over the network, A's Start waits for it, both games apply it; launcher mutant `LOBBY_NO_SET_SEND`, caught: Start
+stays blocked). All three, with their mutants, are scenarios of the full regression (`tools/qa.sh --all`: `EXTERNAL` in `tools/suite.py`, a
+script that exits 0 passes). On 2026-11-10 all passed and every mutant was caught.
+
+The editor paints each puzzle in the colours of the panel it goes on (`PanelLook` in `common/wpuzzle_panels.h`: each offered panel's surface,
++0x110, and grid lines, +0xC0, read from the game) and says when a symbol's colour is close to that surface (`HardToSee`, mutant
+`CONTRAST_BLIND`; the yellow polyominoes on the Tutorial's yellow were hard to see in the game). A start in the middle of an edge is not
+offered, as the panel writer cannot make one.
 
 ## Testing every puzzle, or one puzzle
 
@@ -856,7 +867,7 @@ read-only; `wkeys.py`, `wshot.py`, `wplace.py`, `wfocus.py` and `launch.py` driv
 | Emotes | `python3 tools/test_gestures.py` (poses, activity, wire simulator and mutants) | `emote` |
 | Free drawing | core stroke messages | `ink` |
 | Progression and new game | `make -C proxy/progress test` (closure, order, lasers, text, sidecar; 6 mutants) | `progress` (solved panels and open doors read from both games' memory; the save's sidecar) |
-| Built-in randomizers | `make -C proxy/randomizer test` (memory layer, whole runs over a recorded game, your own puzzles written and read back; 5 mutants), core `world-ready` and `puzzles`, launcher lobby and core | `randomizer` (the same puzzles in both games read from outside, a randomized solve shared, other puzzles told; 1 mutant); one game: `tools/randomizer_solo.sh` |
+| Built-in randomizers | `make -C proxy/randomizer test` (memory layer, whole runs over a recorded game in 4 parallel shards with the mutants beside them, `GEN_SHARDS`; your own puzzles written and read back on every offered panel; 6 mutants), core `world-ready` and `puzzles`, launcher lobby and core | `randomizer` (the same puzzles in both games read from outside, a randomized solve shared, other puzzles told; 1 mutant); one game: `tools/randomizer_solo.sh` |
 | Launcher | `make -C launcher test` (cfg, video file, options in a save, saves; 5 mutants) | `launcher` (the window driven with window messages, the files on disk, the game it starts: its own log and the save it writes) |
 | Voice / Walkie-talkie (the handheld radio is experimental, `experimental_radio=1`) | `make -C common test` (gating: R does nothing and the guide has no radio while off; 2 mutants), `make -C proxy/voice test` (codec, packets, mix, radio filter, jitter, channels; 12 mutants) and `make -C proxy/radio test` (18 mutants), `make -C proxy/ui test` (the voice display, `ui/voice_hud.h`: only a live microphone and the players heard talking; 2 mutants) | `voice` (proximity gain, pan, fade and radio read from the listener's mixer with real positions; push to talk; the voice display on both games (empty when idle, Mic on while the key is held, who is heard, nobody out of earshot); speaking flag; game volume read back from the system; `voice channels`: every channel at 80 m and 5 m, one on one with a player that is not there, the `H` key; mutants) |
 | See through players | `make -C proxy/ghost test` (body overlap, opaque proximity and puzzle sightlines, smooth vertical edges and restoration; 6 mutants) | `ghost` (B reads rendered alpha while A stays opaque near a puzzle and at 0.65 m, fades during overlap, and stays solid on another level; partial edges and a disabled-fade mutant) |

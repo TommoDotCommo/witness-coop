@@ -44,8 +44,7 @@ $(BUILD)/emote-mutant-%: $(EMOTESRC) $(HDR) emote_sim.h
 emotes: $(BUILD)/emote-quality $(addprefix $(BUILD)/emote-mutant-,$(EMOTE_MUTANTS))
 	python3 ../../tools/emote_embed.py --check
 	$(BUILD)/emote-quality $(GLB) --json $(BUILD)/emote_report.json
-	@for f in tests/emote_bad/*.emote; do c=$$(sed -n 's/^# expect: //p' $$f); if $(BUILD)/emote-quality $(GLB) $$f --expect $$c >/dev/null; then echo "bad clip $$f caught ($$c)"; else echo "BAD CLIP $$f NOT CAUGHT as $$c"; exit 1; fi; done
-	@for m in $(EMOTE_MUTANTS); do if $(BUILD)/emote-mutant-$$m $(GLB) >/dev/null; then echo "EMOTE MUTANT $$m SURVIVED (the gate cannot fail for it)"; exit 1; else echo "emote mutant $$m killed"; fi; done
+	@./tests/emote_par.sh $(BUILD) $(GLB) "$(EMOTE_MUTANTS)"      # the bad clips and the code mutants, side by side (each run takes about 14 s)
 test: lighting emotes $(BUILD)/model-test $(addprefix $(BUILD)/mutant-,$(MUTANTS)) $(BUILD)/life-test $(addprefix $(BUILD)/life-mutant-,$(LIFE_MUTANTS))
 	$(BUILD)/model-test $(GLB)
 	@for m in $(MUTANTS); do if $(BUILD)/mutant-$$m $(GLB) >/dev/null; then echo "MUTANT $$m SURVIVED (the test cannot fail for it)"; exit 1; else echo "mutant $$m killed"; fi; done
