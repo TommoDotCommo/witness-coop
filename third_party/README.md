@@ -34,7 +34,7 @@ copyright 2026 jbzdarkid).
 
 ## The marked changes
 
-Every change to an upstream file is on a line that says `witness-coop:`. `tools/randomizer_upstream.sh all status` lists them against each
+Every change to an upstream file is on a line that says `witness-coop:`, or, for a whole upstream pull request applied, under one such line naming it. `tools/randomizer_upstream.sh all status` lists them against each
 folder's `UPSTREAM` commit.
 
 | Where | Why |
@@ -47,6 +47,7 @@ folder's `UPSTREAM` commit.
 | `star-randomizer/App/Version.h` | `L#s` is MSVC only: `L ## #s` |
 | `despair-randomizer/src/PuzzleList.cpp` (`GenerateSymmetryH`) | the symmetry lists hold repeats and a repeat is popped again, so for some seeds (4242) a list ran empty and the next pop divided by zero: the game died. Refilled when empty; every seed that worked makes the same puzzles |
 | `variety-randomizer/src/Special.cpp` (`generateKeepLaserPuzzle`) | NewSoupVi's fix, [Penguin12335/Variety-Randomiser PR #1](https://github.com/Penguin12335/Variety-Randomiser/pull/1) (open; his own Variety in `witness-randomizer` ships it): the Keep laser puzzle could retry for ever; after 10000 failures one square colour loses a square, again until it fits |
+| `Generate.cpp`/`.h` of `variety-randomizer`, `despair-randomizer`, `star-randomizer` (`place_all_symbols`, `place_shapes`) | NewSoupVi's shape-rotation fix, [sigma144/witness-randomizer PR #104](https://github.com/sigma144/witness-randomizer/pull/104) (open; `witness-randomizer` ships it): rotated and rotated negative shapes counted apart, so a puzzle gets the shapes it asks for. The PR's `std::min`/`std::max` are written `(std::min)`/`(std::max)`: these forks build with MSVC's `min`/`max` macros. Not in `symbol-shuffler`: with it, Puzzle Pack never finished for 16 of 30 seeds (its random puzzles ask for shape mixes the stricter counting cannot fit) |
 | `variety-randomizer/src/Generate.cpp` (`Generate::generate`) | a panel was retried for ever: in Ascension, Mountain panel 0x09FD6 (ghosts, bars and antitriangles on a 6x6 grid) never fitted for any seed tried (15 minutes natively). After `WC_MAX_TRIES` (2000, `variants.mk`) failures in a row a panel keeps the game's own puzzle; the glue resets the count before a run |
 
 Not carried over: the Tutorializer's two patches to the game's code that stop the endings from ending the game (in the co-op mod the endings
@@ -55,7 +56,8 @@ work as in the game). How the generators run in the game, what is tested and how
 ## Upstream pull requests
 
 Checked 2026-11-09 (open pull requests of every upstream): NewSoupVi's Keep laser fix (Penguin12335/Variety-Randomiser #1) is applied above; his
-shape-rotation fix (sigma144/witness-randomizer #104) and the Keep fix are already in `witness-randomizer`. Not applied: the stone-region change
+shape-rotation fix (sigma144/witness-randomizer #104) is applied to Ascension, Despair and Star (above; not to the Symbol Shuffler, where it made
+Puzzle Pack hang); both are already in `witness-randomizer`. Not applied: the stone-region change
 (NewSoupVi #35, sigma144 #109, by lkaesberg: a change to how stone puzzles are made, not a crash or hang fix, unmerged by either maintainer), the
 Mac port (sigma144 #78), and KemSpeedruns #1 (Parker's work into the Symbol Shuffler; the Star Randomizer is vendored from Parker's own repository).
 When one of these is merged upstream, `tools/randomizer_upstream.sh <folder> update` brings it in.
