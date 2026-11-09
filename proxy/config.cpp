@@ -96,6 +96,11 @@ const Cfg& GetCfg() {
             else if (sscanf(line, "no_emote_send=%d", &v) == 1) r.noEmoteSend = v != 0;
             else if (sscanf(line, "no_typing_dots=%d", &v) == 1) r.noTypingDots = v != 0;
             else if (sscanf(line, "no_ping_marks=%d", &v) == 1) r.noPingMarks = v != 0;
+            else if (sscanf(line, "trainer_speed=%d", &v) == 1) r.trainerSpeed = v < 50 ? 50 : v > 400 ? 400 : v;
+            else if (sscanf(line, "trainer_fov=%d", &v) == 1) r.trainerFov = v <= 0 ? 0 : v < 20 ? 20 : v > 170 ? 170 : v;
+            else if (sscanf(line, "trainer_noclip=%d", &v) == 1) r.trainerNoclip = v != 0;
+            else if (sscanf(line, "trainer_no_challenge_limit=%d", &v) == 1) r.trainerNoChallengeLimit = v != 0;
+            else if (sscanf(line, "trainer_ep_overlay=%d", &v) == 1) r.trainerEpOverlay = v != 0;
             else if (!strncmp(line, "randomizer=", 11)) { std::string t = line + 11; while (!t.empty() && (t.back() == '\r' || t.back() == '\n')) t.pop_back(); r.randomizer = t; }
             else if (!strncmp(line, "start_progress=", 15)) { std::string t = line + 15; while (!t.empty() && (t.back() == '\r' || t.back() == '\n')) t.pop_back(); r.startProgress = t; }
             else if (sscanf(line, "no_radio_view=%d", &v) == 1) r.noRadioView = v != 0;

@@ -4,19 +4,27 @@ MAKEFLAGS += -j8
 CXX = x86_64-w64-mingw32-g++
 OUT = dsound.dll
 .DEFAULT_GOAL := $(OUT)
-SRC = oracle.cpp pad.cpp diag.cpp thirdperson.cpp tracer.cpp guide_ui.cpp tv.cpp radio/radio_game.cpp race_game.cpp race/race.cpp voice_audio.cpp voice/voice.cpp dsound_proxy.cpp overlay.cpp gamecam.cpp model_gpu.cpp depth.cpp model/model.cpp coop.cpp steam_net.cpp game.cpp state.cpp hooks.cpp config.cpp input.cpp ui.cpp devmenu.cpp social.cpp video.cpp savepoints.cpp core/sync_core.cpp mapgen.cpp savemeta_game.cpp progress/progress.cpp progress/savemeta.cpp progress/progress_data.cpp
-# the built-in randomizers: our layer (randomizer/), and the vendored generator (../third_party/witness-randomizer/src, built with its own flags below)
+SRC = oracle.cpp pad.cpp diag.cpp thirdperson.cpp tracer.cpp guide_ui.cpp tv.cpp radio/radio_game.cpp race_game.cpp race/race.cpp voice_audio.cpp voice/voice.cpp dsound_proxy.cpp overlay.cpp gamecam.cpp model_gpu.cpp depth.cpp model/model.cpp coop.cpp steam_net.cpp game.cpp state.cpp hooks.cpp config.cpp input.cpp ui.cpp devmenu.cpp social.cpp video.cpp savepoints.cpp core/sync_core.cpp mapgen.cpp savemeta_game.cpp trainer.cpp progress/progress.cpp progress/savemeta.cpp progress/progress_data.cpp
+# the built-in randomizers (randomizer/variant.h): our layer, and each vendored randomizer in a namespace of its own (a generated wrapper per file)
 RSRC = randomizer/backend.cpp randomizer/generate.cpp randomizer/game_randomizer.cpp
-VSRC = Generate MultiGenerate Panel PuzzleList Quaternion Randomizer Special Watchdog
-VENDOR = ../third_party/witness-randomizer
-RFLAGS = -O2 -std=gnu++2a -D_WIN32_WINNT=0x0601 -MMD -MP -Ibuild -DWITNESS_COOP -include $(VENDOR)/shim/compat.h -I$(VENDOR)/shim -I$(VENDOR)/src -Irandomizer
-ROBJ = $(patsubst %.cpp,build/%.o,$(RSRC)) $(patsubst %,build/vendor/%.o,$(VSRC))
+TP = ../third_party
+include randomizer/variants.mk
+RFLAGS = -O2 -std=gnu++2a -D_WIN32_WINNT=0x0601 -MMD -MP -Ibuild -DWITNESS_COOP -I$(TP)/witness-randomizer/shim -Irandomizer
 build/randomizer/%.o: randomizer/%.cpp Makefile
 	@mkdir -p $(dir $@)
-	$(CXX) $(RFLAGS) -c -o $@ $<
-build/vendor/%.o: $(VENDOR)/src/%.cpp Makefile
-	@mkdir -p $(dir $@)
-	$(CXX) $(RFLAGS) -w -c -o $@ $<
+	$(CXX) $(RFLAGS) -include compat.h -c -o $@ $<
+define RVARIANT
+build/variants/$(1)/%.cpp: $$($(1)_DIR)/%.cpp
+	@mkdir -p $$(dir $$@); printf '#include "variant_prelude.h"\nnamespace v_$(1) {\n%b#include "%s"\n}\n' "$$(if $$($(1)_INSIDE),#include \"$$(abspath randomizer/$$($(1)_INSIDE))\"\n)" "$$(abspath $$<)" > $$@
+build/variants/$(1)/%.o: build/variants/$(1)/%.cpp Makefile
+	$(CXX) $(RFLAGS) $$($(1)_FLAGS) -include variant_prelude.h -w -c -o $$@ $$<
+build/variants/$(1)_glue.o: randomizer/variants/$(1).cpp Makefile
+	@mkdir -p build/variants
+	$(CXX) $(RFLAGS) $$($(1)_FLAGS) -include variant_prelude.h -c -o $$@ $$<
+ROBJ += $$(patsubst %,build/variants/$(1)/%.o,$$($(1)_SRC)) build/variants/$(1)_glue.o
+endef
+ROBJ = $(patsubst %.cpp,build/%.o,$(RSRC))
+$(foreach v,$(VARIANTS),$(eval $(call RVARIANT,$(v))))
 OBJ = $(patsubst %.cpp,build/%.o,$(SRC)) $(ROBJ)
 CXXFLAGS = -O2 -std=c++17 -D_WIN32_WINNT=0x0601 -MMD -MP -Ibuild
 LIBS = -ld3d11 -ldxgi -luuid -lws2_32 -lgdi32 -lshell32 -lwindowscodecs -lole32 -loleaut32 -lwinmm

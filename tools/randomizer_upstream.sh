@@ -1,16 +1,22 @@
 #!/bin/bash
-# The vendored randomizer (third_party/witness-randomizer) against its upstream (NewSoupVi's Witness Random Puzzle Generator for Archipelago).
-#   tools/randomizer_upstream.sh status           our changes: each vendored file against the upstream commit in third_party/witness-randomizer/UPSTREAM
-#   tools/randomizer_upstream.sh update <commit>  upstream's changes from that commit to <commit> merged into ours (a three-way merge per file, git merge-file);
-#                                                 UPSTREAM is moved on only when no file has a conflict. Then: make -C proxy/randomizer test, a new
-#                                                 recording (tools/randomizer_solo.sh --record), tools/qa.sh randomizer (third_party/witness-randomizer/README.md).
+# A vendored randomizer (third_party/<folder>: witness-randomizer, variety-randomizer, despair-randomizer, symbol-shuffler, star-randomizer,
+# tutorializer) against its upstream. Its UPSTREAM file: line 1 the upstream commit the files come from, line 2 the repository and branch.
+#   tools/randomizer_upstream.sh <folder> status           our changes: each vendored file against that commit
+#   tools/randomizer_upstream.sh <folder> update <commit>  upstream's changes from that commit to <commit> merged into ours (a three-way merge per
+#                                                          file, git merge-file); UPSTREAM moves on only when no file has a conflict. Then:
+#                                                          make -C proxy/randomizer test, a new recording (tools/randomizer_solo.sh --record),
+#                                                          tools/qa.sh randomizer (third_party/witness-randomizer/README.md, "Updating").
+#   tools/randomizer_upstream.sh all status                every folder's changes
 set -eu
-here=$(cd "$(dirname "$0")/.." && pwd); V="$here/third_party/witness-randomizer"; base=$(head -1 "$V/UPSTREAM")
-repo=https://github.com/NewSoupVi/The-Witness-Randomizer-for-Archipelago
+here=$(cd "$(dirname "$0")/.." && pwd)
+if [ "${1:-}" = all ]; then for d in "$here"/third_party/*/UPSTREAM; do n=$(basename "$(dirname "$d")"); echo "######## $n"; "$0" "$n" "${2:-status}"; done; exit 0; fi
+folder="${1:?give the folder under third_party (or all)}"; shift
+V="$here/third_party/$folder"; [ -f "$V/UPSTREAM" ] || { echo "no $V/UPSTREAM" >&2; exit 2; }
+base=$(sed -n 1p "$V/UPSTREAM"); repo=$(sed -n 2p "$V/UPSTREAM" | cut -d' ' -f1)
 tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
 git clone -q --filter=blob:none --no-checkout "$repo" "$tmp/up"
 up() { case "$1" in src/*) echo "Source/${1#src/}";; *) echo "$1";; esac; }      # our path -> upstream's
-files=$(cd "$V" && find src App -type f | sort)
+files=$(cd "$V" && find src App -type f 2>/dev/null | sort)
 case "${1:-status}" in
 status)
   for f in $files; do
@@ -28,9 +34,9 @@ update)
       cmp -s "$tmp/ours" "$V/$f" || { cp "$tmp/ours" "$V/$f"; echo "$f: merged"; }
     else n=$?; cp "$tmp/ours" "$V/$f"; echo "$f: $n CONFLICT(S), marked in the file"; conflicts=$((conflicts + n)); fi
   done
-  # what upstream added beside the generator (a new source file it may now need)
-  git -C "$tmp/up" diff --name-only --diff-filter=A "$base" "$new" -- Source/*.cpp Source/*.h | sed 's/^/new upstream file (not vendored): /'
-  if [ "$conflicts" = 0 ]; then printf '%s\n' "$new" > "$V/UPSTREAM"; echo "UPSTREAM is now $new: build and run the tests (third_party/witness-randomizer/README.md)"
-  else echo "$conflicts conflict(s): resolve them, then write $new into $V/UPSTREAM"; exit 1; fi;;
-*) echo "usage: randomizer_upstream.sh status | update <commit>" >&2; exit 2;;
+  # what upstream added beside the generator (a new source file it may now need: proxy/randomizer/variants.mk)
+  git -C "$tmp/up" diff --name-only --diff-filter=A "$base" "$new" -- 'Source/*.cpp' 'Source/*.h' | sed 's/^/new upstream file (not vendored): /'
+  if [ "$conflicts" = 0 ]; then { printf '%s\n' "$new"; sed -n '2,$p' "$V/UPSTREAM"; } > "$tmp/U" && cp "$tmp/U" "$V/UPSTREAM"; echo "UPSTREAM is now $new: build and run the tests"
+  else echo "$conflicts conflict(s): resolve them, then write $new as the first line of $V/UPSTREAM"; exit 1; fi;;
+*) echo "usage: randomizer_upstream.sh <folder>|all status | <folder> update <commit>" >&2; exit 2;;
 esac

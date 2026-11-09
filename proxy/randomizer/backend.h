@@ -5,6 +5,7 @@
 //   render thread       the live game itself (applying an overlay, the watchdogs)
 //   tests               a fake world (tests/fake_world.h) or a recorded one
 // An entity is addressed by its id in the game's entity table; a field by its byte offset in the entity; an array by the pointer field that points to it.
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -89,7 +90,7 @@ private:
 // (copy on write) into one of `arrays`, so the game's own arrays are never touched by the generator.
 class Overlay : public Backend {
 public:
-    Overlay(Raw* raw, Arrays* arrays) : raw_(raw), arrays_(arrays) {}
+    Overlay(Raw* raw, Arrays* arrays, const std::atomic<bool>* cancel = nullptr) : raw_(raw), arrays_(arrays), cancel_(cancel) {}
     bool readField(int id, int off, void* dst, size_t n) override;
     bool writeField(int id, int off, const void* src, size_t n) override;
     bool readArray(int id, int off, void* dst, size_t n) override;
@@ -112,7 +113,8 @@ private:
     Ent& ent(int id);
     bool baseRead(int id, int off, void* dst, size_t n);
     void notePointers(int id, int off, const uint8_t* p, size_t n);
-    Raw* raw_; Arrays* arrays_;
+    Raw* raw_; Arrays* arrays_; const std::atomic<bool>* cancel_;      // cancel_: set from outside, the next read throws (a generator that never ends)
+    void checkCancel() const;
     std::map<int, Ent> e_;
     std::map<int, uintptr_t> ents_;
     std::map<uint64_t, std::pair<int, int>> origin_;          // a qword the game had -> the first (entity, offset) it was read at

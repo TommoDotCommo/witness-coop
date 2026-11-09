@@ -8,17 +8,25 @@ Their notices follow, as their licences ask. Thank you to everyone named here.
 1. The randomizers (the launcher's Randomizers tab)
 ---------------------------------------------------
 
-Sigma's Randomizer (Normal and Expert) and the Variety Randomizer are built into the mod from the Witness Random Puzzle Generator,
-as maintained for Archipelago by NewSoupVi:
-    https://github.com/NewSoupVi/The-Witness-Randomizer-for-Archipelago
+The randomizers are built into the mod from the Witness Random Puzzle Generator and its forks, each as its author published it:
 
-It is the work of sigma144 (the puzzle generator, Normal and Expert: https://github.com/sigma144/witness-randomizer), jbzdarkid
-(the original Witness randomizer: https://github.com/jbzdarkid/witness-randomizer), Penguin12335 (Variety:
-https://github.com/Penguin12335/Variety-Randomiser), NewSoupVi, blastron, Jarno458, hatkirby, ReverM and others.
+- Sigma's Randomizer (Normal and Expert) and the Variety Randomizer: the Witness Random Puzzle Generator as maintained for Archipelago by
+  NewSoupVi, https://github.com/NewSoupVi/The-Witness-Randomizer-for-Archipelago (from sigma144's https://github.com/sigma144/witness-randomizer
+  and jbzdarkid's https://github.com/jbzdarkid/witness-randomizer, with Penguin12335's Variety)
+- Ascension: Penguin12335's Variety Randomizer, https://github.com/Penguin12335/Variety-Randomiser (with symbols from Looksy and from chuukunn's
+  Despair Randomizer)
+- Despair and its Symbols mode: chuukunn's Despair Randomizer, https://github.com/chuukunn/witness-randomizer
+- The Symbol Shuffler, Emptiness and Puzzle Pack: Dawgup's (KemSpeedruns) Symbol Shuffler, https://github.com/KemSpeedruns/witness-randomizer
+- The Star Randomizer: Parker's (MrP4rK3r2), https://github.com/MrP4rK3r2/witness-randomizer
+- The Tutorializer: hatkirby's, https://code.fourisland.com/witness-tutorializer
 
-The mod runs its puzzle generator unchanged apart from how it reaches the game: inside the game instead of from a separate program, and
-a few small fixes marked "witness-coop" in the source. The authors made it for everyone to use; they did not make or check this co-op
-version, so please report problems with it to the co-op mod.
+Written by sigma144, jbzdarkid, NewSoupVi, Penguin12335, chuukunn, Dawgup, Parker, hatkirby, blastron, Jarno458, ReverM and others.
+
+The mod runs their puzzle generators unchanged apart from how they reach the game: inside the game instead of from a separate program, and a
+few small fixes marked "witness-coop" in the source. The authors made them for everyone to use; they did not make or check this co-op version,
+so please report problems with it to the co-op mod.
+
+All of them are under this licence:
 
 MIT License
 
@@ -43,7 +51,36 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-2. Which panels open what ("parts of the map done" for a new game)
+2. The Witness Trainer's options (the launcher's Randomizers tab)
+-----------------------------------------------------------------
+
+The walking speed, field of view, noclip, challenge time limit and environmental-puzzle overlay options are ported from jbzdarkid's
+Witness Trainer, https://github.com/jbzdarkid/witness-trainer (the patterns it finds the game's values with, and the values it writes).
+
+MIT License
+
+Copyright (c) 2026 jbzdarkid
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+
+3. Which panels open what ("parts of the map done" for a new game)
 -------------------------------------------------------------------
 
 The order in which the game needs its panels solved comes from the logic of Archipelago's world for The Witness:

@@ -25,6 +25,7 @@ constexpr unsigned Help = 0x70, Boost = 0x72, Nearby = 0x73, Roster = 0x09 /* ho
 struct Fixed { unsigned key; const char* text; };
 inline bool IsTvBinding(const Binding& b) { return std::string(b.config).compare(0, 7, "key_tv_") == 0; }      // the experimental TV features (experimental_tv)
 inline bool IsRadioBinding(const Binding& b) { return std::string(b.config) == "key_radio"; }      // the experimental handheld radio (experimental_radio)
+inline bool IsTrainerBinding(const Binding& b) { return std::string(b.config) == "key_noclip"; }      // the Witness Trainer's noclip (trainer_noclip, the Randomizers tab)
 inline const Fixed fixed[] = {
     {Help, "Hold: quick guide (game and launcher)"},
     {Boost, "Toggle puzzle mouse speed boost"},
@@ -251,7 +252,8 @@ inline std::vector<std::string> KeyLines(const Cfg& c) {
         if (IsTvBinding(b) && !c.experimentalTv) continue;      // experimental TV features are not in the guide while they are off
 #endif
 #ifndef GUIDE_MUT_RADIO_IN_GUIDE
-        if (IsRadioBinding(b) && !c.RadioOn()) continue;      // nor the handheld radio
+        if (IsRadioBinding(b) && !c.RadioOn()) continue;
+        if (IsTrainerBinding(b) && !c.trainerNoclip) continue;      // nor noclip while the Witness Trainer's noclip is off      // nor the handheld radio
 #endif
         if (IsAlt(b)) continue;      // listed with its first key
         std::string keys = c.*b.member ? DisplayKey(c.*b.member) : "";

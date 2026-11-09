@@ -74,6 +74,7 @@ static std::vector<Row> Build() {
         Row r = R(std::string("cfg:") + b.config, b.label, kControls, kKey); r.def = guide::KeyName(b.initial);
         if (guide::IsTvBinding(b)) r.hint = "only with Experimental: TV features (Launcher)";
         if (guide::IsRadioBinding(b)) r.hint = "only with Experimental: handheld radio (Launcher)";
+        if (guide::IsTrainerBinding(b)) r.hint = "only with the Witness Trainer's noclip on (Randomizers)";
         v.push_back(r);
     }
     // the controller (K4, H5): the co-op layer on View, listed from the one table (common/padlayer.h) the quick guide lists too

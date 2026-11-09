@@ -560,10 +560,14 @@ players who were in the game with their names and times (historical character la
 
 ## Built-in randomizers
 
-The launcher's Randomizers tab offers Sigma's Randomizer (Normal, Expert) and the Variety Randomizer. They are the puzzle generator of NewSoupVi's Witness
-Random Puzzle Generator for Archipelago, vendored in `third_party/witness-randomizer` (MIT, copyright 2018 jbzdarkid; what is vendored, the four marked
-changes, and how to update: its README; the players' notices: `dist/THIRD-PARTY-NOTICES.txt`, which the launcher embeds and shows). Upstream runs as a
-separate program that writes the game from outside; here it runs inside the game, and the parts are:
+The launcher's Randomizers tab offers randomizers other people wrote: Sigma's Normal and Expert, Variety and Ascension, Despair and its Symbols
+mode, the Symbol Shuffler (with Emptiness and Puzzle Pack), the Star Randomizer and the Tutorializer, from six projects vendored in `third_party/`
+(MIT; what each folder is, the marked changes and how to update or add one: `third_party/README.md`; the players' notices:
+`dist/THIRD-PARTY-NOTICES.txt`, which the launcher embeds and shows). Upstream each is a separate program that writes the game from outside;
+here they run inside the game. They are forks of one randomizer whose classes share names, so each is compiled in a namespace of its own
+(`proxy/randomizer/variant.h`: the build wraps every vendored `.cpp` as `namespace v_<v> { #include "<file>" }` after `variant_prelude.h`, which
+includes every header first so that only upstream's own declarations land in the namespace; `variants/<v>.cpp` is each one's glue). The same tab
+has the Witness Trainer's co-op options (`proxy/trainer.cpp`, below). The parts:
 
 - `common/randomizers.h`: the randomizers (names, descriptions, credits) and the one text for a choice, `normal;seed:48213;shuffle;colorblind;fast`.
   The launcher keeps the player's pick in the cfg (`randomizer_pick`, `randomizer_new_seed`) and writes the spec a game starts with as `randomizer=`
@@ -575,16 +579,17 @@ separate program that writes the game from outside; here it runs inside the game
   the game's bytes (read once, so a generation sees one snapshot) with the generator's writes on top, writes stay in the overlay, and an array the
   generator writes is copied first into one of ours (copy on write), so nothing reaches the game while it works. On the render thread it is the
   live game (`Live`).
-- `proxy/randomizer/generate.cpp` runs one randomizer from a spec: it resets upstream's statics (a second run in one process, after a save is
-  loaded, must make what a partner's first run made), seeds upstream's generator from the spec, and returns the overlay, the watchdogs and a
-  fingerprint: a hash of every changed byte in which our arrays count by their contents and a pointer the game had by where it was first read,
+- `proxy/randomizer/generate.cpp` runs one randomizer from a spec through the variant that makes its mode (`FindVariant`); the variant's glue
+  resets upstream's statics (a second run in one process, after a save is loaded, must make what a partner's first run made) and seeds upstream's
+  generator from the spec; the result is the overlay, the watchdogs and a fingerprint: a hash of every changed byte in which our arrays count by their contents and a pointer the game had by where it was first read,
   so it is the same on every PC for the same puzzles.
 - `proxy/randomizer/game_randomizer.cpp`, once per frame on the render thread: for every world the game loads (a new game, a save, the same save
   again: the three tutorial panels' addresses change) it waits 1.5 s of the same world and until the entity table stops growing (a load
   creates the island in steps: a generation started on the tutorial alone failed reading the Keep), starts the generation thread (above normal priority:
   it competes with the game's loading), and when it is done writes the overlay in one frame (refused if an entity changed meanwhile: then
   again), then runs upstream's watchdogs (arrow puzzles, the Keep, the Jungle's sound dots, Treehouse, Town door, a bridge) on the render
-  thread at their own intervals. Until then `RandomizerSettled()` is false: the sync core's stable-world gate waits for it (`World::worldReady`),
+  thread at their own intervals. A generation still not done after 3 minutes is given up (the game's own puzzles, the player is told, the sync goes
+  on): Ascension measured stuck in its mountaintop puzzle. Until then `RandomizerSettled()` is false: the sync core's stable-world gate waits for it (`World::worldReady`),
   so nothing from another player is applied to a panel before its puzzle is in, and what the randomizer switched off at the start is in the
   baseline; the start-progress option waits for it too (the randomizer powers some targets off on a fresh world, which must not undo the parts
   done). A generation that failed reading the game is tried again (up to 5 times); one that fails otherwise leaves the game's own puzzles, says so to the player and lets the sync go on.
@@ -595,6 +600,13 @@ Measured (build 11370412, one PC): a generation takes 0.27 to 0.38 s (Normal), 0
 as well since the generation thread runs above normal priority (before that, competing with the game's loading: 7.5 s for Normal, 24 s for Expert);
 both games of `tools/qa.sh randomizer` settle about 38 s after the restart is asked.
 A generation changes about 370 to 490 entities (34 to 165 KB) and makes about 2000 arrays (0.4 to 0.6 MB); Expert and Variety start about 50 watchdogs.
+
+- `proxy/trainer.cpp`: the Witness Trainer's options that suit co-op, each player's own (`trainer_speed`, `trainer_fov`, `trainer_noclip` with
+  `key_noclip`, `trainer_no_challenge_limit`, `trainer_ep_overlay`), ported from jbzdarkid's witness-trainer: its byte-pattern scans run over the
+  loaded exe and its writes happen on the render thread (the run speed and walking acceleration scaled from the game's own values once a world is
+  loaded, the field of view every frame, the challenge's time limit by upstream's one jump, noclip on the key, putting the feet under the camera
+  when it ends). Upstream's practice tools (saved positions, random-doors practice, disabling saves, opening doors, distance gating) are left out.
+  Test command `trainerstat`.
 
 Known limits: a save loaded from the game's own menu gets the randomizer of the cfg the game was started with (the launcher's continue uses the
 save's own); with the panel shuffle on, a chain whose order it shuffles (the Symmetry transparent panels, Orchard, Monastery, Bunker,

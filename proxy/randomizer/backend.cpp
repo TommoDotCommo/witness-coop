@@ -89,7 +89,9 @@ void Overlay::notePointers(int id, int off, const uint8_t* p, size_t n) {
         if (v >= 0x10000 && v < (1ull << 47) && !origin_.count(v)) origin_[v] = {id, (int)(off + i)};
     }
 }
+void Overlay::checkCancel() const { if (cancel_ && cancel_->load(std::memory_order_relaxed)) throw std::runtime_error("cancelled (it took too long)"); }
 bool Overlay::readField(int id, int off, void* dst, size_t n) {
+    checkCancel();
     if (!n) return true;
     // what the game had (cached), with the generator's own writes on top
     Ent* x = nullptr;
@@ -109,6 +111,7 @@ bool Overlay::writeField(int id, int off, const void* src, size_t n) {
     return true;
 }
 bool Overlay::readArray(int id, int off, void* dst, size_t n) {
+    checkCancel();
     uint64_t p = 0; if (!readField(id, off, &p, 8) || !p) return false;
     size_t size = 0;
     if (arrays_->owns(p, &size)) { std::memset(dst, 0, n); std::memcpy(dst, (const void*)(uintptr_t)p, std::min(n, size)); return true; }
@@ -193,6 +196,7 @@ bool Overlay::apply(Raw* live) const {
 }  // namespace wrand
 
 // ---- the vendored code's singletons
+int Memory::GLOBALS = 0;
 Memory* Memory::get() {
     if (!wrand::t_memory) throw std::runtime_error("randomizer: no backend on this thread");
     return wrand::t_memory;

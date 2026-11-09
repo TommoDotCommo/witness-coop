@@ -20,9 +20,9 @@ int main() {
         auto cols = guide::Content(c);
         auto rowsFor = [&](const guide::Columns& cs) { std::string r = guide::Row("", b.text), desc = r.substr(r.find('\t')); size_t n = 0;      // the action's row, which names this key
             for (const auto& l : cs[0]) if (l.size() >= desc.size() && l.compare(l.size() - desc.size(), desc.size(), desc) == 0 && l.find(guide::DisplayKey(c.*b.member)) != std::string::npos) ++n; return n; };
-        check(rowsFor(cols) == (guide::IsTvBinding(b) || guide::IsRadioBinding(b) ? 0u : 1u),
-              "guide lists actual configured action exactly once (the experimental TV and radio keys not while their options are off)");
-        c.experimentalTv = true; c.experimentalRadio = true; cols = guide::Content(c);
+        check(rowsFor(cols) == (guide::IsTvBinding(b) || guide::IsRadioBinding(b) || guide::IsTrainerBinding(b) ? 0u : 1u),
+              "guide lists actual configured action exactly once (the experimental TV and radio keys and the Trainer's noclip not while their options are off)");
+        c.experimentalTv = true; c.experimentalRadio = true; c.trainerNoclip = true; cols = guide::Content(c);
         check(rowsFor(cols) == 1, "with experimental_tv on every action is listed exactly once");
         c = Cfg();
     }

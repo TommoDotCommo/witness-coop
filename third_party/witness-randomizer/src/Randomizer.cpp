@@ -122,7 +122,7 @@ void Randomizer::AdjustSpeed() {
 }
 
 void Randomizer::RandomizeDesert() {
-	std::vector<int> desertPanels = ::desertPanels; // witness-coop: a copy; upstream permuted the global list, so a second run in one process (a save loaded again) made other puzzles
+	const std::vector<int>& desertGlobal = desertPanels; std::vector<int> desertPanels = desertGlobal; // witness-coop: a copy; upstream permuted the global list, so a second run in one process (a save loaded again) made other puzzles
 	std::vector<int> puzzles = desertPanels;
 	std::vector<int> valid1 = { 0x00698, 0x0048F, 0x09F92, 0x09DA6, 0x0078D, 0x04D18, 0x0117A, 0x17ECA, 0x0A02D };
 	std::vector<int> valid2 = { 0x00698, 0x0048F, 0x09F92, 0x0A036, 0x0A049, 0x0A053, 0x00422, 0x006E3, 0x00C72, 0x008BB, 0x0078D, 0x04D18, 0x01205, 0x181AB, 0x012D7, 0x17ECA, 0x0A02D };

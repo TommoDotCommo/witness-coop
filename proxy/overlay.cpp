@@ -1,3 +1,4 @@
+#include "trainer.h"
 #include "randomizer/game_randomizer.h"
 #include "radio/radio_game.h"
 #include "radio/radio.h"
@@ -751,6 +752,7 @@ static HRESULT HookPresentBody(IDXGISwapChain* sc, UINT sync, UINT flags) {
     ThirdPersonPresentBegin();
     { const float* dc = (const float*)((uintptr_t)GetModuleHandleA(nullptr) + kCamPos); DiagFrame(Readable(dc, 12) ? dc : nullptr, (unsigned)f); }
     GameRunQueued();
+    TrainerFrame();         // the Witness Trainer's options (trainer.cpp), when any is on
     RandomizerFrame();      // the built-in randomizer: makes and applies this world's puzzles, runs its watchdogs (before remote events are applied)
     PadFrame();
     StateApplyRemote();

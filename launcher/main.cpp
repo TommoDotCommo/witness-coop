@@ -55,9 +55,10 @@ enum { ID_TAB = 100, ID_APPLY, ID_LAUNCH, ID_NEWGAME, ID_BROWSE, ID_GAMEDIR, ID_
        ID_SAVEPICK2, ID_PRIMARY, ID_NAME, ID_TILE_HOST, ID_TILE_JOIN, ID_TILE_SOLO, ID_TILE_HOST_TXT, ID_TILE_JOIN_TXT, ID_TILE_SOLO_TXT, ID_HOST_STEAM, ID_HOST_DIRECT, ID_JOIN_LABEL, ID_SOLO_NOTE, ID_SOLO_NEW, ID_UP_WHATSNEW, ID_HINTS, ID_FOOT_ACTION,
        ID_SECTIONS, ID_RESET, ID_GUIDE_BTN, ID_LINK_HOME, ID_LINK_NOTES, ID_CREDITS, ID_FOLDER_LABEL, ID_ABOUT_TITLE, ID_ABOUT_GUIDE_TXT, ID_ABOUT_DIAG_TXT, ID_SECTION_TITLE, ID_PICK_LABEL, ID_PICK_LABEL2, ID_RESET2, ID_SAVEPIC, ID_UP_REL, ID_UP_WHICH,
        ID_NG_OK = 300, ID_NG_LASERS, ID_NG_PRESET, ID_NG_INFO, ID_NG_AREAS = 400, ID_FIELD = 1000,
-       // the Randomizers page (common/randomizers.h): the choice (ID_RZ_OFF, then one radio and one description per randomizer), its options, the credits
-       ID_RZ_TITLE = 800, ID_RZ_INTRO, ID_RZ_OFF, ID_RZ_MODE0, ID_RZ_MODE1, ID_RZ_MODE2, ID_RZ_BLURB0, ID_RZ_BLURB1, ID_RZ_BLURB2, ID_RZ_SEED_LABEL, ID_RZ_SEED, ID_RZ_NEWSEED,
-       ID_RZ_ROLL, ID_RZ_SHUFFLE, ID_RZ_COLOR, ID_RZ_FAST, ID_RZ_STATUS, ID_RZ_H_CREDITS, ID_RZ_CREDITS, ID_RZ_LINK0, ID_RZ_LINK1, ID_RZ_LINK2, ID_RZ_LINK3, ID_RZ_LICENCE };
+       // the Randomizers page (common/randomizers.h, proxy/trainer.cpp): the randomizer (a list), what it is and who made it, its options; the Witness Trainer; the credits
+       ID_RZ_TITLE = 800, ID_RZ_INTRO, ID_RZ_MODE, ID_RZ_BLURB, ID_RZ_WARN, ID_RZ_BY, ID_RZ_SEED_LABEL, ID_RZ_SEED, ID_RZ_NEWSEED, ID_RZ_ROLL, ID_RZ_SHUFFLE, ID_RZ_COLOR, ID_RZ_FAST,
+       ID_RZ_STATUS, ID_RZ_H_TRAINER, ID_RZ_TR_SPEED_LABEL, ID_RZ_TR_SPEED, ID_RZ_TR_FOV_LABEL, ID_RZ_TR_FOV, ID_RZ_TR_NOCLIP, ID_RZ_TR_CHALLENGE, ID_RZ_TR_EPS, ID_RZ_TR_NOTE,
+       ID_RZ_H_CREDITS, ID_RZ_CREDITS, ID_RZ_LINK_MODE, ID_RZ_LINK_TRAINER, ID_RZ_LICENCE };
 static_assert(ID_UP_WHICH < ID_NG_OK, "control ids run into the New game dialog's");
 static_assert(ID_RZ_LICENCE < ID_FIELD, "the Randomizers page's ids run into the settings fields");
 enum Kind { kCheck, kCombo, kEdit, kMulti, kSlider, kKeyBtn, kNoteK };
@@ -1025,57 +1026,72 @@ std::string RzForLaunch(bool newGame) {
     return wl::RandomizerForLaunch(wrand::SpecText(RzPick()), RzNewSeed(), newGame, newGame ? "" : RzNewestSave(), g_rzRound);
 }
 bool RzGuest() { return g_sess.Active() && !g_sess.IsHost(); }
+// The Witness Trainer's options (each player's own, unlike the randomizer: a guest sets them too): cfg trainer_*, read by proxy/trainer.cpp.
+const int kSpeeds[] = {100, 125, 150, 200, 300};
+const int kFovs[] = {0, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150};
 std::string RzCreditsText() {
     std::string t;
     for (const auto& i : wrand::Randomizers()) {
         t += std::string(i.name) + "\r\n";
-        for (const auto& c : i.credits) t += std::string("    ") + c.who + ": " + c.what + "\r\n";
+        for (const auto& c : i.credits) t += std::string("    ") + c.who + ": " + c.what + "\r\n" + (*c.link ? std::string("        ") + c.link + "\r\n" : std::string());
     }
-    t += "\r\n" + std::string(wrand::RandomizerSourceCredit()) + "\r\n\r\nThe randomizers' authors made them for everyone to use; they did not make or check this co-op version, so please report problems with it to this mod, not to them.\r\n\r\n";
+    t += "Witness Trainer (its co-op options)\r\n    jbzdarkid: the Witness Trainer\r\n        https://github.com/jbzdarkid/witness-trainer\r\n";
+    t += "\r\n" + std::string(wrand::RandomizerSourceCredit()) + "\r\n\r\nThe authors made these for everyone to use; they did not make or check this co-op version, so please report problems with it to this mod, not to them.\r\n\r\n";
     for (const char* c = kNotices; *c; ++c) { if (*c == '\n' && (c == kNotices || c[-1] != '\r')) t += '\r'; t += *c; }      // the licences in full (THIRD-PARTY-NOTICES.txt)
     return t;
 }
 void BuildRandomizers(HWND pg) {
     HWND t = Make(pg, L"STATIC", L"Randomized puzzles", SS_LEFT, 0, 0, 10, 10, ID_RZ_TITLE); SendMessageW(t, WM_SETFONT, (WPARAM)th::Bold(), TRUE);
     th::MarkMuted(Make(pg, L"STATIC", L"New puzzles for the island, made when the game starts. In a lobby the host's choice is everyone's, so all of you get the same puzzles. A continued game keeps the puzzles it was started with.", SS_LEFT, 0, 0, 10, 10, ID_RZ_INTRO));
-    Make(pg, L"BUTTON", L"The game's own puzzles", BS_AUTORADIOBUTTON | WS_GROUP | WS_TABSTOP, 0, 0, 10, 10, ID_RZ_OFF);
-    int k = 0;
-    for (const auto& i : wrand::Randomizers()) {
-        if (k > 2) break;
-        Make(pg, L"BUTTON", W(i.name).c_str(), BS_AUTORADIOBUTTON, 0, 0, 10, 10, ID_RZ_MODE0 + k);
-        th::MarkMuted(Make(pg, L"STATIC", W(i.blurb).c_str(), SS_LEFT, 0, 0, 10, 10, ID_RZ_BLURB0 + k)); k++;
-    }
-    Make(pg, L"BUTTON", L"A new seed for each new game", BS_AUTOCHECKBOX | WS_GROUP | WS_TABSTOP, 0, 0, 10, 10, ID_RZ_NEWSEED);
+    HWND mc = Make(pg, L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP, 0, 0, 10, 10, ID_RZ_MODE);
+    SendMessageW(mc, CB_ADDSTRING, 0, (LPARAM)L"The game's own puzzles");
+    for (const auto& i : wrand::Randomizers()) SendMessageW(mc, CB_ADDSTRING, 0, (LPARAM)W(i.name).c_str());
+    th::MarkMuted(Make(pg, L"STATIC", L"", SS_LEFT, 0, 0, 10, 10, ID_RZ_BLURB)); Make(pg, L"STATIC", L"", SS_LEFT, 0, 0, 10, 10, ID_RZ_WARN); th::MarkMuted(Make(pg, L"STATIC", L"", SS_LEFT, 0, 0, 10, 10, ID_RZ_BY));
+    Make(pg, L"BUTTON", L"A new seed for each new game", BS_AUTOCHECKBOX | WS_TABSTOP, 0, 0, 10, 10, ID_RZ_NEWSEED);
     Make(pg, L"STATIC", L"Seed", SS_LEFT, 0, 0, 10, 10, ID_RZ_SEED_LABEL); Make(pg, L"EDIT", L"", WS_BORDER | ES_NUMBER | ES_AUTOHSCROLL, 0, 0, 10, 10, ID_RZ_SEED);
     Make(pg, L"BUTTON", L"New seed", BS_PUSHBUTTON, 0, 0, 10, 10, ID_RZ_ROLL);
-    Make(pg, L"BUTTON", L"Shuffle which panel is where (Sigma's randomizers)", BS_AUTOCHECKBOX | WS_TABSTOP, 0, 0, 10, 10, ID_RZ_SHUFFLE);
+    Make(pg, L"BUTTON", L"Shuffle which panel is where", BS_AUTOCHECKBOX | WS_TABSTOP, 0, 0, 10, 10, ID_RZ_SHUFFLE);
     Make(pg, L"BUTTON", L"Colour-blind friendly colours", BS_AUTOCHECKBOX | WS_TABSTOP, 0, 0, 10, 10, ID_RZ_COLOR);
     Make(pg, L"BUTTON", L"Faster doors, bridges and elevators", BS_AUTOCHECKBOX | WS_TABSTOP, 0, 0, 10, 10, ID_RZ_FAST);
     Make(pg, L"STATIC", L"", SS_LEFT, 0, 0, 10, 10, ID_RZ_STATUS);
+    HWND ht = Make(pg, L"STATIC", L"WITNESS TRAINER  (by jbzdarkid; your own game only)", SS_LEFT, 0, 0, 10, 10, ID_RZ_H_TRAINER); SendMessageW(ht, WM_SETFONT, (WPARAM)th::Bold(), TRUE);
+    Make(pg, L"STATIC", L"Walking speed", SS_LEFT, 0, 0, 10, 10, ID_RZ_TR_SPEED_LABEL);
+    HWND sc = Make(pg, L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP, 0, 0, 10, 10, ID_RZ_TR_SPEED);
+    for (int v : kSpeeds) SendMessageW(sc, CB_ADDSTRING, 0, (LPARAM)(v == 100 ? std::wstring(L"The game's own") : std::to_wstring(v) + L" %").c_str());
+    Make(pg, L"STATIC", L"Field of view", SS_LEFT, 0, 0, 10, 10, ID_RZ_TR_FOV_LABEL);
+    HWND fc = Make(pg, L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP, 0, 0, 10, 10, ID_RZ_TR_FOV);
+    for (int v : kFovs) SendMessageW(fc, CB_ADDSTRING, 0, (LPARAM)(v == 0 ? std::wstring(L"The game's own") : std::to_wstring(v) + L" degrees").c_str());
+    Make(pg, L"BUTTON", L"Noclip key: fly through walls", BS_AUTOCHECKBOX | WS_TABSTOP, 0, 0, 10, 10, ID_RZ_TR_NOCLIP);
+    Make(pg, L"BUTTON", L"No time limit in the challenge", BS_AUTOCHECKBOX | WS_TABSTOP, 0, 0, 10, 10, ID_RZ_TR_CHALLENGE);
+    Make(pg, L"BUTTON", L"Show the environmental puzzles (overlay)", BS_AUTOCHECKBOX | WS_TABSTOP, 0, 0, 10, 10, ID_RZ_TR_EPS);
+    th::MarkMuted(Make(pg, L"STATIC", L"", SS_LEFT, 0, 0, 10, 10, ID_RZ_TR_NOTE));
     HWND h = Make(pg, L"STATIC", L"CREDITS", SS_LEFT, 0, 0, 10, 10, ID_RZ_H_CREDITS); SendMessageW(h, WM_SETFONT, (WPARAM)th::Bold(), TRUE);
     Make(pg, L"EDIT", W(RzCreditsText()).c_str(), WS_BORDER | ES_MULTILINE | ES_READONLY | WS_VSCROLL | ES_AUTOVSCROLL, 0, 0, 10, 10, ID_RZ_CREDITS);
-    Make(pg, L"BUTTON", L"sigma144's randomizer", BS_PUSHBUTTON, 0, 0, 10, 10, ID_RZ_LINK0); Make(pg, L"BUTTON", L"Penguin12335's Variety", BS_PUSHBUTTON, 0, 0, 10, 10, ID_RZ_LINK1);
-    Make(pg, L"BUTTON", L"jbzdarkid's original", BS_PUSHBUTTON, 0, 0, 10, 10, ID_RZ_LINK2); Make(pg, L"BUTTON", L"Source we use (NewSoupVi)", BS_PUSHBUTTON, 0, 0, 10, 10, ID_RZ_LINK3);
+    Make(pg, L"BUTTON", L"The randomizer's page", BS_PUSHBUTTON, 0, 0, 10, 10, ID_RZ_LINK_MODE); Make(pg, L"BUTTON", L"The Witness Trainer's page", BS_PUSHBUTTON, 0, 0, 10, 10, ID_RZ_LINK_TRAINER);
 }
 void LayoutRandomizers(int W, int H) {
-    int m = 24, y = 14, cw = std::min(W - 2 * m, 1180), left = std::min(620, cw * 52 / 100), rx = m + left + 24, rw = cw - left - 24;
-    PlaceId(ID_RZ_TITLE, m, y, cw, 26); y += 30; PlaceId(ID_RZ_INTRO, m, y, cw, 40); y += 48;
+    int m = 24, y = 14, cw = std::min(W - 2 * m, 1180), left = std::min(600, cw * 51 / 100), rx = m + left + 28, rw = cw - left - 28;
+    PlaceId(ID_RZ_TITLE, m, y, cw, 26); y += 30; PlaceId(ID_RZ_INTRO, m, y, cw, 40); y += 46;
     int ly = y;
-    PlaceId(ID_RZ_OFF, m, ly, left, 26); ly += 32;
-    for (int k = 0; k < 3; ++k) { PlaceId(ID_RZ_MODE0 + k, m, ly, left, 26); ly += 26; PlaceId(ID_RZ_BLURB0 + k, m + 24, ly, left - 24, 38); ly += 44; }
-    ly += 4; PlaceId(ID_RZ_NEWSEED, m, ly, left, 26); ly += 32;
+    PlaceId(ID_RZ_MODE, m, ly, left, 400); ly += 40;
+    PlaceId(ID_RZ_BLURB, m, ly, left, 40); ly += 42; PlaceId(ID_RZ_WARN, m, ly, left, 40); ly += 42; PlaceId(ID_RZ_BY, m, ly, left, 22); ly += 30;
+    PlaceId(ID_RZ_NEWSEED, m, ly, left, 26); ly += 32;
     PlaceId(ID_RZ_SEED_LABEL, m, ly + 6, 60, 22); PlaceId(ID_RZ_SEED, m + 64, ly + 2, 140, 30); PlaceId(ID_RZ_ROLL, m + 214, ly, 120, 34); ly += 42;
     PlaceId(ID_RZ_SHUFFLE, m, ly, left, 26); ly += 30; PlaceId(ID_RZ_COLOR, m, ly, left, 26); ly += 30; PlaceId(ID_RZ_FAST, m, ly, left, 26); ly += 34;
     PlaceId(ID_RZ_STATUS, m, ly, left, std::max(22, H - ly - 10));
     int ry = y;
+    PlaceId(ID_RZ_H_TRAINER, rx, ry, rw, 22); ry += 28;
+    PlaceId(ID_RZ_TR_SPEED_LABEL, rx, ry + 6, 130, 22); PlaceId(ID_RZ_TR_SPEED, rx + 136, ry, std::min(220, rw - 136), 300); ry += 38;
+    PlaceId(ID_RZ_TR_FOV_LABEL, rx, ry + 6, 130, 22); PlaceId(ID_RZ_TR_FOV, rx + 136, ry, std::min(220, rw - 136), 300); ry += 40;
+    PlaceId(ID_RZ_TR_NOCLIP, rx, ry, rw, 26); ry += 30; PlaceId(ID_RZ_TR_CHALLENGE, rx, ry, rw, 26); ry += 30; PlaceId(ID_RZ_TR_EPS, rx, ry, rw, 26); ry += 30;
+    PlaceId(ID_RZ_TR_NOTE, rx, ry, rw, 40); ry += 46;
     PlaceId(ID_RZ_H_CREDITS, rx, ry, rw, 22); ry += 26;
-    int linksH = 2 * 40;
-    PlaceId(ID_RZ_CREDITS, rx, ry, rw, std::max(80, H - ry - linksH - 14)); ry = H - linksH - 6;
-    int bw = (rw - 10) / 2; PlaceId(ID_RZ_LINK0, rx, ry, bw, 34); PlaceId(ID_RZ_LINK1, rx + bw + 10, ry, bw, 34); ry += 40; PlaceId(ID_RZ_LINK2, rx, ry, bw, 34); PlaceId(ID_RZ_LINK3, rx + bw + 10, ry, bw, 34);
+    PlaceId(ID_RZ_CREDITS, rx, ry, rw, std::max(80, H - ry - 52)); ry = H - 44;
+    int bw = (rw - 10) / 2; PlaceId(ID_RZ_LINK_MODE, rx, ry, bw, 34); PlaceId(ID_RZ_LINK_TRAINER, rx + bw + 10, ry, bw, 34);
 }
+const wrand::Info* RzShownInfo() { int k = (int)SendMessageW(C(ID_RZ_MODE), CB_GETCURSEL, 0, 0); return k >= 1 && k <= (int)wrand::Randomizers().size() ? &wrand::Randomizers()[k - 1] : nullptr; }
 wrand::Spec RzFromUi() {      // what the page shows, as a spec
-    wrand::Spec s; s.mode = wrand::kOff;
-    for (int k = 0; k < 3 && k < (int)wrand::Randomizers().size(); ++k) if (SendMessageW(C(ID_RZ_MODE0 + k), BM_GETCHECK, 0, 0) == BST_CHECKED) s.mode = wrand::Randomizers()[k].mode;
+    wrand::Spec s; const wrand::Info* inf = RzShownInfo(); s.mode = inf ? inf->mode : wrand::kOff;
     unsigned long seed = strtoul(EditText(C(ID_RZ_SEED)).c_str(), nullptr, 10); s.seed = (uint32_t)std::min<unsigned long>(seed, 0x7FFFFFFFul);
     s.shuffle = SendMessageW(C(ID_RZ_SHUFFLE), BM_GETCHECK, 0, 0) == BST_CHECKED; s.colorblind = SendMessageW(C(ID_RZ_COLOR), BM_GETCHECK, 0, 0) == BST_CHECKED; s.fast = SendMessageW(C(ID_RZ_FAST), BM_GETCHECK, 0, 0) == BST_CHECKED;
     if (!s.on()) { wrand::Spec keep = RzPick(); keep.mode = wrand::kOff; return keep; }      // (off: the options are kept for the next time one is chosen)
@@ -1083,12 +1099,36 @@ wrand::Spec RzFromUi() {      // what the page shows, as a spec
 }
 void RzShow(const wrand::Spec& s, bool newSeed) {      // a spec into the page's controls
     g_rzLoading = true;
-    SendMessageW(C(ID_RZ_OFF), BM_SETCHECK, s.on() ? BST_UNCHECKED : BST_CHECKED, 0);
-    for (int k = 0; k < 3 && k < (int)wrand::Randomizers().size(); ++k) SendMessageW(C(ID_RZ_MODE0 + k), BM_SETCHECK, s.mode == wrand::Randomizers()[k].mode ? BST_CHECKED : BST_UNCHECKED, 0);
+    int k = 0; for (size_t i = 0; i < wrand::Randomizers().size(); ++i) if (wrand::Randomizers()[i].mode == s.mode) k = (int)i + 1;
+    SendMessageW(C(ID_RZ_MODE), CB_SETCURSEL, k, 0);
     SetWindowTextW(C(ID_RZ_SEED), std::to_wstring(s.seed).c_str());
     SendMessageW(C(ID_RZ_NEWSEED), BM_SETCHECK, newSeed ? BST_CHECKED : BST_UNCHECKED, 0);
     SendMessageW(C(ID_RZ_SHUFFLE), BM_SETCHECK, s.shuffle ? BST_CHECKED : BST_UNCHECKED, 0); SendMessageW(C(ID_RZ_COLOR), BM_SETCHECK, s.colorblind ? BST_CHECKED : BST_UNCHECKED, 0); SendMessageW(C(ID_RZ_FAST), BM_SETCHECK, s.fast ? BST_CHECKED : BST_UNCHECKED, 0);
     g_rzLoading = false;
+}
+void RzTrainerShow() {      // the cfg's trainer_* into the Trainer's controls
+    g_rzLoading = true; wl::CfgFile c = LoadCfg();
+    int sp = atoi(c.Get("trainer_speed", "100").c_str()), fov = atoi(c.Get("trainer_fov", "0").c_str()), si = 0, fi = 0;
+    for (int i = 0; i < (int)(sizeof kSpeeds / sizeof *kSpeeds); ++i) if (kSpeeds[i] == sp) si = i;
+    for (int i = 0; i < (int)(sizeof kFovs / sizeof *kFovs); ++i) if (kFovs[i] == fov) fi = i;
+    SendMessageW(C(ID_RZ_TR_SPEED), CB_SETCURSEL, si, 0); SendMessageW(C(ID_RZ_TR_FOV), CB_SETCURSEL, fi, 0);
+    SendMessageW(C(ID_RZ_TR_NOCLIP), BM_SETCHECK, c.Get("trainer_noclip", "0") == "1" ? BST_CHECKED : BST_UNCHECKED, 0);
+    SendMessageW(C(ID_RZ_TR_CHALLENGE), BM_SETCHECK, c.Get("trainer_no_challenge_limit", "0") == "1" ? BST_CHECKED : BST_UNCHECKED, 0);
+    SendMessageW(C(ID_RZ_TR_EPS), BM_SETCHECK, c.Get("trainer_ep_overlay", "0") == "1" ? BST_CHECKED : BST_UNCHECKED, 0);
+    std::string key = c.Get("key_noclip", "N"); SetWindowTextW(C(ID_RZ_TR_NOTE), W("Noclip key: " + key + " (Settings, Controls). These change only your own game; they apply when the game starts.").c_str());
+    g_rzLoading = false;
+}
+void RzTrainerSave() {
+    if (g_rzLoading) return;
+    int si = (int)SendMessageW(C(ID_RZ_TR_SPEED), CB_GETCURSEL, 0, 0), fi = (int)SendMessageW(C(ID_RZ_TR_FOV), CB_GETCURSEL, 0, 0);
+    auto put = [&](wl::CfgFile& c) {
+        c.Set("trainer_speed", std::to_string(si >= 0 && si < (int)(sizeof kSpeeds / sizeof *kSpeeds) ? kSpeeds[si] : 100)); c.Set("trainer_fov", std::to_string(fi >= 0 && fi < (int)(sizeof kFovs / sizeof *kFovs) ? kFovs[fi] : 0));
+        c.Set("trainer_noclip", SendMessageW(C(ID_RZ_TR_NOCLIP), BM_GETCHECK, 0, 0) == BST_CHECKED ? "1" : "0");
+        c.Set("trainer_no_challenge_limit", SendMessageW(C(ID_RZ_TR_CHALLENGE), BM_GETCHECK, 0, 0) == BST_CHECKED ? "1" : "0");
+        c.Set("trainer_ep_overlay", SendMessageW(C(ID_RZ_TR_EPS), BM_GETCHECK, 0, 0) == BST_CHECKED ? "1" : "0");
+    };
+    if (g_game && !g_cfgBackup.empty()) { wl::CfgFile c = wl::CfgFile::Parse(g_cfgBackup); put(c); g_cfgBackup = c.Text(); }
+    else { wl::CfgFile c = LoadCfg(); put(c); WriteFile8(CfgPath(), c.Text()); }
 }
 void RzRefresh() {      // what may be changed, and what the next game gets
     if (!C(ID_RZ_STATUS)) return;
@@ -1102,19 +1142,23 @@ void RzRefresh() {      // what may be changed, and what the next game gets
         wrand::Spec pick = RzPick();
         bool ng = !host || SendMessageW(LB(ID_LB_NEWGAME), BM_GETCHECK, 0, 0) == BST_CHECKED;
         wrand::Spec next = wrand::ParseSpec(RzForLaunch(true));
+        const wrand::Info* pi = wrand::FindRandomizer(pick.mode);
         std::string cont = RzNewestSave();
-        status = pick.on() ? "A new game gets " + wrand::SpecSummary(next) + (RzNewSeed() ? " (a new seed each game; this one is shown so you can tell a friend)." : ".") : "A new game has the game's own puzzles.";
+        status = pick.on() ? "A new game gets " + wrand::SpecSummary(next) + (RzNewSeed() && pi && pi->seeded ? " (a new seed each game; this one is shown so you can tell a friend)." : ".") : "A new game has the game's own puzzles.";
         status += "\r\nContinuing keeps your newest save's puzzles: " + (wrand::ParseSpec(cont).on() ? wrand::SpecSummary(wrand::ParseSpec(cont)) : std::string("the game's own")) + ".";
         if (host) status += ng ? "\r\nEveryone in your lobby gets this new game's puzzles." : "\r\nYour lobby continues your newest save: everyone gets its puzzles.";
     }
     SetWindowTextW(C(ID_RZ_STATUS), W(status).c_str());
-    wrand::Spec shown = RzFromUi(); const wrand::Info* inf = wrand::FindRandomizer(shown.mode);
-    bool can = !guest, on = shown.on();
-    for (int id : {ID_RZ_OFF, ID_RZ_MODE0, ID_RZ_MODE1, ID_RZ_MODE2}) EnableWindow(C(id), can);
-    bool newSeed = SendMessageW(C(ID_RZ_NEWSEED), BM_GETCHECK, 0, 0) == BST_CHECKED;
-    EnableWindow(C(ID_RZ_NEWSEED), can && on); EnableWindow(C(ID_RZ_SEED), can && on && !newSeed); EnableWindow(C(ID_RZ_ROLL), can && on);
-    EnableWindow(C(ID_RZ_SHUFFLE), can && on && inf && inf->canShuffle); EnableWindow(C(ID_RZ_COLOR), can && on); EnableWindow(C(ID_RZ_FAST), can && on);
-    if (newSeed && !guest && on) { g_rzLoading = true; SetWindowTextW(C(ID_RZ_SEED), std::to_wstring(g_rzRound ? g_rzRound : (g_rzRound = FreshSeed())).c_str()); g_rzLoading = false; }
+    const wrand::Info* inf = RzShownInfo(); bool can = !guest, on = inf != nullptr;
+    SetWindowTextW(C(ID_RZ_BLURB), inf ? W(inf->blurb).c_str() : L"The puzzles the game came with.");
+    SetWindowTextW(C(ID_RZ_WARN), inf && *inf->warning ? W(inf->warning).c_str() : L"");
+    SetWindowTextW(C(ID_RZ_BY), inf ? W("By " + wrand::CreditNames(inf->mode) + ".").c_str() : L"");
+    EnableWindow(C(ID_RZ_MODE), can);
+    bool newSeed = SendMessageW(C(ID_RZ_NEWSEED), BM_GETCHECK, 0, 0) == BST_CHECKED, seeded = on && inf->seeded;
+    EnableWindow(C(ID_RZ_NEWSEED), can && seeded); EnableWindow(C(ID_RZ_SEED), can && seeded && !newSeed); EnableWindow(C(ID_RZ_ROLL), can && seeded);
+    EnableWindow(C(ID_RZ_SHUFFLE), can && on && inf->canShuffle); EnableWindow(C(ID_RZ_COLOR), can && on && inf->canColorblind); EnableWindow(C(ID_RZ_FAST), can && on);
+    EnableWindow(C(ID_RZ_LINK_MODE), on && inf->credits.size() && *inf->credits[0].link);
+    if (newSeed && !guest && seeded) { g_rzLoading = true; SetWindowTextW(C(ID_RZ_SEED), std::to_wstring(g_rzRound ? g_rzRound : (g_rzRound = FreshSeed())).c_str()); g_rzLoading = false; }
     std::string lobbyLine = g_sess.Active() ? wrand::SpecSummary(wrand::ParseSpec(g_sess.State().settings.randomizer)) : "";
     SetWindowTextW(LB(ID_LB_RZ), W(lobbyLine.empty() ? std::string() : "Puzzles: " + lobbyLine).c_str());
     EnableWindow(LB(ID_LB_RZ_BTN), true);
@@ -1123,22 +1167,26 @@ void RzSave() {      // the page into the cfg (during a lobby game: into the set
     if (g_rzLoading || RzGuest()) return;
     wrand::Spec s = RzFromUi(); bool newSeed = SendMessageW(C(ID_RZ_NEWSEED), BM_GETCHECK, 0, 0) == BST_CHECKED;
     if (newSeed && s.on()) { wrand::Spec keep = RzPick(); s.seed = keep.seed; }      // (the typed seed is kept for when "a new seed" is turned off)
-    auto put = [&](wl::CfgFile& c) { c.Set("randomizer_pick", s.on() || RzPick().on() ? wrand::SpecText(s.on() ? s : wrand::Spec()) : "off"); c.Set("randomizer_new_seed", newSeed ? "1" : "0"); };
+    auto put = [&](wl::CfgFile& c) { c.Set("randomizer_pick", s.on() ? wrand::SpecText(s) : "off"); c.Set("randomizer_new_seed", newSeed ? "1" : "0"); };
     if (g_game && !g_cfgBackup.empty()) { wl::CfgFile c = wl::CfgFile::Parse(g_cfgBackup); put(c); g_cfgBackup = c.Text(); }
     else { wl::CfgFile c = LoadCfg(); put(c); WriteFile8(CfgPath(), c.Text()); }
     PushSettings(); RzRefresh();
 }
-void RzLoad() { RzShow(RzPick(), RzNewSeed()); RzRefresh(); }
+void RzLoad() { RzShow(RzPick(), RzNewSeed()); RzTrainerShow(); RzRefresh(); }
 void RzCommand(int id, int code) {
-    if (id == ID_RZ_LINK0 || id == ID_RZ_LINK1 || id == ID_RZ_LINK2 || id == ID_RZ_LINK3) {
+    if (id == ID_RZ_LINK_MODE || id == ID_RZ_LINK_TRAINER) {
         if (code != BN_CLICKED) return;
-        const char* url = id == ID_RZ_LINK0 ? "https://github.com/sigma144/witness-randomizer" : id == ID_RZ_LINK1 ? "https://github.com/Penguin12335/Variety-Randomiser"
-                        : id == ID_RZ_LINK2 ? "https://github.com/jbzdarkid/witness-randomizer" : wrand::kRandomizerSourceLink;
-        ShellExecuteW(nullptr, L"open", W(url).c_str(), nullptr, nullptr, SW_SHOW); return;
+        const wrand::Info* inf = RzShownInfo();
+        std::string url = id == ID_RZ_LINK_TRAINER ? "https://github.com/jbzdarkid/witness-trainer" : inf && inf->credits.size() ? inf->credits[0].link : "";
+        if (!url.empty()) ShellExecuteW(nullptr, L"open", W(url).c_str(), nullptr, nullptr, SW_SHOW);
+        return;
     }
+    if (id == ID_RZ_TR_SPEED || id == ID_RZ_TR_FOV) { if (code == CBN_SELCHANGE) RzTrainerSave(); return; }
+    if (id == ID_RZ_TR_NOCLIP || id == ID_RZ_TR_CHALLENGE || id == ID_RZ_TR_EPS) { if (code == BN_CLICKED) RzTrainerSave(); return; }
     if (id == ID_RZ_ROLL) { if (code != BN_CLICKED || RzGuest()) return; g_rzRound = FreshSeed(); g_rzLoading = true; SetWindowTextW(C(ID_RZ_SEED), std::to_wstring(g_rzRound).c_str()); g_rzLoading = false;
         if (SendMessageW(C(ID_RZ_NEWSEED), BM_GETCHECK, 0, 0) != BST_CHECKED) RzSave(); else { PushSettings(); RzRefresh(); } return; }
     if (id == ID_RZ_SEED) { if (code == EN_CHANGE) RzSave(); return; }
+    if (id == ID_RZ_MODE) { if (code == CBN_SELCHANGE) RzSave(); return; }
     if (code == BN_CLICKED) RzSave();
 }
 void RzSetFromCommand(const std::string& arg) {      // tests: randomizer <spec> [newseed 0|1]
@@ -1147,7 +1195,8 @@ void RzSetFromCommand(const std::string& arg) {      // tests: randomizer <spec>
 }
 std::string RzStat() {
     return "randomizers pick " + wrand::SpecText(RzPick()) + " newseed " + (RzNewSeed() ? "1" : "0") + " round " + std::to_string(g_rzRound) + " guest " + (RzGuest() ? "1" : "0") +
-           " seededit " + (IsWindowEnabled(C(ID_RZ_SEED)) ? "1" : "0") + " shuffleedit " + (IsWindowEnabled(C(ID_RZ_SHUFFLE)) ? "1" : "0") + " offedit " + (IsWindowEnabled(C(ID_RZ_OFF)) ? "1" : "0") + "\n";
+           " seededit " + (IsWindowEnabled(C(ID_RZ_SEED)) ? "1" : "0") + " shuffleedit " + (IsWindowEnabled(C(ID_RZ_SHUFFLE)) ? "1" : "0") + " offedit " + (IsWindowEnabled(C(ID_RZ_MODE)) ? "1" : "0") +
+           " trainer " + LoadCfg().Get("trainer_speed", "100") + "," + LoadCfg().Get("trainer_fov", "0") + "," + LoadCfg().Get("trainer_noclip", "0") + "\n";
 }
 
 // ---- the update banner (Play) and the About block follow the updater's state

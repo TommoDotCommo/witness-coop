@@ -10,7 +10,6 @@
 #include "game_randomizer.h"
 #include "generate.h"
 #include "world.h"
-#include "Watchdog.h"          // third_party/witness-randomizer/src (upstream's watchdogs)
 #include "../../common/notices.h"
 #include "../../common/randomizers.h"
 #include "../config.h"
@@ -59,18 +58,20 @@ struct Gen {
     std::unique_ptr<Arena> arena;
     std::unique_ptr<wrand::Arrays> arrays;
     wrand::Result result;
-    std::atomic<bool> done{false};
+    std::atomic<bool> done{false}, cancel{false};
     std::string status;  SRWLOCK statusLock = SRWLOCK_INIT;
     DWORD started = 0, finished = 0;
 };
+std::string GenStatus(Gen* g) { AcquireSRWLockShared(&g->statusLock); std::string s = g->status; ReleaseSRWLockShared(&g->statusLock); return s; }
 DWORD WINAPI GenThread(void* p) {
     Gen* g = (Gen*)p;
-    g->result = wrand::Generate(g->spec, &g_raw, g->arrays.get(), [g](const std::string& s) { AcquireSRWLockExclusive(&g->statusLock); g->status = s; ReleaseSRWLockExclusive(&g->statusLock); });
+    g->result = wrand::Generate(g->spec, &g_raw, g->arrays.get(), [g](const std::string& s) { AcquireSRWLockExclusive(&g->statusLock); g->status = s; ReleaseSRWLockExclusive(&g->statusLock); }, &g->cancel);
     g->finished = GetTickCount(); g->done = true;
     return 0;
 }
 
 enum State { kOff, kWaitWorld, kGenerating, kApplied, kFailed };
+constexpr DWORD kGiveUpMs = 180000;      // (the slowest randomizer takes a few seconds; its author warns of minutes on a slow PC)
 const char* StateName(State s) { static const char* n[] = {"off", "waiting for the world", "generating", "applied", "failed"}; return n[s]; }
 State g_state = kOff;
 std::atomic<bool> g_settled{false};
@@ -79,7 +80,7 @@ wrand::Spec g_spec; bool g_specRead = false;
 std::unique_ptr<Gen> g_gen;                       // the one generating or applied
 std::vector<std::unique_ptr<Gen>> g_old;          // replaced ones: their arrays may still be read for a moment (freed two generations later)
 uint64_t g_lastWorld = 0; DWORD g_stableSince = 0, g_nextCount = 0; unsigned g_lastCount = 0, g_sameCount = 0, g_retries = 0;
-struct Dog { Watchdog* w; DWORD next; };
+struct Dog { wrand::Dog d; DWORD next; };
 std::vector<Dog> g_dogs;
 wrand::Arrays g_liveArrays([](size_t n) -> uint8_t* { static Arena a; return a.alloc(n); });      // what the watchdogs make (a failed arrow trace: a new sequence)
 DWORD g_nextPeerCheck = 0; std::string g_toldDiffer;
@@ -100,7 +101,8 @@ void Logf(const char* fmt, ...) { char m[600]; va_list a; va_start(a, fmt); vsnp
 void SetCore(uint8_t state) { if (auto* c = CoopCore()) c->setPuzzles(g_fp.load(), state); }
 
 void StartGeneration(uint64_t world) {
-    if (g_gen) { g_old.push_back(std::move(g_gen)); while (g_old.size() > 2) g_old.erase(g_old.begin()); }
+    if (g_gen) g_old.push_back(std::move(g_gen));
+    for (size_t i = 0; g_old.size() > 2 && i < g_old.size();) { if (g_old[i]->done) g_old.erase(g_old.begin() + i); else i++; }      // (one given up on may still run: kept)
     g_dogs.clear();
     auto* g = new Gen; g->spec = g_spec; g->world = world; g->arena.reset(new Arena);
     Arena* arena = g->arena.get();
@@ -131,7 +133,7 @@ void Finish() {
     if (!g->result.overlay->apply(&g_raw)) { Logf("randomizer: could not apply (an entity changed): again"); g_state = kWaitWorld; g_settled = false; return; }
 #endif
     DWORD t = GetTickCount();
-    for (Watchdog* w : g->result.watchdogs) g_dogs.push_back(Dog{w, t + (DWORD)(w->sleepTime * 1000)});
+    for (const auto& w : g->result.watchdogs) g_dogs.push_back(Dog{w, t + (DWORD)(w.interval() * 1000)});
     g_state = kApplied; g_fp = g->result.fingerprint; g_settled = true; SetCore(witness::PUZ_READY);
     Logf("randomizer: applied '%s' in %lu ms: %zu entities, %zu bytes, %zu arrays (%zu bytes), %zu watchdogs, fingerprint %016llx%s",
          wrand::SpecText(g->spec).c_str(), g->finished - g->started, g->result.entities, g->result.bytes, g->arrays->count(), g->arrays->bytes(),
@@ -146,10 +148,10 @@ void TickWatchdogs() {
     DWORD now = GetTickCount();
     for (size_t i = 0; i < g_dogs.size();) {
         Dog& d = g_dogs[i];
-        if (d.w->terminate) { g_dogs.erase(g_dogs.begin() + i); continue; }
+        if (d.d.done()) { g_dogs.erase(g_dogs.begin() + i); continue; }
         if ((LONG)(now - d.next) >= 0) {
-            try { d.w->action(); } catch (const std::exception& e) { Logf("randomizer: a watchdog stopped: %s", e.what()); d.w->terminate = true; }
-            d.next = now + (DWORD)(d.w->sleepTime * 1000);
+            try { d.d.act(); } catch (const std::exception& e) { Logf("randomizer: a watchdog stopped: %s", e.what()); d.d.stop(); }
+            d.next = now + (DWORD)(d.d.interval() * 1000);
         }
         i++;
     }
@@ -174,7 +176,8 @@ void CheckPeers() {
 }
 
 // ---- randrecord: every randomizer over a recording of this world, written with what each made (for the game-free test)
-struct Recording { std::string path, only; std::atomic<bool> done{false}; bool ok = false; };
+struct Recording { std::string path, only; std::atomic<bool> done{false}, cancel{false}; bool ok = false; };
+
 DWORD WINAPI RecordThread(void* p) {
     Recording* r = (Recording*)p;
     wrand::RecordingRaw rec(&g_raw);
@@ -188,7 +191,10 @@ DWORD WINAPI RecordThread(void* p) {
     for (const auto& s : specs) {
         wrand::Arrays arrays;
         DWORD t0 = GetTickCount();
-        auto res = wrand::Generate(s, &rec, &arrays);
+        r->cancel = false;
+        HANDLE watch = CreateThread(nullptr, 0, [](void* q) -> DWORD { auto* rr = (Recording*)q; DWORD t0 = GetTickCount(); while (!rr->cancel && GetTickCount() - t0 < 120000) Sleep(200); rr->cancel = true; return 0; }, r, 0, nullptr);
+        auto res = wrand::Generate(s, &rec, &arrays, nullptr, &r->cancel);
+        r->cancel = true; if (watch) { WaitForSingleObject(watch, 2000); CloseHandle(watch); }
         DWORD ms = GetTickCount() - t0;
         wrand::RecordedRun run; run.spec = wrand::SpecText(s); run.fingerprint = res.ok ? res.fingerprint : 0; run.watchdogs = (uint32_t)res.watchdogs.size();
         run.entities = (uint32_t)res.entities; run.bytes = (uint32_t)res.bytes; runs.push_back(run);
@@ -233,6 +239,11 @@ void RandomizerFrame() {
         break;
     case kGenerating:
         if (g_gen && g_gen->done) Finish();
+        else if (g_gen && now - g_gen->started > kGiveUpMs) {      // a generator that never ends must not hold the world (and the sync) for ever
+            g_state = kFailed; g_settled = true; g_fp = 0; SetCore(witness::PUZ_FAILED); g_gen->cancel = true;      // (its next read stops it)
+            Logf("randomizer: FAILED: '%s' still not done after %lu s (last status '%s'): the game's own puzzles", wrand::SpecText(g_gen->spec).c_str(), (now - g_gen->started) / 1000, GenStatus(g_gen.get()).c_str());
+            DevMenuNotice(wnotice::PuzzlesFailed().c_str());
+        }
         break;
     case kApplied: TickWatchdogs(); break;
     default: break;
@@ -250,6 +261,7 @@ uint64_t RandomizerFingerprint() { return g_fp.load(); }
 bool RandomizerCommand(const char* line) {
     if (!strncmp(line, "randstat", 8)) {
         Gen* g = g_gen.get();
+        if (g && !g->done) Logf("randstat: generating for %lu ms, status '%s'", GetTickCount() - g->started, GenStatus(g).c_str());
         Logf("randstat: state %s spec '%s' settled %d fingerprint %016llx world %016llx entities %zu bytes %zu arrays %zu watchdogs %zu active %zu ms %lu error '%s'",
              StateName(g_state), wrand::SpecText(g_spec).c_str(), (int)g_settled.load(), (unsigned long long)g_fp.load(), (unsigned long long)(g ? g->world : 0),
              g && g->done ? g->result.entities : 0, g && g->done ? g->result.bytes : 0, g && g->done ? g->arrays->count() : 0, g && g->done ? g->result.watchdogs.size() : 0,

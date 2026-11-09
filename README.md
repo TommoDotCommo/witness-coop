@@ -110,7 +110,14 @@ The launcher's **Randomizers** tab gives the island new puzzles, made by randomi
 - **Sigma's Randomizer: Normal**: new puzzles on most panels, each area keeping its own kind of symbols. A good first
   randomized game.
 - **Sigma's Randomizer: Expert**: much harder puzzles, some needing approaches the base game never asks for.
-- **Variety Randomizer**: each area gets its own combination of symbols, including new ones such as arrows.
+- **Variety Randomizer**: each area gets its own combination of symbols, including new ones such as arrows; **Ascension**
+  adds symbols from other Witness fan games and the Despair Randomizer.
+- **Despair Randomizer**: **Despair** has bigger grids and harder combinations, the step beyond Expert; **Symbols** brings
+  new symbols (faces, mushrooms and ghosts; its author warns ghost puzzles are buggy).
+- **Symbol Shuffler**: new puzzles with the same number of each symbol as the game's own panel; **Emptiness** empties
+  every puzzle as much as possible; **Puzzle Pack** makes completely random puzzles (its author warns issues may arise).
+- **Star Randomizer**: each panel keeps its theme, with at least two extra stars.
+- **Tutorializer**: almost every panel becomes the first tutorial puzzle. A joke mode.
 
 Each comes with a seed (a number: the same seed gives the same puzzles) and options: a new seed for each new game,
 shuffling which panel is where, colour-blind friendly colours, and faster doors, bridges and elevators.
@@ -120,8 +127,12 @@ A continued game keeps the puzzles it was started with, and the Saves tab shows 
 made when the game starts, which takes a few seconds. If someone's game ends up with different puzzles, the game says
 so; start again from the lobby.
 
-The randomizers are the work of sigma144, jbzdarkid, Penguin12335, NewSoupVi and others: see
-[Credits](#credits-and-licence).
+The same tab has some of the **Witness Trainer**'s options, for your own game only: a faster walking speed, a field of
+view beyond the game's limits, a noclip key (N) to fly through walls when you're stuck, no time limit in the
+challenge, and an overlay that shows the environmental puzzles.
+
+The randomizers and the Trainer are the work of sigma144, jbzdarkid, Penguin12335, chuukunn, Dawgup, Parker,
+hatkirby, NewSoupVi and others: see [Credits](#credits-and-licence).
 
 ## Controls
 
@@ -252,10 +263,15 @@ made for this mod and is public domain ([credits](assets/models/CREDITS.md)). Th
 [LICENSE](LICENSE)).
 
 The randomizers are the [Witness Random Puzzle Generator](https://github.com/NewSoupVi/The-Witness-Randomizer-for-Archipelago)
-as maintained for Archipelago by NewSoupVi: [sigma144's randomizer](https://github.com/sigma144/witness-randomizer)
-(Normal and Expert), [Penguin12335's Variety](https://github.com/Penguin12335/Variety-Randomiser) and
-[jbzdarkid's original](https://github.com/jbzdarkid/witness-randomizer), with work by blastron, Jarno458, hatkirby,
-ReverM and others (MIT licence, copyright 2018 jbzdarkid). The order in which the game needs its panels solved, for a new
+as maintained for Archipelago by NewSoupVi ([sigma144's](https://github.com/sigma144/witness-randomizer) Normal and Expert,
+[jbzdarkid's original](https://github.com/jbzdarkid/witness-randomizer)) and its forks:
+[Penguin12335's Variety Randomizer](https://github.com/Penguin12335/Variety-Randomiser),
+[chuukunn's Despair Randomizer](https://github.com/chuukunn/witness-randomizer),
+[Dawgup's Symbol Shuffler](https://github.com/KemSpeedruns/witness-randomizer),
+[Parker's Star Randomizer](https://github.com/MrP4rK3r2/witness-randomizer) and
+[hatkirby's Tutorializer](https://code.fourisland.com/witness-tutorializer), with work by blastron, Jarno458, ReverM and
+others (MIT licence, copyright 2018 jbzdarkid). The Trainer options come from
+[jbzdarkid's Witness Trainer](https://github.com/jbzdarkid/witness-trainer) (MIT licence). The order in which the game needs its panels solved, for a new
 game with parts already done, comes from [Archipelago](https://github.com/ArchipelagoMW/Archipelago)'s logic for The
 Witness (MIT licence). Their licences are in [THIRD-PARTY-NOTICES.txt](dist/THIRD-PARTY-NOTICES.txt), which comes with
 the download, and the launcher's Randomizers tab shows them too. None of these authors made or checked this co-op

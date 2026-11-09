@@ -41,6 +41,11 @@ struct Cfg {
     bool noSeatTiebreak = false;   // test mutant: two players who take the same audience stool in the same instant both stay seated
     bool noEmoteAnim = false, noEmoteClips = false, noEmoteSend = false;   // test mutants: emotes shown but not animated / never play a model's own clip / emotes not sent
     bool noChatUi = false, noTypingDots = false, noPingMarks = false;      // test mutants: T does nothing; typing is not announced; pings are not drawn
+    int trainerSpeed = 100;      // trainer_speed=N: walking and running at N % of the game's speed (Witness Trainer, trainer.cpp); 100: the game's own
+    int trainerFov = 0;          // trainer_fov=N: a horizontal field of view of N degrees, beyond the game's own limits (Witness Trainer); 0: the game's own
+    bool trainerNoclip = false;  // trainer_noclip=1: the noclip key (key_noclip) flies through walls (Witness Trainer)
+    bool trainerNoChallengeLimit = false;   // trainer_no_challenge_limit=1: the challenge has no time limit (Witness Trainer)
+    bool trainerEpOverlay = false;          // trainer_ep_overlay=1: the environmental puzzles' overlay (Witness Trainer)
     std::string randomizer;      // randomizer=<spec>: the built-in randomizer and its seed for this world (common/randomizers.h; the launcher writes it from the host's choice, a continued save keeps its own); empty or off: the game's own puzzles
     std::string startProgress;   // start_progress=<spec>: the next new game starts with these parts of the map completed (the launcher arms it; progress/progress.h says how a spec reads); disarmed once applied
     bool noSaveMeta = false;     // test mutant: no <save>.coop.txt is written

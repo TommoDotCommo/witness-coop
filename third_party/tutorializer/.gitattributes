@@ -1,0 +1,3 @@
+# upstream's files as upstream has them: tools/randomizer_upstream.sh merges against upstream byte for byte
+src/** -text whitespace=cr-at-eol
+LICENSE -text whitespace=cr-at-eol

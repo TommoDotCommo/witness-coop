@@ -5,7 +5,7 @@
 # --record: instead, a game with no randomizer (the generator must read the game's own puzzles, as it does in every world it makes puzzles for)
 # records its world for the game-free test: local/randomizer/<build>.world (game data, never committed; proxy/randomizer/Makefile's generate-test
 # replays it).
-#   tools/randomizer_solo.sh [--spec <spec>] [--record] [--mutant]
+#   tools/randomizer_solo.sh [--spec <spec>] [--record] [--mutant]      (RECORD_SPEC=<spec> with --record: that randomizer only, in a file of its own)
 #   --mutant: the proxy built with WR_MUT_NO_APPLY (the puzzles are made but never written): the check must fail
 # The owner's saves are never touched (save_dir=instance). Needs the resource provider (local/env.sh), as qa.sh does.
 set -u
@@ -42,15 +42,16 @@ applied=0
 if [ $record = 1 ]; then
   for i in $(seq 1 60); do grep -q 'devmenu: 594 panels' "$d/witness_proxy.log" 2>/dev/null && break; [ "$(alive)" = 0 ] && break; sleep 3; done
   sleep 5
-  mkdir -p "$ROOT/local/randomizer"; out="$ROOT/local/randomizer/11370412.world"; rm -f "$out"
-  cmd "randrecord $(win "$out")"
-  for i in $(seq 1 270); do grep -q 'randrecord: done' "$d/witness_proxy.log" && break; [ "$(alive)" = 0 ] && break; sleep 2; done
+  mkdir -p "$ROOT/local/randomizer"; out="$ROOT/local/randomizer/11370412${RECORD_SPEC:+-$(echo "$RECORD_SPEC" | tr ';:' '__')}.world"; rm -f "$out"
+  cmd "randrecord $(win "$out")${RECORD_SPEC:+ $RECORD_SPEC}"      # RECORD_SPEC=<spec>: only that randomizer (its own file)
+  for i in $(seq 1 1200); do grep -q 'randrecord: done' "$d/witness_proxy.log" && break; [ "$(alive)" = 0 ] && break; sleep 2; done
   grep -E '^randrecord:' "$d/witness_proxy.log" | tail -9
   grep -q 'randrecord: done, wrote' "$d/witness_proxy.log" && [ "$(alive)" = 1 ] && { echo "randomizer_solo: RECORDED $out"; exit 0; }
   echo "randomizer_solo: the recording did not finish"; exit 1
 fi
-for i in $(seq 1 90); do
+for i in $(seq 1 ${RANDOMIZER_WAIT:-90}); do
   grep -qE 'randomizer: (applied|FAILED)' "$d/witness_proxy.log" 2>/dev/null && { applied=$i; break; }
+  [ $((i % 15)) = 0 ] && { cmd randstat; grep -a '^randstat: generating' "$d/witness_proxy.log" | tail -1; }
   [ "$(alive)" = 0 ] && break
   sleep 2
 done

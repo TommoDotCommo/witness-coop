@@ -1,4 +1,4 @@
 # upstream's files as upstream has them (CRLF): tools/randomizer_upstream.sh merges against upstream byte for byte
-src/** -text
-App/** -text
-LICENSE -text
+src/** -text whitespace=cr-at-eol
+App/** -text whitespace=cr-at-eol
+LICENSE -text whitespace=cr-at-eol

@@ -1,3 +1,4 @@
+#include "trainer.h"
 #include "randomizer/game_randomizer.h"
 #include "../common/guide.h"
 // In-game dev menu (build 11370412). See devmenu.h. Everything the menu knows comes from the entity table (positions, solved and powered
@@ -537,6 +538,7 @@ bool DevMenuKey(unsigned vk, bool down) {
     if (down && tvKey==guide::TvKeyAction::Consent) { TvAllow(!TvConsent()); return true; }
     if (down && tvKey==guide::TvKeyAction::Deploy) { TvDeployAction(OverlayTvAim()); return true; }
     if (PovKey(vk, down)) return true;
+    if (TrainerKey(vk, down)) return true;      // the Witness Trainer's noclip key (trainer.cpp)
     if (vk == guide::Boost && down) { PanelBoostToggle(); return true; }
     if (vk == guide::Video && down && VideoEnabled()) { VideoToggleView(); return true; }
     if (!DevMenuEnabled()) return false;
