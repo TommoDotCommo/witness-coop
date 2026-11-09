@@ -22,7 +22,7 @@ static wpz::Set TestSet() {
     a.at(3, 5) = wpz::Cell{wpz::kPoly, 8, 0, 0x017};                    // an L of four, fixed (bits x * 4 + y: (0,0) (0,1) (0,2) (1,0))
     a.at(5, 5) = wpz::Cell{wpz::kYlop, 9, 0, 0x1};
     a.at(7, 7) = wpz::Cell{wpz::kSquare, 4};
-    a.at(2, 2).dot = wpz::kDotBlack; a.at(4, 3).dot = wpz::kDotBlack; a.at(5, 4).gap = wpz::kGapBreak; a.at(8, 3).gap = wpz::kGapFull;
+    a.at(2, 2).dot = wpz::kDotBlack; a.at(4, 3).dot = wpz::kDotBlack; a.at(3, 6).dot = wpz::kDotBlack;      // dots on a corner, a vertical and a horizontal line a.at(5, 4).gap = wpz::kGapBreak; a.at(8, 3).gap = wpz::kGapFull;
     a.panel = 0x00557;
     s.puzzles.push_back(a);
     wpz::Puzzle b = wpz::NewPuzzle(3, 3, "mirrored"); b.sym = wpz::kSymX; b.panel = 0x00022;
@@ -86,6 +86,11 @@ int main(int argc, char** argv) {
             }
             bool same = Shape(back) == Shape(set.puzzles[k]);
             if (pass == 1) std::printf("  %-14s on %-36s %s\n", set.puzzles[k].name.c_str(), wpz::SlotName(where[k]).c_str(), same ? "read back the same" : "DIFFERENT");
+            auto flags = wrand::CustomGridFlags((int)where[k]); const wpz::Puzzle& q = set.puzzles[k];      // each dot with the generator's own flags (the game reads more than the reader keeps)
+            for (int x = 0; x < q.width(); x++) for (int y = 0; y < q.height(); y++) if (q.at(x, y).dot) {
+                int want = wrand::DotFlags(x % 2 == 0 && y % 2 == 0 ? 0 : x % 2 ? 1 : 2), got = x < (int)flags.size() && y < (int)flags[x].size() ? flags[x][y] : 0;
+                if ((got & want) != want) { std::printf("FAIL: %s: the dot at %d,%d has flags %x, not the generator's %x\n", q.name.c_str(), x, y, got, want); fails++; }
+            }
             if (!same) { fails++; if (pass == 1) std::printf("--- made\n%s--- read back\n%s", Shape(set.puzzles[k]).c_str(), Shape(back).c_str()); }
         }
     }

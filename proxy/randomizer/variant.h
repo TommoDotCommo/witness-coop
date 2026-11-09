@@ -30,6 +30,10 @@ std::vector<Dog> RunCustom(const Spec& spec);       // the player's own puzzles 
 extern std::string (*LoadPuzzleSet)(const std::string& hash);
 // A panel read back into the editor's model (through the current backend), for the tests: what the game holds.
 wpz::Puzzle ReadCustomPuzzle(int id);
+// The generator's own flags of each place of a panel's grid ([x][y], y down, as the editor's model), for the tests.
+std::vector<std::vector<int>> CustomGridFlags(int id);
+// The flags the generator gives a dot on a corner, on a horizontal line and on a vertical line (Decoration::Dot_*).
+int DotFlags(int where);      // 0 corner, 1 horizontal line, 2 vertical line
 }  // namespace wrand
 
 // Inside a variant's namespace: a Dog for one of its watchdogs (any class with action(), sleepTime and terminate; never deleted, as upstream).

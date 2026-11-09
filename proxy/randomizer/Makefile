@@ -60,7 +60,7 @@ $(BUILD)/custom-test: tests/custom_test.cpp world.h $(BUILD)/backend.o $(GLUE) $
 	g++ $(CXXF) -include compat.h -Wall -o $@ tests/custom_test.cpp $(BUILD)/backend.o $(GLUE) $(LIBS)
 $(BUILD)/custom-mut-%: tests/custom_test.cpp world.h $(BUILD)/backend.o $$(call glue-mut,$$*) $(LIBS)
 	g++ $(CXXF) -include compat.h -o $@ tests/custom_test.cpp $(BUILD)/backend.o $(call glue-mut,$*) $(LIBS)
-CUSTOM_MUTANTS = SHAPE_FLIPPED READ_ANY_PANEL
+CUSTOM_MUTANTS = SHAPE_FLIPPED READ_ANY_PANEL DOT_PLAIN
 
 # one run of one spec over a recorded game (tools/randomizer_sweep.py: every mode over many seeds, each in a process of its own)
 $(BUILD)/one-run: tests/one_run.cpp world.h $(BUILD)/backend.o $(GLUE) $(LIBS)

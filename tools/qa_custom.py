@@ -12,23 +12,24 @@ them goes on the game's panels, and the game itself must draw and check each one
 The set has every kind of symbol (squares and stars in several colours, stars counting triangles of their colour, triangles 1 to 3,
 eliminators, turnable, fixed and negative shapes, dots on corners and lines, gaps, missing lines, symmetry with blue and yellow dots) and grids
 from 3 x 3 to 7 x 7 and 7 x 2, on the Tutorial and the panels outside it.
-The bot draws with the mouse (tools/win/wdraw.py), steering by feedback (WDRAW_STEER). The first two Tutorial panels (doors in the tunnel) are
-only checked as held by the game (check 2) and pictured, then solved by the test-only command `nativesolve`, which powers the courtyard
-(--tunnel: the bot tries them first; it has started a line on the first but never finished one, a note, not a failure). The
+The bot draws with the mouse (tools/win/wdraw.py), steering by feedback (WDRAW_STEER). On the first two Tutorial panels (doors in the tunnel)
+it draws an editor solution that goes up first and straight into the end's stub last (it solved the first panel that way); where it does not
+get a line to the game (the Bend's start circle is dark: it does not find it) that is a note, and the panel is solved by the test-only command
+`nativesolve`, which powers the courtyard (--no-tunnel: at once). The
 courtyard's panels power one another (Front Center, then Center Left, then Front Left), so the next puzzle drawn is always one whose panel the
 game reports powered: a black panel is never walked to. A drawing is tried again (up to 4 times) when the game did not judge it (the bot lost
 the line, or did not reach the end), never when the game judged the line. What the bot remembers about these panels is forgotten first.
 Mutant (--mutant): A runs the proxy built with WR_MUT_SHAPE_FLIPPED (polyominoes written upside down): the mirror puzzle (on Back Left, powered
 from the start) still passes, and on the shapes puzzle the game and the editor's rules must disagree (the line the game holds a solution is not
 one by the rules, or the game refuses it).
-usage: qa_custom.py [--mutant] [--only N,N] [--tunnel]   (tools/qa.sh custom)"""
+usage: qa_custom.py [--mutant] [--only N,N] [--no-tunnel]   (tools/qa.sh custom)"""
 import json, os, re, subprocess, sys, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from witness import ROOT, TOOLS, DIR1, DIR2, RUN, pid, pyw, win
 import qa_sweep, solver, sweep
 
 MUTANT = '--mutant' in sys.argv
-TRY_TUNNEL = '--tunnel' in sys.argv      # let the bot try the two tunnel panels (it has not finished a line on them yet)
+SKIP_TUNNEL = '--no-tunnel' in sys.argv      # do not let the bot try the two tunnel panels (solve them with nativesolve at once)
 ONLY = [int(v) for v in sys.argv[sys.argv.index('--only') + 1].split(',')] if '--only' in sys.argv else None
 SET = '''witness-coop puzzles 1
 set In-game test
@@ -85,6 +86,7 @@ at 8 0 end right
 at 2 8 dot black
 at 4 4 dot black
 at 6 3 dot black
+at 5 8 dot black
 at 1 0 gap break
 at 8 5 gap full
 at 4 1 gap break
@@ -174,6 +176,24 @@ def powered(which, panel, wait=20.0):
 # The bot steers by feedback (WDRAW_STEER: it nudges and reads which edge the line went onto) rather than by projecting the panel: on the panels
 # this set rewrites, the projection's first guess of how the panel is turned was refuted every time, and its fallback ran the line past turns.
 os.environ['WDRAW_STEER'] = '1'; os.environ['WSLENV'] = os.environ.get('WSLENV', '') + ':WDRAW_STEER'
+
+def own_line(exe, raw, p):
+    """An editor solution of puzzle p the bot draws best: its first step up the start's line (the bot's steering starts best that way) and its last
+    step heading where the end's stub points (the bot finds the stub by going on the same way; turning into it, it stopped on a grid edge and its
+    finishing click dropped the line, on the first Tutorial panel). The best that is there, else the first solution."""
+    sols = [[tuple(map(int, v.split(','))) for v in l.split()] for l in subprocess.run([exe, 'solutions', raw, str(p['k']), '200'], capture_output=True, text=True).stdout.splitlines() if l.strip()]
+    def score(l):
+        up = len(l) > 1 and l[1][0] == l[0][0]
+        return (into_stub(p, l), up)
+    return max(sols, key=score) if sols else p['line']
+
+def into_stub(p, line):
+    """The line's last step heads where the end's stub points (the bot then finishes it)."""
+    ends = {tuple(map(int, l.split()[1:3])): l.split()[4] for l in sets_of(p).splitlines() if ' end ' in l}
+    d = {'right': (1, 0), 'left': (-1, 0), 'top': (0, -1), 'bottom': (0, 1)}.get(ends.get(line[-1], '') if line else '', (0, 0))
+    return len(line) > 1 and (line[-1][0] - line[-2][0], line[-1][1] - line[-2][1]) == d
+
+def sets_of(p): return SET.split('\npuzzle ')[1:][p['k']]
 
 def judged(r):
     """The game judged the drawn line: solved, or its verdict "wrong" (state 2 after the finishing click, tools/win/wdraw.py)."""
@@ -265,10 +285,10 @@ def main():
             time.sleep(14.0)      # (the game takes a refused line off after its error flash, about 10 s: a line started sooner was lost)
         name = sets[p['k']].splitlines()[0].split(' ', 4)[-1]
         nodes = solver.solve(dict(p['q'], seq=[]))
-        if p['k'] in TUNNEL and not TRY_TUNNEL:      # (the bot has never finished a line on these: 7 minutes each for nothing)
+        if p['k'] in TUNNEL and SKIP_TUNNEL:
             pyw('wcmd.py', win(DIR1), 'shot custom_%d' % p['k']); time.sleep(1.5); pyw('wcmd.py', win(DIR1), 'nativesolve %x' % p['panel']); time.sleep(3.0); continue
-        if p['k'] in TUNNEL and not MUTANT:      # the bot has never drawn on these: a line the game judged counts, a bot that never got there is a note
-            line = to_line(p['map'], nodes or []); r = draw(p['q'], nodes, tries=2) if nodes else {}
+        if p['k'] in TUNNEL and not MUTANT:      # an editor solution the bot can finish here (up first, into the end's stub last); a bot that never got the line to the game is a note
+            line = own_line(exe, raw, p); nodes = to_nodes(p['q'], p['map'], line); r = draw(p['q'], nodes, tries=2)
             verdict = subprocess.run([exe, 'check', raw, str(p['k'])] + ['%d,%d' % v for v in line], capture_output=True, text=True).stdout.strip()
             if judged(r):
                 check('4. puzzle %d (%s) on %#x, drawn by the bot: the game and the editor\'s rules judge it the same' % (p['k'], name, p['panel']), bool(r.get('solved')) == (verdict == 'ok'), (r.get('why'), verdict))
@@ -279,7 +299,7 @@ def main():
         if nodes:      # the repo's solver's line: the game and the editor's rules must judge it the same
             line = to_line(p['map'], nodes)
             verdict = subprocess.run([exe, 'check', raw, str(p['k'])] + ['%d,%d' % v for v in line], capture_output=True, text=True).stdout.strip()
-            r = draw(p['q'], nodes); game = bool(r.get('solved'))
+            r = draw(p['q'], nodes, tries=4 if into_stub(p, line) else 1); game = bool(r.get('solved'))      # (one that turns into the stub: the bot has never finished one; one try)
             results[p['k']] = (game, verdict == 'ok') if judged(r) else None      # (None: not judged by the game)
             if results[p['k']] is None: print('  NOTE puzzle %d on %#x: the bot did not get the solver\'s line to the game (%s); the editor\'s own solution is drawn' % (p['k'], p['panel'], r.get('why')), flush=True)
             else: check('4. puzzle %d (%s) on %#x: the game and the editor\'s rules judge the solver\'s line the same' % (p['k'], name, p['panel']),
@@ -288,8 +308,7 @@ def main():
             r = {}; print('  (puzzle %d: the repo\'s solver has no line for what the game holds)' % p['k'], flush=True)
             if not MUTANT: check('4. puzzle %d (%s): the repo\'s solver has a line for it' % (p['k'], name), False)
         if not r.get('solved'):      # the editor's own solution (one that starts up the left edge when there is one: the bot draws those)
-            sols = [[tuple(map(int, v.split(','))) for v in l.split()] for l in subprocess.run([exe, 'solutions', raw, str(p['k']), '100'], capture_output=True, text=True).stdout.splitlines() if l.strip()]
-            own = next((l for l in sols if len(l) > 1 and l[1][0] == l[0][0]), sols[0] if sols else p['line'])
+            own = own_line(exe, raw, p)
             r = draw(p['q'], to_nodes(p['q'], p['map'], own))
             if MUTANT: results[p['k']] = (bool(r.get('solved')), True) if judged(r) else None      # (the rules accept it: it is theirs)
             check('   the editor\'s own solution is taken by the game', r.get('solved'), {k: r.get(k) for k in ('why', 'traced')} if not r.get('solved') else '')

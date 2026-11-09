@@ -18,6 +18,7 @@ namespace v_nsv {
 class PanelExtractionTests { public: static void Reset() { Panel::generatedPanels.clear(); Panel::arrowPuzzles.clear(); }
     static void WriteCustom(int id, const wpz::Puzzle& p);      // (below: the player's own puzzles reach the panel's private grid the same way)
     static wpz::Puzzle ReadCustom(int id);
+    static std::vector<std::vector<int>> GridFlags(int id) { Panel panel(id); return panel._grid; }
 };
 class APWatchdog { public: static void Reset() { Generate::_SHAPEDIRECTIONS.clear(); } };
 
@@ -80,8 +81,13 @@ static int Flags(const wpz::Puzzle& p, int x, int y) {
     bool corner = x % 2 == 0 && y % 2 == 0;
     int where = corner ? IntersectionFlags::INTERSECTION : (x % 2 ? IntersectionFlags::ROW : IntersectionFlags::COLUMN);
     if (c.gap == wpz::kGapBreak) v |= Decoration::Gap | where;
-    if (c.dot) {
-        v |= Decoration::Dot | where;
+    if (c.dot) {      // the generator's own dot flags: a dot on a line carries 0x40000 too (Dot_Row, Dot_Column); without it the game refused a line
+                      // through a dot on a horizontal line (found in the game on 2026-11-10: the same puzzle without the dot was solved)
+#ifndef WR_MUT_DOT_PLAIN
+        v |= corner ? Decoration::Dot_Intersection : (x % 2 ? Decoration::Dot_Row : Decoration::Dot_Column);
+#else
+        v |= Decoration::Dot | where;      // mutant: the dot's flags as before the fix
+#endif
         if (c.dot == wpz::kDotBlue) v |= IntersectionFlags::DOT_IS_BLUE;
         if (c.dot == wpz::kDotYellow) v |= IntersectionFlags::DOT_IS_ORANGE;
         if (c.dot == wpz::kDotInvisible) v |= IntersectionFlags::DOT_IS_INVISIBLE;
@@ -188,4 +194,6 @@ static std::vector<::wrand::Dog> RunCustom(const ::wrand::Spec& spec) {
 std::vector<wrand::Dog> wrand::RunNsv(const Spec& spec) { return v_nsv::Run(spec); }
 std::vector<wrand::Dog> wrand::RunCustom(const Spec& spec) { return v_nsv::RunCustom(spec); }
 wpz::Puzzle wrand::ReadCustomPuzzle(int id) { return v_nsv::PanelExtractionTests::ReadCustom(id); }
+std::vector<std::vector<int>> wrand::CustomGridFlags(int id) { return v_nsv::PanelExtractionTests::GridFlags(id); }
+int wrand::DotFlags(int where) { return where == 0 ? v_nsv::Decoration::Dot_Intersection : where == 1 ? v_nsv::Decoration::Dot_Row : v_nsv::Decoration::Dot_Column; }
 std::string (*wrand::LoadPuzzleSet)(const std::string& hash) = nullptr;

@@ -671,8 +671,13 @@ rule solver (`tools/psolve`) finds from what the game holds: the game and the ed
 (or the bot never got it to the game, a note), an editor solution is drawn and must be taken; each solve must reach B. `--mutant`: A with
 polyominoes upside down; the game must refuse the editor's solution of the shapes puzzle. The bot steers by feedback (`WDRAW_STEER`) and forgets
 what it remembered about these panels first; the next puzzle drawn is always one whose panel the game reports powered (the courtyard's panels
-power one another), so a black panel is never walked to. The two tunnel panels are checked as held and pictured, then solved with `nativesolve`
-(`--tunnel`: the bot tries them first; it has started a line on the first, never finished one). On 2026-11-10: PASS, every puzzle judged the same
+power one another), so a black panel is never walked to. On the two tunnel panels the bot draws an editor solution that goes up first and
+straight into the end's stub last (the shape it finishes; turning into the stub it stopped on a grid edge and its finishing click dropped the
+line); where it gets no line to the game (on the Bend it does not start one) that is a note and the panel is solved with `nativesolve`
+(`--no-tunnel`: at once). Found that way on 2026-11-10: a dot on a horizontal line was refused by the game (the same puzzle without the dot was
+solved, and with an empty puzzle the first panel was solved): the writer gave a dot on a line `0x20 | ROW` where the generator's own flags are
+`Dot_Row` / `Dot_Column`, which carry `0x40000` too; now the generator's (game-free check of each dot's flags in `custom_test.cpp`, mutant
+`DOT_PLAIN`). Also seen there: orange triangles do not show on the Tutorial's yellow (the editor says so). On 2026-11-10: PASS, every puzzle judged the same
 by the game and the rules (stars counting triangles of their colour, triangles 1 to 3, dots, gaps, missing lines, eliminators, shapes, symmetry,
 7 x 7, 7 x 2), each solve in B 0.4 s later; the mutant caught. Found in the game: an eliminator with nothing to remove is refused by the game,
 as jbzdarkid's rules say; `tools/psolve` took that line and now does not, for a region with one eraser (`eraser_needed`, its mutant). Also seen
