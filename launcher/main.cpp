@@ -1074,7 +1074,7 @@ void LayoutRandomizers(int W, int H) {
     PlaceId(ID_RZ_TITLE, m, y, cw, 26); y += 30; PlaceId(ID_RZ_INTRO, m, y, cw, 40); y += 46;
     int ly = y;
     PlaceId(ID_RZ_MODE, m, ly, left, 400); ly += 40;
-    PlaceId(ID_RZ_BLURB, m, ly, left, 40); ly += 42; PlaceId(ID_RZ_WARN, m, ly, left, 40); ly += 42; PlaceId(ID_RZ_BY, m, ly, left, 22); ly += 30;
+    PlaceId(ID_RZ_BLURB, m, ly, left, 40); ly += 42; PlaceId(ID_RZ_BY, m, ly, left, 22); ly += 26; PlaceId(ID_RZ_WARN, m, ly, left, 40); ly += 46;      // (the author's warning, often none, last)
     PlaceId(ID_RZ_NEWSEED, m, ly, left, 26); ly += 32;
     PlaceId(ID_RZ_SEED_LABEL, m, ly + 6, 60, 22); PlaceId(ID_RZ_SEED, m + 64, ly + 2, 140, 30); PlaceId(ID_RZ_ROLL, m + 214, ly, 120, 34); ly += 42;
     PlaceId(ID_RZ_SHUFFLE, m, ly, left, 26); ly += 30; PlaceId(ID_RZ_COLOR, m, ly, left, 26); ly += 30; PlaceId(ID_RZ_FAST, m, ly, left, 26); ly += 34;

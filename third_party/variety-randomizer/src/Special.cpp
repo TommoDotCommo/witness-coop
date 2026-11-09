@@ -676,6 +676,7 @@ void Special::generateKeepLaserPuzzle(int id, const std::set<Point>& path1, cons
 		solution.push_back(row);
 	}
 
+	int failedCount = 0; // witness-coop: NewSoupVi's fix, Penguin12335/Variety-Randomiser PR #1 (open), as his own Variety ships it: the Keep laser puzzle could retry for ever
 	while (!generator->place_all_symbols(psymbols)) {
 		for (int x = 0; x < generator->_panel->_width; x++)
 			for (int y = 0; y < generator->_panel->_height; y++)
@@ -685,6 +686,12 @@ void Special::generateKeepLaserPuzzle(int id, const std::set<Point>& path1, cons
 		for (int i = 0; i < psymbols.symbols[Decoration::Poly].size(); i++) {
 			psymbols.symbols[Decoration::Poly][i].second = psymbolsBackup.symbols[Decoration::Poly][i].second + Random::rand() % 3 - Random::rand() % 3;
 			if (psymbols.symbols[Decoration::Poly][i].second < 1) psymbols.symbols[Decoration::Poly][i].second = 1;
+		}
+		failedCount++; // witness-coop: PR #1 (see above): after 10000 failures one of the square colours loses a square, again until it fits
+		if (failedCount == 10000 && psymbols.symbols.contains(0x100) && psymbols.symbols[0x100].size() > 3) {
+			psymbols.symbols[0x100].back().second--;
+			if (psymbols.symbols[0x100][0].second == 0) psymbols.symbols[0x100].pop_back();
+			failedCount = 0;
 		}
 	}
 

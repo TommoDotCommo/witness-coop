@@ -46,10 +46,19 @@ folder's `UPSTREAM` commit.
 | `symbol-shuffler/src/PuzzleList.cpp` | `void::PuzzleList::` (MSVC) is not valid inside a namespace: `void PuzzleList::` |
 | `star-randomizer/App/Version.h` | `L#s` is MSVC only: `L ## #s` |
 | `despair-randomizer/src/PuzzleList.cpp` (`GenerateSymmetryH`) | the symmetry lists hold repeats and a repeat is popped again, so for some seeds (4242) a list ran empty and the next pop divided by zero: the game died. Refilled when empty; every seed that worked makes the same puzzles |
+| `variety-randomizer/src/Special.cpp` (`generateKeepLaserPuzzle`) | NewSoupVi's fix, [Penguin12335/Variety-Randomiser PR #1](https://github.com/Penguin12335/Variety-Randomiser/pull/1) (open; his own Variety in `witness-randomizer` ships it): the Keep laser puzzle could retry for ever; after 10000 failures one square colour loses a square, again until it fits |
 | `variety-randomizer/src/Generate.cpp` (`Generate::generate`) | a panel was retried for ever: in Ascension, Mountain panel 0x09FD6 (ghosts, bars and antitriangles on a 6x6 grid) never fitted for any seed tried (15 minutes natively). After `WC_MAX_TRIES` (2000, `variants.mk`) failures in a row a panel keeps the game's own puzzle; the glue resets the count before a run |
 
 Not carried over: the Tutorializer's two patches to the game's code that stop the endings from ending the game (in the co-op mod the endings
 work as in the game). How the generators run in the game, what is tested and how: `docs/DEVELOPMENT.md`, "Built-in randomizers".
+
+## Upstream pull requests
+
+Checked 2026-11-09 (open pull requests of every upstream): NewSoupVi's Keep laser fix (Penguin12335/Variety-Randomiser #1) is applied above; his
+shape-rotation fix (sigma144/witness-randomizer #104) and the Keep fix are already in `witness-randomizer`. Not applied: the stone-region change
+(NewSoupVi #35, sigma144 #109, by lkaesberg: a change to how stone puzzles are made, not a crash or hang fix, unmerged by either maintainer), the
+Mac port (sigma144 #78), and KemSpeedruns #1 (Parker's work into the Symbol Shuffler; the Star Randomizer is vendored from Parker's own repository).
+When one of these is merged upstream, `tools/randomizer_upstream.sh <folder> update` brings it in.
 
 ## Updating to a newer upstream
 
