@@ -22,6 +22,7 @@ bool StoreSet(const std::wstring& dataDir, const std::string& hash, const std::s
 // Opens the editor (or brings it forward) on this set; `changed` is called after the library changed (the Randomizers tab refreshes its list).
 void OpenEditor(HWND owner, const std::wstring& dataDir, const std::string& setName, void (*changed)());
 bool EditorOpen();
+void EditorTest(const std::string& command);      // tests and pictures: select <n>, solve, count, try, tool <n>
 std::string EditorStat();      // for the launcher's stat file: "editor open <0|1> set <name> puzzles <n> tool <tool>"
 
 }  // namespace ped

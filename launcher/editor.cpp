@@ -46,6 +46,7 @@ HWND Ctl(int id) { return GetDlgItem(E.wnd, id); }
 wpz::Puzzle* Cur() { return E.cur >= 0 && E.cur < (int)E.set.puzzles.size() ? &E.set.puzzles[E.cur] : nullptr; }
 void Say(const std::string& s, bool good = false) { E.status = s; E.statusGood = good; SetWindowTextW(Ctl(ID_STATUS), Wd(s).c_str()); }
 void Redraw() { if (E.canvas) InvalidateRect(E.canvas, nullptr, FALSE); }
+void SetTrying(bool on) { E.trying = on; E.trace.path.clear(); if (HWND b = Ctl(ID_TRY)) SetWindowTextW(b, on ? L"Stop trying" : L"Try it"); }
 
 void Save() {
     if (E.setName.empty()) return;
@@ -80,8 +81,7 @@ void LoadControls(bool resetUndo = true) {      // the current puzzle into the r
         int k = 0; for (size_t i = 0; i < wpz::Slots().size(); i++) if (wpz::Slots()[i].id == p->panel) k = (int)i + 1;
         SendMessageW(Ctl(ID_PANEL), CB_SETCURSEL, k, 0);
     }
-    E.loading = false; E.trace.path.clear(); E.trying = false; E.shown.clear(); if (resetUndo) E.undo.clear();
-    SendMessageW(Ctl(ID_TRY), BM_SETCHECK, BST_UNCHECKED, 0);
+    E.loading = false; SetTrying(false); E.shown.clear(); if (resetUndo) E.undo.clear();
     ShowProblems(); Redraw();
 }
 void Changed(bool relist = true) { Save(); if (relist) FillList(); ShowProblems(); Redraw(); }
@@ -172,7 +172,7 @@ void Symbol(HDC dc, const wpz::Cell& c, int cx, int cy, int cell) {
 void Paint(HDC dc, const RECT& rc) {
     HBRUSH bg = CreateSolidBrush(kBack); FillRect(dc, &rc, bg); DeleteObject(bg);
     wpz::Puzzle* pp = Cur(); if (!pp) return;
-    const wpz::Puzzle& p = *pp; Geometry g = Geometry::Fit(p, rc.left, rc.top, rc.right - rc.left, rc.bottom - rc.top, 40);
+    const wpz::Puzzle& p = *pp; Geometry g = Geometry::Fit(p, rc.left, rc.top, rc.right - rc.left, rc.bottom - rc.top, 16);
     int lw = std::max(3, g.step / 3), cell = g.step * 2;
     RECT pr = {g.px(0) - g.step, g.py(0) - g.step, g.px(p.width() - 1) + g.step + 1, g.py(p.height() - 1) + g.step + 1};
     HBRUSH pb = CreateSolidBrush(kPanel); FillRect(dc, &pr, pb); DeleteObject(pb);
@@ -223,7 +223,7 @@ void Paint(HDC dc, const RECT& rc) {
         Rectangle(dc, g.px(E.hover.x) - r, g.py(E.hover.y) - r, g.px(E.hover.x) + r, g.py(E.hover.y) + r); SelectObject(dc, op); SelectObject(dc, ob); DeleteObject(pen);
     }
 }
-Geometry CanvasGeometry() { RECT rc; GetClientRect(E.canvas, &rc); return Geometry::Fit(*Cur(), 0, 0, rc.right, rc.bottom, 40); }
+Geometry CanvasGeometry() { RECT rc; GetClientRect(E.canvas, &rc); return Geometry::Fit(*Cur(), 0, 0, rc.right, rc.bottom, 16); }
 void FinishTry() {
     wpz::Puzzle* p = Cur(); if (!p || !E.trace.atEnd(*p)) return;
     wpz::Verdict v = wpz::Check(*p, E.trace.path);
@@ -269,7 +269,7 @@ LRESULT CALLBACK CanvasProc(HWND h, UINT m, WPARAM w, LPARAM l) {
 // ---- the window ---------------------------------------------------------------------------------------------------------------------------
 HWND Mk(const wchar_t* cls, const wchar_t* text, DWORD style, int id, DWORD ex = 0) {
     HWND c = CreateWindowExW(ex, cls, text, WS_CHILD | WS_VISIBLE | style, 0, 0, 10, 10, E.wnd, (HMENU)(INT_PTR)id, GetModuleHandleW(nullptr), nullptr);
-    SendMessageW(c, WM_SETFONT, (WPARAM)E.font, TRUE); if (!(style & BS_OWNERDRAW)) th::Style(c); return c;
+    SendMessageW(c, WM_SETFONT, (WPARAM)E.font, TRUE); if (!(wcscmp(cls, L"BUTTON") == 0 && (style & BS_TYPEMASK) == BS_OWNERDRAW)) th::Style(c); return c;
 }
 void Put(int id, int x, int y, int w, int h) { if (HWND c = Ctl(id)) SetWindowPos(c, nullptr, x, y, std::max(1, w), std::max(1, h), SWP_NOZORDER | SWP_NOACTIVATE); }
 void Layout() {
@@ -281,14 +281,15 @@ void Layout() {
     int by = H - 92; int b5 = (lw - 8) / 3; Put(ID_ADD, m, by, b5, 30); Put(ID_COPY, m + b5 + 4, by, b5, 30); Put(ID_REMOVE, m + 2 * (b5 + 4), by, b5, 30);
     by += 34; Put(ID_UP, m, by, (lw - 4) / 2, 30); Put(ID_DOWN, m + (lw - 4) / 2 + 4, by, (lw - 4) / 2, 30);
     int cx = m + lw + m, cw = W - cx - rw - 2 * m;
-    SetWindowPos(E.canvas, nullptr, cx, m, std::max(50, cw), std::max(50, H - m - 110), SWP_NOZORDER | SWP_NOACTIVATE);
-    int bottom = H - 96; int bb = (cw - 5 * 6) / 6;
-    Put(ID_TRY, cx, bottom, bb, 32); Put(ID_SOLVE, cx + (bb + 6), bottom, bb, 32); Put(ID_CHECK, cx + 2 * (bb + 6), bottom, bb, 32); Put(ID_UNDO, cx + 3 * (bb + 6), bottom, bb, 32);
-    Put(ID_IMPORT, cx + 4 * (bb + 6), bottom, bb, 32); Put(ID_EXPORT, cx + 5 * (bb + 6), bottom, bb, 32);
-    Put(ID_STATUS, cx, bottom + 38, cw, 40); Put(ID_CREDIT, cx, H - 20, cw + rw + m, 18);
+    SetWindowPos(E.canvas, nullptr, cx, m, std::max(50, cw), std::max(50, H - m - 140), SWP_NOZORDER | SWP_NOACTIVATE);
+    int bottom = H - 128; int bb = (cw - 2 * 6) / 3;
+    Put(ID_TRY, cx, bottom, bb, 32); Put(ID_SOLVE, cx + (bb + 6), bottom, bb, 32); Put(ID_CHECK, cx + 2 * (bb + 6), bottom, bb, 32);
+    Put(ID_UNDO, cx, bottom + 36, bb, 32); Put(ID_IMPORT, cx + (bb + 6), bottom + 36, bb, 32); Put(ID_EXPORT, cx + 2 * (bb + 6), bottom + 36, bb, 32);
+    Put(ID_STATUS, cx, bottom + 74, cw, 36); Put(ID_CREDIT, cx, H - 20, cw + rw + m, 18);
     int rx = W - rw - m; y = m;
     Put(ID_NAME, rx, y, rw, 28); y += 36;
-    Put(ID_W, rx, y, 64, 300); Put(ID_H, rx + 74, y, 64, 300); Put(ID_SYM, rx + 148, y, rw - 148, 300); y += 36;
+    Put(ID_W, rx, y, (rw - 8) / 2, 300); Put(ID_H, rx + (rw - 8) / 2 + 8, y, (rw - 8) / 2, 300); y += 36;
+    Put(ID_SYM, rx, y, rw, 300); y += 36;
     Put(ID_PANEL, rx, y, rw, 400); y += 40;
     int tw = (rw - 8) / 3;
     for (int t = 0; t < kToolCount; t++) Put(ID_TOOL0 + t, rx + (t % 3) * (tw + 4), y + (t / 3) * 34, tw, 30);
@@ -364,7 +365,7 @@ void Export() {
 }
 void Solve(bool count) {
     wpz::Puzzle* p = Cur(); if (!p) return;
-    E.trying = false; SendMessageW(Ctl(ID_TRY), BM_SETCHECK, BST_UNCHECKED, 0);
+    SetTrying(false);
     HCURSOR old = SetCursor(LoadCursorW(nullptr, IDC_WAIT));
     size_t max = count ? 1000 : 1; wpz::Solutions s = wpz::Solve(*p, max, 0, count ? 4000 : 3000);
     SetCursor(old);
@@ -404,7 +405,7 @@ void Command(int id, int code) {
     case ID_DOTKIND: if (code == CBN_SELCHANGE) E.brush.dot = (uint8_t)(SendMessageW(Ctl(ID_DOTKIND), CB_GETCURSEL, 0, 0) + 1); return;
     case ID_ROTATE: E.brush.rotate = SendMessageW(Ctl(ID_ROTATE), BM_GETCHECK, 0, 0) == BST_CHECKED; E.brush.tool = kPoly; RedrawOwners(); return;
     case ID_NEGATIVE: E.brush.negative = SendMessageW(Ctl(ID_NEGATIVE), BM_GETCHECK, 0, 0) == BST_CHECKED; E.brush.tool = kPoly; RedrawOwners(); return;
-    case ID_TRY: E.trying = SendMessageW(Ctl(ID_TRY), BM_GETCHECK, 0, 0) == BST_CHECKED; E.trace.path.clear(); E.shown.clear();
+    case ID_TRY: SetTrying(!E.trying); E.shown.clear();
         Say(E.trying ? "Trying: press on a start and draw the line to an end, as on a panel." : "Editing."); Redraw(); return;
     case ID_SOLVE: Solve(false); return;
     case ID_CHECK: Solve(true); return;
@@ -413,7 +414,7 @@ void Command(int id, int code) {
     case ID_EXPORT: Export(); return;
     case ID_SITE: ShellExecuteW(E.wnd, L"open", L"https://witnesspuzzles.com/editor.html", nullptr, nullptr, SW_SHOWNORMAL); return;
     }
-    if (id >= ID_TOOL0 && id < ID_TOOL0 + kToolCount) { E.brush.tool = (Tool)(id - ID_TOOL0); if (E.trying) { E.trying = false; SendMessageW(Ctl(ID_TRY), BM_SETCHECK, BST_UNCHECKED, 0); } RedrawOwners(); return; }
+    if (id >= ID_TOOL0 && id < ID_TOOL0 + kToolCount) { E.brush.tool = (Tool)(id - ID_TOOL0); if (E.trying) SetTrying(false); RedrawOwners(); return; }
     if (id >= ID_COLOUR0 && id < ID_COLOUR0 + (int)wpz::Colours().size()) { E.brush.colour = wpz::Colours()[id - ID_COLOUR0].index; if (!OnCells(E.brush.tool)) E.brush.tool = kSquare; RedrawOwners(); return; }
     if (id >= ID_SHAPE0 && id < ID_SHAPE0 + 16) { int k = id - ID_SHAPE0; E.brush.shape ^= wpz::PolyMask(k % 4, k / 4); E.brush.tool = kPoly; RedrawOwners(); return; }
 }
@@ -506,8 +507,18 @@ bool StoreSet(const std::wstring& dataDir, const std::string& hash, const std::s
 }
 
 bool EditorOpen() { return E.wnd != nullptr; }
+void EditorTest(const std::string& c) {      // tests and pictures: "select <n>", "solve", "count", "try", "tool <n>"
+    if (!E.wnd) return;
+    std::string w = c.substr(0, c.find(' ')), a = c.find(' ') == std::string::npos ? "" : c.substr(c.find(' ') + 1);
+    if (w == "select") { E.cur = std::max(0, std::min(atoi(a.c_str()), (int)E.set.puzzles.size() - 1)); FillList(); LoadControls(); }
+    else if (w == "solve") Solve(false);
+    else if (w == "count") Solve(true);
+    else if (w == "try") { SetTrying(true); Redraw(); }
+    else if (w == "tool") { E.brush.tool = (Tool)std::max(0, std::min(atoi(a.c_str()), (int)kToolCount - 1)); RedrawOwners(); }
+    UpdateWindow(E.wnd);
+}
 std::string EditorStat() {
-    return std::string("editor open ") + (E.wnd ? "1" : "0") + " set " + (E.setName.empty() ? "-" : SafeName(E.setName)) + " puzzles " + std::to_string(E.set.puzzles.size()) +
+    return std::string("editor open ") + (E.wnd ? "1" : "0") + " status \"" + E.status + "\" set " + (E.setName.empty() ? "-" : SafeName(E.setName)) + " puzzles " + std::to_string(E.set.puzzles.size()) +
            " tool " + ToolName(E.brush.tool) + " trying " + (E.trying ? "1" : "0");
 }
 
@@ -543,7 +554,7 @@ void OpenEditor(HWND owner, const std::wstring& dataDir, const std::string& setN
     HWND dk = Mk(L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_TABSTOP, ID_DOTKIND);
     for (const wchar_t* t : {L"Black dots", L"Blue dots", L"Yellow dots", L"Invisible dots"}) SendMessageW(dk, CB_ADDSTRING, 0, (LPARAM)t); SendMessageW(dk, CB_SETCURSEL, 0, 0);
     Mk(L"BUTTON", L"Open witnesspuzzles.com's editor", BS_PUSHBUTTON | WS_TABSTOP, ID_SITE);
-    Mk(L"BUTTON", L"Try it", BS_AUTOCHECKBOX | BS_PUSHLIKE | WS_TABSTOP, ID_TRY); Mk(L"BUTTON", L"Show a solution", BS_PUSHBUTTON | WS_TABSTOP, ID_SOLVE);
+    Mk(L"BUTTON", L"Try it", BS_PUSHBUTTON | WS_TABSTOP, ID_TRY); Mk(L"BUTTON", L"Show a solution", BS_PUSHBUTTON | WS_TABSTOP, ID_SOLVE);
     Mk(L"BUTTON", L"Count solutions", BS_PUSHBUTTON | WS_TABSTOP, ID_CHECK); Mk(L"BUTTON", L"Undo", BS_PUSHBUTTON | WS_TABSTOP, ID_UNDO);
     Mk(L"BUTTON", L"Import...", BS_PUSHBUTTON | WS_TABSTOP, ID_IMPORT); Mk(L"BUTTON", L"Copy for the web", BS_PUSHBUTTON | WS_TABSTOP, ID_EXPORT);
     Mk(L"STATIC", L"", SS_LEFT, ID_STATUS);

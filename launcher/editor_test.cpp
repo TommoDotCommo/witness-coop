@@ -9,10 +9,10 @@ static int fails = 0;
 int main() {
     wpz::Puzzle p = wpz::NewPuzzle(4, 4);
     ped::Geometry g = ped::Geometry::Fit(p, 0, 0, 400, 400, 40);
-    CHECK(g.step == 40 && g.ox == 40 && g.oy == 40, "a 4x4 puzzle fills 320 pixels of a 400 pixel canvas");
+    CHECK(g.step >= 25 && g.px(0) - g.step * 12 / 10 >= 40 && g.px(8) + g.step * 12 / 10 <= 360 && g.py(0) - g.step * 12 / 10 >= 40, "a 4x4 puzzle and a step of panel around it fit the canvas inside its margin");
     wpz::Pos a;
     CHECK(ped::Pick(g, p, ped::kSquare, g.px(3) + 5, g.py(5) - 5, &a) && a.x == 3 && a.y == 5, "a click inside a cell picks the cell for a symbol");
-    CHECK(ped::Pick(g, p, ped::kStart, g.px(0) + 25, g.py(1) + 9, &a) && a.x == 0 && a.y == 2, "a start goes to the nearest corner");
+    CHECK(ped::Pick(g, p, ped::kStart, g.px(0) + g.step * 6 / 10, g.py(1) + g.step * 3 / 10, &a) && a.x == 0 && a.y == 2, "a start goes to the nearest corner");
     CHECK(ped::Pick(g, p, ped::kGap, g.px(2) + 30, g.py(2), &a) && a.x == 3 && a.y == 2, "a gap goes to the nearest edge");
     CHECK(!ped::Pick(g, p, ped::kDot, 5, 5, &a), "a click far outside the grid picks nothing");
 

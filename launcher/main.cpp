@@ -1119,6 +1119,12 @@ void RzFillSets() {
     if (names.empty()) SendMessageW(c, CB_ADDSTRING, 0, (LPARAM)L"(none yet: open the editor)");
     SendMessageW(c, CB_SETCURSEL, k, 0); g_rzLoading = was;
 }
+std::string RzSummary(const wrand::Spec& s) {      // as wrand::SpecSummary, with the set's name when it is the set picked here
+    if (s.mode != wrand::kCustom) return wrand::SpecSummary(s);
+    std::string name = RzSetName(); wpz::Set set;
+    if (!name.empty() && ped::LoadSet(g_data, name, &set) && wpz::Hash(set) == s.set) return "your puzzles \"" + name + "\" (" + std::to_string(set.puzzles.size()) + (set.puzzles.size() == 1 ? " puzzle)" : " puzzles)");
+    return wrand::SpecSummary(s);
+}
 const wrand::Info* RzShownInfo() { int k = (int)SendMessageW(C(ID_RZ_MODE), CB_GETCURSEL, 0, 0); return k >= 1 && k <= (int)wrand::Randomizers().size() ? &wrand::Randomizers()[k - 1] : nullptr; }
 wrand::Spec RzFromUi() {      // what the page shows, as a spec
     wrand::Spec s; const wrand::Info* inf = RzShownInfo(); s.mode = inf ? inf->mode : wrand::kOff;
@@ -1175,7 +1181,7 @@ void RzRefresh() {      // what may be changed, and what the next game gets
         wrand::Spec next = wrand::ParseSpec(RzForLaunch(true));
         const wrand::Info* pi = wrand::FindRandomizer(pick.mode);
         std::string cont = RzNewestSave();
-        status = pick.on() ? "A new game gets " + wrand::SpecSummary(next) + (RzNewSeed() && pi && pi->seeded ? " (a new seed each game; this one is shown so you can tell a friend)." : ".") : "A new game has the game's own puzzles.";
+        status = pick.on() ? "A new game gets " + RzSummary(next) + (RzNewSeed() && pi && pi->seeded ? " (a new seed each game; this one is shown so you can tell a friend)." : ".") : "A new game has the game's own puzzles.";
         status += "\r\nContinuing keeps your newest save's puzzles: " + (wrand::ParseSpec(cont).on() ? wrand::SpecSummary(wrand::ParseSpec(cont)) : std::string("the game's own")) + ".";
         if (host) status += ng ? "\r\nEveryone in your lobby gets this new game's puzzles." : "\r\nYour lobby continues your newest save: everyone gets its puzzles.";
     }
@@ -1192,6 +1198,7 @@ void RzRefresh() {      // what may be changed, and what the next game gets
     bool custom = on && inf->mode == wrand::kCustom;
     for (int id : {ID_RZ_NEWSEED, ID_RZ_SEED_LABEL, ID_RZ_SEED, ID_RZ_ROLL}) ShowWindow(C(id), custom ? SW_HIDE : SW_SHOW);
     for (int id : {ID_RZ_SET_LABEL, ID_RZ_SET, ID_RZ_EDIT}) ShowWindow(C(id), custom ? SW_SHOW : SW_HIDE);
+    for (int id : {ID_RZ_SHUFFLE, ID_RZ_COLOR, ID_RZ_FAST}) ShowWindow(C(id), custom ? SW_HIDE : SW_SHOW);      // (none of these apply to your own puzzles)
     EnableWindow(C(ID_RZ_SET), can && custom); EnableWindow(C(ID_RZ_EDIT), true);
     if (newSeed && !guest && seeded) { g_rzLoading = true; SetWindowTextW(C(ID_RZ_SEED), std::to_wstring(g_rzRound ? g_rzRound : (g_rzRound = FreshSeed())).c_str()); g_rzLoading = false; }
     std::string lobbyLine = g_sess.Active() ? wrand::SpecSummary(wrand::ParseSpec(g_sess.State().settings.randomizer)) : "";
@@ -1291,6 +1298,8 @@ void PollCommands() {      // tests: one command per line in launcher_cmd.txt, t
         else if (cmd == "updateapply") g_upd.StartApply();
         else if (cmd == "tab") SelectTab(atoi(arg.c_str()));
         else if (cmd == "randomizer") RzSetFromCommand(arg);      // randomizer <spec> [newseed 0|1]
+        else if (cmd == "editor") ped::OpenEditor(g_main, g_data, arg, RzSetsChanged);      // editor [set]: the puzzle editor on that set
+        else if (cmd == "editortest") ped::EditorTest(arg);      // editortest select <n> | solve | count | try | tool <n>
         else if (cmd == "section") ShowSection(atoi(arg.c_str()));
         else if (cmd == "choice") ChooseTile(ls::ParseChoice(arg));
         else if (cmd == "primary") SendMessageW(g_main, WM_COMMAND, ID_PRIMARY, 0);

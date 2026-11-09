@@ -27,8 +27,8 @@ struct Brush {
 struct Geometry {
     int ox = 0, oy = 0, step = 1;
     static Geometry Fit(const wpz::Puzzle& p, int left, int top, int width, int height, int margin) {
-        Geometry g; int gw = p.width() - 1, gh = p.height() - 1;
-        g.step = std::max(4, std::min((width - 2 * margin) / std::max(1, gw), (height - 2 * margin) / std::max(1, gh)));
+        Geometry g; int gw = p.width() - 1, gh = p.height() - 1;      // (a step and a bit of panel around the grid, for the ends)
+        g.step = std::max(4, std::min((width - 2 * margin) * 10 / std::max(1, gw * 10 + 24), (height - 2 * margin) * 10 / std::max(1, gh * 10 + 24)));
         g.ox = left + (width - g.step * gw) / 2; g.oy = top + (height - g.step * gh) / 2;
         return g;
     }
