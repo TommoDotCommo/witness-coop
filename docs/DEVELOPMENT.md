@@ -589,16 +589,19 @@ has the Witness Trainer's co-op options (`proxy/trainer.cpp`, below). The parts:
   it competes with the game's loading), and when it is done writes the overlay in one frame (refused if an entity changed meanwhile: then
   again), then runs upstream's watchdogs (arrow puzzles, the Keep, the Jungle's sound dots, Treehouse, Town door, a bridge) on the render
   thread at their own intervals. A generation still not done after 3 minutes is given up (the game's own puzzles, the player is told, the sync goes
-  on): Ascension measured stuck in its mountaintop puzzle. Until then `RandomizerSettled()` is false: the sync core's stable-world gate waits for it (`World::worldReady`),
+  on; it is cancelled at its next read and lowered to idle priority in case it never reads again). Until then `RandomizerSettled()` is false: the sync core's stable-world gate waits for it (`World::worldReady`),
   so nothing from another player is applied to a panel before its puzzle is in, and what the randomizer switched off at the start is in the
   baseline; the start-progress option waits for it too (the randomizer powers some targets off on a fresh world, which must not undo the parts
   done). A generation that failed reading the game is tried again (up to 5 times); one that fails otherwise leaves the game's own puzzles, says so to the player and lets the sync go on.
 - Each game sends its fingerprint and state to the others (`WTR6`, `SyncCore::setPuzzles`, every 2 s and at once on a change; nothing is sent by a
   game that never set it), and says `<name> has different puzzles` once per difference (`common/notices.h`).
 
-Measured (build 11370412, one PC): a generation takes 0.27 to 0.38 s (Normal), 0.6 to 0.8 s (Expert), 2.4 to 3 s (Variety), at the start of a new game
-as well since the generation thread runs above normal priority (before that, competing with the game's loading: 7.5 s for Normal, 24 s for Expert);
-both games of `tools/qa.sh randomizer` settle about 38 s after the restart is asked.
+Measured (build 11370412, one PC, at the start of a new game; the generation thread runs above normal priority): Normal 0.27 to 0.4 s, Expert
+0.6 to 0.8 s, Variety 2.4 to 3.2 s, Ascension 5 to 7.5 s, Despair 13 s, Despair Symbols 1.8 to 2.6 s, Symbol Shuffler 0.6 s, Emptiness 0.08 s, Puzzle
+Pack 0.3 to 0.8 s, Star 0.2 to 0.6 s, Tutorializer 0.02 to 0.2 s (before the priority was raised, competing with the game's loading: 7.5 s for
+Normal, 24 s for Expert); both games of `tools/qa.sh randomizer` settle about 38 s after the restart is asked. Two upstream bugs, found by the replay
+and the sweep (`tools/randomizer_sweep.py`), are fixed in the vendored code: Despair divided by zero for some seeds, Ascension retried a Mountain
+panel for ever (`third_party/README.md`).
 A generation changes about 370 to 490 entities (34 to 165 KB) and makes about 2000 arrays (0.4 to 0.6 MB); Expert and Variety start about 50 watchdogs.
 
 - `proxy/trainer.cpp`: the Witness Trainer's options that suit co-op, each player's own (`trainer_speed`, `trainer_fov`, `trainer_noclip` with
@@ -613,14 +616,16 @@ save's own); with the panel shuffle on, a chain whose order it shuffles (the Sym
 Jungle, the pillars) is still solved whole by a new game's "parts done", but a part of it follows the game's own order; the recorded game for the replay
 test is game data and stays in `local/`.
 
-Tests: `make -C proxy/randomizer test` (game-free): the memory layer on a fake game (the overlay leaves the game alone, sees its own writes, copies
+Tests: `tools/randomizer_sweep.py` (game-free, two minutes on 16 cores: every mode over 30 seeds, each run in a process of its own, a crash or a
+hang is a finding; run it after updating a vendored randomizer). `make -C proxy/randomizer test` (game-free): the memory layer on a fake game (the overlay leaves the game alone, sees its own writes, copies
 arrays before writing them, a fingerprint that ignores addresses, applying refuses a reloaded world; mutants `COW_NO_COPY`, `FP_ADDRESSES`), and,
 over a game recorded by `tools/randomizer_solo.sh --record` (`local/randomizer/11370412.world`; skipped and said when absent), whole runs of every
 randomizer with and without its options, twice in one process: each must make exactly what the game made (the generator built natively on Linux
 against the one built into the mod), with no read outside the recording (mutants `NO_RESET`, `WATCHDOG_THREAD`). `make -C proxy/core test`:
 `world-ready` (a remote solve waits for this world's puzzles; twin `noWorldReady`) and `puzzles` (the fingerprint reaches the others; mutant
 `PUZZLES_ZERO`). `make -C launcher test`: the lobby carries the host's spec into every member's cfg (mutant `NO_RANDOMIZER`) and a continued game
-keeps its save's puzzles (mutant `CONTINUE_REPICKS`). One game: `tools/randomizer_solo.sh [--spec S] [--mutant]` (applied, the game alive). Two
+keeps its save's puzzles (mutant `CONTINUE_REPICKS`). One game: `tools/randomizer_solo.sh [--spec S] [--mutant]` (applied, the game alive; run for every mode on 2026-11-09), `tools/trainer_solo.sh
+[--mutant]` (the Trainer's values read back from the game, noclip on its key). Two
 games: `tools/qa.sh randomizer [--mutant]` (`tools/qa_randomizer.py`: the same fingerprint in both, the puzzles read from each game the same and not the
 game's own, a randomized panel drawn in A solved in B, another seed in B told in both games; the mutant B never writes its puzzles).
 Run on 2026-11-09: Normal, Expert and Variety pass; with the panel shuffle, checks 1, 2 and 4 pass but the bot (`tools/win/wdraw.py`) could not draw

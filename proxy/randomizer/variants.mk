@@ -5,7 +5,8 @@ nsv_SRC = Generate MultiGenerate Panel PuzzleList Quaternion Randomizer Special 
 VARIANTS += variety despair shuffler star
 # the older forks were built with MSVC's min/max macros (their code calls min() and max() bare): <v>_FLAGS turns them on for that variant
 variety_DIR = $(TP)/variety-randomizer/src
-variety_FLAGS = -DWRAND_MSVC_MINMAX
+variety_FLAGS = -DWRAND_MSVC_MINMAX -DWC_MAX_TRIES=$(VARIETY_MAX_TRIES)
+VARIETY_MAX_TRIES ?= 2000
 variety_SRC = Generate MultiGenerate Panel PuzzleList Quaternion Randomizer Special Watchdog
 despair_DIR = $(TP)/despair-randomizer/src
 despair_FLAGS = -DWRAND_MSVC_MINMAX

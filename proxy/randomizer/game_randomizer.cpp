@@ -1,6 +1,7 @@
 // See game_randomizer.h. Build 11370412.
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <algorithm>
 #include <atomic>
 #include <cstdio>
 #include <cstring>
@@ -61,6 +62,8 @@ struct Gen {
     std::atomic<bool> done{false}, cancel{false};
     std::string status;  SRWLOCK statusLock = SRWLOCK_INIT;
     DWORD started = 0, finished = 0;
+    ~Gen() { if (thread) CloseHandle(thread); }
+    HANDLE thread = nullptr;      // kept: a generation given up on is lowered to idle priority (one stuck in its own computation never reads again, so the cancel never reaches it)
 };
 std::string GenStatus(Gen* g) { AcquireSRWLockShared(&g->statusLock); std::string s = g->status; ReleaseSRWLockShared(&g->statusLock); return s; }
 DWORD WINAPI GenThread(void* p) {
@@ -110,7 +113,7 @@ void StartGeneration(uint64_t world) {
     g->started = GetTickCount();
     g_gen.reset(g);
     HANDLE t = CreateThread(nullptr, 1 << 22, GenThread, g, 0, nullptr);      // 4 MB of stack: upstream's path search recurses
-    if (!t) { g->result.error = "could not start the generator's thread"; g->done = true; } else { SetThreadPriority(t, THREAD_PRIORITY_ABOVE_NORMAL); CloseHandle(t); }      // (it competes with the game's own loading; the player waits for it)
+    if (!t) { g->result.error = "could not start the generator's thread"; g->done = true; } else { SetThreadPriority(t, THREAD_PRIORITY_ABOVE_NORMAL); g->thread = t; }      // (it competes with the game's own loading; the player waits for it)
     g_state = kGenerating; g_settled = false; g_fp = 0; SetCore(witness::PUZ_WORKING);
     Logf("randomizer: generating '%s' for world %016llx", wrand::SpecText(g_spec).c_str(), (unsigned long long)world);
 }
@@ -187,14 +190,28 @@ DWORD WINAPI RecordThread(void* p) {
         wrand::Spec s; s.mode = i.mode; s.seed = 4242; specs.push_back(s);
         s.seed = 7; s.fast = true; s.colorblind = true; s.shuffle = i.canShuffle; specs.push_back(s);
     }
+    std::stable_partition(specs.begin(), specs.end(), [](const wrand::Spec& s) { return s.mode != wrand::kAscension; });      // (it can get stuck for good: last, so the others are saved)
     if (!r->only.empty()) { specs.clear(); specs.push_back(wrand::ParseSpec(r->only)); }
     for (const auto& s : specs) {
         wrand::Arrays arrays;
         DWORD t0 = GetTickCount();
+        // A run still going after 2 minutes is cancelled (its next read throws). One that is still going 5 s after that reads nothing: it loops in its
+        // own computation, so what it has read is complete and is saved from here (the test replays the loop); the run itself is left behind.
+        struct Watch { Recording* r; wrand::RecordingRaw* rec; std::vector<wrand::RecordedRun>* runs; std::string spec; std::atomic<bool> finished{false}; } w{r, &rec, &runs, wrand::SpecText(s)};
         r->cancel = false;
-        HANDLE watch = CreateThread(nullptr, 0, [](void* q) -> DWORD { auto* rr = (Recording*)q; DWORD t0 = GetTickCount(); while (!rr->cancel && GetTickCount() - t0 < 120000) Sleep(200); rr->cancel = true; return 0; }, r, 0, nullptr);
+        HANDLE watch = CreateThread(nullptr, 0, [](void* q) -> DWORD {
+            auto* w = (Watch*)q; DWORD t0 = GetTickCount();
+            while (!w->finished && GetTickCount() - t0 < 120000) Sleep(200);
+            if (w->finished) return 0;
+            w->r->cancel = true; Sleep(5000);
+            if (w->finished) return 0;
+            auto runs = *w->runs; wrand::RecordedRun stuck; stuck.spec = w->spec; runs.push_back(stuck);
+            bool ok = wrand::SaveWorld(w->r->path.c_str(), *w->rec, runs);
+            char m[300]; snprintf(m, sizeof m, "randrecord: '%s' is stuck in its own computation (no read for 5 s after it was cancelled): %s what it read; done", w->spec.c_str(), ok ? "saved" : "could not save");
+            Log(m); w->r->done = true; return 0;
+        }, &w, 0, nullptr);
         auto res = wrand::Generate(s, &rec, &arrays, nullptr, &r->cancel);
-        r->cancel = true; if (watch) { WaitForSingleObject(watch, 2000); CloseHandle(watch); }
+        w.finished = true; if (watch) { WaitForSingleObject(watch, 6000); CloseHandle(watch); }
         DWORD ms = GetTickCount() - t0;
         wrand::RecordedRun run; run.spec = wrand::SpecText(s); run.fingerprint = res.ok ? res.fingerprint : 0; run.watchdogs = (uint32_t)res.watchdogs.size();
         run.entities = (uint32_t)res.entities; run.bytes = (uint32_t)res.bytes; runs.push_back(run);
@@ -241,6 +258,7 @@ void RandomizerFrame() {
         if (g_gen && g_gen->done) Finish();
         else if (g_gen && now - g_gen->started > kGiveUpMs) {      // a generator that never ends must not hold the world (and the sync) for ever
             g_state = kFailed; g_settled = true; g_fp = 0; SetCore(witness::PUZ_FAILED); g_gen->cancel = true;      // (its next read stops it)
+            if (g_gen->thread) SetThreadPriority(g_gen->thread, THREAD_PRIORITY_IDLE);      // (and if it never reads again, it only gets what the game leaves idle)
             Logf("randomizer: FAILED: '%s' still not done after %lu s (last status '%s'): the game's own puzzles", wrand::SpecText(g_gen->spec).c_str(), (now - g_gen->started) / 1000, GenStatus(g_gen.get()).c_str());
             DevMenuNotice(wnotice::PuzzlesFailed().c_str());
         }

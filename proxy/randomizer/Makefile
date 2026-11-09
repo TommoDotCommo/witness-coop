@@ -55,6 +55,10 @@ $(BUILD)/generate-test: tests/generate_test.cpp world.h $(BUILD)/backend.o $(GLU
 $(BUILD)/generate-mut-%: tests/generate_test.cpp world.h $(BUILD)/backend.o $$(call glue-mut,$$*) $(LIBS)
 	g++ $(CXXF) -include compat.h -o $@ tests/generate_test.cpp $(BUILD)/backend.o $(call glue-mut,$*) $(LIBS)
 
+# one run of one spec over a recorded game (tools/randomizer_sweep.py: every mode over many seeds, each in a process of its own)
+$(BUILD)/one-run: tests/one_run.cpp world.h $(BUILD)/backend.o $(GLUE) $(LIBS)
+	g++ $(CXXF) -include compat.h -o $@ tests/one_run.cpp $(BUILD)/backend.o $(GLUE) $(LIBS)
+
 BACKEND_MUTANTS = COW_NO_COPY FP_ADDRESSES
 GENERATE_MUTANTS = NO_RESET WATCHDOG_THREAD
 test: $(BUILD)/backend-test $(addprefix $(BUILD)/backend-mut-,$(BACKEND_MUTANTS)) $(BUILD)/generate-test $(addprefix $(BUILD)/generate-mut-,$(GENERATE_MUTANTS))

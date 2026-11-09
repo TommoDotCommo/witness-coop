@@ -1156,7 +1156,7 @@ void RzRefresh() {      // what may be changed, and what the next game gets
     EnableWindow(C(ID_RZ_MODE), can);
     bool newSeed = SendMessageW(C(ID_RZ_NEWSEED), BM_GETCHECK, 0, 0) == BST_CHECKED, seeded = on && inf->seeded;
     EnableWindow(C(ID_RZ_NEWSEED), can && seeded); EnableWindow(C(ID_RZ_SEED), can && seeded && !newSeed); EnableWindow(C(ID_RZ_ROLL), can && seeded);
-    EnableWindow(C(ID_RZ_SHUFFLE), can && on && inf->canShuffle); EnableWindow(C(ID_RZ_COLOR), can && on && inf->canColorblind); EnableWindow(C(ID_RZ_FAST), can && on);
+    EnableWindow(C(ID_RZ_SHUFFLE), can && on && inf->canShuffle); EnableWindow(C(ID_RZ_COLOR), can && on && inf->canColorblind); EnableWindow(C(ID_RZ_FAST), can && on && inf->canFast);
     EnableWindow(C(ID_RZ_LINK_MODE), on && inf->credits.size() && *inf->credits[0].link);
     if (newSeed && !guest && seeded) { g_rzLoading = true; SetWindowTextW(C(ID_RZ_SEED), std::to_wstring(g_rzRound ? g_rzRound : (g_rzRound = FreshSeed())).c_str()); g_rzLoading = false; }
     std::string lobbyLine = g_sess.Active() ? wrand::SpecSummary(wrand::ParseSpec(g_sess.State().settings.randomizer)) : "";

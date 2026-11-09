@@ -45,6 +45,8 @@ folder's `UPSTREAM` commit.
 | `Watchdog.h`/`.cpp` of `witness-randomizer`, `variety-randomizer`, `despair-randomizer`, `star-randomizer` | the Jungle watchdog keeps two pointers in `long`, 32 bits on Windows: `intptr_t` |
 | `symbol-shuffler/src/PuzzleList.cpp` | `void::PuzzleList::` (MSVC) is not valid inside a namespace: `void PuzzleList::` |
 | `star-randomizer/App/Version.h` | `L#s` is MSVC only: `L ## #s` |
+| `despair-randomizer/src/PuzzleList.cpp` (`GenerateSymmetryH`) | the symmetry lists hold repeats and a repeat is popped again, so for some seeds (4242) a list ran empty and the next pop divided by zero: the game died. Refilled when empty; every seed that worked makes the same puzzles |
+| `variety-randomizer/src/Generate.cpp` (`Generate::generate`) | a panel was retried for ever: in Ascension, Mountain panel 0x09FD6 (ghosts, bars and antitriangles on a 6x6 grid) never fitted for any seed tried (15 minutes natively). After `WC_MAX_TRIES` (2000, `variants.mk`) failures in a row a panel keeps the game's own puzzle; the glue resets the count before a run |
 
 Not carried over: the Tutorializer's two patches to the game's code that stop the endings from ending the game (in the co-op mod the endings
 work as in the game). How the generators run in the game, what is tested and how: `docs/DEVELOPMENT.md`, "Built-in randomizers".
@@ -53,7 +55,9 @@ work as in the game). How the generators run in the game, what is tested and how
 
 1. `tools/randomizer_upstream.sh <folder> update <commit>`: a three-way merge per file; `UPSTREAM` moves on only without conflicts. It also names
    files upstream added (a new source file the generator may now need: add it to that variant's `_SRC` in `proxy/randomizer/variants.mk`).
-2. `make -C proxy/randomizer test` (game-free: the memory layer and, over a recorded game, whole runs of every randomizer, twice in one process).
+2. `make -C proxy/randomizer test` (game-free: the memory layer and, over a recorded game, whole runs of every randomizer, twice in one process),
+   and `tools/randomizer_sweep.py` (every mode over 30 seeds, each run in a process of its own: a crash or a hang in a generator would kill or
+   stall the game; the two upstream bugs above were found this way).
 3. `tools/randomizer_solo.sh --record` records the game again with the new generator (the recorded fingerprints are what the game makes), then
    step 2 again.
 4. `tools/qa.sh randomizer --spec <mode;seed:N>` for the modes that changed (two games: the same puzzles, a solve shared, other puzzles told),

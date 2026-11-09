@@ -25,6 +25,7 @@ struct Info {
     bool canColorblind = true;  // the colour-blind option exists in that randomizer
     bool seeded = true;         // the seed changes the puzzles (Tutorializer's are always the same)
     const char* warning = "";   // its author's own warning, shown with it
+    bool canFast = true;        // the faster doors option exists in that randomizer (upstream's AdjustSpeed)
 };
 
 inline const std::vector<Info>& Randomizers() {
@@ -43,7 +44,7 @@ inline const std::vector<Info>& Randomizers() {
           {"sigma144", "the puzzle generator it builds on", "https://github.com/sigma144/witness-randomizer"},
           {"jbzdarkid", "the original Witness randomizer", "https://github.com/jbzdarkid/witness-randomizer"}}, "Variety Randomizer"},
         {kAscension, "ascension", "Variety Randomizer: Ascension",
-         "New symbols from other Witness fan games and the Despair Randomizer, in puzzles of the Variety Randomizer's kind.", true,
+         "New symbols from other Witness fan games and the Despair Randomizer, in puzzles of the Variety Randomizer's kind. One Mountain puzzle may keep the game's own.", true,
          {{"Penguin12335", "Variety and Ascension", "https://github.com/Penguin12335/Variety-Randomiser"},
           {"chuukunn", "the Despair Randomizer's symbols", "https://github.com/chuukunn/witness-randomizer"},
           {"Looksy", "symbols from a Witness fan game", ""},
@@ -85,7 +86,7 @@ inline const std::vector<Info>& Randomizers() {
          "Almost every panel becomes the first tutorial puzzle, a straight line. A joke mode.", false,
          {{"hatkirby", "the Tutorializer", "https://code.fourisland.com/witness-tutorializer/about/"},
           {"jbzdarkid", "the randomizer it builds on", "https://github.com/jbzdarkid/witness-randomizer"}}, "Tutorializer", false, false,
-         "Its author's note: some panels (the tutorial gate, every Bunker puzzle) behave strangely and are solved by double-clicking in the middle."},
+         "Its author's note: some panels (the tutorial gate, every Bunker puzzle) behave strangely and are solved by double-clicking in the middle.", false},
     };
     return v;
 }
@@ -120,7 +121,7 @@ inline std::string SpecText(const Spec& s) {
 #endif
     if (s.shuffle && i->canShuffle) t += ";shuffle";
     if (s.colorblind && i->canColorblind) t += ";colorblind";
-    if (s.fast) t += ";fast";
+    if (s.fast && i->canFast) t += ";fast";
     return t;
 }
 // Anything unknown is ignored; a mode it does not know, or none, is off. A missing seed is 0.
@@ -148,6 +149,7 @@ inline Spec ParseSpec(const std::string& text) {
     const Info* i = FindRandomizer(s.mode);
     if (i && !i->canShuffle) s.shuffle = false;
     if (i && !i->canColorblind) s.colorblind = false;
+    if (i && !i->canFast) s.fast = false;
     return s;
 }
 // The people a randomizer is by, for the game's notice: "sigma144 and jbzdarkid"

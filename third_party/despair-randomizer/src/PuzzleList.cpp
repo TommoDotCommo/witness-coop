@@ -1253,7 +1253,9 @@ void PuzzleList::GenerateSymmetryH()
 	std::vector<Panel::Symmetry> sym1 = { Panel::Symmetry::ParallelHFlip, Panel::Symmetry::ParallelVFlip, Panel::Symmetry::Rotational,Panel::Symmetry::Rotational, Panel::Symmetry::FlipXY, Panel::Symmetry::FlipNegXY };
 	std::vector<Panel::Symmetry> sym2 = { Panel::Symmetry::RotateRight, Panel::Symmetry::RotateLeft,Panel::Symmetry::RotateRight, Panel::Symmetry::RotateLeft,Panel::Symmetry::RotateRight, Panel::Symmetry::RotateLeft };
 	Panel::Symmetry lastChoice = Panel::Symmetry::None;
+	const std::vector<Panel::Symmetry> sym1All = sym1, sym2All = sym2; // witness-coop: kept to refill a list the loop empties (below)
 	for (int i = 0; i < ids.size(); i++) {
+		if ((i < 3 ? sym1 : sym2).empty()) { if (i < 3) sym1 = sym1All; else sym2 = sym2All; } // witness-coop: upstream popped from the empty list here (a divide by zero, the program died) for some seeds; refilled, nothing else changes
 		Panel::Symmetry choice = (i < 3 ? pop_random(sym1) : pop_random(sym2));
 		if (choice == lastChoice) { i--; continue; }
 		lastChoice = choice;

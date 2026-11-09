@@ -516,8 +516,10 @@ bool Generate::generate_maze(int id, int numStarts, int numExits)
 //The primary generation function. id - id of the puzzle. symbols - a structure representing the amount and types of each symbol to add to the puzzle
 //The algorithm works by making a random path and then adding the chosen symbols to the grid in such a way that they will be satisfied by the path.
 //if at some point the generator fails to add a symbol while still making the solution correct, the function returns false and must be called again.
+int wcLastId = -1, wcTries = 0; // witness-coop: how often the same panel failed in a row (the glue resets them before a run)
 bool Generate::generate(int id, PuzzleSymbols symbols)
 {
+	if (id != wcLastId) { wcLastId = id; wcTries = 0; } if (++wcTries > WC_MAX_TRIES) { wcTries = 0; return true; } // witness-coop: upstream retried a panel for ever (Mountain 0x09FD6 never fits); after WC_MAX_TRIES it keeps the game's own puzzle
 	initPanel(id);
 
 	//Multiple erasers are forced to be separate by default. This is because combining them causes unpredictable and inconsistent behavior. 

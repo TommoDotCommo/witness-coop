@@ -111,7 +111,7 @@ The launcher's **Randomizers** tab gives the island new puzzles, made by randomi
   randomized game.
 - **Sigma's Randomizer: Expert**: much harder puzzles, some needing approaches the base game never asks for.
 - **Variety Randomizer**: each area gets its own combination of symbols, including new ones such as arrows; **Ascension**
-  adds symbols from other Witness fan games and the Despair Randomizer.
+  adds symbols from other Witness fan games and the Despair Randomizer (one Mountain puzzle may keep the game's own).
 - **Despair Randomizer**: **Despair** has bigger grids and harder combinations, the step beyond Expert; **Symbols** brings
   new symbols (faces, mushrooms and ghosts; its author warns ghost puzzles are buggy).
 - **Symbol Shuffler**: new puzzles with the same number of each symbol as the game's own panel; **Emptiness** empties

@@ -9,7 +9,7 @@ int main() {
     for (const auto& i : Randomizers()) {
         Spec s; s.mode = i.mode; s.seed = 48213; s.shuffle = true; s.colorblind = true; s.fast = true;
         Spec b = ParseSpec(SpecText(s));
-        check(b.mode == s.mode && b.seed == 48213 && b.colorblind == i.canColorblind && b.fast && b.shuffle == i.canShuffle, "every randomizer and the options it has survive the text");
+        check(b.mode == s.mode && b.seed == 48213 && b.colorblind == i.canColorblind && b.fast == i.canFast && b.shuffle == i.canShuffle, "every randomizer and the options it has survive the text");
         check(std::string(i.project).size() > 0, "every randomizer names the project it comes from");
         check(!i.credits.empty() && !CreditNames(i.mode).empty(), "every randomizer names who made it");
     }

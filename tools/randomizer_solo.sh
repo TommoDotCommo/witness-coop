@@ -44,9 +44,10 @@ if [ $record = 1 ]; then
   sleep 5
   mkdir -p "$ROOT/local/randomizer"; out="$ROOT/local/randomizer/11370412${RECORD_SPEC:+-$(echo "$RECORD_SPEC" | tr ';:' '__')}.world"; rm -f "$out"
   cmd "randrecord $(win "$out")${RECORD_SPEC:+ $RECORD_SPEC}"      # RECORD_SPEC=<spec>: only that randomizer (its own file)
-  for i in $(seq 1 1200); do grep -q 'randrecord: done' "$d/witness_proxy.log" && break; [ "$(alive)" = 0 ] && break; sleep 2; done
+  for i in $(seq 1 1200); do grep -qE 'randrecord: (done|.* is stuck)' "$d/witness_proxy.log" && break; [ "$(alive)" = 0 ] && break; sleep 2; done
   grep -E '^randrecord:' "$d/witness_proxy.log" | tail -9
   grep -q 'randrecord: done, wrote' "$d/witness_proxy.log" && [ "$(alive)" = 1 ] && { echo "randomizer_solo: RECORDED $out"; exit 0; }
+  grep -q 'is stuck in its own computation.*: saved' "$d/witness_proxy.log" && { echo "randomizer_solo: RECORDED a stuck run $out (the game is closed: its generator still spins)"; exit 0; }
   echo "randomizer_solo: the recording did not finish"; exit 1
 fi
 for i in $(seq 1 ${RANDOMIZER_WAIT:-90}); do
