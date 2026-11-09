@@ -352,7 +352,7 @@ def launcher_scene(vi):
              (3, 4, 'launcher_display', 'Settings, Display: the game\'s own Launcher.variables (screen mode, resolution, frame limit, quality).'),
              (3, 5, 'launcher_network', 'Settings, Network: port and how friends find each other.'),
              (3, 6, 'launcher_launcher', 'Settings, Launcher: show at start, updates, and the experimental options (off by default).'),
-             (2, 0, 'launcher_randomizers', 'Randomizers: the built-in randomizers (Sigma\'s Normal and Expert, Variety), the seed and options, and the credits of the people who made them.'),
+             (2, 0, 'launcher_randomizers', 'Randomizers: the built-in randomizers (Sigma\'s Normal and Expert, Variety, Ascension, Despair, the Symbol Shuffler, Star, the Tutorializer), the seed and options, the Witness Trainer\'s co-op options, and the credits of the people who made them.'),
              (4, 0, 'launcher_about', 'About: version, updates, the quick guide, Send diagnostics, links, the game folder (a generic path is shown here instead of this PC\'s) and credits.')]
     for page, section, name, caption in pages:
         p = subprocess.Popen([exe, '--dir', games[vi].dir, '--page', str(page), '--section', str(section), '--no-activate'] + (['--size', '1280', '900'] if name == 'launcher_keys' else []), startupinfo=si, env=launcher_env()); h = None; t0 = time.time()

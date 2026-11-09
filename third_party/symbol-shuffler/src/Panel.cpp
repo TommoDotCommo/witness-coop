@@ -203,7 +203,11 @@ void Panel::SavePanels(int seed, int input_difficulty)
 	default:
 		break;
 	}
+#ifdef WITNESS_COOP // witness-coop: no puzzledata<difficulty><seed>.dat in the game's folder (upstream's own reload of a seed): a stream that is never opened
+	std::ofstream file;
+#else
 	std::ofstream file("puzzledata" + difficulty + std::to_string(seed) + ".dat");
+#endif
 	file << generatedPanels.size() << std::endl;
 	for (Panel &panel : generatedPanels) {
 		file << panel.id << " " << Point::pillarWidth << " ";
