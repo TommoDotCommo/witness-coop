@@ -284,20 +284,29 @@ def run_with(folder):
     return r.returncode == 0, ' | '.join(l for l in (r.stdout + r.stderr).strip().splitlines() if 'FAILED' in l or 'Error' in l)[:300]
 
 
+def mutant_run(text, old, new):
+    """One mutant in a folder of its own: (still passes, the failing lines)."""
+    with tempfile.TemporaryDirectory(prefix='wnav-mut-') as d:
+        open(os.path.join(d, 'wnav.py'), 'w').write(text.replace(old, new, 1)); shutil.copy(os.path.join(HERE, 'win', 'wtrace.py'), d)
+        return run_with(d)
+
+
 def main():
-    src = os.path.join(HERE, 'win', 'wnav.py')
-    r = subprocess.run([sys.executable, '-c', 'D=%r\n' % os.path.dirname(src) + CHECK], capture_output=True, text=True, timeout=300)
-    print(r.stdout.strip()); print(r.stderr.strip()[-500:]) if r.returncode and r.stderr else None
-    bad = r.returncode != 0; print('clean:', 'passed' if not bad else 'FAILED')
-    text = open(src).read()
-    for old, new in MUTANTS:
-        if old not in text:
-            print('mutant text not found: %s' % old[:70]); bad = True; continue
-        with tempfile.TemporaryDirectory(prefix='wnav-mut-') as d:
-            open(os.path.join(d, 'wnav.py'), 'w').write(text.replace(old, new, 1)); shutil.copy(os.path.join(HERE, 'win', 'wtrace.py'), d)
-            ok, out = run_with(d)
+    from concurrent.futures import ThreadPoolExecutor
+    src = os.path.join(HERE, 'win', 'wnav.py'); text = open(src).read(); bad = False
+    with ThreadPoolExecutor(max_workers=os.cpu_count() or 4) as pool:      # the clean run and every mutant side by side (each a process of its own)
+        clean = pool.submit(subprocess.run, [sys.executable, '-c', 'D=%r\n' % os.path.dirname(src) + CHECK], capture_output=True, text=True, timeout=300)
+        runs = []
+        for old, new in MUTANTS:
+            if old not in text:
+                print('mutant text not found: %s' % old[:70]); bad = True; continue
+            runs.append((old, pool.submit(mutant_run, text, old, new)))
+        r = clean.result()
+        print(r.stdout.strip()); print(r.stderr.strip()[-500:]) if r.returncode and r.stderr else None
+        bad |= r.returncode != 0; print('clean:', 'passed' if r.returncode == 0 else 'FAILED')
+        for old, fut in runs:
+            ok, out = fut.result()
             print('mutant %-70s %s (%s)' % (old[:70], 'rejected' if not ok else 'SURVIVED', out), flush=True); bad |= ok
     print('ALL OK' if not bad else 'FAILED'); return 1 if bad else 0
-
 
 if __name__ == '__main__': sys.exit(main())

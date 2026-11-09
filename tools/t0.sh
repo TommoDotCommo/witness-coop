@@ -1,8 +1,9 @@
 #!/bin/bash
 # Every game-free test (T0) at once: the make suites and the Python tests that need no game, no Windows tool and no argument, side by side
 # (they are independent: each make suite has its own build folder). Prints a table of suite, seconds and result, longest first, and the wall
-# time; each one's output is in a log in the printed folder. Exit 0 when all passed.
-#   tools/t0.sh [--quick] [-j N] [FILTER ...]      --quick: without the three that take minutes (navsim, playthrough, diag); FILTER: only names
+# time; each one's output is in a log in the printed folder. Exit 0 when all passed. About 2 minutes on 16 CPUs (--quick about 1.5): with
+# everything at once the wall time is the CPU work, so a test that repeats work costs everyone.
+#   tools/t0.sh [--quick] [-j N] [FILTER ...]      --quick: without the three heaviest (navsim, playthrough, diag); FILTER: only names
 #                                                  containing one of the words; -j: at most N at once (default: the number of CPUs)
 # Not here: tests that need arguments or a Windows scratch folder (test_idle_seam, test_run_pose, test_update_installer,
 # test_launcher_update_win), the shell tests that build installers or need Blender, and every scenario with a game (tools/qa.sh).
@@ -26,6 +27,8 @@ for f in tools/test_*.py tools/playthrough/test_*.py; do
   [ $quick = 1 ] && case "$long" in *" $f "*) continue;; esac
   suites+=("$f|python3 -B $f")
 done
+# the make suites leave out the Python tests this script runs on its own (proxy/core, launcher), unless a filter may have left those out
+[ ${#filters[@]} = 0 ] && export T0_SEPARATE=1
 logs=$(mktemp -d "${TMPDIR:-/tmp}/t0.XXXXXX"); t0=$(date +%s); n=0
 run_one() {      # name|command -> logs/<n>.log and a line "seconds rc name" in logs/<n>.res
   local i="$1" name="${2%%|*}" cmd="${2#*|}" s; s=$(date +%s)

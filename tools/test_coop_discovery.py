@@ -4,7 +4,9 @@ candidates, rows, Tailscale status parser and recents store (T0 with sanitisers 
 source mutants that must fail, C++ and MinGW builds of the shared headers, and the Windows
 adapter self-test (adapters, tailscale.exe stand-ins, loopback fake hosts) when Windows interop
 is available. Usage: test_coop_discovery.py [--quick]"""
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+import os
 import shutil
 import subprocess
 import sys
@@ -96,19 +98,24 @@ with tempfile.TemporaryDirectory(prefix='coop-discovery-') as temp:
         print(r.stdout.strip())
         if r.returncode:
             raise SystemExit(f'FAIL: {test}\n{r.stderr[-3000:]}')
-    # mutants: each must compile and then fail its suite
-    for header, test, mutants in (('coop_invite.h', 'coop_invite_test.c', INVITE_MUTANTS),
-                                  ('coop_discover.h', 'coop_discover_test.c', DISCOVER_MUTANTS)):
-        for name, (before, after) in mutants.items():
-            folder = temp / f'm-{name}'
-            folder.mkdir()
-            mutate(folder, header, before, after)
-            exe = folder / 'test'
-            build(exe, BRIDGE / 'tests' / test, folder, ['-O1', '-Wno-unused-but-set-variable', '-Wno-unused-variable'])
-            r = run([str(exe), '3000'], timeout=120)
-            if r.returncode == 0:
-                raise SystemExit(f'SURVIVED: {name}\n{r.stdout[-2000:]}')
-            print('KILLED:', name)
+    # mutants: each must compile and then fail its suite (side by side, each in a folder of its own)
+    def c_mutant(job):
+        header, test, name, before, after = job
+        folder = temp / f'm-{name}'
+        folder.mkdir()
+        mutate(folder, header, before, after)
+        exe = folder / 'test'
+        build(exe, BRIDGE / 'tests' / test, folder, ['-O1', '-Wno-unused-but-set-variable', '-Wno-unused-variable'])
+        return run([str(exe), '3000'], timeout=120)
+    jobs = [(header, test, name, before, after) for header, test, mutants in (('coop_invite.h', 'coop_invite_test.c', INVITE_MUTANTS),
+                                                                            ('coop_discover.h', 'coop_discover_test.c', DISCOVER_MUTANTS))
+            for name, (before, after) in mutants.items()]
+    with ThreadPoolExecutor(max_workers=os.cpu_count() or 4) as pool:
+        results = list(pool.map(c_mutant, jobs))
+    for (header, test, name, before, after), r in zip(jobs, results):
+        if r.returncode == 0:
+            raise SystemExit(f'SURVIVED: {name}\n{r.stdout[-2000:]}')
+        print('KILLED:', name)
     # the headers as C++ (The Witness vendors them) and with both MinGW compilers
     cpp = temp / 'cpp.cc'
     cpp.write_text('#include "coop_discover.h"\nint main(){struct cr_result r;struct cd_ts t;'
@@ -167,7 +174,7 @@ with tempfile.TemporaryDirectory(prefix='coop-discovery-') as temp:
                      f"@(Get-CimInstance Win32_Process | Where-Object {{ $_.ExecutablePath -like '{stage_win}\\*' }}).Count"])
             return int(r.stdout.strip() or 0)
 
-        def adapter_suite(header_dir, label, extra=()):
+        def adapter_suite(header_dir, label, extra=(), first_fail=False):      # first_fail: stop at the first case that fails (a mutant)
             exe = stage / f'selftest-{label}.exe'
             build(exe, BRIDGE / 'tests/coop_discover_win_test.c', header_dir, ['-O2', '-static-libgcc', *extra], gcc, ['-lws2_32'])
             exe_win = f'{stage_win}\\{exe.name}'
@@ -175,12 +182,14 @@ with tempfile.TemporaryDirectory(prefix='coop-discovery-') as temp:
             r = windows(exe_win, '')
             outputs.append(r.stdout.replace('\r', ''))
             ok &= r.returncode == 0
-            for expect, env, pre in cases:
+            for expect, env, pre in (cases if ok or not first_fail else []):
                 if 'ProgramW6432' not in env:
                     env += "; $env:ProgramW6432='C:\\nonexistent-coop'"
                 r = windows(exe_win, f'--tailscale-expect {expect}', env, pre)
                 outputs.append(f'[{expect}] ' + r.stdout.replace('\r', ''))
                 ok &= r.returncode == 0
+                if first_fail and not ok:
+                    break
             if leftovers():
                 outputs.append('a stand-in tailscale.exe was still running after the suite')
                 ok = False
@@ -196,7 +205,7 @@ with tempfile.TemporaryDirectory(prefix='coop-discovery-') as temp:
             mutate(folder, 'coop_discover_win.h', before, after)
             shutil.copy(BRIDGE / 'coop_discover.h', folder)
             shutil.copy(BRIDGE / 'coop_invite.h', folder)
-            ok, output = adapter_suite(folder, name, ['-Wno-unused-but-set-variable', '-Wno-unused-variable'])
+            ok, output = adapter_suite(folder, name, ['-Wno-unused-but-set-variable', '-Wno-unused-variable'], first_fail=True)
             if ok:
                 raise SystemExit(f'SURVIVED: {name}\n{output[-2000:]}')
             print('KILLED:', name)

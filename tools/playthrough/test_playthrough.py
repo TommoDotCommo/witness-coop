@@ -74,23 +74,31 @@ def run(folder):
     return r.returncode == 0, (r.stdout + r.stderr).strip().splitlines()[-1:] or ['']
 
 
-def main():
-    ok, out = run(HERE); print('clean:', 'passed' if ok else 'FAILED %s' % out, flush=True)
-    bad = not ok
-    for name, edits in MUTANTS.items():
-        for old, new in edits:
-            with tempfile.TemporaryDirectory(prefix='playthrough-mut-') as d:
-                shutil.copytree(os.path.join(HERE, 'data'), os.path.join(d, 'data'))
-                for f in ('logic.py', 'planner.py'):
-                    text = open(os.path.join(HERE, f)).read()
-                    if f == name:
-                        assert text.count(old) == 1, (f, old); text = text.replace(old, new)
-                    open(os.path.join(d, f), 'w').write(text)
-                caught, out = run(d)
-                caught = not caught
-                print('mutant %s: %s %s' % (name, 'rejected' if caught else 'SURVIVED', '' if caught else old), flush=True)
-                bad |= not caught
-    print('ALL OK' if not bad else 'FAILED'); return 1 if bad else 0
+def mutant_run(name, old, new):
+    """One mutant in a folder of its own: (caught, old)."""
+    with tempfile.TemporaryDirectory(prefix='playthrough-mut-') as d:
+        shutil.copytree(os.path.join(HERE, 'data'), os.path.join(d, 'data'))
+        for f in ('logic.py', 'planner.py'):
+            text = open(os.path.join(HERE, f)).read()
+            if f == name:
+                assert text.count(old) == 1, (f, old); text = text.replace(old, new)
+            open(os.path.join(d, f), 'w').write(text)
+        passed, out = run(d)
+        return not passed
 
+
+def main():
+    # the clean run and every mutant side by side (each is a process of its own, about 20 s; one after another they took 219 s)
+    from concurrent.futures import ThreadPoolExecutor
+    edits = [(name, old, new) for name, es in MUTANTS.items() for old, new in es]
+    with ThreadPoolExecutor(max_workers=len(edits) + 1) as pool:
+        clean = pool.submit(run, HERE); muts = [(name, old, pool.submit(mutant_run, name, old, new)) for name, old, new in edits]
+        ok, out = clean.result(); print('clean:', 'passed' if ok else 'FAILED %s' % out, flush=True)
+        bad = not ok
+        for name, old, fut in muts:
+            caught = fut.result()
+            print('mutant %s: %s %s' % (name, 'rejected' if caught else 'SURVIVED', '' if caught else old), flush=True)
+            bad |= not caught
+    print('ALL OK' if not bad else 'FAILED'); return 1 if bad else 0
 
 if __name__ == '__main__': sys.exit(main())

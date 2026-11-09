@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Game-free test of the walker (tools/win/wnav.py): the real planner and the real walk loop against the simulated levels of tools/navsim.py,
-on a simulated clock (the whole file takes about half a minute), with mutants.
-usage: python3 tools/test_navsim.py [--levels-only] [level ...]      (--levels-only: no mutants; exit 0 when every check passes)
+on a simulated clock, with mutants; the walks run in a process pool and the mutants side by side (about a minute on 16 CPUs).
+usage: python3 tools/test_navsim.py [--levels-only] [-j N] [level ...]      (--levels-only: no mutants; exit 0 when every check passes; -j: walks at once)
 
 Per level the expected outcome is in navsim.py (arrives within N simulated seconds, or gives up with one of the reasons within N): the closed
 room must give up, not wander; a view that does not turn must be said so within seconds. Also checked: the WalkResult has all its fields and
@@ -46,54 +46,64 @@ def structure(r, w):
     return bad
 
 
-def run_levels(names, quiet=False, fail_fast=False):
+def walk_job(job):
+    """One walk of the level suite, in a worker process: [(name, ok, message)] and, for clutter, (arrived, reachable)."""
+    kind, arg = job
+    if kind == 'level':
+        lv = navsim.LEVELS[arg](); r, sim, w = navsim.walk(lv)
+        ok, msg = judge(lv, r); bad = structure(r, w)
+        return [(lv.name, ok and not bad, msg + (' | ' + '; '.join(bad) if bad else ''))], None
+    if kind == 'stall':      # the closed room: the stall watchdog fires and the trace says so
+        r, sim, w = navsim.walk(navsim.closed_room()); stalls = [l for l in w.tr.lines if l['kind'] == 'stall']
+        return [('stall trace', bool(stalls) and any('wall rule' in s['tried'] for s in stalls) and any('replan' in s['tried'] for s in stalls), 'stall lines: %s' % [s['tried'] for s in stalls])], None
+    if kind == 'repeat':      # a walk is the same every time (the simulated clock and a seeded world)
+        a, _, _ = navsim.walk(navsim.zigzag()); b, _, _ = navsim.walk(navsim.zigzag())
+        return [('repeat', (a.why, a.seconds, a.walked) == (b.why, b.seconds, b.walked), '%s %s' % ((a.why, a.seconds), (b.why, b.seconds)))], None
+    lv = navsim.clutter(arg); r, sim, w = navsim.walk(lv); bad = structure(r, w)      # random clutter: a structured result; arrives only where a way exists
+    return [('clutter%d' % arg, not bad and (not r.ok or lv.reachable) and r.seconds <= lv.seconds + 1, '%s in %.0f s, reachable=%s %s' % (r.why, r.seconds, lv.reachable, '; '.join(bad)))], (bool(r.ok), lv.reachable)
+
+
+def run_levels(names, quiet=False, fail_fast=False, jobs=None):
+    """Every walk as a job of a process pool (each walk is independent and deterministic; wall_80 alone takes about 9 s), results in order."""
     fails = []
     def check(name, ok, why=''):
         if not quiet: print('%-14s %s %s' % (name, 'ok' if ok else 'FAILED', why), flush=True)
         if not ok: fails.append(name)
         return ok
-    for f in navsim.LEVELS:
-        lv = f()
-        if names and lv.name not in names: continue
-        r, sim, w = navsim.walk(lv)
-        ok, msg = judge(lv, r); bad = structure(r, w)
-        check(lv.name, ok and not bad, msg + (' | ' + '; '.join(bad) if bad else ''))
-        if fail_fast and fails: return fails
+    work = [('level', i) for i, f in enumerate(navsim.LEVELS) if not names or f().name in names]
+    if not names: work += [('stall', None), ('repeat', None)] + [('clutter', seed) for seed in CLUTTER_SEEDS]
+    order = {'wall_80': 0, 'hedge_long': 0, 'closed_room': 0, 'wide_wall': 0, 'locked_mid': 0}      # the longest first, then the ones the mutants fail (--fail-fast)
+    work.sort(key=lambda j: order.get(navsim.LEVELS[j[1]]().name, 1) if j[0] == 'level' else 1)
+    if not names:      # the quick checks first (a mutant they catch need not walk every level)
+        # the proxy stops taking commands in the middle of a walk: a structured result, not an exception out of the caller's run
+        sim = navsim.Sim(navsim.open_field()); orig = sim.send; n = [0]
+        def dying(lines, settle=0.0):
+            n[0] += 1
+            if n[0] > 200: raise TimeoutError('proxy did not take command file')
+            orig(lines, settle)
+        sim.send = dying
+        with tempfile.TemporaryDirectory() as d:
+            try: r = navsim.SimWalker(sim, d).go((30, 6, wnav.EYE), 1.0, 60, ztol=1.8); got = '%s: %s' % (r.why, r.detail)
+            except Exception as e: r, got = None, 'raised %r' % (e,)
+        check('proxy dies', r is not None and not r.ok and r.why == 'timed out' and 'proxy' in r.detail, got)
+        # the simulator itself
+        lv = navsim.Level('door', [navsim.Block(5, -5, 6, 5, 'door', name='d')], (0, 0), (10, 0), ('arrives', 60))
+        s = navsim.Sim(lv); s.send(['key W down'], 4.0); shut = s.x
+        s.open_door('d'); s.send([], 4.0)
+        check('sim door', shut < 5 and s.x > 7, 'the body stopped at %.1f, went through at %.1f once it was open' % (shut, s.x))
+        s = navsim.Sim(navsim.open_field()); s.send(['key W down'], 1.0)
+        check('sim speed', abs(s.walked - navsim.SPEED * 1.011) < 0.1, 'walked %.2f m in 1 s' % s.walked)
+        s = navsim.Sim(navsim.wall_gap()); pts = s.depth(); nearest = min(abs(x - 12) for x, y, z in pts if 1.0 < z < 2.5 and abs(y) < 5) if any(1.0 < z < 2.5 for _, _, z in pts) else 99
+        check('sim depth', len(pts) > 500 and any(abs(z) < 0.01 for _, _, z in pts), '%d points, ground at z 0, wall points at the wall' % len(pts))
+    arrived = reach = 0
+    import multiprocessing
+    with multiprocessing.get_context('fork').Pool(min(len(work), jobs or os.cpu_count() or 4)) as pool:
+        for lines, clut in pool.imap(walk_job, work):
+            for name, ok, msg in lines: check(name, ok, msg)
+            if clut: arrived += clut[0]; reach += clut[1]
+            if fail_fast and fails: pool.terminate(); return fails
     if names: return fails
-    # the closed room: the stall watchdog fires and the trace says so
-    r, sim, w = navsim.walk(navsim.closed_room()); stalls = [l for l in w.tr.lines if l['kind'] == 'stall']
-    check('stall trace', bool(stalls) and any('wall rule' in s['tried'] for s in stalls) and any('replan' in s['tried'] for s in stalls), 'stall lines: %s' % [s['tried'] for s in stalls])
-    # a walk is the same every time (the simulated clock and a seeded world)
-    a, _, _ = navsim.walk(navsim.zigzag()); b, _, _ = navsim.walk(navsim.zigzag())
-    check('repeat', (a.why, a.seconds, a.walked) == (b.why, b.seconds, b.walked), '%s %s' % ((a.why, a.seconds), (b.why, b.seconds)))
-    # random clutter: a structured result each time; arrives only where a way exists
-    arrived = 0; reach = 0
-    for seed in CLUTTER_SEEDS:
-        lv = navsim.clutter(seed); r, sim, w = navsim.walk(lv); bad = structure(r, w)
-        reach += lv.reachable; arrived += bool(r.ok)
-        check('clutter%d' % seed, not bad and (not r.ok or lv.reachable) and r.seconds <= lv.seconds + 1, '%s in %.0f s, reachable=%s %s' % (r.why, r.seconds, lv.reachable, '; '.join(bad)))
-        if fail_fast and fails: return fails
     if not quiet: print('clutter: arrived in %d of %d worlds (%d have a way)' % (arrived, len(CLUTTER_SEEDS), reach))
-    # the proxy stops taking commands in the middle of a walk: a structured result, not an exception out of the caller's run
-    sim = navsim.Sim(navsim.open_field()); orig = sim.send; n = [0]
-    def dying(lines, settle=0.0):
-        n[0] += 1
-        if n[0] > 200: raise TimeoutError('proxy did not take command file')
-        orig(lines, settle)
-    sim.send = dying
-    with tempfile.TemporaryDirectory() as d:
-        try: r = navsim.SimWalker(sim, d).go((30, 6, wnav.EYE), 1.0, 60, ztol=1.8); got = '%s: %s' % (r.why, r.detail)
-        except Exception as e: r, got = None, 'raised %r' % (e,)
-    check('proxy dies', r is not None and not r.ok and r.why == 'timed out' and 'proxy' in r.detail, got)
-    # the simulator itself
-    lv = navsim.Level('door', [navsim.Block(5, -5, 6, 5, 'door', name='d')], (0, 0), (10, 0), ('arrives', 60))
-    s = navsim.Sim(lv); s.send(['key W down'], 4.0); shut = s.x
-    s.open_door('d'); s.send([], 4.0)
-    check('sim door', shut < 5 and s.x > 7, 'the body stopped at %.1f, went through at %.1f once it was open' % (shut, s.x))
-    s = navsim.Sim(navsim.open_field()); s.send(['key W down'], 1.0)
-    check('sim speed', abs(s.walked - navsim.SPEED * 1.011) < 0.1, 'walked %.2f m in 1 s' % s.walked)
-    s = navsim.Sim(navsim.wall_gap()); pts = s.depth(); nearest = min(abs(x - 12) for x, y, z in pts if 1.0 < z < 2.5 and abs(y) < 5) if any(1.0 < z < 2.5 for _, _, z in pts) else 99
-    check('sim depth', len(pts) > 500 and any(abs(z) < 0.01 for _, _, z in pts), '%d points, ground at z 0, wall points at the wall' % len(pts))
     return fails
 
 
@@ -112,17 +122,25 @@ MUTANTS = [
 
 
 def main():
-    args = [a for a in sys.argv[1:] if not a.startswith('--')]
-    if '--levels-only' in sys.argv:
-        fails = run_levels(set(args), fail_fast='--fail-fast' in sys.argv); print('FAILED: %s' % ', '.join(fails) if fails else 'levels passed'); return 1 if fails else 0
-    fails = run_levels(set(args)); bad = bool(fails); print('clean:', 'FAILED (%s)' % ', '.join(fails) if bad else 'passed', flush=True)
+    argv = sys.argv[1:]; jobs = None
+    if '-j' in argv: k = argv.index('-j'); jobs = int(argv[k + 1]); del argv[k:k + 2]
+    args = [a for a in argv if not a.startswith('--')]
+    if '--levels-only' in argv:
+        fails = run_levels(set(args), fail_fast='--fail-fast' in argv, jobs=jobs); print('FAILED: %s' % ', '.join(fails) if fails else 'levels passed'); return 1 if fails else 0
     src = os.path.join(HERE, 'win'); text = open(os.path.join(src, 'wnav.py')).read()
-    for old, new in MUTANTS:
-        if old not in text: print('mutant text not found: %s' % old[:70]); bad = True; continue
-        with tempfile.TemporaryDirectory(prefix='navsim-mut-') as d:
+    # the mutants run side by side with the clean levels (each a process of its own with a small pool; the CPUs are shared out)
+    bad = False; runs = []; per = max(2, (os.cpu_count() or 4) // (len(MUTANTS) + 1))
+    with tempfile.TemporaryDirectory(prefix='navsim-mut-') as top:
+        for k, (old, new) in enumerate(MUTANTS):
+            if old not in text: print('mutant text not found: %s' % old[:70]); bad = True; continue
+            d = os.path.join(top, str(k)); os.mkdir(d)
             shutil.copy(os.path.join(src, 'wtrace.py'), d); open(os.path.join(d, 'wnav.py'), 'w').write(text.replace(old, new, 1))
-            r = subprocess.run([sys.executable, os.path.join(HERE, 'test_navsim.py'), '--levels-only', '--fail-fast'], capture_output=True, text=True, timeout=900, env={**os.environ, 'NAVSIM_WIN': d})
-            last = (r.stdout.strip().splitlines() or ['?'])[-1]; killed = r.returncode != 0
+            runs.append((old, subprocess.Popen([sys.executable, '-B', os.path.join(HERE, 'test_navsim.py'), '--levels-only', '--fail-fast', '-j', str(per)],
+                                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env={**os.environ, 'NAVSIM_WIN': d})))
+        fails = run_levels(set(args), jobs=per * 2); bad |= bool(fails); print('clean:', 'FAILED (%s)' % ', '.join(fails) if fails else 'passed', flush=True)
+        for old, pr in runs:
+            out, _ = pr.communicate(timeout=900)
+            last = (out.strip().splitlines() or ['?'])[-1]; killed = pr.returncode != 0
             print('mutant %-70s %s (%s)' % (old.strip()[:70], 'rejected' if killed else 'SURVIVED', last[:120]), flush=True); bad |= not killed
     print('ALL OK' if not bad else 'FAILED'); return 1 if bad else 0
 

@@ -94,8 +94,9 @@ prepare a reviewable diff before asking to publish. Never force-push.
   A scenario whose bot never reached its precondition (game not in the world yet, a click missed under load) is run once more automatically; that is logged as `RETRY`. Report only what you ran.
 - One game without a partner: `tools/solo.sh` (one slot; a start whose cfg has no roster, as from Steam, must scan the world and stay alive;
   `--mutant` sets `late_voice_lock=1`, the lock as before 2026-10-31, and the game must die).
-- Every game-free test at once: `tools/t0.sh` (the make suites and the Python tests side by side, a table of seconds and results; `--quick` leaves out
-  the three that take minutes, about 2 minutes in all; words select tests by name).
+- Every game-free test at once: `tools/t0.sh` (the make suites and the Python tests side by side, a table of seconds and results; about 2 minutes
+  on 16 CPUs, `--quick` leaves out the three heaviest for about 1.5; words select tests by name). The slow tests run their mutants side by side
+  in processes of their own; a new test with mutants should do the same.
 - For documentation changes, check links, paths and `git diff --check`; game runs are unnecessary.
 
 ## Compatibility constraints

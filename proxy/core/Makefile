@@ -87,24 +87,25 @@ $(BUILD)/appearance.ok: appearance.h sync_core.cpp sync_core.h tests/appearance.
 	@if python3 tests/run_appearance.py > $(BUILD)/appearance.log 2>&1; then cat $(BUILD)/appearance.log; touch $@; else cat $(BUILD)/appearance.log; exit 1; fi
 test: $(BUILD)/appearance.ok
 
+# The Python tests below are skipped when T0_SEPARATE is set: tools/t0.sh runs each of them on its own, side by side.
 test: appearance-palette-test
 appearance-palette-test:
-	python3 ../../tools/test_appearance.py
+	@[ -n "$$T0_SEPARATE" ] || python3 ../../tools/test_appearance.py
 .PHONY: appearance-palette-test
 
 test: appearance-label-test
 appearance-label-test:
-	python3 ../../tools/test_appearance_labels.py
+	@[ -n "$$T0_SEPARATE" ] || python3 ../../tools/test_appearance_labels.py
 .PHONY: appearance-label-test
 
 test: appearance-asset-validator-test
 appearance-asset-validator-test:
-	python3 ../../tools/test_appearance_asset.py
+	@[ -n "$$T0_SEPARATE" ] || python3 ../../tools/test_appearance_asset.py
 .PHONY: appearance-asset-validator-test
 
 test: gesture-test
 gesture-test:
-	python3 ../../tools/test_gestures.py
+	@[ -n "$$T0_SEPARATE" ] || python3 ../../tools/test_gestures.py
 .PHONY: gesture-test
 
 test: radio-test
@@ -115,7 +116,7 @@ radio-test:
 # Optional back TV: wire fuzz, bounded animation/layout and mutation oracles.
 test: tv-test
 tv-test:
-	python3 ../../tools/test_tv.py
+	@[ -n "$$T0_SEPARATE" ] || python3 ../../tools/test_tv.py
 .PHONY: tv-test
 
 $(BUILD)/line-precision: tests/line_precision.cpp tests/line_sync.cpp line_precision.h ../frame/panelframe.h ../frame/ribbon.h $(BUILD)/sync_core.o
@@ -132,8 +133,8 @@ line-precision-mutants:
 test: line-precision-mutants
 .PHONY: line-precision-mutants
 line-capture-test:
-	python3 ../../tools/test_line_precision_capture.py
-	python3 ../../tools/test_line_capture_pixels.py
+	@[ -n "$$T0_SEPARATE" ] || python3 ../../tools/test_line_precision_capture.py
+	@[ -n "$$T0_SEPARATE" ] || python3 ../../tools/test_line_capture_pixels.py
 test: line-capture-test
 .PHONY: line-capture-test
 

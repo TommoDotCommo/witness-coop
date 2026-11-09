@@ -95,19 +95,25 @@ check("the script is plain ASCII (Windows PowerShell 5.1 reads it as ANSI)", all
 
 
 def run_bundle(text, tag):
-    """Run a version of the script against the planted folders; return (zip path or None, result text)."""
+    """Run a version of the script against the planted folders (while hold_live_log holds the live log); return (zip path or None, result text)."""
     sdir = out / tag; sdir.mkdir()
     sp = sdir / "diag.ps1"; sp.write_text(text)
-    # the game still holds its live log open for appending and lets others read it
-    holder = subprocess.Popen(["powershell.exe", "-NoProfile", "-Command", "$f = [IO.File]::Open('%s', 'Append', 'Write', 'Read'); Start-Sleep 40" % win(live)])
-    import time; time.sleep(2.5)
     res = sdir / "result.txt"
     r = subprocess.run(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", win(sp), "-GameDir", win(gamedir), "-LogsDir", win(logs),
                         "-OutDir", win(sdir), "-Version", "v-test", "-ResultFile", win(res), "-NoOpen"], capture_output=True, text=True)
-    holder.kill()
     result = res.read_text().strip() if res.exists() else "no result " + r.stderr[:200]
     zips = sorted(sdir.glob("witness-coop-diag_*.zip"))
     return (zips[0] if zips else None), result
+
+
+def hold_live_log():
+    """The game holds its live log open for appending and lets others read it: one holder for every run (they run side by side), which says
+    when it holds the file and lets go when its input closes."""
+    h = subprocess.Popen(["powershell.exe", "-NoProfile", "-Command", "$f = [IO.File]::Open('%s', 'Append', 'Write', 'Read'); 'held'; [void][Console]::In.ReadLine(); $f.Close()" % win(live)],
+                         stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+    first = h.stdout.readline().strip()
+    check("the live log is held open the way the game holds it", first == "held", first)
+    return h
 
 
 NEEDLES = (("the Windows user name", user.encode()), ("the computer name", host.encode()), ("a username path", planted_path),
@@ -124,7 +130,42 @@ def leaks(zpath):
     return found
 
 
-zp, result = run_bundle(script, "real")
+# --- mutants: one protection removed from the script; the leak check must then find the planted string
+MUTANTS = [
+    ("computer name", "$machine = [Environment]::MachineName", "$machine = ''", "the computer name"),
+    ("user name", "$userName = [Environment]::UserName", "$userName = ''", "the Windows user name"),
+    ("username path", None, None, "a username path"),         # needs both of the next two
+    ("IP addresses", "if ($ips) {", "if ($false) {", "a LAN address"),
+    ("Steam IDs", "7656119\\d{10}(?![0-9])', {\n            param($m)\n            if (-not $steamIds", "7656118\\d{10}(?![0-9])', {\n            param($m)\n            if (-not $steamIds", "a Steam id"),
+    ("dump masking", "if ($rel -like '*.dmp') {", "if ($false) {", "the Windows user name"),
+    ("cut name masking", "if ($lit.Length -ge 4) {", "if ($false) {", "a cut username"),
+]
+runs = {"real": script}; expects = {}
+for name, old, new, expect in MUTANTS:
+    if name == "username path":
+        t = script.replace("$userName = [Environment]::UserName", "$userName = ''").replace("$profile = $env:USERPROFILE", "$profile = ''")
+        applied = t != script
+    else:
+        applied = old in script
+        t = script.replace(old, new, 1)
+    check("mutant '%s' is a real change to the script" % name, applied)
+    if applied:
+        runs["mut-" + re.sub(r"\W", "", name)] = t; expects["mut-" + re.sub(r"\W", "", name)] = (name, expect)
+# the real script and every mutant side by side (each is a PowerShell of its own; one after another they took about two minutes)
+from concurrent.futures import ThreadPoolExecutor
+holder = hold_live_log()
+try:
+    with ThreadPoolExecutor(max_workers=len(runs)) as pool:
+        bundles = dict(zip(runs, pool.map(lambda tag: run_bundle(runs[tag], tag), runs)))
+finally:
+    holder.stdin.close()
+    try: holder.wait(timeout=20)
+    except subprocess.TimeoutExpired: holder.kill()
+for tag, (name, expect) in expects.items():
+    mz, mres = bundles[tag]
+    check("mutant '%s' leaks (%s)" % (name, expect), mz is not None and expect in leaks(mz), (mres, leaks(mz) if mz else None))
+
+zp, result = bundles["real"]
 check("the script reports the zip", zp is not None and result.startswith("OK "), result)
 if zp:
     z = zipfile.ZipFile(zp); names = z.namelist()
@@ -184,29 +225,6 @@ if zp:
     (raw / "a.log").write_bytes(edited)
     rep = subprocess.run([sys.executable, str(here / "tools/diag_report.py"), "--raw", str(raw)], capture_output=True, text=True)
     check("a live logs folder with an edited log is caught", "chain mismatch" in rep.stdout and rep.returncode == 1, rep.stdout[-300:])
-
-# --- mutants: one protection removed from the script; the leak check must then find the planted string
-MUTANTS = [
-    ("computer name", "$machine = [Environment]::MachineName", "$machine = ''", "the computer name"),
-    ("user name", "$userName = [Environment]::UserName", "$userName = ''", "the Windows user name"),
-    ("username path", None, None, "a username path"),         # needs both of the next two
-    ("IP addresses", "if ($ips) {", "if ($false) {", "a LAN address"),
-    ("Steam IDs", "7656119\\d{10}(?![0-9])', {\n            param($m)\n            if (-not $steamIds", "7656118\\d{10}(?![0-9])', {\n            param($m)\n            if (-not $steamIds", "a Steam id"),
-    ("dump masking", "if ($rel -like '*.dmp') {", "if ($false) {", "the Windows user name"),
-    ("cut name masking", "if ($lit.Length -ge 4) {", "if ($false) {", "a cut username"),
-]
-for name, old, new, expect in MUTANTS:
-    if name == "username path":
-        t = script.replace("$userName = [Environment]::UserName", "$userName = ''").replace("$profile = $env:USERPROFILE", "$profile = ''")
-        applied = t != script
-    else:
-        applied = old in script
-        t = script.replace(old, new, 1)
-    check("mutant '%s' is a real change to the script" % name, applied)
-    if not applied:
-        continue
-    mz, mres = run_bundle(t, "mut-" + re.sub(r"\W", "", name))
-    check("mutant '%s' leaks (%s)" % (name, expect), mz is not None and expect in leaks(mz), (mres, leaks(mz) if mz else None))
 
 print()
 print("%d failed" % len(failures) if failures else "all passed")

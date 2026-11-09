@@ -77,8 +77,7 @@ def run(name, text, geometry, ownership=resources):
         assert (r.returncode == 0) == (name == 'clean'), f'{name}: {r.stdout} {r.stderr}'
         return f'{name}: {"passed" if name == "clean" else "mutant rejected"}'
 if __name__ == '__main__':
-    print(run('clean', header, mesh), flush=True)
-    jobs = []
+    jobs = [('clean', header, mesh)]      # the clean build and every mutant side by side, one per CPU
     for name, (old, new) in mutations.items():
         assert old in header, name
         jobs.append((name, header.replace(old, new), mesh))
@@ -89,5 +88,6 @@ if __name__ == '__main__':
         new='++it' if name=='stats-prune' else ''
         assert old in resources
         jobs.append((name,header,mesh,resources.replace(old,new)))
-    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+    import os
+    with concurrent.futures.ThreadPoolExecutor(max_workers=os.cpu_count() or 4) as pool:
         for line in pool.map(lambda args: run(*args), jobs): print(line, flush=True)

@@ -6,6 +6,8 @@ interop, the router code runs against a fake UPnP IGD and NAT-PMP responder on l
 is not removed when the lobby closes) and the firewall reader reads the real rules (read only).
 Usage: test_launcher_host.py [--quick]"""
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
+import os
 import shutil
 import subprocess
 import sys
@@ -94,14 +96,18 @@ with tempfile.TemporaryDirectory(prefix='launcher-host-') as temp:
                  str(BRIDGE / 'launcher_host_core.h')])
         if r.returncode:
             raise SystemExit(f'FAIL: launcher_host_core.h as C++\n{r.stderr[-2000:]}')
-    for name, (before, after) in CORE_MUTANTS.items():
+    def core_mutant(item):      # side by side, each in a folder of its own
+        name, (before, after) = item
         folder = temp / f'm-{name}'
         folder.mkdir()
         mutate(folder, 'launcher_host_core.h', before, after)
         shutil.copy(BRIDGE / 'coop_invite.h', folder)
         exe = folder / 'test'
         build(exe, BRIDGE / 'tests/launcher_host_test.c', folder, ['-O1', '-Wno-unused-but-set-variable', '-Wno-unused-variable'])
-        r = run([str(exe), '2000'], timeout=120)
+        return run([str(exe), '2000'], timeout=120)
+    with ThreadPoolExecutor(max_workers=os.cpu_count() or 4) as pool:
+        core_runs = list(pool.map(core_mutant, CORE_MUTANTS.items()))
+    for name, r in zip(CORE_MUTANTS, core_runs):
         if r.returncode == 0:
             raise SystemExit(f'SURVIVED: {name}\n{r.stdout[-2000:]}')
         print('KILLED:', name)
@@ -119,16 +125,21 @@ with tempfile.TemporaryDirectory(prefix='launcher-host-') as temp:
             out = stage / f'host-{label}.exe'
             build(out, BRIDGE / 'tests/launcher_host_win_test.c', header_dir, ['-O2', '-static-libgcc', *extra], gcc, ['-lws2_32'])
             return run(['powershell.exe', '-NoProfile', '-Command', f"& '{stage_win}\\{out.name}'; exit $LASTEXITCODE"], timeout=180)
-        r = win_suite(BRIDGE, 'baseline')
-        print(r.stdout.replace('\r', '').strip())
-        if r.returncode:
-            raise SystemExit('FAIL: Windows router and firewall test')
-        for name, (before, after) in WIN_MUTANTS.items():
+        def win_mutant(item):
+            name, (before, after) = item
             folder = temp / f'w-{name}'
             folder.mkdir()
             mutate(folder, 'launcher_host_win.h', before, after)
             shutil.copy(BRIDGE / 'launcher_host_core.h', folder)
-            r = win_suite(folder, name, ['-Wno-unused-but-set-variable', '-Wno-unused-variable'])
+            return win_suite(folder, name, ['-Wno-unused-but-set-variable', '-Wno-unused-variable'])
+        # the baseline and the mutants side by side: each fake router binds ports the system picks, and the firewall pass only reads
+        with ThreadPoolExecutor(max_workers=len(WIN_MUTANTS) + 1) as pool:
+            base = pool.submit(win_suite, BRIDGE, 'baseline'); win_runs = list(pool.map(win_mutant, WIN_MUTANTS.items()))
+            r = base.result()
+        print(r.stdout.replace('\r', '').strip())
+        if r.returncode:
+            raise SystemExit('FAIL: Windows router and firewall test')
+        for name, r in zip(WIN_MUTANTS, win_runs):
             if r.returncode == 0:
                 raise SystemExit(f'SURVIVED: {name}\n{r.stdout[-2000:]}')
             print('KILLED:', name)

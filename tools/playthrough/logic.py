@@ -41,6 +41,7 @@ class Logic:
         self.regions = {}                       # name -> (short name, area)
         self.connections = defaultdict(list)    # region -> [(target, rule)]
         self.in_region = defaultdict(list)      # region -> [hex] of panels, EPs, events and obelisks placed there
+        self._derived = {}                      # frozenset(solved) -> (done, reach): derive is a pure function of the solved set (the planner asks again and again)
         area = 'Misc'; region = None
         raw = []
         for line in open(path, encoding='utf-8'):
@@ -70,8 +71,15 @@ class Logic:
 
     # ---- the state derived from what is solved
     def derive(self, solved):
-        """From the solved panels (and events): open doors, lit lasers, reachable regions and done entities, to a fixed point."""
-        solved = set(solved); done = set(solved); reach = {'Entry'}
+        """From the solved panels (and events): open doors, lit lasers, reachable regions and done entities, to a fixed point. (New sets each call.)"""
+        key = frozenset(solved); hit = self._derived.get(key)
+        if hit is None:
+            if len(self._derived) > 4096: self._derived.clear()
+            done, reach = self._derive(key); hit = self._derived[key] = (frozenset(done), frozenset(reach))
+        return set(hit[0]), set(hit[1])
+
+    def _derive(self, solved):
+        done = set(solved); reach = {'Entry'}
         while True:
             changed = False
             for h, e in self.entities.items():      # doors and lasers have no place in the logic: they are done when their rule holds

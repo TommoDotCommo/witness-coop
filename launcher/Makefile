@@ -149,9 +149,9 @@ trace-test: $(BUILD)/trace-test.exe $(addsuffix .exe,$(addprefix $(BUILD)/trace-
 .PHONY: trace-test
 test: trace-test
 
-# the self-update (update.h, ported from the MDK2 launcher): game-free, with source mutants (tools/test_launcher_update.py)
+# the self-update (update.h, ported from the MDK2 launcher): game-free, with source mutants (tools/test_launcher_update.py); skipped when T0_SEPARATE is set (tools/t0.sh runs it on its own)
 update-test:
-	python3 -I ../tools/test_launcher_update.py
+	@[ -n "$$T0_SEPARATE" ] || python3 -I ../tools/test_launcher_update.py
 .PHONY: update-test
 test: update-test
 

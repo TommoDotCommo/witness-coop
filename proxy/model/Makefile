@@ -43,8 +43,7 @@ $(BUILD)/emote-mutant-%: $(EMOTESRC) $(HDR) emote_sim.h
 	g++ -std=c++17 -O2 -Wno-unused-parameter -D$* -o $@ $(EMOTESRC)
 emotes: $(BUILD)/emote-quality $(addprefix $(BUILD)/emote-mutant-,$(EMOTE_MUTANTS))
 	python3 ../../tools/emote_embed.py --check
-	$(BUILD)/emote-quality $(GLB) --json $(BUILD)/emote_report.json
-	@./tests/emote_par.sh $(BUILD) $(GLB) "$(EMOTE_MUTANTS)"      # the bad clips and the code mutants, side by side (each run takes about 14 s)
+	@./tests/emote_par.sh $(BUILD) $(GLB) "$(EMOTE_MUTANTS)" $(BUILD)/emote_report.json      # the clean gate, the bad clips and the code mutants, side by side (each run takes about 14 s)
 test: lighting emotes $(BUILD)/model-test $(addprefix $(BUILD)/mutant-,$(MUTANTS)) $(BUILD)/life-test $(addprefix $(BUILD)/life-mutant-,$(LIFE_MUTANTS))
 	$(BUILD)/model-test $(GLB)
 	@for m in $(MUTANTS); do if $(BUILD)/mutant-$$m $(GLB) >/dev/null; then echo "MUTANT $$m SURVIVED (the test cannot fail for it)"; exit 1; else echo "mutant $$m killed"; fi; done
