@@ -22,7 +22,7 @@ import versioninfo
 
 EXPECTED = ['Witness-Coop-Setup.exe', 'dsound.dll', 'witness_launcher.exe', 'witness_models/adventurer.glb',
             'witness_models/adventurer.glb.txt', 'witness-coop.ps1', 'installer-gui.ps1', 'install-state.ps1',
-            'install-policy.exe', 'install-linux.sh', 'README.txt', 'LICENSE.txt', 'coop-mod.json',
+            'install-policy.exe', 'install-linux.sh', 'README.txt', 'LICENSE.txt', 'THIRD-PARTY-NOTICES.txt', 'coop-mod.json',
             'steam-input/witness-coop_deck.vdf']
 ROOT_FILES = ['coop-mod.json']      # beside the top folder as well, for mod managers
 ONE_FILE_SKIPS = {'Witness-Coop-Setup.exe', 'install-linux.sh', 'steam-input/witness-coop_deck.vdf'}      # in the zip only

@@ -64,6 +64,10 @@ prepare a reviewable diff before asking to publish. Never force-push.
   `common/launcher_host_win.h` (vendored from MDK2 unchanged apart from `#ifndef` constants: `common/VENDORED.md`; the Witness's constants and the only include path are `common/coop_witness.h`),
   `launcher/joinglue.h` (paste box, probe answer, the copied invite), `launcher/netfind.c` (Join list, recents, invite routes at once, Friends can join by, router mapping, firewall check);
   tests `python3 tools/test_coop_discovery.py`, `tools/test_coop_join.py`, `tools/test_coop_host.py`, `tools/test_coop_witness.py`, `make -C launcher joinglue-test`, live `tools/qa.sh join` (no game).
+- Built-in randomizers (the launcher's Randomizers tab): `third_party/witness-randomizer` (the vendored generator, MIT; its README: the marked changes and
+  `tools/randomizer_upstream.sh status|update`), `common/randomizers.h` (the list, credits, the spec), `proxy/randomizer/` (`backend.h` the overlay and fingerprint,
+  `generate.cpp` one run, `game_randomizer.cpp` in the game: per world, applied in one frame, watchdogs, `World::worldReady`), `dist/THIRD-PARTY-NOTICES.txt`;
+  tests `make -C proxy/randomizer test` (with a world recorded by `tools/randomizer_solo.sh --record`), `tools/qa.sh randomizer` (docs/DEVELOPMENT.md).
 - `local/`: ignored private configuration, disposable test copies, release zips (`local/release/`) and QA evidence.
 
 ## Build and validation

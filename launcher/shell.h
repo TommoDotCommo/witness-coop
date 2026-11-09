@@ -1,5 +1,5 @@
 #pragma once
-// The launcher's shape (co-op standard A, E, K3, K7), game-free: the four tabs, the Play choice, the Settings sections and their rows, press-a-key capture,
+// The launcher's shape (co-op standard A, E, K3, K7), game-free: the tabs (the standard's four and Randomizers), the Play choice, the Settings sections and their rows, press-a-key capture,
 // pad navigation from XInput states and the footer hints. main.cpp draws what this says; shell_test.cpp tests it without a window (T0, with mutants).
 #include <cstdint>
 #include <string>
@@ -8,7 +8,7 @@
 
 namespace ls {
 // ---- tabs (A1, A3)
-enum Tab { kPlay, kSaves, kSettings, kAbout, kTabCount };
+enum Tab { kPlay, kSaves, kRandomizers, kSettings, kAbout, kTabCount };      // Randomizers: the built-in randomizers and their credits (common/randomizers.h)
 const char* TabLabel(int tab, bool inLobby);              // "Play" turns into "Lobby" while hosting or joined
 
 // ---- Play (A2): three tiles and one primary button that says what it does; the last choice is remembered (cfg launcher_choice)

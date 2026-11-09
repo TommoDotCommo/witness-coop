@@ -558,6 +558,56 @@ doors are opened by the game's script, not by a panel's target, and are opened b
 solution line for a panel solved this way, and is put back when a later session loads a campaign. A save made while the mod runs gets `<save>.coop.txt` beside it: when it was made, the
 players who were in the game with their names and times (historical character labels remain readable) (earlier sessions of the campaign add up), panels solved in all and per area, lasers lit, doors open.
 
+## Built-in randomizers
+
+The launcher's Randomizers tab offers Sigma's Randomizer (Normal, Expert) and the Variety Randomizer. They are the puzzle generator of NewSoupVi's Witness
+Random Puzzle Generator for Archipelago, vendored in `third_party/witness-randomizer` (MIT, copyright 2018 jbzdarkid; what is vendored, the four marked
+changes, and how to update: its README; the players' notices: `dist/THIRD-PARTY-NOTICES.txt`, which the launcher embeds and shows). Upstream runs as a
+separate program that writes the game from outside; here it runs inside the game, and the parts are:
+
+- `common/randomizers.h`: the randomizers (names, descriptions, credits) and the one text for a choice, `normal;seed:48213;shuffle;colorblind;fast`.
+  The launcher keeps the player's pick in the cfg (`randomizer_pick`, `randomizer_new_seed`) and writes the spec a game starts with as `randomizer=`
+  (`wl::RandomizerForLaunch`: a new game gets the pick, with a new seed when wanted; a continued game gets what its newest save's sidecar says, so a
+  game's puzzles never change). In a lobby the host's spec, with this round's seed, travels in the lobby state (protocol 4) and `BuildGameCfg` writes it
+  into every member's cfg, over whatever that cfg had. The game writes the spec into each save's sidecar (`randomizer <spec>`).
+- `third_party/witness-randomizer/shim/Memory.h` replaces upstream's memory access: every `ReadPanelData`, `WritePanelData`, `ReadArray`, `WriteArray`
+  goes to the calling thread's backend (`proxy/randomizer/backend.h`). On the generation thread that is an `Overlay` over the live game: reads see
+  the game's bytes (read once, so a generation sees one snapshot) with the generator's writes on top, writes stay in the overlay, and an array the
+  generator writes is copied first into one of ours (copy on write), so nothing reaches the game while it works. On the render thread it is the
+  live game (`Live`).
+- `proxy/randomizer/generate.cpp` runs one randomizer from a spec: it resets upstream's statics (a second run in one process, after a save is
+  loaded, must make what a partner's first run made), seeds upstream's generator from the spec, and returns the overlay, the watchdogs and a
+  fingerprint: a hash of every changed byte in which our arrays count by their contents and a pointer the game had by where it was first read,
+  so it is the same on every PC for the same puzzles.
+- `proxy/randomizer/game_randomizer.cpp`, once per frame on the render thread: for every world the game loads (a new game, a save, the same save
+  again: the three tutorial panels' addresses change) it waits 1.5 s of the same world, starts the generation thread (above normal priority:
+  it competes with the game's loading), and when it is done writes the overlay in one frame (refused if an entity changed meanwhile: then
+  again), then runs upstream's watchdogs (arrow puzzles, the Keep, the Jungle's sound dots, Treehouse, Town door, a bridge) on the render
+  thread at their own intervals. Until then `RandomizerSettled()` is false: the sync core's stable-world gate waits for it (`World::worldReady`),
+  so nothing from another player is applied to a panel before its puzzle is in, and what the randomizer switched off at the start is in the
+  baseline; the start-progress option waits for it too (the randomizer powers some targets off on a fresh world, which must not undo the parts
+  done). A failed generation leaves the game's own puzzles, says so to the player and lets the sync go on.
+- Each game sends its fingerprint and state to the others (`WTR6`, `SyncCore::setPuzzles`, every 2 s and at once on a change; nothing is sent by a
+  game that never set it), and says `<name> has different puzzles` once per difference (`common/notices.h`).
+
+Measured (build 11370412, one PC): a generation over a stable world takes 0.27 s (Normal), 0.66 s (Expert), 2.4 to 3 s (Variety); at the start of a
+new game, competing with the game's loading, Normal took 7.5 s and Expert 24 s before the generation thread's priority was raised (not measured since).
+A generation changes about 370 to 490 entities (34 to 165 KB) and makes about 2000 arrays (0.4 to 0.6 MB); Expert and Variety start about 50 watchdogs.
+
+Known limits: a save loaded from the game's own menu gets the randomizer of the cfg the game was started with (the launcher's continue uses the
+save's own); the recorded game for the replay test is game data and stays in `local/`.
+
+Tests: `make -C proxy/randomizer test` (game-free): the memory layer on a fake game (the overlay leaves the game alone, sees its own writes, copies
+arrays before writing them, a fingerprint that ignores addresses, applying refuses a reloaded world; mutants `COW_NO_COPY`, `FP_ADDRESSES`), and,
+over a game recorded by `tools/randomizer_solo.sh --record` (`local/randomizer/11370412.world`; skipped and said when absent), whole runs of every
+randomizer with and without its options, twice in one process: each must make exactly what the game made (the generator built natively on Linux
+against the one built into the mod), with no read outside the recording (mutants `NO_RESET`, `WATCHDOG_THREAD`). `make -C proxy/core test`:
+`world-ready` (a remote solve waits for this world's puzzles; twin `noWorldReady`) and `puzzles` (the fingerprint reaches the others; mutant
+`PUZZLES_ZERO`). `make -C launcher test`: the lobby carries the host's spec into every member's cfg (mutant `NO_RANDOMIZER`) and a continued game
+keeps its save's puzzles (mutant `CONTINUE_REPICKS`). One game: `tools/randomizer_solo.sh [--spec S] [--mutant]` (applied, the game alive). Two
+games: `tools/qa.sh randomizer [--mutant]` (`tools/qa_randomizer.py`: the same fingerprint in both, the puzzles read from each game the same and not the
+game's own, a randomized panel drawn in A solved in B, another seed in B told in both games; the mutant B never writes its puzzles).
+
 ## Testing every puzzle, or one puzzle
 
 The island has 594 placed panels. `tools/sweep.sh` (resource provider mode: leases two slots, starts both games) and `tools/sweep.py run` teleport to each one with the
@@ -734,6 +784,7 @@ read-only; `wkeys.py`, `wshot.py`, `wplace.py`, `wfocus.py` and `launch.py` driv
 | Emotes | `python3 tools/test_gestures.py` (poses, activity, wire simulator and mutants) | `emote` |
 | Free drawing | core stroke messages | `ink` |
 | Progression and new game | `make -C proxy/progress test` (closure, order, lasers, text, sidecar; 6 mutants) | `progress` (solved panels and open doors read from both games' memory; the save's sidecar) |
+| Built-in randomizers | `make -C proxy/randomizer test` (memory layer, whole runs over a recorded game; 4 mutants), core `world-ready` and `puzzles`, launcher lobby and core | `randomizer` (the same puzzles in both games read from outside, a randomized solve shared, other puzzles told; 1 mutant); one game: `tools/randomizer_solo.sh` |
 | Launcher | `make -C launcher test` (cfg, video file, options in a save, saves; 5 mutants) | `launcher` (the window driven with window messages, the files on disk, the game it starts: its own log and the save it writes) |
 | Voice / Walkie-talkie (the handheld radio is experimental, `experimental_radio=1`) | `make -C common test` (gating: R does nothing and the guide has no radio while off; 2 mutants), `make -C proxy/voice test` (codec, packets, mix, radio filter, jitter, channels; 12 mutants) and `make -C proxy/radio test` (18 mutants), `make -C proxy/ui test` (the voice display, `ui/voice_hud.h`: only a live microphone and the players heard talking; 2 mutants) | `voice` (proximity gain, pan, fade and radio read from the listener's mixer with real positions; push to talk; the voice display on both games (empty when idle, Mic on while the key is held, who is heard, nobody out of earshot); speaking flag; game volume read back from the system; `voice channels`: every channel at 80 m and 5 m, one on one with a player that is not there, the `H` key; mutants) |
 | See through players | `make -C proxy/ghost test` (body overlap, opaque proximity and puzzle sightlines, smooth vertical edges and restoration; 6 mutants) | `ghost` (B reads rendered alpha while A stays opaque near a puzzle and at 0.65 m, fades during overlap, and stays solid on another level; partial edges and a disabled-fade mutant) |

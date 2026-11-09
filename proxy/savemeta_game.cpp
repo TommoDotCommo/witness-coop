@@ -1,5 +1,6 @@
 // Writes <game save>.coop.txt next to the newest save of the game (progress/savemeta.h): who was in the game and how far it got. See savemeta.h.
 #define WIN32_LEAN_AND_MEAN
+#include "../common/randomizers.h"
 #include <windows.h>
 #include <cstdio>
 #include <map>
@@ -47,6 +48,7 @@ void SaveMetaTick() {
     m.sessionSeconds = unsigned((now - start) / 1000); m.totalSeconds = m.sessionSeconds + (hadEarlier ? earlier.totalSeconds : 0);
     for (const auto& kv : g_roster) { wprog::MetaPlayer p; p.id = kv.second.id; p.name = kv.second.name; p.character = kv.second.character; p.seconds = unsigned(kv.second.seconds); p.sessions = 1; bool dup = false; for (auto& q : m.players) if (q.name == p.name) { q.seconds += p.seconds; dup = true; } if (!dup) m.players.push_back(p); }
     if (hadEarlier) wprog::MergePlayers(&m.players, earlier.players);
+    { wrand::Spec r = wrand::ParseSpec(GetCfg().randomizer); if (r.on()) m.randomizer = wrand::SpecText(r); }      // so the launcher continues this game with the same puzzles
     std::wstring out = Swap(file, L".coop.txt"); std::string text = wprog::FormatMeta(m);
     if (m.total == 0) return;      // no census yet (the world is not up): nothing worth writing
     FILE* f = _wfopen(out.c_str(), L"wb"); if (f) { fwrite(text.data(), 1, text.size(), f); fclose(f); char msg[300]; snprintf(msg, sizeof msg, "savemeta: wrote %s (%u of %u panels, %zu players)", Utf8(out).c_str(), m.solved, m.total, m.players.size()); Log(msg); }

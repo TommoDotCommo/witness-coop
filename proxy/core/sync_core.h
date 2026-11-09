@@ -37,6 +37,9 @@ public:
     // Changes when the world is loaded again (a save restored in the same process re-creates the entities, so their addresses change); 0 when
     // not known. With it a reload is told from progress that undoes itself (timed doors, desert panels that reset): see reloadSeen.
     virtual uint64_t generation() { return 0; }
+    // False while something of the mod's own still changes the world it has just loaded (the built-in randomizer writing its puzzles and the
+    // powers they need, proxy/randomizer): the world is not stable before that is done, so what it changed is in the baseline, not progress.
+    virtual bool worldReady() { return true; }
     virtual bool isPanel(unsigned id) = 0;                                      // type checks, so a wrong-typed event is refused
     virtual bool isDoor(unsigned id) = 0;
     virtual bool panelSolved(unsigned id) = 0;
@@ -66,6 +69,7 @@ struct Flags {   // all off by default
     bool dropFirstEvent = false, noResend = false, noEchoGuard = false;                 // test switches (witness_coop.cfg)
     // bug twins: each switches one protection off so a test must fail (see core/tests)
     bool noDedupe = false, noEpochReset = false, noResyncOnRestart = false, noGate = false, noSettle = false;
+    bool noWorldReady = false;     // twin: the stable-world gate does not wait for World::worldReady (the randomizer's writes become progress)
     bool wrongAckEpoch = false, applyOutOfOrder = false, noChecksum = false;
     bool countSkippedResends = false; // twin: an event the 32-per-round budget skipped is counted as resent (a startup burst of 248 events reads as 840 resends)
     bool noEntityOrder = false; // twin: an event retried later is overtaken by a later event about the same entity (a door close lands after the open that followed it)
@@ -126,6 +130,7 @@ struct Hooks {
 };
 
 // Social layer: presence (emote, typing, speaking: small unreliable state, repeated), and reliable ordered messages (chat, location pings, drawing strokes).
+enum PuzzleState : uint8_t { PUZ_VANILLA = 0, PUZ_WORKING = 1, PUZ_READY = 2, PUZ_FAILED = 3 };      // no randomizer; making them; made; the randomizer gave up (vanilla puzzles)
 struct Presence { Appearance appearance; uint8_t emote = 0, emoteSeq = 0; bool typing = false, speaking = false, proximitySpeaking = false, radioEquipped = false, radioTx = false; uint8_t voiceChannel = 0; bool operator==(const Presence& o) const { return appearance == o.appearance && emote == o.emote && emoteSeq == o.emoteSeq && typing == o.typing && speaking == o.speaking && proximitySpeaking == o.proximitySpeaking && radioEquipped == o.radioEquipped && radioTx == o.radioTx && voiceChannel == o.voiceChannel; } };
 enum SocialType : uint8_t { SOC_CHAT = 1, SOC_MARK = 2, SOC_STROKE = 3, SOC_STROKE_CLEAR = 4 };
 constexpr size_t kMaxChatBytes = 400, kMaxStrokePoints = 60;
@@ -157,6 +162,11 @@ public:
     bool setPeers(const std::vector<unsigned>& ids);
     void setName(const std::string& name);                  // this player's name, sent with every ping (24 bytes at most)
     // social layer (any thread)
+    // This player's puzzles: the built-in randomizer's fingerprint (proxy/randomizer) and its state (PUZ_*); sent when they change and every 2 s.
+    // Players whose puzzles differ see different panels: the game tells them (the core only carries it).
+    void setPuzzles(uint64_t fingerprint, uint8_t state);
+    struct PeerPuzzles { unsigned id; uint64_t fingerprint; uint8_t state; std::string name; };
+    std::vector<PeerPuzzles> peerPuzzles();                  // every peer that said what its puzzles are
     void setPresence(const Presence& p);                     // this player's emote, typing and speaking flags: sent at once when they change, and every second
     bool sendChat(const std::string& text);                  // reliable, ordered; false when empty (longer than kMaxChatBytes is cut)
     bool sendMark(uint8_t kind, const float pos[3]);         // a location ping
@@ -202,6 +212,8 @@ private:
     struct SocOut { uint32_t seq = 0; uint8_t type = 0; Bytes payload; bool sent = false; uint64_t lastSent = 0; std::set<unsigned> acked; };
     std::vector<SocOut> socOut_; uint64_t socEpoch_ = 0; uint32_t socNext_ = 1, socRestarts_ = 0;
     Presence pres_; bool presDirty_ = true; uint32_t presSeq_ = 0; uint64_t nextPres_ = 0;
+    uint64_t puz_ = 0; uint8_t puzState_ = 0; bool puzOn_ = false, puzDirty_ = false; uint64_t nextPuz_ = 0;      // puzOn_: the game said what its puzzles are (nothing is sent before)
+    void sendPuzzles(); void onPuzzles(const uint8_t* d, size_t n, uint64_t now);
     std::vector<ChatLine> chatIn_; std::vector<MarkMsg> markIn_; std::vector<StrokeMsg> strokeIn_;
     bool socialQueue(uint8_t type, Bytes payload);
     void socialTick(uint64_t now);
@@ -212,7 +224,7 @@ private:
     void scanLines(uint64_t now);
     void onLine(const uint8_t* data, size_t n, uint64_t now);
     void sendLine(unsigned panel, const LineState& s);
-    struct Peer { uint32_t session = 0, applied = 0; uint64_t epoch = 0, poseAt = 0; RemotePose pose; std::map<unsigned, LineIn> lines; std::string name; uint32_t lastNonce = 0, lastT0 = 0; float ping = -1; uint64_t pongAt = 0; uint64_t socEpoch = 0; uint32_t socApplied = 0, presSeq = 0, presSession = 0; uint64_t presAt = 0; EmoteGate emoteGate; Presence pres; };
+    struct Peer { uint32_t session = 0, applied = 0; uint64_t epoch = 0, poseAt = 0; RemotePose pose; std::map<unsigned, LineIn> lines; std::string name; uint32_t lastNonce = 0, lastT0 = 0; float ping = -1; uint64_t pongAt = 0; uint64_t socEpoch = 0; uint32_t socApplied = 0, presSeq = 0, presSession = 0; uint64_t presAt = 0; EmoteGate emoteGate; Presence pres; uint64_t puz = 0, puzAt = 0; uint8_t puzState = 0; };
     std::map<unsigned, Peer> peers_; bool fixedRoster_ = false;
 
     int id_; uint32_t session_; World* w_; Hooks h_; Flags f_;

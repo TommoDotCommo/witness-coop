@@ -18,6 +18,9 @@ inline std::string Reconnecting(const std::string& name) { return "Reconnecting 
 inline std::string DifferentVersion(const std::string& name, const std::string& version) {
     return name + " has a different version" + (version.empty() ? std::string() : " (" + version + ")");
 }
+// The built-in randomizer (proxy/randomizer): another player's puzzles are not this player's (the randomizer's fingerprints differ).
+inline std::string PuzzlesDiffer(const std::string& name) { return name + " has different puzzles: start again from the launcher's lobby so everyone gets the host's randomizer"; }
+inline std::string PuzzlesFailed() { return "The randomizer could not make this world's puzzles: you have the game's own puzzles"; }
 constexpr uint64_t kLostAfterMs = 5000, kLeftAfterMs = 30000;      // silent this long: "Lost"; and "waiting up to 30 s" is over: "left"
 struct Seen { bool valid = false; uint64_t ageMs = 0; std::string name; };
 class Roster {

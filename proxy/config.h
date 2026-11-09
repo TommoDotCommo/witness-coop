@@ -41,6 +41,7 @@ struct Cfg {
     bool noSeatTiebreak = false;   // test mutant: two players who take the same audience stool in the same instant both stay seated
     bool noEmoteAnim = false, noEmoteClips = false, noEmoteSend = false;   // test mutants: emotes shown but not animated / never play a model's own clip / emotes not sent
     bool noChatUi = false, noTypingDots = false, noPingMarks = false;      // test mutants: T does nothing; typing is not announced; pings are not drawn
+    std::string randomizer;      // randomizer=<spec>: the built-in randomizer and its seed for this world (common/randomizers.h; the launcher writes it from the host's choice, a continued save keeps its own); empty or off: the game's own puzzles
     std::string startProgress;   // start_progress=<spec>: the next new game starts with these parts of the map completed (the launcher arms it; progress/progress.h says how a spec reads); disarmed once applied
     bool noSaveMeta = false;     // test mutant: no <save>.coop.txt is written
     bool noStartProgress = false, progressNoPrereq = false;      // test mutants: the setting is ignored / only the chosen panels are solved, not what the game needs before them

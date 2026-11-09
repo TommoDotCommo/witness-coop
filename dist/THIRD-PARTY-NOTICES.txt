@@ -1,0 +1,78 @@
+The Witness co-op: other people's work in this mod
+====================================================
+
+The co-op mod itself is under the MIT licence in LICENSE.txt. It contains the work of other projects, also under the MIT licence.
+Their notices follow, as their licences ask. Thank you to everyone named here.
+
+
+1. The randomizers (the launcher's Randomizers tab)
+---------------------------------------------------
+
+Sigma's Randomizer (Normal and Expert) and the Variety Randomizer are built into the mod from the Witness Random Puzzle Generator,
+as maintained for Archipelago by NewSoupVi:
+    https://github.com/NewSoupVi/The-Witness-Randomizer-for-Archipelago
+
+It is the work of sigma144 (the puzzle generator, Normal and Expert: https://github.com/sigma144/witness-randomizer), jbzdarkid
+(the original Witness randomizer: https://github.com/jbzdarkid/witness-randomizer), Penguin12335 (Variety:
+https://github.com/Penguin12335/Variety-Randomiser), NewSoupVi, blastron, Jarno458, hatkirby, ReverM and others.
+
+The mod runs its puzzle generator unchanged apart from how it reaches the game: inside the game instead of from a separate program, and
+a few small fixes marked "witness-coop" in the source. The authors made it for everyone to use; they did not make or check this co-op
+version, so please report problems with it to the co-op mod.
+
+MIT License
+
+Copyright (c) 2018 jbzdarkid
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+
+2. Which panels open what ("parts of the map done" for a new game)
+-------------------------------------------------------------------
+
+The order in which the game needs its panels solved comes from the logic of Archipelago's world for The Witness:
+    https://github.com/ArchipelagoMW/Archipelago (worlds/witness)
+
+MIT License
+
+Copyright (c) 2017 LLCoolDave
+Copyright (c) 2025 Berserker66
+Copyright (c) 2022 CaitSith2
+Copyright (c) 2021 LegendaryLinux
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+
+The Witness is by Thekla, Inc. This co-op mod is a fan project, not made or endorsed by Thekla or by the authors above.

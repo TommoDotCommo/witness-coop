@@ -16,6 +16,7 @@
 #include "thirdperson.h"
 #include "state.h"
 #include "config.h"
+#include "randomizer/game_randomizer.h"
 
 void Log(const char* msg);
 // panels whose trace a remote solve wrote (the game draws that line itself, so the overlay does not draw it again); cleared when this player traces there
@@ -66,6 +67,7 @@ public:
         for (unsigned id : {0x64u, 0x182u, 0x293u}) { uintptr_t e = GameEntity(id); if (!e) return 0; h = (h ^ (uint64_t)e) * 1099511628211ull; }
         return h;
     }
+    bool worldReady() override { return RandomizerSettled(); }      // the built-in randomizer has written this world's puzzles (or has none to write)
     bool isPanel(unsigned id) override { uintptr_t e = id < kMaxId ? GameEntity(id) : 0; return e && Type(e) == Base() + kPanelTI; }
     bool isDoor(unsigned id) override { uintptr_t e = id < kMaxId ? GameEntity(id) : 0; return e && Type(e) == Base() + kDoorTI; }
     bool panelSolved(unsigned id) override { uintptr_t e = GameEntity(id); return e && PanelSolved(e); }

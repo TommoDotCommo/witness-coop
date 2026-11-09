@@ -8,7 +8,7 @@ HUB := $(patsubst %/tools/fuzz/src,%,$(HUB))
 FUZZ = $(HUB)/tools/fuzz
 BUILD = build
 CXXF = -std=c++17 -O2 -Wall -Wextra
-TESTS = oracle-cell pov ping-names social-sync line-sync solve-react group-sync apply-retry power-sync reload-sync cable-sync cable-off race-isolation resend-count unsolve-sync propagation-latency peers thirdperson
+TESTS = oracle-cell pov ping-names social-sync line-sync solve-react group-sync apply-retry power-sync reload-sync world-ready puzzles cable-sync cable-off race-isolation resend-count unsolve-sync propagation-latency peers thirdperson
 
 $(BUILD)/sync_core.o: sync_core.cpp sync_core.h line_precision.h appearance.h emotes.h pov.h ../radio/radio.h
 	@mkdir -p $(BUILD)
@@ -171,3 +171,13 @@ near-fade-test: $(BUILD)/near-fade $(BUILD)/near-fade-mutant-product
 	@if $(BUILD)/near-fade-mutant-product >/dev/null 2>&1; then echo "MUTANT near-fade PRODUCT SURVIVED"; exit 1; else echo "near-fade mutant PRODUCT killed"; fi
 test: near-fade-test
 .PHONY: near-fade-test
+
+# the puzzle fingerprint between players (tests/puzzles.cpp): the core built with the fingerprint never sent must fail it
+$(BUILD)/sync_core_puz0.o: sync_core.cpp sync_core.h line_precision.h appearance.h emotes.h pov.h ../radio/radio.h
+	@mkdir -p $(BUILD)
+	g++ $(CXXF) -DWR_MUT_PUZZLES_ZERO -c -o $@ sync_core.cpp
+$(BUILD)/puzzles-mutant: tests/puzzles.cpp $(BUILD)/sync_core_puz0.o
+	g++ $(CXXF) -o $@ tests/puzzles.cpp $(BUILD)/sync_core_puz0.o
+$(BUILD)/puzzles-mutant.ok: $(BUILD)/puzzles-mutant
+	@if $(BUILD)/puzzles-mutant > /dev/null; then echo 'puzzles mutant PUZZLES_ZERO survived'; exit 1; else echo 'puzzles mutant PUZZLES_ZERO killed'; touch $@; fi
+test: $(BUILD)/puzzles-mutant.ok

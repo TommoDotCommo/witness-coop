@@ -1,4 +1,5 @@
 // See lobby.h.
+#include "../common/randomizers.h"
 #include "lobby.h"
 #include "core.h"
 #include "../common/steam_ids.h"
@@ -10,7 +11,7 @@
 namespace wlobby {
 namespace {
 enum Type : uint8_t { T_JOIN = 1, T_WELCOME = 2, T_HELLO = 3, T_STATE = 4, T_CHAT = 5, T_LEAVE = 7 };
-constexpr uint8_t kVersion = 3;      // 2: members carry a SteamID (Steam lobbies). 3: JOIN carries the mod version, WELCOME names both versions, the member list carries each member's version (an older launcher is refused as kBadVersion)
+constexpr uint8_t kVersion = 4;      // 2: members carry a SteamID (Steam lobbies). 3: JOIN carries the mod version, WELCOME names both versions, the member list carries each member's version (an older launcher is refused as kBadVersion). 4: the state carries the randomizer
 uint32_t Fnv(const uint8_t* d, size_t n) { uint32_t h = 2166136261u; for (size_t i = 0; i < n; ++i) { h ^= d[i]; h *= 16777619u; } return h; }
 struct W {
     Bytes b; explicit W(Type t) { b = {'W', 'T', 'L', '1', (uint8_t)t}; }
@@ -65,7 +66,7 @@ void Lobby::PushChat(unsigned from, const std::string& text) {      // host: a c
     ChatLine c; c.seq = chatNext_++; c.from = from; c.text = text; chatIn_.push_back(c);
     for (auto& kv : peers_) { kv.second.outbox[c.seq] = c; kv.second.outboxAt = 0; }
 }
-void Lobby::SetSettings(const Settings& s) { if (!host_) return; st_.settings = s; st_.settings.raceGoal = Clean(s.raceGoal, 23); st_.settings.progress = Clean(s.progress, 160); Refresh(); }
+void Lobby::SetSettings(const Settings& s) { if (!host_) return; st_.settings = s; st_.settings.raceGoal = Clean(s.raceGoal, 23); st_.settings.progress = Clean(s.progress, 160); st_.settings.randomizer = Clean(s.randomizer, 80); Refresh(); }
 void Lobby::SetResult(const std::string& t) { if (!host_) return; st_.lastResult = Clean(t, 200); Refresh(); }
 bool Lobby::Start(uint64_t now) {
     if (!host_ || st_.phase != kLobby) return false;
@@ -113,7 +114,13 @@ void Lobby::Tick(uint64_t now) {
         }
         if (now >= nextState_) {
             st_.startInMs = st_.phase == kStarting ? int32_t(std::max<int64_t>(0, int64_t(startAt_) - int64_t(now))) : 0; Rebuild();
-            W w(T_STATE); w.u32(session_).u32(st_.seq).u8(st_.phase).u32((uint32_t)st_.startInMs).u8(st_.settings.mode).u8(st_.settings.newGame ? 1 : 0).str(st_.settings.raceGoal, 23).lstr(st_.settings.progress, 160).lstr(st_.lastResult, 200).u8((unsigned)st_.members.size());
+            W w(T_STATE); w.u32(session_).u32(st_.seq).u8(st_.phase).u32((uint32_t)st_.startInMs).u8(st_.settings.mode).u8(st_.settings.newGame ? 1 : 0).str(st_.settings.raceGoal, 23).lstr(st_.settings.progress, 160).lstr(
+#ifdef WLB_MUT_NO_RANDOMIZER
+                ""
+#else
+                st_.settings.randomizer
+#endif
+                , 80).lstr(st_.lastResult, 200).u8((unsigned)st_.members.size());
             for (const auto& m : st_.members) w.u8(m.id).u8((m.host ? 1 : 0) | (m.ready ? 2 : 0) | (m.inGame ? 4 : 0) | (m.speaking ? 8 : 0) | (m.playing ? 16 : 0)).u16(m.gamePort).u32(m.ip).u32(m.ackedChat).str(m.name, 23).u64(m.steamId).str(
 #ifdef WLB_MUT_LIST_NO_VERSION
                 ""
@@ -208,7 +215,7 @@ void Lobby::OnPacket(const Addr& from, const uint8_t* d, size_t n, uint64_t now)
         if (res == kJoinOk) { id_ = id; joined_ = true; refused_ = kJoinOk; lastHost_ = now; nextHello_ = 0; out_.clear(); outAcked_ = 0; outSeq_ = 0; seenChat_ = 0; pendingIn_.clear(); } else { refused_ = JoinResult(res); } return; }
     if (!joined_) return;
     if (t == T_STATE) {
-        State s; uint32_t session = r.u32(); s.seq = r.u32(); s.phase = Phase(r.u8()); s.startInMs = int32_t(r.u32()); s.settings.mode = Mode(r.u8()); s.settings.newGame = r.u8() != 0; s.settings.raceGoal = r.str(); s.settings.progress = r.lstr(); s.lastResult = r.lstr();
+        State s; uint32_t session = r.u32(); s.seq = r.u32(); s.phase = Phase(r.u8()); s.startInMs = int32_t(r.u32()); s.settings.mode = Mode(r.u8()); s.settings.newGame = r.u8() != 0; s.settings.raceGoal = r.str(); s.settings.progress = r.lstr(); s.settings.randomizer = r.lstr(); s.lastResult = r.lstr();
         unsigned cnt = r.u8(); for (unsigned i = 0; i < cnt && !r.bad; ++i) { Member m; m.id = r.u8(); unsigned f = r.u8(); m.host = f & 1; m.ready = f & 2; m.inGame = f & 4; m.speaking = f & 8; m.playing = f & 16; m.gamePort = (uint16_t)r.u16(); m.ip = r.u32(); m.ackedChat = r.u32(); m.name = r.str(); m.steamId = r.u64(); m.version = r.str(); s.members.push_back(m); }
         if (r.bad || s.phase > kInGame) return;
         bool newHost = hostSession_ != session;
@@ -246,6 +253,7 @@ std::string BuildGameCfg(const std::string& base, const Launch& l, uint32_t host
     cfg.Set("game_mode", l.state.settings.mode == kRace ? "race" : "coop");
     if (l.state.settings.mode == kRace) cfg.Set("race_goal", l.state.settings.raceGoal); else cfg.Unset("race_goal");
     if (l.state.settings.newGame && !l.state.settings.progress.empty()) cfg.Set("start_progress", l.state.settings.progress); else cfg.Unset("start_progress");
+    { wrand::Spec r = wrand::ParseSpec(l.state.settings.randomizer); cfg.Set("randomizer", r.on() ? wrand::SpecText(r) : "off"); }
     return cfg.Text();
 }
 }  // namespace wlobby

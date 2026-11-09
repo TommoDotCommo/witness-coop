@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build the player downloads into local/release/:
 #   witness-coop-<version>.zip                 the manual-install zip: the proxy (dsound.dll), the launcher, the player model, the thin Setup.exe
-#                                              (runs the scripts beside it), the PowerShell scripts, install-linux.sh, README.txt, LICENSE.txt,
+#                                              (runs the scripts beside it), the PowerShell scripts, install-linux.sh, README.txt, LICENSE.txt, THIRD-PARTY-NOTICES.txt,
 #                                              steam-input/witness-coop_deck.vdf (the Steam Input layout),
 #                                              coop-mod.json (what the package is: tools/mod_manifest.py; also at the zip root); every shipped exe and
 #                                              dll carries a VERSIONINFO (ProductName "The Witness Co-op", the version)
@@ -67,6 +67,7 @@ cp "$here/dist/install-linux.sh" "$stage/install-linux.sh"; chmod +x "$stage/ins
 cp "$here/dist/steam-input/witness-coop_deck.vdf" "$stage/steam-input/"      # the Steam Input layout (README: Controllers and Steam Deck); zip only
 sed 's/\r$//; s/$/\r/; s/@VERSION@/'"$ver"'/' "$here/dist/README.txt" > "$stage/README.txt"
 sed 's/\r$//; s/$/\r/' "$here/LICENSE" > "$stage/LICENSE.txt"
+sed 's/\r$//; s/$/\r/' "$here/dist/THIRD-PARTY-NOTICES.txt" > "$stage/THIRD-PARTY-NOTICES.txt"      # the other projects' licences (the randomizers, Archipelago's logic)
 
 # the thin Setup.exe of the zip, then the one-file setup that carries everything but itself and the Linux script
 "$here/tools/build_setup.sh" "$stage/Witness-Coop-Setup.exe" "$ver"

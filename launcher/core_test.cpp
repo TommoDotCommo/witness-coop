@@ -19,6 +19,14 @@ static std::vector<uint8_t> FakeSave() {      // the layout of the real save: na
 static float Val(const std::vector<uint8_t>& b, const char* n) { for (const auto& o : ReadSaveOptions(b)) if (o.name == n) return o.value; return -999; }
 
 int main() {
+    {   // the built-in randomizers: what a game starts with
+        check("randomizer: a new game gets the pick with a fresh seed", RandomizerForLaunch("expert;seed:5;fast", true, true, "normal;seed:9", 1234) == "expert;seed:1234;fast");
+        check("randomizer: a new game keeps the typed seed when no new seed is wanted", RandomizerForLaunch("expert;seed:5;fast", false, true, "", 1234) == "expert;seed:5;fast");
+        check("randomizer: a continued game keeps its save's puzzles, whatever the pick", RandomizerForLaunch("expert;seed:5", true, false, "normal;seed:9;shuffle", 1234) == "normal;seed:9;shuffle");
+        check("randomizer: a continued game whose save had none has the game's own puzzles", RandomizerForLaunch("expert;seed:5", true, false, "", 1234) == "off");
+        check("randomizer: off picked is off", RandomizerForLaunch("off", true, true, "normal;seed:9", 1234) == "off" && RandomizerForLaunch("", true, true, "", 1) == "off");
+        check("randomizer: a fresh seed stays a 31-bit number", RandomizerForLaunch("variety;seed:1", true, true, "", 0xFFFFFFFFu) == "variety;seed:2147483647");
+    }
     {   // the build check: a synthetic exe stands in for the game
         Fixture ok = Make(0x5c48cf09, 0x1100, 1), newer = Make(0x5c48cf0a, 0x1100, 1);
         check("build: the supported build gives no problem", GameBuildProblem(ok.file, ok.spec).empty());

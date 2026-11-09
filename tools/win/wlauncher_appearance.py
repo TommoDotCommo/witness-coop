@@ -39,7 +39,7 @@ def start():
     try: os.remove(dump)
     except OSError: pass
     si = subprocess.STARTUPINFO(); si.dwFlags |= subprocess.STARTF_USESHOWWINDOW; si.wShowWindow = 4
-    proc = subprocess.Popen([exe, '--dir', gdir, '--dump-controls', dump, '--no-activate', '--page', '2', '--section', '1'], startupinfo=si)
+    proc = subprocess.Popen([exe, '--dir', gdir, '--dump-controls', dump, '--no-activate', '--page', '3', '--section', '1'], startupinfo=si)
     deadline = time.time() + 15; main = None
     while time.time() < deadline and not (main and os.path.exists(dump)):
         ws = windows(proc.pid); main = ws[0] if ws else None; time.sleep(0.2)

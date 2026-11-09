@@ -1,3 +1,4 @@
+#include "randomizer/game_randomizer.h"
 #include "../common/guide.h"
 // In-game dev menu (build 11370412). See devmenu.h. Everything the menu knows comes from the entity table (positions, solved and powered
 // words, each panel's target at +0x2B4); every action calls the same game functions the sync code uses, on the render thread.
@@ -241,6 +242,7 @@ void StartProgressTick() {
     Refresh(); uintptr_t fp = GameEntity(0x64);
     if (!stableSince || fp != firstPanel) { firstPanel = fp; stableSince = now; return; }      // the same world for a while (a title screen may build one that a new game then replaces)
     if (now - stableSince < 6000) return;
+    if (!RandomizerSettled()) return;      // the randomizer first: it switches some targets off on a fresh world, which must not undo the parts done
     done = true;
     if (armed) {
         std::string err; auto ids = wprog::Resolve(wprog::Builtin(), c.startProgress, &err, !c.progressNoPrereq);

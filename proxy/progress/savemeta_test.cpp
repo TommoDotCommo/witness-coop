@@ -24,6 +24,8 @@ int main() {
     check("the text parses back to the same", ParseMeta(t, &back) && back.savedAt == m.savedAt && back.solved == m.solved && back.total == m.total && back.lasers == 2 && back.areas.size() == m.areas.size() && back.players.size() == 2);
     check("players keep names with spaces, characters and times", back.players[0].name == "Alpha Fox" && back.players[0].character == "fox" && back.players[0].seconds == 3600 && back.players[0].sessions == 2 && back.players[1].character.empty());
     check("an area name with spaces survives", [&] { for (const auto& a : back.areas) if (a.name == "Symmetry Island") return true; return false; }());
+    { SaveMeta r; r.savedAt = "2026-11-09 12:00:00"; r.randomizer = "expert;seed:48213;fast"; SaveMeta back2; check("the randomizer that made the puzzles survives the text", ParseMeta(FormatMeta(r), &back2) && back2.randomizer == "expert;seed:48213;fast");
+      SaveMeta none; none.savedAt = r.savedAt; check("no randomizer: no line, and none read back", FormatMeta(none).find("randomizer") == std::string::npos && ParseMeta(FormatMeta(none), &back2) && back2.randomizer.empty()); }
     check("not a sidecar: refused", !ParseMeta("hello\n", &back) && !ParseMeta("coop-save 2\n", &back) && !ParseMeta("coop-save 1\nplayer\t1\tx\n", &back) && !ParseMeta("coop-save 1\nwhat 3\n", &back));
     check("a tab or newline in a name cannot break the file", [&] { SaveMeta x = m; x.players[0].name = "A\tB\nC"; SaveMeta y; return ParseMeta(FormatMeta(x), &y) && y.players.size() == 2 && y.players[0].name == "A B C"; }());
     // earlier sessions

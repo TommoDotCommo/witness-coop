@@ -38,6 +38,7 @@ std::string FormatMeta(const SaveMeta& m) {
         << "\nprogress " << m.solved << " " << m.total << "\nlasers " << m.lasers << " " << m.lasersTotal << "\ndoors " << m.doorsOpen << " " << m.doorsTotal << "\n";
     for (const auto& a : m.areas) { std::string n = a.name; for (auto& c : n) if (c == ' ') c = '_'; o << "area " << n << " " << a.solved << " " << a.total << "\n"; }
     for (const auto& p : m.players) o << "player\t" << p.id << "\t" << Clean(p.name) << "\t" << Clean(p.character) << "\t" << p.seconds << "\t" << p.sessions << "\n";
+    if (!m.randomizer.empty()) o << "randomizer " << Clean(m.randomizer) << "\n";
     return o.str();
 }
 
@@ -55,6 +56,7 @@ bool ParseMeta(const std::string& text, SaveMeta* out) {
         else if (k == "saved") { std::getline(ls, m.savedAt); if (!m.savedAt.empty() && m.savedAt[0] == ' ') m.savedAt.erase(0, 1); }
         else if (k == "session_seconds") ls >> m.sessionSeconds; else if (k == "total_seconds") ls >> m.totalSeconds;
         else if (k == "progress") ls >> m.solved >> m.total; else if (k == "lasers") ls >> m.lasers >> m.lasersTotal; else if (k == "doors") ls >> m.doorsOpen >> m.doorsTotal;
+        else if (k == "randomizer") { std::getline(ls, m.randomizer); if (!m.randomizer.empty() && m.randomizer[0] == ' ') m.randomizer.erase(0, 1); }
         else if (k == "area") { MetaArea a; ls >> a.name >> a.solved >> a.total; for (auto& c : a.name) if (c == '_') c = ' '; m.areas.push_back(a); }
         else return false;
     }

@@ -18,9 +18,9 @@ static bool Typed(const ls::Row& r) { return ls::IsTyped(r); }
 #endif
 
 int main() {
-    // A1, A3: four tabs in this order; Play reads Lobby in a lobby
+    // A1, A3: the standard's four tabs in this order, with Randomizers (the built-in randomizers) after Saves; Play reads Lobby in a lobby
     std::string tabs; for (int t = 0; t < ls::kTabCount; ++t) tabs += std::string(t ? "," : "") + ls::TabLabel(t, false);
-    Check(tabs == "Play,Saves,Settings,About", "four tabs: Play, Saves, Settings, About", tabs);
+    Check(tabs == "Play,Saves,Randomizers,Settings,About", "tabs: Play, Saves, Randomizers, Settings, About", tabs);
     Check(std::string(ls::TabLabel(ls::kPlay, true)) == "Lobby" && std::string(ls::TabLabel(ls::kSaves, true)) == "Saves", "hosting or joining turns Play into Lobby, the others stay");
     // A2: the primary button says what it does; the choice round-trips through the cfg
     Check(ls::PrimaryLabel(ls::kHost, "") == "Open lobby" && ls::PrimaryLabel(ls::kJoin, "Fox") == "Join Fox" && ls::PrimaryLabel(ls::kSolo, "") == "Play solo", "primary button: Open lobby / Join <name> / Play solo");

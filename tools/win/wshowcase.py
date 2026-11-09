@@ -346,13 +346,14 @@ def launcher_scene(vi):
     si = subprocess.STARTUPINFO(); si.dwFlags |= subprocess.STARTF_USESHOWWINDOW; si.wShowWindow = 4
     pages = [(0, 0, 'launcher_play', 'The launcher (witness_launcher.exe): Play. Your name, three tiles (Host a game, Join a friend, Play solo) and one button that says what it does; hosting or joining turns the tab into the lobby.'),
              (1, 0, 'launcher_saves', 'Saves: each save with the players who were in the game and how far it got, and the New game slot.'),
-             (2, 1, 'launcher_players', 'Settings, Players and interface: your colour, name tags, text chat, pings.'),
-             (2, 2, 'launcher_sound', 'Settings, Voice and sound: voice chat mode, push-to-talk key (press a key), volumes, hearing range.'),
-             (2, 3, 'launcher_keys', 'Settings, Controls: every co-op key by press-a-key, gamepad on or off.'),
-             (2, 4, 'launcher_display', 'Settings, Display: the game\'s own Launcher.variables (screen mode, resolution, frame limit, quality).'),
-             (2, 5, 'launcher_network', 'Settings, Network: port and how friends find each other.'),
-             (2, 6, 'launcher_launcher', 'Settings, Launcher: show at start, updates, and the experimental options (off by default).'),
-             (3, 0, 'launcher_about', 'About: version, updates, the quick guide, Send diagnostics, links, the game folder (a generic path is shown here instead of this PC\'s) and credits.')]
+             (3, 1, 'launcher_players', 'Settings, Players and interface: your colour, name tags, text chat, pings.'),
+             (3, 2, 'launcher_sound', 'Settings, Voice and sound: voice chat mode, push-to-talk key (press a key), volumes, hearing range.'),
+             (3, 3, 'launcher_keys', 'Settings, Controls: every co-op key by press-a-key, gamepad on or off.'),
+             (3, 4, 'launcher_display', 'Settings, Display: the game\'s own Launcher.variables (screen mode, resolution, frame limit, quality).'),
+             (3, 5, 'launcher_network', 'Settings, Network: port and how friends find each other.'),
+             (3, 6, 'launcher_launcher', 'Settings, Launcher: show at start, updates, and the experimental options (off by default).'),
+             (2, 0, 'launcher_randomizers', 'Randomizers: the built-in randomizers (Sigma\'s Normal and Expert, Variety), the seed and options, and the credits of the people who made them.'),
+             (4, 0, 'launcher_about', 'About: version, updates, the quick guide, Send diagnostics, links, the game folder (a generic path is shown here instead of this PC\'s) and credits.')]
     for page, section, name, caption in pages:
         p = subprocess.Popen([exe, '--dir', games[vi].dir, '--page', str(page), '--section', str(section), '--no-activate'] + (['--size', '1280', '900'] if name == 'launcher_keys' else []), startupinfo=si, env=launcher_env()); h = None; t0 = time.time()
         while time.time() - t0 < 10 and not h: h = find(p.pid, 'WitnessLauncher'); time.sleep(0.2)

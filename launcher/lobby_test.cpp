@@ -63,12 +63,13 @@ int main() {
       check("invite only (B9): no code and a wrong code are refused, the invite's code joins", !n5.n[e5]->joined() && n5.n[e5]->refused() == kBadToken && !n5.n[w5]->joined() && n5.n[k5]->joined() && n5.n[h5]->state().members.size() == 2); }
     // 2. ready, settings, start, the roster
     { Net net(15, 60); unsigned h = net.add(true, "Host", "ABC123", {}, 47001); unsigned a = net.add(false, "Alpha", "ABC123", {}, 47002), b = net.add(false, "Beta", "ABC123", {}, 47003); net.advance(4000);
-      Settings s; s.mode = kRace; s.raceGoal = "count:9"; s.progress = "area:Symmetry_Island;lasers:2"; net.n[h]->SetSettings(s); net.advance(2500);
+      Settings s; s.mode = kRace; s.raceGoal = "count:9"; s.progress = "area:Symmetry_Island;lasers:2"; s.randomizer = "expert;seed:48213;fast"; net.n[h]->SetSettings(s); net.advance(2500);
       check("settings: the mode, goal and new-game spec reach every member", net.n[a]->state().settings.mode == kRace && net.n[b]->state().settings.raceGoal == "count:9" && net.n[a]->state().settings.progress == "area:Symmetry_Island;lasers:2");
+      check("settings: the host's randomizer and seed reach every member", net.n[a]->state().settings.randomizer == "expert;seed:48213;fast" && net.n[b]->state().settings.randomizer == "expert;seed:48213;fast");
       check("start: refused while somebody is not ready", !net.n[h]->Start(net.now)); net.n[a]->SetReady(true); net.advance(1500); check("start: still refused with one of two ready", !net.n[h]->Start(net.now));
       net.n[b]->SetReady(true); net.advance(2500); check("ready: everybody sees who is ready", net.n[h]->state().members[2].ready && net.n[a]->state().members[2].ready && net.n[b]->state().members[1].ready);
       uint64_t t0 = net.now; check("start: accepted when all are ready", net.n[h]->Start(t0));
-      unsigned late = net.add(false, "Late"); std::vector<uint64_t> launchAt(4, 0); std::vector<Launch> L(4); std::vector<std::string> base = {"id=9\nvoice_mode=ptt\nname=Old\n", "listen=1\nvoice_volume=50\n", "dev_menu=1\n", ""};
+      unsigned late = net.add(false, "Late"); std::vector<uint64_t> launchAt(4, 0); std::vector<Launch> L(4); std::vector<std::string> base = {"id=9\nvoice_mode=ptt\nname=Old\n", "listen=1\nvoice_volume=50\nrandomizer=normal;seed:1\n", "dev_menu=1\n", ""};
       for (int step = 0; step < 600; ++step) { net.advance(10); for (unsigned i = 0; i < 4; ++i) { Launch l; if (net.n[i]->TakeLaunch(net.now, &l)) { launchAt[i] = net.now; L[i] = l; } } }
       bool once = true; for (unsigned i : {h, a, b}) once = once && launchAt[i] != 0; check("start: every member's launcher is told to start its game", once);
       uint64_t lo = ~0ull, hi = 0; for (unsigned i : {h, a, b}) { lo = std::min(lo, launchAt[i]); hi = std::max(hi, launchAt[i]); }
@@ -79,6 +80,7 @@ int main() {
       std::string cfg[3]; unsigned who[3] = {h, a, b}; for (int k = 0; k < 3; ++k) cfg[k] = BuildGameCfg(base[k], L[who[k]], 0x0A000001);
       auto has = [&](const std::string& c, const std::string& line) { return c.find(line + "\n") != std::string::npos || c.find(line + "\r\n") != std::string::npos; };
       check("cfg: id, listen port, name and mode of each game", has(cfg[0], "id=1") && has(cfg[0], "listen=47001") && has(cfg[1], "id=2") && has(cfg[1], "listen=47002") && has(cfg[2], "id=3") && has(cfg[2], "listen=47003") && has(cfg[1], "name=Alpha") && has(cfg[0], "game_mode=race") && has(cfg[2], "race_goal=count:9") && has(cfg[1], "start_progress=area:Symmetry_Island;lasers:2"));
+      check("cfg: every game gets the host's randomizer, whatever its own cfg had", has(cfg[0], "randomizer=expert;seed:48213;fast") && has(cfg[1], "randomizer=expert;seed:48213;fast") && has(cfg[2], "randomizer=expert;seed:48213;fast"));
       bool peersOk = true; for (int x = 0; x < 3; ++x) { wl::CfgFile cf = wl::CfgFile::Parse(cfg[x]); auto ps = cf.GetAll("peer"); peersOk = peersOk && ps.size() == 2; for (int y = 0; y < 3; ++y) { if (x == y) continue; std::string want = std::to_string(y + 1) + ",10.0.0." + std::to_string(y + 1) + "," + std::to_string(47001 + y); bool f = false; for (auto& p : ps) f = f || p == want; peersOk = peersOk && f; } }
       check("cfg: every game lists every other game's id, address and port, and not itself, not the late joiner", peersOk);
       check("cfg: the lines the launcher does not set are kept, the old id is replaced", has(cfg[0], "voice_mode=ptt") && has(cfg[1], "voice_volume=50") && has(cfg[2], "dev_menu=1") && !has(cfg[0], "id=9") && !has(cfg[0], "name=Old"));

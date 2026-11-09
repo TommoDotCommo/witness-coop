@@ -20,6 +20,7 @@
 #include <vector>
 #include <uxtheme.h>
 #include "core.h"
+#include "../common/randomizers.h"
 #include "shell.h"
 #include "../common/handover.h"
 #include "../proxy/core/appearance.h"
@@ -36,6 +37,7 @@
 #include "update_win.h"
 #include "../common/userdata.h"
 #include "diag_ps1.h"
+#include "notices_txt.h"      // dist/THIRD-PARTY-NOTICES.txt
 #define STB_IMAGE_IMPLEMENTATION
 #define STBI_ONLY_PNG
 #define STBI_NO_STDIO
@@ -52,8 +54,12 @@ bool Exists(const std::wstring& p) { return GetFileAttributesW(p.c_str()) != INV
 enum { ID_TAB = 100, ID_APPLY, ID_LAUNCH, ID_NEWGAME, ID_BROWSE, ID_GAMEDIR, ID_STATUS, ID_REFRESH, ID_OPENSAVES, ID_BACKUP, ID_TRASH, ID_SAVELIST, ID_SAVEINFO, ID_SAVEPICK, ID_DIAG, ID_UP_VER, ID_UP_STATUS, ID_UP_NOTES, ID_UP_CHECK, ID_UP_APPLY, ID_UP_LATER, ID_UP_AUTO, ID_UP_PRE, ID_UP_BANNER, ID_UP_BANNER_APPLY, ID_UP_BANNER_LATER,
        ID_SAVEPICK2, ID_PRIMARY, ID_NAME, ID_TILE_HOST, ID_TILE_JOIN, ID_TILE_SOLO, ID_TILE_HOST_TXT, ID_TILE_JOIN_TXT, ID_TILE_SOLO_TXT, ID_HOST_STEAM, ID_HOST_DIRECT, ID_JOIN_LABEL, ID_SOLO_NOTE, ID_SOLO_NEW, ID_UP_WHATSNEW, ID_HINTS, ID_FOOT_ACTION,
        ID_SECTIONS, ID_RESET, ID_GUIDE_BTN, ID_LINK_HOME, ID_LINK_NOTES, ID_CREDITS, ID_FOLDER_LABEL, ID_ABOUT_TITLE, ID_ABOUT_GUIDE_TXT, ID_ABOUT_DIAG_TXT, ID_SECTION_TITLE, ID_PICK_LABEL, ID_PICK_LABEL2, ID_RESET2, ID_SAVEPIC, ID_UP_REL, ID_UP_WHICH,
-       ID_NG_OK = 300, ID_NG_LASERS, ID_NG_PRESET, ID_NG_INFO, ID_NG_AREAS = 400, ID_FIELD = 1000 };
+       ID_NG_OK = 300, ID_NG_LASERS, ID_NG_PRESET, ID_NG_INFO, ID_NG_AREAS = 400, ID_FIELD = 1000,
+       // the Randomizers page (common/randomizers.h): the choice (ID_RZ_OFF, then one radio and one description per randomizer), its options, the credits
+       ID_RZ_TITLE = 800, ID_RZ_INTRO, ID_RZ_OFF, ID_RZ_MODE0, ID_RZ_MODE1, ID_RZ_MODE2, ID_RZ_BLURB0, ID_RZ_BLURB1, ID_RZ_BLURB2, ID_RZ_SEED_LABEL, ID_RZ_SEED, ID_RZ_NEWSEED,
+       ID_RZ_ROLL, ID_RZ_SHUFFLE, ID_RZ_COLOR, ID_RZ_FAST, ID_RZ_STATUS, ID_RZ_H_CREDITS, ID_RZ_CREDITS, ID_RZ_LINK0, ID_RZ_LINK1, ID_RZ_LINK2, ID_RZ_LINK3, ID_RZ_LICENCE };
 static_assert(ID_UP_WHICH < ID_NG_OK, "control ids run into the New game dialog's");
+static_assert(ID_RZ_LICENCE < ID_FIELD, "the Randomizers page's ids run into the settings fields");
 enum Kind { kCheck, kCombo, kEdit, kMulti, kSlider, kKeyBtn, kNoteK };
 struct Field { int id; ls::Section section; std::string label, key; Kind kind; std::vector<std::string> choices; std::string def, hint; const ls::Row* row; HWND h = nullptr, hLabel = nullptr, hHint = nullptr, hValue = nullptr; };
 guide::Hold g_guideHold;
@@ -89,6 +95,8 @@ void Status(const std::wstring& s, const wchar_t* action = nullptr, int cmd = 0)
     if (b) { if (action) SetWindowTextW(b, action); ShowWindow(b, action ? SW_SHOW : SW_HIDE); }
 }
 void LobbyPartsChosen(const std::string& spec);
+std::string RzForLaunch(bool newGame); void RzRefresh(); void RzLoad(); void RzCommand(int id, int code); void RzSetFromCommand(const std::string& arg); std::string RzStat(); uint32_t FreshSeed();
+extern uint32_t g_rzRound;      // the Randomizers page (below): the spec a game starts with, the page's state, this round's seed
 HWND C(int id); void LoadPlayUi(const wl::CfgFile& c); void LoadSaveOptions(int pick);
 
 void AddFields() {
@@ -181,7 +189,9 @@ void ShowSaveInfo(int i) {
     const auto& s = g_saves[i]; t = L"File: " + W(s.stem) + L".witness_campaign (" + std::to_wstring(s.bytes / 1024) + L" KB)\r\n";
     if (!s.hasMeta) t += L"The game wrote this save without the mod running, so there is no record of who played or how far.\r\n";
     else {
-        const auto& m = s.meta; t += L"Saved " + W(m.savedAt) + L";  playing time " + std::to_wstring(m.totalSeconds / 3600) + L" h " + std::to_wstring((m.totalSeconds % 3600) / 60) + L" min\r\n";
+        const auto& m = s.meta;
+        { wrand::Spec r = wrand::ParseSpec(m.randomizer); t += L"Puzzles: " + (r.on() ? W(wrand::SpecSummary(r)) + L" (continuing this save keeps them)" : std::wstring(L"the game's own")) + L"\r\n"; }
+        t += L"Saved " + W(m.savedAt) + L";  playing time " + std::to_wstring(m.totalSeconds / 3600) + L" h " + std::to_wstring((m.totalSeconds % 3600) / 60) + L" min\r\n";
         t += L"Panels solved: " + std::to_wstring(m.solved) + L" of " + std::to_wstring(m.total) + L";  lasers lit: " + std::to_wstring(m.lasers) + L" of " + std::to_wstring(m.lasersTotal) + L";  doors open: " + std::to_wstring(m.doorsOpen) + L"\r\n\r\nPlayers:\r\n";
         for (const auto& p : m.players) t += L"  " + W(p.name) + (p.character.empty() ? L"" : L"  as " + W(p.character)) + L"   " + std::to_wstring(p.seconds / 3600) + L" h " + std::to_wstring((p.seconds % 3600) / 60) + L" min in " + std::to_wstring(p.sessions) + L" session(s)\r\n";
         t += L"\r\nProgress by area:\r\n"; for (const auto& a : m.areas) if (a.solved) t += L"  " + W(a.name) + L":  " + std::to_wstring(a.solved) + L" of " + std::to_wstring(a.total) + L"\r\n";
@@ -237,6 +247,7 @@ void LoadAll() {
     RefreshSaves(); LoadPlayUi(c);
     LoadSaveOptions(0);
     ShowSaveInfo(g_saves.empty() ? -1 : 0); g_loading = false;
+    RzLoad();      // the Randomizers page
 }
 bool ApplyAll(std::wstring* msg) {
     std::string keyError = guide::Validate(GuideSettings(false));
@@ -399,6 +410,7 @@ void LaunchGame(bool newGame) {
     if (!Exists(exe)) { Status(L"The game was not found in " + g_dir, L"Choose the game folder", ID_BROWSE); return; }
     if (!BuildOk(exe)) return;
     std::wstring ApplyMsg; if (!ApplyAll(&ApplyMsg)) { Status(ApplyMsg); return; }
+    { wl::CfgFile c = LoadCfg(); c.Set("randomizer", RzForLaunch(newGame)); WriteFile8(CfgPath(), c.Text()); }      // a new game: the pick (a new seed if wanted); continued: its save's
     PassMonitor();
     std::wstring cmd = L"\"" + exe + L"\" " + W(wl::LaunchArgs(LoadCfg(), newGame));
     Dlog(("launching the game: " + U(cmd)).c_str());
@@ -436,7 +448,7 @@ LRESULT CALLBACK PageProc(HWND h, UINT m, WPARAM w, LPARAM l) {
 }
 wup::Updater g_upd; bool g_updFromLobby;
 enum { ID_LB_HOST = 600, ID_LB_JOIN, ID_LB_INVITE, ID_LB_COPY, ID_LB_LEAVE, ID_LB_READY, ID_LB_START, ID_LB_MEMBERS, ID_LB_LOG, ID_LB_CHAT, ID_LB_SEND, ID_LB_MODE, ID_LB_GOAL, ID_LB_NEWGAME, ID_LB_PARTS, ID_LB_STATUS, ID_LB_PORT, ID_LB_ADVERTISE, ID_LB_MUTE, ID_LB_DEAF, ID_LB_RESULT, ID_LB_LEVEL, ID_LB_PARTSINFO, ID_LB_WHO, ID_LB_STEAM_HOST, ID_LB_STEAM_INVITE, ID_LB_STEAM_FRIENDS, ID_LB_STEAM_SEND, ID_LB_UPDATE,
-       ID_LB_INVITE_SHOW, ID_LB_H_PLAYERS, ID_LB_H_CHAT, ID_LB_H_INVITE, ID_LB_H_PLAY, ID_LB_H_GAME, ID_LB_H_GOAL, ID_LB_H_GOALHINT, ID_LB_H_VOICE, ID_LB_H_STEAMHINT,
+       ID_LB_INVITE_SHOW, ID_LB_H_PLAYERS, ID_LB_H_CHAT, ID_LB_H_INVITE, ID_LB_H_PLAY, ID_LB_H_GAME, ID_LB_H_GOAL, ID_LB_H_GOALHINT, ID_LB_H_VOICE, ID_LB_H_STEAMHINT, ID_LB_RZ, ID_LB_RZ_BTN,
        ID_LB_FJ0, ID_LB_FJ1, ID_LB_FJ2, ID_LB_FJ3, ID_LB_FJ4, ID_JOIN_WHAT, ID_JOIN_SOURCES, ID_JOIN_LIST, ID_JOIN_CLIP, ID_JOIN_CLIP_YES, ID_JOIN_LIST_HEAD };
 HWND LB(int id) { return C(id); }
 void BuildLobbyPanel(HWND pg);
@@ -466,7 +478,8 @@ void StartVoice() {
     g_voice.SetMuted(SendMessageW(LB(ID_LB_MUTE), BM_GETCHECK, 0, 0) == BST_CHECKED); g_voice.SetDeaf(SendMessageW(LB(ID_LB_DEAF), BM_GETCHECK, 0, 0) == BST_CHECKED); g_voice.Start(&g_sess, VoiceCfgNow());
 }
 wlobby::Settings SettingsFromUi() {
-    wlobby::Settings s; s.mode = SendMessageW(LB(ID_LB_MODE), CB_GETCURSEL, 0, 0) == 1 ? wlobby::kRace : wlobby::kCoop; s.raceGoal = EditText(LB(ID_LB_GOAL)); s.newGame = SendMessageW(LB(ID_LB_NEWGAME), BM_GETCHECK, 0, 0) == BST_CHECKED; s.progress = g_lobbySpec; return s;
+    wlobby::Settings s; s.mode = SendMessageW(LB(ID_LB_MODE), CB_GETCURSEL, 0, 0) == 1 ? wlobby::kRace : wlobby::kCoop; s.raceGoal = EditText(LB(ID_LB_GOAL)); s.newGame = SendMessageW(LB(ID_LB_NEWGAME), BM_GETCHECK, 0, 0) == BST_CHECKED; s.progress = g_lobbySpec;
+    s.randomizer = RzForLaunch(s.newGame); return s;      // the host's randomizer, with this round's seed: every member's game gets the same
 }
 void PushSettings() { if (g_sess.Active() && g_sess.IsHost()) g_sess.SetSettings(SettingsFromUi()); }
 void PartsInfo() { SetWindowTextW(LB(ID_LB_PARTSINFO), g_lobbySpec.empty() ? L"nothing done yet" : W(g_lobbySpec).c_str()); }
@@ -603,6 +616,7 @@ void GameEnded() {
     if (g_sess.IsHost()) g_sess.SetResult(res);
 #endif
     g_sess.SetInGame(false); StartVoice(); LobbyStatus(L"The game ended. Back in the lobby."); LoadAll();
+    g_rzRound = FreshSeed(); PushSettings(); RzRefresh();      // the next round's new game gets another seed
 }
 void RefreshLobbyUi() {
     bool act = g_sess.Active(), host = act && g_sess.IsHost(), joined = act && g_sess.Joined(); bool lobby = g_shown.phase == wlobby::kLobby;
@@ -616,6 +630,7 @@ void RefreshLobbyUi() {
 void ApplyRemoteSettings(const wlobby::State& st) {      // a guest sees what the host chose
     if (g_sess.IsHost()) return; bool wasRace = SendMessageW(LB(ID_LB_MODE), CB_GETCURSEL, 0, 0) == 1; SendMessageW(LB(ID_LB_MODE), CB_SETCURSEL, st.settings.mode == wlobby::kRace ? 1 : 0, 0); if (wasRace != (st.settings.mode == wlobby::kRace)) LayoutAll(); SetWindowTextW(LB(ID_LB_GOAL), W(st.settings.raceGoal).c_str());
     SendMessageW(LB(ID_LB_NEWGAME), BM_SETCHECK, st.settings.newGame ? BST_CHECKED : BST_UNCHECKED, 0); g_lobbySpec = st.settings.progress; PartsInfo();
+    RzRefresh();
 }
 int CurTab(); void LayoutAll();
 // the Join list on screen (B6: it fills as soon as Join is chosen, refreshes every 5 s while shown; netfind.c sends nothing while it is hidden)
@@ -924,7 +939,8 @@ void LayoutLobby(int W, int H) {
 #endif
     ShowId(ID_LB_H_GOAL, race); ShowId(ID_LB_GOAL, race); ShowId(ID_LB_H_GOALHINT, race);      // the race goal only for a race (owner, 2026-11-06)
     if (race) { PlaceId(ID_LB_H_GOAL, c3, y + 6, 90, 22); PlaceId(ID_LB_GOAL, c3 + 96, y + 2, c3w - 96, 30); y += 34; PlaceId(ID_LB_H_GOALHINT, c3 + 96, y, c3w - 96, 20); y += 26; }
-    PlaceId(ID_LB_NEWGAME, c3, y + 3, 140, 28); PlaceId(ID_LB_PARTS, c3 + 150, y, c3w - 150, 34); y += 40; PlaceId(ID_LB_PARTSINFO, c3 + 150, y, c3w - 150, 20); y += 24; PlaceId(ID_LB_RESULT, c3, y, c3w, std::max(20, H - y - 8));
+    PlaceId(ID_LB_NEWGAME, c3, y + 3, 140, 28); PlaceId(ID_LB_PARTS, c3 + 150, y, c3w - 150, 34); y += 40; PlaceId(ID_LB_PARTSINFO, c3 + 150, y, c3w - 150, 20); y += 26;
+    PlaceId(ID_LB_RZ_BTN, c3, y, 140, 34); PlaceId(ID_LB_RZ, c3 + 150, y, c3w - 150, 40); y += 44; PlaceId(ID_LB_RESULT, c3, y, c3w, std::max(20, H - y - 8));
 }
 void BuildLobbyPanel(HWND pg) {
     auto mk = [&](const wchar_t* cls, const wchar_t* text, DWORD style, int id) { return Make(pg, cls, text, style, 0, 0, 10, 10, id); };
@@ -944,6 +960,7 @@ void BuildLobbyPanel(HWND pg) {
     { HWND mc = mk(L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_VSCROLL, ID_LB_MODE); SendMessageW(mc, CB_ADDSTRING, 0, (LPARAM)L"Co-op"); SendMessageW(mc, CB_ADDSTRING, 0, (LPARAM)L"Race"); SendMessageW(mc, CB_SETCURSEL, 0, 0); }
     mk(L"STATIC", L"Race goal", SS_LEFT, ID_LB_H_GOAL); mk(L"EDIT", L"panel:9F7F", WS_BORDER | ES_AUTOHSCROLL, ID_LB_GOAL); head(L"panel:ID or count:N", ID_LB_H_GOALHINT);
     HWND ng = mk(L"BUTTON", L"New game", BS_AUTOCHECKBOX, ID_LB_NEWGAME); SendMessageW(ng, BM_SETCHECK, BST_CHECKED, 0); mk(L"BUTTON", L"Parts of the map done...", BS_PUSHBUTTON, ID_LB_PARTS); head(L"", ID_LB_PARTSINFO);
+    mk(L"BUTTON", L"Puzzles...", BS_PUSHBUTTON, ID_LB_RZ_BTN); head(L"", ID_LB_RZ);
     head(L"", ID_LB_RESULT); PartsInfo(); RefreshLobbyUi();
 }
 
@@ -989,6 +1006,148 @@ void LayoutAbout(int W, int H) {
     PlaceId(ID_LINK_HOME, m, y, 200, 36); PlaceId(ID_LINK_NOTES, m + 210, y, 200, 36); y += 50;
     PlaceId(ID_FOLDER_LABEL, m, y + 6, 120, 22); PlaceId(ID_GAMEDIR, m + 130, y + 2, cw - 130 - 120, 30); PlaceId(ID_BROWSE, m + cw - 110, y, 110, 34); y += 50;
     PlaceId(ID_CREDITS, m, y, cw, 44);
+}
+
+// ---- Randomizers: the built-in randomizers (common/randomizers.h, proxy/randomizer). The player's pick is kept in the cfg (randomizer_pick: the spec with
+// its seed; randomizer_new_seed: a new seed for each new game, the default) and the game gets the spec it starts with as randomizer= (RzForLaunch). In a
+// lobby the host's choice is everyone's: a guest's page shows it and cannot change it. Everyone whose work it is is named here, with their links.
+uint32_t g_rzRound;                      // this round's seed for "a new seed for each new game" (the lobby shows it before the start; a new one after each game)
+bool g_rzLoading;
+uint32_t FreshSeed() { LARGE_INTEGER q; QueryPerformanceCounter(&q); uint64_t x = (uint64_t)q.QuadPart ^ (GetTickCount64() << 21) ^ ((uint64_t)GetCurrentProcessId() << 40); x ^= x >> 33; x *= 0xff51afd7ed558ccdULL; x ^= x >> 33; return 1 + (uint32_t)(x % 999999); }      // 1..999999: easy to read out to a friend
+wrand::Spec RzPick() { return wrand::ParseSpec(CfgGet("randomizer_pick", "off")); }
+bool RzNewSeed() { return CfgGet("randomizer_new_seed", "1") != "0"; }
+std::string RzNewestSave() {      // the randomizer the newest save was made with ("" none): a continued game keeps it
+    std::vector<wl::SaveInfo> v = wl::ListSaves(SaveFolder(LoadCfg()));
+    return !v.empty() && v[0].hasMeta ? v[0].meta.randomizer : "";
+}
+std::string RzForLaunch(bool newGame) {
+    if (!g_rzRound) g_rzRound = FreshSeed();
+    return wl::RandomizerForLaunch(wrand::SpecText(RzPick()), RzNewSeed(), newGame, newGame ? "" : RzNewestSave(), g_rzRound);
+}
+bool RzGuest() { return g_sess.Active() && !g_sess.IsHost(); }
+std::string RzCreditsText() {
+    std::string t;
+    for (const auto& i : wrand::Randomizers()) {
+        t += std::string(i.name) + "\r\n";
+        for (const auto& c : i.credits) t += std::string("    ") + c.who + ": " + c.what + "\r\n";
+    }
+    t += "\r\n" + std::string(wrand::RandomizerSourceCredit()) + "\r\n\r\nThe randomizers' authors made them for everyone to use; they did not make or check this co-op version, so please report problems with it to this mod, not to them.\r\n\r\n";
+    for (const char* c = kNotices; *c; ++c) { if (*c == '\n' && (c == kNotices || c[-1] != '\r')) t += '\r'; t += *c; }      // the licences in full (THIRD-PARTY-NOTICES.txt)
+    return t;
+}
+void BuildRandomizers(HWND pg) {
+    HWND t = Make(pg, L"STATIC", L"Randomized puzzles", SS_LEFT, 0, 0, 10, 10, ID_RZ_TITLE); SendMessageW(t, WM_SETFONT, (WPARAM)th::Bold(), TRUE);
+    th::MarkMuted(Make(pg, L"STATIC", L"New puzzles for the island, made when the game starts. In a lobby the host's choice is everyone's, so all of you get the same puzzles. A continued game keeps the puzzles it was started with.", SS_LEFT, 0, 0, 10, 10, ID_RZ_INTRO));
+    Make(pg, L"BUTTON", L"The game's own puzzles", BS_AUTORADIOBUTTON | WS_GROUP | WS_TABSTOP, 0, 0, 10, 10, ID_RZ_OFF);
+    int k = 0;
+    for (const auto& i : wrand::Randomizers()) {
+        if (k > 2) break;
+        Make(pg, L"BUTTON", W(i.name).c_str(), BS_AUTORADIOBUTTON, 0, 0, 10, 10, ID_RZ_MODE0 + k);
+        th::MarkMuted(Make(pg, L"STATIC", W(i.blurb).c_str(), SS_LEFT, 0, 0, 10, 10, ID_RZ_BLURB0 + k)); k++;
+    }
+    Make(pg, L"BUTTON", L"A new seed for each new game", BS_AUTOCHECKBOX | WS_GROUP | WS_TABSTOP, 0, 0, 10, 10, ID_RZ_NEWSEED);
+    Make(pg, L"STATIC", L"Seed", SS_LEFT, 0, 0, 10, 10, ID_RZ_SEED_LABEL); Make(pg, L"EDIT", L"", WS_BORDER | ES_NUMBER | ES_AUTOHSCROLL, 0, 0, 10, 10, ID_RZ_SEED);
+    Make(pg, L"BUTTON", L"New seed", BS_PUSHBUTTON, 0, 0, 10, 10, ID_RZ_ROLL);
+    Make(pg, L"BUTTON", L"Shuffle which panel is where (Sigma's randomizers)", BS_AUTOCHECKBOX | WS_TABSTOP, 0, 0, 10, 10, ID_RZ_SHUFFLE);
+    Make(pg, L"BUTTON", L"Colour-blind friendly colours", BS_AUTOCHECKBOX | WS_TABSTOP, 0, 0, 10, 10, ID_RZ_COLOR);
+    Make(pg, L"BUTTON", L"Faster doors, bridges and elevators", BS_AUTOCHECKBOX | WS_TABSTOP, 0, 0, 10, 10, ID_RZ_FAST);
+    Make(pg, L"STATIC", L"", SS_LEFT, 0, 0, 10, 10, ID_RZ_STATUS);
+    HWND h = Make(pg, L"STATIC", L"CREDITS", SS_LEFT, 0, 0, 10, 10, ID_RZ_H_CREDITS); SendMessageW(h, WM_SETFONT, (WPARAM)th::Bold(), TRUE);
+    Make(pg, L"EDIT", W(RzCreditsText()).c_str(), WS_BORDER | ES_MULTILINE | ES_READONLY | WS_VSCROLL | ES_AUTOVSCROLL, 0, 0, 10, 10, ID_RZ_CREDITS);
+    Make(pg, L"BUTTON", L"sigma144's randomizer", BS_PUSHBUTTON, 0, 0, 10, 10, ID_RZ_LINK0); Make(pg, L"BUTTON", L"Penguin12335's Variety", BS_PUSHBUTTON, 0, 0, 10, 10, ID_RZ_LINK1);
+    Make(pg, L"BUTTON", L"jbzdarkid's original", BS_PUSHBUTTON, 0, 0, 10, 10, ID_RZ_LINK2); Make(pg, L"BUTTON", L"Source we use (NewSoupVi)", BS_PUSHBUTTON, 0, 0, 10, 10, ID_RZ_LINK3);
+}
+void LayoutRandomizers(int W, int H) {
+    int m = 24, y = 14, cw = std::min(W - 2 * m, 1180), left = std::min(620, cw * 52 / 100), rx = m + left + 24, rw = cw - left - 24;
+    PlaceId(ID_RZ_TITLE, m, y, cw, 26); y += 30; PlaceId(ID_RZ_INTRO, m, y, cw, 40); y += 48;
+    int ly = y;
+    PlaceId(ID_RZ_OFF, m, ly, left, 26); ly += 32;
+    for (int k = 0; k < 3; ++k) { PlaceId(ID_RZ_MODE0 + k, m, ly, left, 26); ly += 26; PlaceId(ID_RZ_BLURB0 + k, m + 24, ly, left - 24, 38); ly += 44; }
+    ly += 4; PlaceId(ID_RZ_NEWSEED, m, ly, left, 26); ly += 32;
+    PlaceId(ID_RZ_SEED_LABEL, m, ly + 6, 60, 22); PlaceId(ID_RZ_SEED, m + 64, ly + 2, 140, 30); PlaceId(ID_RZ_ROLL, m + 214, ly, 120, 34); ly += 42;
+    PlaceId(ID_RZ_SHUFFLE, m, ly, left, 26); ly += 30; PlaceId(ID_RZ_COLOR, m, ly, left, 26); ly += 30; PlaceId(ID_RZ_FAST, m, ly, left, 26); ly += 34;
+    PlaceId(ID_RZ_STATUS, m, ly, left, std::max(22, H - ly - 10));
+    int ry = y;
+    PlaceId(ID_RZ_H_CREDITS, rx, ry, rw, 22); ry += 26;
+    int linksH = 2 * 40;
+    PlaceId(ID_RZ_CREDITS, rx, ry, rw, std::max(80, H - ry - linksH - 14)); ry = H - linksH - 6;
+    int bw = (rw - 10) / 2; PlaceId(ID_RZ_LINK0, rx, ry, bw, 34); PlaceId(ID_RZ_LINK1, rx + bw + 10, ry, bw, 34); ry += 40; PlaceId(ID_RZ_LINK2, rx, ry, bw, 34); PlaceId(ID_RZ_LINK3, rx + bw + 10, ry, bw, 34);
+}
+wrand::Spec RzFromUi() {      // what the page shows, as a spec
+    wrand::Spec s; s.mode = wrand::kOff;
+    for (int k = 0; k < 3 && k < (int)wrand::Randomizers().size(); ++k) if (SendMessageW(C(ID_RZ_MODE0 + k), BM_GETCHECK, 0, 0) == BST_CHECKED) s.mode = wrand::Randomizers()[k].mode;
+    unsigned long seed = strtoul(EditText(C(ID_RZ_SEED)).c_str(), nullptr, 10); s.seed = (uint32_t)std::min<unsigned long>(seed, 0x7FFFFFFFul);
+    s.shuffle = SendMessageW(C(ID_RZ_SHUFFLE), BM_GETCHECK, 0, 0) == BST_CHECKED; s.colorblind = SendMessageW(C(ID_RZ_COLOR), BM_GETCHECK, 0, 0) == BST_CHECKED; s.fast = SendMessageW(C(ID_RZ_FAST), BM_GETCHECK, 0, 0) == BST_CHECKED;
+    if (!s.on()) { wrand::Spec keep = RzPick(); keep.mode = wrand::kOff; return keep; }      // (off: the options are kept for the next time one is chosen)
+    return s;
+}
+void RzShow(const wrand::Spec& s, bool newSeed) {      // a spec into the page's controls
+    g_rzLoading = true;
+    SendMessageW(C(ID_RZ_OFF), BM_SETCHECK, s.on() ? BST_UNCHECKED : BST_CHECKED, 0);
+    for (int k = 0; k < 3 && k < (int)wrand::Randomizers().size(); ++k) SendMessageW(C(ID_RZ_MODE0 + k), BM_SETCHECK, s.mode == wrand::Randomizers()[k].mode ? BST_CHECKED : BST_UNCHECKED, 0);
+    SetWindowTextW(C(ID_RZ_SEED), std::to_wstring(s.seed).c_str());
+    SendMessageW(C(ID_RZ_NEWSEED), BM_SETCHECK, newSeed ? BST_CHECKED : BST_UNCHECKED, 0);
+    SendMessageW(C(ID_RZ_SHUFFLE), BM_SETCHECK, s.shuffle ? BST_CHECKED : BST_UNCHECKED, 0); SendMessageW(C(ID_RZ_COLOR), BM_SETCHECK, s.colorblind ? BST_CHECKED : BST_UNCHECKED, 0); SendMessageW(C(ID_RZ_FAST), BM_SETCHECK, s.fast ? BST_CHECKED : BST_UNCHECKED, 0);
+    g_rzLoading = false;
+}
+void RzRefresh() {      // what may be changed, and what the next game gets
+    if (!C(ID_RZ_STATUS)) return;
+    bool guest = RzGuest(), host = g_sess.Active() && g_sess.IsHost();
+    std::string status;
+    if (guest) {
+        wrand::Spec hs = wrand::ParseSpec(g_sess.State().settings.randomizer);
+        RzShow(hs, false);
+        status = "The host chooses the puzzles for this lobby: " + wrand::SpecSummary(hs) + ".";
+    } else {
+        wrand::Spec pick = RzPick();
+        bool ng = !host || SendMessageW(LB(ID_LB_NEWGAME), BM_GETCHECK, 0, 0) == BST_CHECKED;
+        wrand::Spec next = wrand::ParseSpec(RzForLaunch(true));
+        std::string cont = RzNewestSave();
+        status = pick.on() ? "A new game gets " + wrand::SpecSummary(next) + (RzNewSeed() ? " (a new seed each game; this one is shown so you can tell a friend)." : ".") : "A new game has the game's own puzzles.";
+        status += "\r\nContinuing keeps your newest save's puzzles: " + (wrand::ParseSpec(cont).on() ? wrand::SpecSummary(wrand::ParseSpec(cont)) : std::string("the game's own")) + ".";
+        if (host) status += ng ? "\r\nEveryone in your lobby gets this new game's puzzles." : "\r\nYour lobby continues your newest save: everyone gets its puzzles.";
+    }
+    SetWindowTextW(C(ID_RZ_STATUS), W(status).c_str());
+    wrand::Spec shown = RzFromUi(); const wrand::Info* inf = wrand::FindRandomizer(shown.mode);
+    bool can = !guest, on = shown.on();
+    for (int id : {ID_RZ_OFF, ID_RZ_MODE0, ID_RZ_MODE1, ID_RZ_MODE2}) EnableWindow(C(id), can);
+    bool newSeed = SendMessageW(C(ID_RZ_NEWSEED), BM_GETCHECK, 0, 0) == BST_CHECKED;
+    EnableWindow(C(ID_RZ_NEWSEED), can && on); EnableWindow(C(ID_RZ_SEED), can && on && !newSeed); EnableWindow(C(ID_RZ_ROLL), can && on);
+    EnableWindow(C(ID_RZ_SHUFFLE), can && on && inf && inf->canShuffle); EnableWindow(C(ID_RZ_COLOR), can && on); EnableWindow(C(ID_RZ_FAST), can && on);
+    if (newSeed && !guest && on) { g_rzLoading = true; SetWindowTextW(C(ID_RZ_SEED), std::to_wstring(g_rzRound ? g_rzRound : (g_rzRound = FreshSeed())).c_str()); g_rzLoading = false; }
+    std::string lobbyLine = g_sess.Active() ? wrand::SpecSummary(wrand::ParseSpec(g_sess.State().settings.randomizer)) : "";
+    SetWindowTextW(LB(ID_LB_RZ), W(lobbyLine.empty() ? std::string() : "Puzzles: " + lobbyLine).c_str());
+    EnableWindow(LB(ID_LB_RZ_BTN), true);
+}
+void RzSave() {      // the page into the cfg (during a lobby game: into the settings that are put back when it ends), then the lobby's settings
+    if (g_rzLoading || RzGuest()) return;
+    wrand::Spec s = RzFromUi(); bool newSeed = SendMessageW(C(ID_RZ_NEWSEED), BM_GETCHECK, 0, 0) == BST_CHECKED;
+    if (newSeed && s.on()) { wrand::Spec keep = RzPick(); s.seed = keep.seed; }      // (the typed seed is kept for when "a new seed" is turned off)
+    auto put = [&](wl::CfgFile& c) { c.Set("randomizer_pick", s.on() || RzPick().on() ? wrand::SpecText(s.on() ? s : wrand::Spec()) : "off"); c.Set("randomizer_new_seed", newSeed ? "1" : "0"); };
+    if (g_game && !g_cfgBackup.empty()) { wl::CfgFile c = wl::CfgFile::Parse(g_cfgBackup); put(c); g_cfgBackup = c.Text(); }
+    else { wl::CfgFile c = LoadCfg(); put(c); WriteFile8(CfgPath(), c.Text()); }
+    PushSettings(); RzRefresh();
+}
+void RzLoad() { RzShow(RzPick(), RzNewSeed()); RzRefresh(); }
+void RzCommand(int id, int code) {
+    if (id == ID_RZ_LINK0 || id == ID_RZ_LINK1 || id == ID_RZ_LINK2 || id == ID_RZ_LINK3) {
+        if (code != BN_CLICKED) return;
+        const char* url = id == ID_RZ_LINK0 ? "https://github.com/sigma144/witness-randomizer" : id == ID_RZ_LINK1 ? "https://github.com/Penguin12335/Variety-Randomiser"
+                        : id == ID_RZ_LINK2 ? "https://github.com/jbzdarkid/witness-randomizer" : wrand::kRandomizerSourceLink;
+        ShellExecuteW(nullptr, L"open", W(url).c_str(), nullptr, nullptr, SW_SHOW); return;
+    }
+    if (id == ID_RZ_ROLL) { if (code != BN_CLICKED || RzGuest()) return; g_rzRound = FreshSeed(); g_rzLoading = true; SetWindowTextW(C(ID_RZ_SEED), std::to_wstring(g_rzRound).c_str()); g_rzLoading = false;
+        if (SendMessageW(C(ID_RZ_NEWSEED), BM_GETCHECK, 0, 0) != BST_CHECKED) RzSave(); else { PushSettings(); RzRefresh(); } return; }
+    if (id == ID_RZ_SEED) { if (code == EN_CHANGE) RzSave(); return; }
+    if (code == BN_CLICKED) RzSave();
+}
+void RzSetFromCommand(const std::string& arg) {      // tests: randomizer <spec> [newseed 0|1]
+    std::string spec = arg.substr(0, arg.find(' ')); bool newSeed = arg.find("newseed 1") != std::string::npos;
+    RzShow(wrand::ParseSpec(spec), newSeed); RzSave();
+}
+std::string RzStat() {
+    return "randomizers pick " + wrand::SpecText(RzPick()) + " newseed " + (RzNewSeed() ? "1" : "0") + " round " + std::to_string(g_rzRound) + " guest " + (RzGuest() ? "1" : "0") +
+           " seededit " + (IsWindowEnabled(C(ID_RZ_SEED)) ? "1" : "0") + " shuffleedit " + (IsWindowEnabled(C(ID_RZ_SHUFFLE)) ? "1" : "0") + " offedit " + (IsWindowEnabled(C(ID_RZ_OFF)) ? "1" : "0") + "\n";
 }
 
 // ---- the update banner (Play) and the About block follow the updater's state
@@ -1042,6 +1201,7 @@ void PollCommands() {      // tests: one command per line in launcher_cmd.txt, t
         else if (cmd == "updatecheck") g_upd.StartManual();
         else if (cmd == "updateapply") g_upd.StartApply();
         else if (cmd == "tab") SelectTab(atoi(arg.c_str()));
+        else if (cmd == "randomizer") RzSetFromCommand(arg);      // randomizer <spec> [newseed 0|1]
         else if (cmd == "section") ShowSection(atoi(arg.c_str()));
         else if (cmd == "choice") ChooseTile(ls::ParseChoice(arg));
         else if (cmd == "primary") SendMessageW(g_main, WM_COMMAND, ID_PRIMARY, 0);
@@ -1077,7 +1237,8 @@ void WriteStat() {      // tests: what the lobby is, as text lines, rewritten ev
     { uint64_t lid = g_sess.SteamLobbyId(); std::string mod = lid ? g_sess.SteamReadData(lsteam::kModKey) : "", proto = lid ? g_sess.SteamReadData(lsteam::kProtocolKey) : "", code = lid ? g_sess.SteamReadData(lsteam::kTokenKey) : "";
       snprintf(b, sizeof b, "steam mode %d lobby %llu members %u limit %u mod %s protocol %s code_set %d failed %d status %s\n", g_sess.SteamMode() ? 1 : 0, (unsigned long long)lid, g_sess.SteamMemberCount(), lid ? g_sess.SteamMemberLimit() : 0u, mod.c_str(), proto.c_str(), code.empty() ? 0 : 1, g_sess.SteamFailed() ? 1 : 0, g_sess.SteamStatus().c_str()); o += b; }
     for (const auto& m : st.members) { snprintf(b, sizeof b, "member %u name %s host %d ready %d ingame %d speaking %d playing %d port %u ip %s\n", m.id, m.name.c_str(), m.host, m.ready, m.inGame, m.speaking, m.playing, m.gamePort, wlobby::IpText(m.ip).c_str()); o += b; snprintf(b, sizeof b, "member_version %u %s\n", m.id, m.version.c_str()); o += b; }
-    snprintf(b, sizeof b, "settings mode %d goal %s newgame %d progress %s\n", (int)st.settings.mode, st.settings.raceGoal.c_str(), st.settings.newGame ? 1 : 0, st.settings.progress.c_str()); o += b;
+    snprintf(b, sizeof b, "settings mode %d goal %s newgame %d progress %s randomizer %s\n", (int)st.settings.mode, st.settings.raceGoal.c_str(), st.settings.newGame ? 1 : 0, st.settings.progress.c_str(), st.settings.randomizer.empty() ? "-" : st.settings.randomizer.c_str()); o += b;
+    o += RzStat();
     { std::string chat = U(g_chatLog); for (size_t i; (i = chat.find("\r\n")) != std::string::npos;) chat.replace(i, 2, " | "); o += "result " + st.lastResult + "\n"; o += "chat " + chat + "\n"; }
     snprintf(b, sizeof b, "voice running %d sent %u received %u level %u speaking %d muted_ui %d\n", g_voice.Running() ? 1 : 0, v.sent, v.received, v.level, v.speaking ? 1 : 0, (int)SendMessageW(LB(ID_LB_MUTE), BM_GETCHECK, 0, 0)); o += b;
     for (const auto& s : v.speakers) { snprintf(b, sizeof b, "voice_speaker %u talking %d rms %.4f tone %.4f %.4f %.4f packets %u\n", s.id, s.talking ? 1 : 0, s.rms, s.tone[0], s.tone[1], s.tone[2], s.packets); o += b; }
@@ -1165,7 +1326,7 @@ void LayoutAll() {
     Place(g_tab, 8, header, w - 16, h - header - foot);
     RECT r; GetClientRect(g_tab, &r); TabCtrl_AdjustRect(g_tab, FALSE, &r); int pw = r.right - r.left, ph = r.bottom - r.top;
     for (int i = 0; i < g_npages; ++i) Place(g_pages[i], r.left, r.top, pw, ph);
-    LayoutPlay(pw, ph); LayoutLobby(pw, ph); LayoutSaves(pw, ph); LayoutAbout(pw, ph);
+    LayoutPlay(pw, ph); LayoutLobby(pw, ph); LayoutSaves(pw, ph); LayoutRandomizers(pw, ph); LayoutAbout(pw, ph);
     Place(g_secList, 12, 12, 240, ph - 24);
     for (int s = 0; s < ls::kSectionCount; ++s) { Place(g_secPanel[s], 270, 8, pw - 282, ph - 16); LayoutSection(g_secPanel[s], s, pw - 282, ph - 16); }
     Place(g_status, 16, h - foot + 8, w - 300, 24); Place(C(ID_FOOT_ACTION), w - 270, h - foot + 4, 254, 30); Place(g_hints, 16, h - 28, w - 32, 22);
@@ -1228,6 +1389,7 @@ void Context(bool y) {
     int t = CurTab(); bool lobby = g_sess.Active();
     if (t == ls::kPlay) { if (lobby) { if (y) SendMessageW(g_main, WM_COMMAND, ID_LB_LEAVE, 0); else if (g_sess.IsHost()) SendMessageW(g_main, WM_COMMAND, ID_LB_COPY, 0); } else if (y) ShowGuide(!GuideOpen()); }
     else if (t == ls::kSaves) SendMessageW(g_main, WM_COMMAND, y ? ID_REFRESH : ID_BACKUP, 0);
+    else if (t == ls::kRandomizers) { if (!y) SendMessageW(g_main, WM_COMMAND, ID_RZ_ROLL, 0); }
     else if (t == ls::kSettings) { if (!y) ResetSection(); }
     else if (t == ls::kAbout) { if (y) ShowGuide(!GuideOpen()); else SendMessageW(g_main, WM_COMMAND, ID_DIAG, 0); }
 }
@@ -1425,6 +1587,8 @@ LRESULT CALLBACK MainProc(HWND h, UINT m, WPARAM w, LPARAM l) {
         }
         else if (id == ID_UP_CHECK) g_upd.StartManual();
         else if (id == ID_UP_APPLY || id == ID_UP_BANNER_APPLY) g_upd.StartApply();
+        else if (id >= ID_RZ_TITLE && id <= ID_RZ_LICENCE) RzCommand(id, code);
+        else if (id == ID_LB_RZ_BTN && code == BN_CLICKED) SelectTab(ls::kRandomizers);
         else if ((id == ID_UP_REL || id == ID_UP_PRE) && HIWORD(w) == BN_CLICKED) {
 #ifndef WL_MUT_UPD_CHOICE_UNSAVED
             g_upd.SetPrereleases(id == ID_UP_PRE ? 1 : 0);
@@ -1471,7 +1635,7 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, LPWSTR cmdline, int show) {
     for (int i = 0; i < ls::kTabCount; ++i) { names[i] = W(ls::TabLabel(i, false)); items[i] = {}; items[i].mask = TCIF_TEXT; items[i].pszText = &names[i][0]; TabCtrl_InsertItem(g_tab, i, &items[i]); }
     th::StyleTab(g_tab);
     for (int i = 0; i < g_npages; ++i) g_pages[i] = Panel(g_tab);
-    BuildPlay(g_pages[ls::kPlay]); BuildSaves(g_pages[ls::kSaves]); BuildSettings(g_pages[ls::kSettings]); BuildAbout(g_pages[ls::kAbout]);
+    BuildPlay(g_pages[ls::kPlay]); BuildSaves(g_pages[ls::kSaves]); BuildRandomizers(g_pages[ls::kRandomizers]); BuildSettings(g_pages[ls::kSettings]); BuildAbout(g_pages[ls::kAbout]);
     g_status = Make(g_main, L"STATIC", L"", SS_LEFT | SS_ENDELLIPSIS, 0, 0, 10, 10, ID_STATUS); Make(g_main, L"BUTTON", L"", BS_PUSHBUTTON, 0, 0, 10, 10, ID_FOOT_ACTION); ShowId(ID_FOOT_ACTION, false);
     g_hints = Make(g_main, L"STATIC", L"", SS_LEFT | SS_ENDELLIPSIS, 0, 0, 10, 10, ID_HINTS); th::MarkMuted(g_hints);
     g_sess.SetModVersion(MOD_VERSION);

@@ -1,5 +1,6 @@
 // See core.h.
 #define WIN32_LEAN_AND_MEAN
+#include "../common/randomizers.h"
 #include <windows.h>
 #include <algorithm>
 #include <cstdio>
@@ -171,6 +172,15 @@ std::string LaunchArgs(const CfgFile& cfg, bool newGame) {
     if (cfg.Get("launcher_no_sound") == "1") a += " -no_sound";
     if (newGame) a += " -new_game";
     return a;
+}
+std::string RandomizerForLaunch(const std::string& pick, bool newSeedEachGame, bool newGame, const std::string& newestSave, uint32_t freshSeed) {
+#ifdef WL_MUT_CONTINUE_REPICKS
+    newGame = true;      // mutant: a continued game is given the pick (its puzzles change under the players)
+#endif
+    wrand::Spec s = wrand::ParseSpec(newGame ? pick : newestSave);
+    if (!s.on()) return "off";
+    if (newGame && newSeedEachGame) s.seed = freshSeed & 0x7FFFFFFFu;
+    return wrand::SpecText(s);
 }
 }  // namespace wl
 

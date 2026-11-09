@@ -2,6 +2,7 @@
 // What the mod writes next to each of the game's own save files (<save>.coop.txt) so a save can be told apart outside the game: who was in the game and how far it got.
 // Game-free; the launcher reads the same files. The text is plain lines (tab separated where a name may hold spaces):
 //   coop-save 1 / saved <date time> / session_seconds N / total_seconds N / progress SOLVED TOTAL / lasers LIT 11 / doors OPEN TOTAL / area <name> SOLVED TOTAL / player <id> <name> <character> <seconds> <sessions>
+//   / randomizer <spec> (only when the puzzles were randomized)
 #include <set>
 #include <string>
 #include <vector>
@@ -16,6 +17,7 @@ struct SaveMeta {
     unsigned solved = 0, total = 0, lasers = 0, lasersTotal = 0, doorsOpen = 0, doorsTotal = 0;
     std::vector<MetaArea> areas;         // only areas with panels
     std::vector<MetaPlayer> players;     // everyone who was in the game, this session and earlier ones, by name
+    std::string randomizer;              // the built-in randomizer that made this game's puzzles (common/randomizers.h spec text), empty: the game's own puzzles
 };
 // The progress half of a SaveMeta from the panels solved (entity ids): per area counts (optional panels left out), lasers lit, panels in total.
 void FillProgress(const Data& d, const std::set<unsigned>& solved, unsigned doorsOpen, unsigned doorsTotal, SaveMeta* m);

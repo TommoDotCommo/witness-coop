@@ -86,8 +86,8 @@ try:
     check('4. "You left the lobby." is said, then clears itself within seconds', s0 == 'You left the lobby.' and s1 == '', (s0, s1))
     # 5. the focus line: a tab opened by the mouse (or a command) puts the focus on its main button without the line; Tab on the keyboard turns the line on,
     # a mouse click turns it off again
-    cmd('tab 1'); a1 = cues(); cmd('tab 3'); a3 = cues()
-    u.PostMessageW(focused(hw), 0x100, 0x09, 0x000F0001); time.sleep(0.4); cmd('tab 3'); kb = cues()      # WM_KEYDOWN Tab, then About again: its button has the focus with the cues on
+    cmd('tab 1'); a1 = cues(); cmd('tab 4'); a3 = cues()
+    u.PostMessageW(focused(hw), 0x100, 0x09, 0x000F0001); time.sleep(0.4); cmd('tab 4'); kb = cues()      # WM_KEYDOWN Tab, then About again: its button has the focus with the cues on
     u.PostMessageW(focused(hw), 0x204, 0, 0); time.sleep(0.6); ms = cues()                                # WM_RBUTTONDOWN on the focused button (no action): the mouse in use
     check('5. a tab opened without the keyboard shows no focus line on its main button; Tab shows it; the mouse hides it again',
           a1 and a3 and a1[:2] == (0, 0) and a3 == (0, 0, 'Button') and kb == (1, 1, 'Button') and ms and ms[:2] == (0, 0), (a1, a3, kb, ms))

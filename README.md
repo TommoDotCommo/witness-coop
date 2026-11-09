@@ -103,6 +103,26 @@ and for a new game, which parts of the island should already be done. Everyone t
 Up to 16 players can be in a lobby. Friends can also join a game that's already under way: their world catches up with
 everything that's been solved once it has loaded.
 
+### Randomized puzzles
+
+The launcher's **Randomizers** tab gives the island new puzzles, made by randomizers built into the mod:
+
+- **Sigma's Randomizer: Normal**: new puzzles on most panels, each area keeping its own kind of symbols. A good first
+  randomized game.
+- **Sigma's Randomizer: Expert**: much harder puzzles, some needing approaches the base game never asks for.
+- **Variety Randomizer**: each area gets its own combination of symbols, including new ones such as arrows.
+
+Each comes with a seed (a number: the same seed gives the same puzzles) and options: a new seed for each new game,
+shuffling which panel is where, colour-blind friendly colours, and faster doors, bridges and elevators.
+
+In a lobby the host's choice is everyone's, so all of you play the same puzzles; the lobby shows it under **Puzzles**.
+A continued game keeps the puzzles it was started with, and the Saves tab shows them for each save. The puzzles are
+made when the game starts, which takes a few seconds. If someone's game ends up with different puzzles, the game says
+so; start again from the lobby.
+
+The randomizers are the work of sigma144, jbzdarkid, Penguin12335, NewSoupVi and others: see
+[Credits](#credits-and-licence).
+
 ## Controls
 
 Hold **F1** in the game or the launcher to see every key, including any you've changed. The co-op keys use the same
@@ -230,6 +250,16 @@ from the clipboard is kept or sent.
 Made with the [Co-op Anything](https://github.com/cranebeaker/coop-anything) playbook. The adventurer character was
 made for this mod and is public domain ([credits](assets/models/CREDITS.md)). The mod is MIT licensed (see
 [LICENSE](LICENSE)).
+
+The randomizers are the [Witness Random Puzzle Generator](https://github.com/NewSoupVi/The-Witness-Randomizer-for-Archipelago)
+as maintained for Archipelago by NewSoupVi: [sigma144's randomizer](https://github.com/sigma144/witness-randomizer)
+(Normal and Expert), [Penguin12335's Variety](https://github.com/Penguin12335/Variety-Randomiser) and
+[jbzdarkid's original](https://github.com/jbzdarkid/witness-randomizer), with work by blastron, Jarno458, hatkirby,
+ReverM and others (MIT licence, copyright 2018 jbzdarkid). The order in which the game needs its panels solved, for a new
+game with parts already done, comes from [Archipelago](https://github.com/ArchipelagoMW/Archipelago)'s logic for The
+Witness (MIT licence). Their licences are in [THIRD-PARTY-NOTICES.txt](dist/THIRD-PARTY-NOTICES.txt), which comes with
+the download, and the launcher's Randomizers tab shows them too. None of these authors made or checked this co-op
+version: report problems with it here.
 
 This is a fan project. It isn't affiliated with or endorsed by Thekla, Inc., and doesn't include any of the game's
 files. You need your own copy of The Witness.

@@ -40,7 +40,7 @@ struct Gate {
         return id != 0 && id != self && members.count(id) != 0;
     }
 };
-struct Settings { Mode mode = kCoop; bool newGame = true; std::string raceGoal = "panel:9F7F", progress; };      // progress: the new game's spec ("area:X;lasers:N", progress/progress.h), empty: nothing done
+struct Settings { Mode mode = kCoop; bool newGame = true; std::string raceGoal = "panel:9F7F", progress, randomizer; };      // progress: the new game's spec ("area:X;lasers:N", progress/progress.h), empty: nothing done; randomizer: the built-in randomizer and its seed (common/randomizers.h), empty or "off": the game's own puzzles
 struct Member { unsigned id = 0; std::string name; bool host = false, ready = false, inGame = false, speaking = false, playing = false; uint16_t gamePort = 0; uint32_t ip = 0; uint32_t ackedChat = 0; uint64_t steamId = 0; std::string version; };      // version: the member's mod version (git describe); steamId: in a Steam lobby      // playing: was in the lobby when the game was started: only these are in the game
 struct ChatLine { unsigned seq = 0, from = 0; std::string text; };
 struct State { uint32_t seq = 0; Phase phase = kLobby; int32_t startInMs = 0; Settings settings; std::vector<Member> members; std::string lastResult; };
@@ -98,7 +98,7 @@ private:
     std::vector<ChatLine> chatIn_; std::map<uint32_t, ChatLine> pendingIn_;
 };
 
-// The cfg of one member's game from the roster: id, game port, every other member as peer=<id>,<ip>,<port> (and peer_version=<id>,<version>, so the game can say whose version differs) (or peer=<id>,steam:<steamid64> when the lobby is a Steam lobby: every
+// The cfg of one member's game from the roster (and the host's randomizer, always written: a guest's own earlier choice never applies): id, game port, every other member as peer=<id>,<ip>,<port> (and peer_version=<id>,<version>, so the game can say whose version differs) (or peer=<id>,steam:<steamid64> when the lobby is a Steam lobby: every
 // member then has a SteamID), the mode and its goal, the name, the new game's progress. `base` is the member's
 // current witness_coop.cfg text (every line it does not set is kept). `dialAddr`: the address the client used to reach the host (the host's own address as the others know it).
 std::string BuildGameCfg(const std::string& base, const Launch& l, uint32_t hostDialIp);

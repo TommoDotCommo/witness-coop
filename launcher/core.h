@@ -63,6 +63,11 @@ ArtPick PickArt(const std::vector<SaveInfo>& saves, const std::function<bool(con
 // (nothing else is ever taken from the command line into the join box) or holds a control character.
 std::string InviteFromLink(const std::string& arg);
 
+// ---- the built-in randomizers (common/randomizers.h): the spec a game starts with ("off" or a spec with its seed).
+// A new game gets the player's pick, with `freshSeed` when a new seed is wanted for each new game; a continued game gets what its newest save was
+// made with (none: the game's own puzzles), so the puzzles of a game never change under the players.
+std::string RandomizerForLaunch(const std::string& pick, bool newSeedEachGame, bool newGame, const std::string& newestSave, uint32_t freshSeed);
+
 // ---- the launch
 std::string ProgressSpec(const std::vector<std::string>& areas, int lasers, const std::vector<std::string>& presets);   // "area:X;area:Y;lasers:N;preset:Z"
 std::string LaunchArgs(const CfgFile& cfg, bool newGame);       // the game's command line: -skip_config_dialog (the launcher has written the game's video settings), -no_sound when launcher_no_sound=1, -new_game for a new world

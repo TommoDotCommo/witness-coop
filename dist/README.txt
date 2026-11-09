@@ -89,6 +89,12 @@ a new game (optionally with parts of the island already done). Everyone ticks Re
 the host presses Start game, and the games start together. Friends can join a game
 that's already going: their world catches up when it loads.
 
+Randomized puzzles: the launcher's Randomizers tab gives the island new puzzles
+(Sigma's Randomizer Normal or Expert, or the Variety Randomizer), with a seed and a
+few options. In a lobby the host's choice is everyone's; a continued game keeps the
+puzzles it was started with. The randomizers are the work of sigma144, jbzdarkid,
+Penguin12335, NewSoupVi and others (see Licence).
+
 
 Keys
 ----
@@ -178,3 +184,6 @@ Licence
 -------
 MIT (LICENSE.txt). This is a fan project, not affiliated with Thekla, Inc., and it
 doesn't include any of the game's files.
+The mod contains other people's work under the MIT licence: the randomizers (sigma144,
+jbzdarkid, Penguin12335, NewSoupVi and others) and Archipelago's logic for The Witness.
+Their notices are in THIRD-PARTY-NOTICES.txt.

@@ -5,7 +5,19 @@ CXX = x86_64-w64-mingw32-g++
 OUT = dsound.dll
 .DEFAULT_GOAL := $(OUT)
 SRC = oracle.cpp pad.cpp diag.cpp thirdperson.cpp tracer.cpp guide_ui.cpp tv.cpp radio/radio_game.cpp race_game.cpp race/race.cpp voice_audio.cpp voice/voice.cpp dsound_proxy.cpp overlay.cpp gamecam.cpp model_gpu.cpp depth.cpp model/model.cpp coop.cpp steam_net.cpp game.cpp state.cpp hooks.cpp config.cpp input.cpp ui.cpp devmenu.cpp social.cpp video.cpp savepoints.cpp core/sync_core.cpp mapgen.cpp savemeta_game.cpp progress/progress.cpp progress/savemeta.cpp progress/progress_data.cpp
-OBJ = $(patsubst %.cpp,build/%.o,$(SRC))
+# the built-in randomizers: our layer (randomizer/), and the vendored generator (../third_party/witness-randomizer/src, built with its own flags below)
+RSRC = randomizer/backend.cpp randomizer/generate.cpp randomizer/game_randomizer.cpp
+VSRC = Generate MultiGenerate Panel PuzzleList Quaternion Randomizer Special Watchdog
+VENDOR = ../third_party/witness-randomizer
+RFLAGS = -O2 -std=gnu++2a -D_WIN32_WINNT=0x0601 -MMD -MP -Ibuild -DWITNESS_COOP -include $(VENDOR)/shim/compat.h -I$(VENDOR)/shim -I$(VENDOR)/src -Irandomizer
+ROBJ = $(patsubst %.cpp,build/%.o,$(RSRC)) $(patsubst %,build/vendor/%.o,$(VSRC))
+build/randomizer/%.o: randomizer/%.cpp Makefile
+	@mkdir -p $(dir $@)
+	$(CXX) $(RFLAGS) -c -o $@ $<
+build/vendor/%.o: $(VENDOR)/src/%.cpp Makefile
+	@mkdir -p $(dir $@)
+	$(CXX) $(RFLAGS) -w -c -o $@ $<
+OBJ = $(patsubst %.cpp,build/%.o,$(SRC)) $(ROBJ)
 CXXFLAGS = -O2 -std=c++17 -D_WIN32_WINNT=0x0601 -MMD -MP -Ibuild
 LIBS = -ld3d11 -ldxgi -luuid -lws2_32 -lgdi32 -lshell32 -lwindowscodecs -lole32 -loleaut32 -lwinmm
 # the version the logs and the diagnostics name: `git describe`, written to build/version.h only when it changes (so only diag.cpp recompiles)
@@ -51,3 +63,10 @@ build/coop_mut_silent.o: coop.cpp Makefile build/version.h
 	$(CXX) $(CXXFLAGS) -DWN_MUT_SILENT -c -o $@ coop.cpp
 dsound_mut_silent.dll: $(filter-out build/coop.o,$(OBJ)) build/coop_mut_silent.o $(RES) dsound.def
 	$(CXX) -shared -static-libgcc -static-libstdc++ -o $@ $(filter-out build/coop.o,$(OBJ)) build/coop_mut_silent.o $(RES) dsound.def $(LIBS)
+# Test builds for tools/randomizer_solo.sh and tools/qa_randomizer.py: dsound_mut_rand_NO_APPLY.dll (the puzzles are made but never written),
+# dsound_mut_rand_NOT_GATED.dll (the sync core does not wait for them). Only game_randomizer.cpp differs.
+build/randomizer/game_randomizer_mut_%.o: randomizer/game_randomizer.cpp Makefile
+	@mkdir -p build/randomizer
+	$(CXX) $(RFLAGS) -DWR_MUT_$* -c -o $@ $<
+dsound_mut_rand_%.dll: $(filter-out build/randomizer/game_randomizer.o,$(OBJ)) build/randomizer/game_randomizer_mut_%.o $(RES) dsound.def
+	$(CXX) -shared -static-libgcc -static-libstdc++ -o $@ $(filter-out build/randomizer/game_randomizer.o,$(OBJ)) build/randomizer/game_randomizer_mut_$*.o $(RES) dsound.def $(LIBS)

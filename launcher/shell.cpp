@@ -8,7 +8,7 @@
 
 namespace ls {
 const char* TabLabel(int tab, bool inLobby) {
-    static const char* names[] = {"Play", "Saves", "Settings", "About"};
+    static const char* names[] = {"Play", "Saves", "Randomizers", "Settings", "About"};
     if (tab == kPlay && inLobby) return "Lobby";
     return tab >= 0 && tab < kTabCount ? names[tab] : "";
 }
@@ -223,6 +223,7 @@ PageActions ActionsFor(Tab t, bool inLobby, bool isHost) {
     case kPlay: if (!inLobby) return {"the primary button", "", "Quick guide"};
                 return {isHost ? "Start game" : "Ready", isHost ? "Copy invite" : "", "Leave"};
     case kSaves: return {"New game", "Back up", "Refresh"};
+    case kRandomizers: return {"", "New seed", ""};
     case kSettings: return {"", "Reset section", ""};
     case kAbout: return {"Check for updates", "Send diagnostics", "Quick guide"};
     default: return {};

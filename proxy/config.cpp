@@ -96,6 +96,7 @@ const Cfg& GetCfg() {
             else if (sscanf(line, "no_emote_send=%d", &v) == 1) r.noEmoteSend = v != 0;
             else if (sscanf(line, "no_typing_dots=%d", &v) == 1) r.noTypingDots = v != 0;
             else if (sscanf(line, "no_ping_marks=%d", &v) == 1) r.noPingMarks = v != 0;
+            else if (!strncmp(line, "randomizer=", 11)) { std::string t = line + 11; while (!t.empty() && (t.back() == '\r' || t.back() == '\n')) t.pop_back(); r.randomizer = t; }
             else if (!strncmp(line, "start_progress=", 15)) { std::string t = line + 15; while (!t.empty() && (t.back() == '\r' || t.back() == '\n')) t.pop_back(); r.startProgress = t; }
             else if (sscanf(line, "no_radio_view=%d", &v) == 1) r.noRadioView = v != 0;
             else if (sscanf(line, "no_radio_pose=%d", &v) == 1) r.noRadioPose = v != 0;

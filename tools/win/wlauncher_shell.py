@@ -1,4 +1,4 @@
-# Game-free check of the launcher's shape on its real window (Windows Python; tools/qa_launcher_shell.py runs it): four tabs, Play turning into Lobby, the
+# Game-free check of the launcher's shape on its real window (Windows Python; tools/qa_launcher_shell.py runs it): the tabs (Settings is tab 3), Play turning into Lobby, the
 # settings saved on change, press-a-key capture refusing F1 and keys in use, Reset section, the remembered Play choice, and the pad (states injected through
 # the launcher's command file, the same path as XInput: D-pad on a slider, RB/LB tabs, B back). Evidence: the launcher's state file and witness_coop.cfg on disk.
 # usage: wlauncher_shell.py <launcher exe>      (a fresh folder in %TEMP% stands in for the game folder; no game is started)
@@ -48,11 +48,11 @@ try:
     time.sleep(2.5); clear_of_pointer(p.pid)
     u, s, h = ui()
     check('1. the launcher opens on Play at 1280x800', 'tab 0 label Play' in u and 'client 1280 800' in u, u)
-    cmd('tab 2', 'section 2', 'focus cfg:voice_volume', 'pad 0 0 0', 'pad 0004 0 0', 'pad 0 0 0'); u, s, h = ui()
+    cmd('tab 3', 'section 2', 'focus cfg:voice_volume', 'pad 0 0 0', 'pad 0004 0 0', 'pad 0 0 0'); u, s, h = ui()
     check('2. pad D-pad left on Voice volume lowers it and it is saved at once (no Save button)', cfg().get('voice_volume') == '95' and s.startswith('Saved'), (cfg().get('voice_volume'), s))
     check('   the footer switched to pad buttons', h.startswith('A Select   B Back   LB/RB Tabs'), h)
     cmd('pad 0200 0 0', 'pad 0 0 0'); u1 = ui()[0]; cmd('pad 0100 0 0', 'pad 0 0 0'); u2 = ui()[0]
-    check('3. RB and LB change tabs', 'tab 3 ' in u1 and 'tab 2 ' in u2, (u1, u2))
+    check('3. RB and LB change tabs', 'tab 4 ' in u1 and 'tab 3 ' in u2, (u1, u2))
     cmd('capture cfg:key_chat 0x70'); s1 = ui()[1]; cmd('capture cfg:key_chat 0x52'); s2 = ui()[1]
     check('4. press-a-key refuses F1 and a key in use, and says why; the cfg is unchanged', s1.startswith('F1 is the quick guide') and 'already used for Radio' in s2 and 'key_chat' not in cfg(), (s1, s2))
     cmd('capture cfg:key_chat 0x55')

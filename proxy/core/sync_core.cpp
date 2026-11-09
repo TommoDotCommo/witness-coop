@@ -13,6 +13,10 @@ constexpr uint32_t kMagicPing = 0x36515457;   // "WTQ6": ping and pong, carry th
 constexpr size_t kPingLen = 48, kNameLen = 24;
 constexpr uint32_t kMagicSoc = 0x36585457, kMagicSocAck = 0x364B5457, kMagicPres = 0x36535457;   // "WTX6" a reliable social message, "WTK6" its acknowledgement, "WTS6" presence
 constexpr size_t kPresLen = 36, kSocHeader = 28, kSocMax = 900, kSocAckLen = 24;
+// "WTR6": this player's puzzles (the built-in randomizer's fingerprint of what it made of this world; 0 with no randomizer), state like presence: magic, from,
+// session, fingerprint (8), state, checksum. Builds before it ignore the class (no version notice).
+constexpr uint32_t kMagicPuz = 0x36525457;
+constexpr size_t kPuzLen = 25;
 constexpr uint64_t kPresExpiryMs = 4000;
 constexpr uint32_t kMagicLineFine = 0x374C5457; // "WTL7": 1/20 mm; old receivers ignore this magic
 constexpr uint32_t kMagicLine = 0x364C5457;   // "WTL6": a drawn line, best effort, the whole line every time
@@ -102,6 +106,7 @@ void SyncCore::tick(uint64_t now) {
         send(finish(std::move(b)));
     }
     if (!f_.noPresenceSend && (presDirty_ || now >= nextPres_)) { presDirty_ = false; nextPres_ = now + 1000; sendPresence(); }
+    if (puzOn_ && (puzDirty_ || now >= nextPuz_)) { puzDirty_ = false; nextPuz_ = now + 2000; sendPuzzles(); }
     if (!socOut_.empty()) socialTick(now);
     for (auto& kv : lines_) {      // a changed line goes out at once while it is being drawn at most every 100 ms, a finished or cleared one immediately
         LineState& s = kv.second;
@@ -146,6 +151,7 @@ void SyncCore::onPacket(const uint8_t* d, size_t n, uint64_t now) {
     if (magic == kMagicSoc) { onSocial(d, n, now); return; }
     if (magic == kMagicSocAck) { onSocialAck(d, n); return; }
     if (magic == kMagicPres) { onPresence(d, n, now); return; }
+    if (magic == kMagicPuz) { onPuzzles(d, n, now); return; }
     Version version = {};
     if (fixedRoster_) {
         if (magic == kGroupEv && n == kGroupEvLen) { version = {get64(d + 28), get32(d + 36)}; magic = kMagicEv; }
@@ -400,11 +406,12 @@ void SyncCore::pollState(uint64_t now) {
         // doors on 3 scans 3 s apart. (A baseline taken while the world was loading reported 39 transient "open" doors, and a
         // counts-only gate still let a default-open door power up late; see also the settling window below.)
         bool go = false;
-        if (f_.noGate) { scanWorld(); go = w_->cameraValid() && !panels_.empty(); }          // twin: no gate
+        const bool worldReady = f_.noWorldReady || w_->worldReady();
+        if (f_.noGate) { scanWorld(); go = worldReady && w_->cameraValid() && !panels_.empty(); }          // twin: no gate
         else if (now >= nextGate_) {
             nextGate_ = now + 3000; scanWorld();
             uint64_t sig = signature();
-            if (w_->cameraValid() && !panels_.empty() && panels_.size() == gateLastPanels_ && doors_.size() == gateLastDoors_ && sig == gateLastSig_) { if (++gateSame_ >= 3) go = true; }
+            if (worldReady && w_->cameraValid() && !panels_.empty() && panels_.size() == gateLastPanels_ && doors_.size() == gateLastDoors_ && sig == gateLastSig_) { if (++gateSame_ >= 3) go = true; }
             else gateSame_ = 0;
             gateLastPanels_ = panels_.size(); gateLastDoors_ = doors_.size(); gateLastSig_ = sig;
         }
@@ -814,6 +821,35 @@ void SyncCore::onPresence(const uint8_t* d, size_t n, uint64_t now) {
     peer.pres.radioEquipped = (d[18] & 8) != 0;
     peer.pres.proximitySpeaking = (d[19] == 0) && ((d[18] & 4) != 0);
     peer.pres.voiceChannel = d[19];
+}
+void SyncCore::setPuzzles(uint64_t fingerprint, uint8_t state) {
+    Guard g(h_);
+    if (!puzOn_ || fingerprint != puz_ || state != puzState_) { puz_ = fingerprint; puzState_ = state; puzDirty_ = true; puzOn_ = true; }
+}
+void SyncCore::sendPuzzles() {
+    Bytes b; put32(b, kMagicPuz); put32(b, uint32_t(id_)); put32(b, session_);
+#ifdef WR_MUT_PUZZLES_ZERO
+    for (int i = 0; i < 8; i++) b.push_back(0);
+#else
+    for (int i = 0; i < 8; i++) b.push_back(uint8_t(puz_ >> (8 * i)));
+#endif
+    b.push_back(puzState_);
+    send(finish(std::move(b)));
+}
+void SyncCore::onPuzzles(const uint8_t* d, size_t n, uint64_t now) {
+    if (n != kPuzLen || d[20] > 3) return;
+    uint32_t from = get32(d + 4);
+    if (int(from) == id_) return;
+    Guard g(h_);
+    auto pi = peers_.find(from);
+    if (pi == peers_.end()) return;           // known peers only (a pose comes first)
+    pi->second.puz = get64(d + 12); pi->second.puzState = d[20]; pi->second.puzAt = now;
+}
+std::vector<SyncCore::PeerPuzzles> SyncCore::peerPuzzles() {
+    Guard g(h_);
+    std::vector<PeerPuzzles> v;
+    for (const auto& p : peers_) if (p.second.puzAt) v.push_back(PeerPuzzles{p.first, p.second.puz, p.second.puzState, p.second.name});
+    return v;
 }
 bool SyncCore::socialQueue(uint8_t type, Bytes payload) {
     if (payload.size() > kSocMax) return false;
