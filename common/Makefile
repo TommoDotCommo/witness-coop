@@ -52,7 +52,16 @@ build/userdata-mutant-%.exe: userdata_test.cpp userdata.h
 userdata-test: build/userdata-test.exe $(addsuffix .exe,$(addprefix build/userdata-mutant-,$(USERDATA_MUTANTS)))
 	build/userdata-test.exe
 	@for m in $(USERDATA_MUTANTS); do if build/userdata-mutant-$$m.exe >/dev/null; then echo "MUTANT userdata $$m SURVIVED"; exit 1; else echo "mutant userdata $$m killed"; fi; done
-test: pad-test userdata-test gamefont-test build/guide-test $(addprefix build/mutant-,$(MUTANTS)) build/buildid-test build/buildid-mutant build/notices-test $(addprefix build/notices-mutant-,$(NOTICE_MUTANTS))
+# the randomizer choice as text (randomizers.h): one mutant
+build/randomizers-test: randomizers_test.cpp randomizers.h
+	mkdir -p build; g++ -std=c++17 -O2 -Wall -Wextra -o $@ randomizers_test.cpp
+build/randomizers-mutant: randomizers_test.cpp randomizers.h
+	mkdir -p build; g++ -std=c++17 -O2 -DRZ_MUT_SEED_LOST -o $@ randomizers_test.cpp
+randomizers-test: build/randomizers-test build/randomizers-mutant
+	build/randomizers-test
+	@if build/randomizers-mutant >/dev/null; then echo "MUTANT SEED_LOST SURVIVED"; exit 1; else echo "randomizers mutant SEED_LOST killed"; fi
+.PHONY: randomizers-test
+test: randomizers-test pad-test userdata-test gamefont-test build/guide-test $(addprefix build/mutant-,$(MUTANTS)) build/buildid-test build/buildid-mutant build/notices-test $(addprefix build/notices-mutant-,$(NOTICE_MUTANTS))
 	build/notices-test
 	@for m in $(NOTICE_MUTANTS); do if build/notices-mutant-$$m >/dev/null 2>&1; then echo "MUTANT notices $$m SURVIVED"; exit 1; else echo "mutant notices $$m killed"; fi; done
 	build/buildid-test $(BUILDID_EXE)

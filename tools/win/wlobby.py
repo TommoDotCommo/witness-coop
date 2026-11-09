@@ -25,8 +25,9 @@ def stat(d):
             m = re.match(r'member (\d+) name (.*) host (\d) ready (\d) ingame (\d) speaking (\d) playing (\d) port (\d+) ip (\S+)', l)
             if m: r['members'][int(m[1])] = dict(name=m[2], host=int(m[3]), ready=int(m[4]), ingame=int(m[5]), speaking=int(m[6]), playing=int(m[7]), port=int(m[8]), ip=m[9])
         elif l.startswith('settings '):
-            m = re.match(r'settings mode (\d) goal (\S*) newgame (\d) progress (.*)', l)
-            if m: r['settings'] = dict(mode=int(m[1]), goal=m[2], newgame=int(m[3]), progress=m[4])
+            m = re.match(r'settings mode (\d) goal (\S*) newgame (\d) progress (.*?) randomizer (\S+)$', l)
+            if m: r['settings'] = dict(mode=int(m[1]), goal=m[2], newgame=int(m[3]), progress=m[4], randomizer=m[5])
+        elif l.startswith('randomizers '): v = l.split(); r['rz'] = {v[i]: v[i + 1] for i in range(1, len(v) - 1, 2)}
         elif l.startswith('result'): r['result'] = l[7:]
         elif l.startswith('chat'): r['chat'] = l[5:]
         elif l.startswith('voice_speaker '):
@@ -99,8 +100,9 @@ try:
     check('   A mutes its microphone: B stops hearing A', b and b['speakers'][1]['talking'] == 0 and a['voice']['muted_ui'] == 1, b and b['speakers'])
     cmd(dirA, 'mute 0')
     # 4. the host's choices
-    cmd(dirA, 'mode race', 'goal count:2', 'newgame 1', 'parts area:Tutorial_(Inside)'); a, b = wait(lambda a, b: b['settings'].get('mode') == 1 and b['settings'].get('goal') == 'count:2', 10)
-    check('4. the host chooses a race to 2 panels and a new game: B sees it', b and b['settings'] == dict(mode=1, goal='count:2', newgame=1, progress='area:Tutorial_(Inside)'), b and b['settings'])
+    cmd(dirA, 'mode race', 'goal count:2', 'newgame 1', 'parts area:Tutorial_(Inside)', 'randomizer normal;seed:777;fast newseed 0'); a, b = wait(lambda a, b: b['settings'].get('mode') == 1 and b['settings'].get('goal') == 'count:2' and b['settings'].get('randomizer') == 'normal;seed:777;fast', 10)
+    check('4. the host chooses a race to 2 panels, a new game and a randomizer: B sees it', b and b['settings'] == dict(mode=1, goal='count:2', newgame=1, progress='area:Tutorial_(Inside)', randomizer='normal;seed:777;fast'), b and b['settings'])
+    check('   B\'s Randomizers tab shows the host\'s choice and cannot change it', b and b.get('rz', {}).get('guest') == '1' and b['rz'].get('offedit') == '0', b and b.get('rz'))
     # 5. start
     cmd(dirA, 'start'); time.sleep(1.5); a, b = stat(dirA), stat(dirB)
     check('5. the host cannot start while B is not ready', a and a['lobby']['phase'] == 0 and b['lobby']['phase'] == 0, a and a['lobby'])
@@ -116,6 +118,7 @@ try:
     check('   each game was given its own number, port, name and the host\'s choices', cA['id'] == '1' and cB['id'] == '2' and cA['listen'] == str(a['members'][1]['port']) and cB['listen'] == str(a['members'][2]['port']) and cA['game_mode'] == 'race' and cB['game_mode'] == 'race' and cB['race_goal'] == 'count:2' and cA['name'] == 'Alpha' and cB['name'] == 'Beta', (cA, cB))
     check('   ... and each lists the other as its only peer (number, address, port)', len(cfg_lines(dirA, 'peer')) == 1 and cfg_lines(dirA, 'peer')[0].startswith('2,') and cfg_lines(dirA, 'peer')[0].endswith(',' + cB['listen']) and len(cfg_lines(dirB, 'peer')) == 1 and cfg_lines(dirB, 'peer')[0].startswith('1,') and cfg_lines(dirB, 'peer')[0].endswith(',' + cA['listen']), (cfg_lines(dirA, 'peer'), cfg_lines(dirB, 'peer')))
     check('   the new game starts with the parts of the map the host chose', cA.get('start_progress') == 'area:Tutorial_(Inside)' and cB.get('start_progress') == 'area:Tutorial_(Inside)', (cA.get('start_progress'), cB.get('start_progress')))
+    check('   and with the host\'s randomizer and seed in both games (B\'s own pick does not count)', cA.get('randomizer') == 'normal;seed:777;fast' and cB.get('randomizer') == 'normal;seed:777;fast', (cA.get('randomizer'), cB.get('randomizer')))
     check('   the lines of the players\' own cfg that the lobby does not set are kept (voice test tone, countdown)', cA.get('voice_test_tone') == '120,1000,5500' and cA.get('race_countdown_ms') == '9000' and cB.get('race_countdown_ms') == '9000', (cA.get('voice_test_tone'), cB.get('race_countdown_ms')))
     for k, d in (('A', dirA), ('B', dirB)):
         x, y, w, h = rects[k].split(); subprocess.run([sys.executable, os.path.join(here, 'wplace.py'), str(pids[k]), x, y, w, h], capture_output=True, timeout=30)

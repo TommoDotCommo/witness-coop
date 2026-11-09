@@ -62,7 +62,11 @@ struct Spec {
 inline std::string SpecText(const Spec& s) {
     const Info* i = FindRandomizer(s.mode);
     if (!i) return "off";
+#ifdef RZ_MUT_SEED_LOST
+    std::string t = std::string(i->key);      // mutant: the seed is not written (every player would roll their own)
+#else
     std::string t = std::string(i->key) + ";seed:" + std::to_string(s.seed & 0x7FFFFFFFu);
+#endif
     if (s.shuffle && i->canShuffle) t += ";shuffle";
     if (s.colorblind) t += ";colorblind";
     if (s.fast) t += ";fast";
@@ -93,6 +97,12 @@ inline Spec ParseSpec(const std::string& text) {
     const Info* i = FindRandomizer(s.mode);
     if (i && !i->canShuffle) s.shuffle = false;
     return s;
+}
+// The people a randomizer is by, for the game's notice: "sigma144 and jbzdarkid"
+inline std::string CreditNames(Mode m) {
+    const Info* i = FindRandomizer(m); if (!i) return "";
+    std::string t; for (size_t k = 0; k < i->credits.size(); ++k) t += (k ? (k + 1 == i->credits.size() ? " and " : ", ") : "") + std::string(i->credits[k].who);
+    return t;
 }
 // A one-line description for the lobby, the save list and the game: "Sigma's Randomizer: Expert, seed 48213, faster doors"
 inline std::string SpecSummary(const Spec& s) {

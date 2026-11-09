@@ -17,7 +17,7 @@ def run(launcher_exe='witness_launcher.exe'):
     subprocess.run(['make', '-C', os.path.join(ROOT, 'launcher'), 'launcher', 'launcher-mutants'], check=True, capture_output=True)
     subprocess.run([os.path.join(TOOLS, 'install.sh'), 'both'], check=True, capture_output=True)
     p1, p2 = int(os.environ.get('WITNESS_PORT1', '47001')), int(os.environ.get('WITNESS_PORT2', '47002'))
-    for d, name, port, tone in ((DIR1, 'Alpha', p1, 'voice_mode=open\nvoice_test_tone=120,1000,5500\n'), (DIR2, 'Beta', p2, 'voice_mode=off\n')):
+    for d, name, port, tone in ((DIR1, 'Alpha', p1, 'voice_mode=open\nvoice_test_tone=120,1000,5500\n'), (DIR2, 'Beta', p2, 'voice_mode=off\nrandomizer_pick=expert;seed:1\nrandomizer_new_seed=0\n')):      # (B's own randomizer pick: the host's must win)
         open(os.path.join(d, 'witness_coop.cfg'), 'w').write(base_cfg(name, port, tone))
         for f in ('witness_proxy.log', 'witness_cmd.txt', 'witness_race_result.txt'):
             try: os.remove(os.path.join(d, f))

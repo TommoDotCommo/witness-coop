@@ -126,7 +126,7 @@ void Finish() {
     Logf("randomizer: applied '%s' in %lu ms: %zu entities, %zu bytes, %zu arrays (%zu bytes), %zu watchdogs, fingerprint %016llx%s",
          wrand::SpecText(g->spec).c_str(), g->finished - g->started, g->result.entities, g->result.bytes, g->arrays->count(), g->arrays->bytes(),
          g->result.watchdogs.size(), (unsigned long long)g->result.fingerprint, "");
-    DevMenuNotice(("Puzzles randomized: " + wrand::SpecSummary(g->spec)).c_str());
+    DevMenuNotice(("Puzzles randomized: " + wrand::SpecSummary(g->spec) + " (by " + wrand::CreditNames(g->spec.mode) + ")").c_str());      // the authors, every time
 }
 
 void TickWatchdogs() {

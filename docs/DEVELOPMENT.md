@@ -595,7 +595,9 @@ new game, competing with the game's loading, Normal took 7.5 s and Expert 24 s b
 A generation changes about 370 to 490 entities (34 to 165 KB) and makes about 2000 arrays (0.4 to 0.6 MB); Expert and Variety start about 50 watchdogs.
 
 Known limits: a save loaded from the game's own menu gets the randomizer of the cfg the game was started with (the launcher's continue uses the
-save's own); the recorded game for the replay test is game data and stays in `local/`.
+save's own); with the panel shuffle on, a chain whose order it shuffles (the Symmetry transparent panels, Orchard, Monastery, Bunker,
+Jungle, the pillars) is still solved whole by a new game's "parts done", but a part of it follows the game's own order; the recorded game for the replay
+test is game data and stays in `local/`.
 
 Tests: `make -C proxy/randomizer test` (game-free): the memory layer on a fake game (the overlay leaves the game alone, sees its own writes, copies
 arrays before writing them, a fingerprint that ignores addresses, applying refuses a reloaded world; mutants `COW_NO_COPY`, `FP_ADDRESSES`), and,
