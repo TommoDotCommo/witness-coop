@@ -61,7 +61,18 @@ randomizers-test: build/randomizers-test build/randomizers-mutant
 	build/randomizers-test
 	@if build/randomizers-mutant >/dev/null; then echo "MUTANT SEED_LOST SURVIVED"; exit 1; else echo "randomizers mutant SEED_LOST killed"; fi
 .PHONY: randomizers-test
-test: randomizers-test pad-test userdata-test gamefont-test build/guide-test $(addprefix build/mutant-,$(MUTANTS)) build/buildid-test build/buildid-mutant build/notices-test $(addprefix build/notices-mutant-,$(NOTICE_MUTANTS))
+# the puzzle editor's model, rules, solver and texts (wpuzzle.h, wpuzzle_json.h) against jbzdarkid's engine on tests/wpuzzle_fixture.txt; mutants: a rule
+# switched off, rotation ignored, the solver's early check blind to eliminators, the set text without rotation
+WPZ_MUTANTS = GAP_IGNORED TRIANGLES_IGNORED SQUARES_IGNORED STARS_IGNORED NO_ROTATION PRUNE_UNSCANNED PRINT_NO_ROTATION
+build/wpuzzle-test: wpuzzle_test.cpp wpuzzle.h wpuzzle_json.h
+	mkdir -p build; $(CXX) $(CXXFLAGS) -g -fsanitize=address,undefined -fno-sanitize-recover=undefined -o $@ wpuzzle_test.cpp
+build/wpuzzle-mutant-%: wpuzzle_test.cpp wpuzzle.h wpuzzle_json.h
+	mkdir -p build; $(CXX) $(CXXFLAGS) -DWPZ_MUT_$* -o $@ wpuzzle_test.cpp
+wpuzzle-test: build/wpuzzle-test $(addprefix build/wpuzzle-mutant-,$(WPZ_MUTANTS))
+	build/wpuzzle-test tests/wpuzzle_fixture.txt
+	@for m in $(WPZ_MUTANTS); do if build/wpuzzle-mutant-$$m tests/wpuzzle_fixture.txt >/dev/null 2>&1; then echo "MUTANT wpuzzle $$m SURVIVED"; exit 1; else echo "mutant wpuzzle $$m killed"; fi; done
+.PHONY: wpuzzle-test
+test: randomizers-test wpuzzle-test pad-test userdata-test gamefont-test build/guide-test $(addprefix build/mutant-,$(MUTANTS)) build/buildid-test build/buildid-mutant build/notices-test $(addprefix build/notices-mutant-,$(NOTICE_MUTANTS))
 	build/notices-test
 	@for m in $(NOTICE_MUTANTS); do if build/notices-mutant-$$m >/dev/null 2>&1; then echo "MUTANT notices $$m SURVIVED"; exit 1; else echo "mutant notices $$m killed"; fi; done
 	build/buildid-test $(BUILDID_EXE)
