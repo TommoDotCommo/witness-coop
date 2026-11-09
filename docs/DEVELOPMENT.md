@@ -658,7 +658,10 @@ Tests: `make -C common wpuzzle-test` (600 random puzzles with the solutions his 
 mutants: a rule off, rotation ignored, the solver's early check blind to eliminators, the set text without rotation). `tools/wpuzzle_diff.py
 <his repository>` compares the two on his published puzzles: on 2026-11-09 the 7454 that the game could show (up to 25 cells) gave the same
 solutions in both. `make -C proxy/randomizer test` writes a set of every kind into the recorded game and reads each panel back with the generator's
-reader, and a small puzzle on every one of the 83 panels the editor offers (`custom_test.cpp`; mutants: polyominoes upside down, `READ_ANY_PANEL`).
+reader, and a small puzzle on every one of the 83 panels the editor offers; and the generator's own puzzles (four recorded runs: Normal, Expert,
+Variety, Puzzle Pack; 195 panels the editor can hold) read into the editor's model and written back by the editor's writer must keep every bit
+the game judges (symbols, dots and the bit a dot needs, gaps, starts, ends) (`custom_test.cpp`; mutants: polyominoes upside down,
+`READ_ANY_PANEL`, `DOT_PLAIN`).
 The first two Tutorial panels are not grids (a straight line and a bend): the generator's panel reader divides by zero on them, which crashed both
 games in the first live run, so they take the frame of the Tutorial grid panel 0x00293 (`IsGridPanel` in `nsv.cpp`). A gap on a corner is a
 problem (`Problems`, mutant `CORNER_GAP`): the game shows none there, while the rules block the corner. `make -C launcher editor-test` (clicks,

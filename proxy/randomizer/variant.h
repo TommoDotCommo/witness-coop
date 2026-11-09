@@ -34,6 +34,8 @@ wpz::Puzzle ReadCustomPuzzle(int id);
 std::vector<std::vector<int>> CustomGridFlags(int id);
 // The flags the generator gives a dot on a corner, on a horizontal line and on a vertical line (Decoration::Dot_*).
 int DotFlags(int where);      // 0 corner, 1 horizontal line, 2 vertical line
+// The player's puzzle written on a panel through the current backend, as RunCustom writes each one, for the tests.
+void WriteCustomPuzzle(int id, const wpz::Puzzle& p);
 }  // namespace wrand
 
 // Inside a variant's namespace: a Dog for one of its watchdogs (any class with action(), sleepTime and terminate; never deleted, as upstream).

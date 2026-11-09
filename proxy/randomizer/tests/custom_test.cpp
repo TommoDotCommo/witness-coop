@@ -115,6 +115,40 @@ int main(int argc, char** argv) {
         }
         g_text = keep;
     }
+    {      // the generator's own puzzles (four recorded runs), read into the editor's model and written back by the editor's writer: what the game
+           // judges (symbols, dots with the bit a dot needs, gaps, starts, ends) must come back bit for bit (a dot without 0x40000 was judged wrong
+           // in the game). Not compared: structure the editor does not need (points nothing connects to, 0x8; extra nodes on lines; how a corner
+           // is tagged) and panels with what the editor has not (arrows and the like: Problems).
+        int compared = 0, differ = 0, runs = 0;
+        for (const auto& rec : recorded) {
+            if (!rec.fingerprint || rec.spec.find("seed:4242") == std::string::npos) continue;
+            std::string m = rec.spec.substr(0, rec.spec.find(';'));
+            if (m != "normal" && m != "expert" && m != "variety" && m != "puzzle-pack") continue;
+            wrand::Arrays ga; world.misses = 0; auto r = wrand::Generate(wrand::ParseSpec(rec.spec), &world, &ga);
+            if (!r.ok) { std::printf("FAIL: %s: %s\n", rec.spec.c_str(), r.error.c_str()); fails++; continue; }
+            runs++; wrand::ScopedBackend use(r.overlay.get()); auto ch = r.overlay->changes();
+            for (auto& sl : wpz::Slots()) {
+                if (!ch.count((int)sl.id)) continue;
+                std::vector<std::vector<int>> before; wpz::Puzzle q;
+                try { before = wrand::CustomGridFlags((int)sl.id); if (before.empty()) continue; q = wrand::ReadCustomPuzzle((int)sl.id); } catch (const std::exception&) { continue; }
+                if (!wpz::Problems(q).empty()) continue;
+                bool unknown = false;      // a symbol the editor has not (arrows 0x700, and the like): its reader drops it, so it is not the editor's puzzle
+                for (int x = 1; x < q.width(); x += 2) for (int y = 1; y < q.height(); y += 2) { int v = x < (int)before.size() && y < (int)before[x].size() ? before[x][y] : 0, sh = v & 0xF00; if (v && sh != 0x100 && sh != 0x200 && sh != 0x400 && sh != 0x500 && sh != 0x600) unknown = true; }
+                if (unknown) continue;
+                wrand::WriteCustomPuzzle((int)sl.id, q); auto after = wrand::CustomGridFlags((int)sl.id); compared++; int shown = 0; bool same = true;
+                for (int x = 0; x < q.width(); x++) for (int y = 0; y < q.height(); y++) {
+                    int g = x < (int)before.size() && y < (int)before[x].size() ? before[x][y] : 0, e = x < (int)after.size() && y < (int)after[x].size() ? after[x][y] : 0;
+                    bool cell = x % 2 && y % 2;
+                    int mask = cell ? ~0 : (0x20 | 0x100 | 0x200 | 0x1000 | 0x100000 | 0x3 | ((g & 0x20) ? 0x40000 : 0));      // (on lines and corners: dots and their colours, gaps, start, end)
+                    if (!cell && (g & 0x3) == 0x3) continue;      // (OPEN, a line that is not there: written as the editor's missing line)
+                    if ((g & mask) != (e & mask)) { same = false; if (shown++ < 3) std::printf("FAIL: %s, %s: at %d,%d the generator has %x, the editor's writer %x\n", rec.spec.c_str(), wpz::SlotName(sl.id).c_str(), x, y, g, e); }
+                }
+                if (!same) { differ++; fails++; }
+            }
+        }
+        std::printf("generator's puzzles written back: %d runs, %d panels compared, %d different\n", runs, compared, differ);
+        if (runs < 4 || compared < 100) { std::printf("FAIL: too little compared (%d runs, %d panels)\n", runs, compared); fails++; }
+    }
     wrand::Arrays a3; auto missing = wrand::Generate(wrand::ParseSpec("custom;set:0000000000000001"), &world, &a3);
     if (missing.ok || missing.error.find("not on this PC") == std::string::npos) { std::printf("FAIL: a missing set: %s\n", missing.error.c_str()); fails++; }
     if (fails) std::printf("custom: %d FAILED\n", fails); else std::printf("custom: ok\n");

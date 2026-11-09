@@ -18,7 +18,7 @@ namespace v_nsv {
 class PanelExtractionTests { public: static void Reset() { Panel::generatedPanels.clear(); Panel::arrowPuzzles.clear(); }
     static void WriteCustom(int id, const wpz::Puzzle& p);      // (below: the player's own puzzles reach the panel's private grid the same way)
     static wpz::Puzzle ReadCustom(int id);
-    static std::vector<std::vector<int>> GridFlags(int id) { Panel panel(id); return panel._grid; }
+    static std::vector<std::vector<int>> GridFlags(int id);      // (empty for a panel that is not a grid: the reader cannot read one)
 };
 class APWatchdog { public: static void Reset() { Generate::_SHAPEDIRECTIONS.clear(); } };
 
@@ -194,6 +194,8 @@ static std::vector<::wrand::Dog> RunCustom(const ::wrand::Spec& spec) {
 std::vector<wrand::Dog> wrand::RunNsv(const Spec& spec) { return v_nsv::Run(spec); }
 std::vector<wrand::Dog> wrand::RunCustom(const Spec& spec) { return v_nsv::RunCustom(spec); }
 wpz::Puzzle wrand::ReadCustomPuzzle(int id) { return v_nsv::PanelExtractionTests::ReadCustom(id); }
+std::vector<std::vector<int>> v_nsv::PanelExtractionTests::GridFlags(int id) { if (!IsGridPanel(id)) return {}; Panel panel(id); return panel._grid; }
 std::vector<std::vector<int>> wrand::CustomGridFlags(int id) { return v_nsv::PanelExtractionTests::GridFlags(id); }
+void wrand::WriteCustomPuzzle(int id, const wpz::Puzzle& p) { v_nsv::PanelExtractionTests::WriteCustom(id, p); }
 int wrand::DotFlags(int where) { return where == 0 ? v_nsv::Decoration::Dot_Intersection : where == 1 ? v_nsv::Decoration::Dot_Row : v_nsv::Decoration::Dot_Column; }
 std::string (*wrand::LoadPuzzleSet)(const std::string& hash) = nullptr;
