@@ -34,14 +34,16 @@ if mode == 'line':
     t = time.time(); ta = tb = []
     while time.time() - t < 10:
         ta, tb = trace(pa, 0x64), trace(pb, 0x64)
-        if ta and ta == tb: break
+        if ta and any(l.startswith('state: remote line on panel 0x64:') for l in open(os.path.join(db, 'witness_proxy.log'), errors='ignore').read().splitlines()): break
         time.sleep(0.5)
     check('A traced panel 0x64 (precondition)', len(ta) >= 1, '%d segments' % len(ta))
-    check("B's panel holds the same traced line (node pairs)", ta and ta == tb, 'A %s | B %s' % (ta[:6], tb[:6]))
+    took = [l for l in open(os.path.join(db, 'witness_proxy.log'), errors='ignore').read().splitlines() if l.startswith('state: remote line on panel 0x64:')]
+    check("B wrote A's line into its panel for the game's reactions (as many edges as A traced)", took and ('%d edges' % len(ta)) in took[-1], took[-1:] or 'no such line in the log')
+    check("  and took it back out: B's panel holds no line of its own", took and 'taken back' in took[-1] and tb == [], 'B %s' % (tb[:6],))
     pos = size(db, 'witness_proxy.log'); send(db, ['linestat'], 1.0)
     st = [l for l in log_since(db, 'witness_proxy.log', pos).splitlines() if 'linestat: lines' in l]
     drawn = int(st[-1].split('linestat: lines')[1].split()[0]) if st else -1
-    check("B's overlay does not draw that line again (the game draws it)", drawn == 0, 'remote lines drawn by the overlay: %d' % drawn)
+    check("B's overlay draws A's finished line, in A's colour", drawn == 1, 'remote lines drawn by the overlay: %d' % drawn)
 else:
     eb = size(db, 'witness_events.log')
     for pid_ in (0x181F5, 0x334D8, 0x1831C):

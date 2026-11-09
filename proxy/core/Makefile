@@ -161,20 +161,6 @@ version-notice-test: $(BUILD)/version-notice $(addprefix $(BUILD)/version-notice
 test: version-notice-test
 .PHONY: version-notice-test
 
-# who draws another player's finished line, the game or the overlay (native_line.h); mutants: the game trusted, the line never handed back
-NL_MUTANTS = TRUST NEVER_HANDED
-$(BUILD)/native-line: tests/native_line.cpp native_line.h
-	@mkdir -p $(BUILD)
-	g++ $(CXXF) -o $@ tests/native_line.cpp
-$(BUILD)/native-line-mutant-%: tests/native_line.cpp native_line.h
-	@mkdir -p $(BUILD)
-	g++ $(CXXF) -DWNL_MUT_$* -o $@ tests/native_line.cpp
-native-line-test: $(BUILD)/native-line $(addprefix $(BUILD)/native-line-mutant-,$(NL_MUTANTS))
-	$(BUILD)/native-line
-	@for m in $(NL_MUTANTS); do if $(BUILD)/native-line-mutant-$$m >/dev/null; then echo "MUTANT native-line $$m SURVIVED"; exit 1; else echo "native-line mutant $$m rejected"; fi; done
-test: native-line-test
-.PHONY: native-line-test
-
 $(BUILD)/near-fade: tests/near_fade.cpp ../near_fade.h
 	@mkdir -p $(BUILD)
 	g++ $(CXXF) -o $@ tests/near_fade.cpp

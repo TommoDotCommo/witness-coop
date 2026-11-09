@@ -107,8 +107,7 @@ struct Cfg {
     bool noRemoteReact = false;    // twin no_remote_react=1: a remote solve does not run the game's reactions (exe+0xB7F80): sliding and rotating bridges, water, windmill, lights stay
     bool hoverDiag = false;        // hover_diag=1: the hold logs once a second how far the game moved the player (diagnostics)
     bool hoverFightsReset = false; // twin hover_fights_reset=1: a held player is pulled back after the game's emergency reset (it resets again every frame)
-    bool nativeLineOverlay = false; // twin native_line_overlay=1: the overlay also draws a finished remote line the game already draws (two lines, one left behind when the panel moves)
-    bool lineTrustGame = false;     // twin line_trust_game=1: a remote line written into a panel already in view is left to the game, which does not draw it (2026-11-07 to 11-10)
+    bool remoteLineKept = false;    // twin remote_line_kept=1: a remote solve's line stays in the panel's trace after the reactions (the game may draw it too, without the player's colour)
     bool noRemoteLineWrite = false; // twin no_remote_line_write=1: the reactions run without the solver's line in the panel (direction-dependent controls guess)
     bool noBridgeAdvance = false;  // twin no_bridge_advance=1: a remote solve does not tell the panel's Bridge (Treehouse bridges stay short)
     std::wstring diagDir;        // diag_dir=instance -> <dll folder>\witness-coop-logs (not "logs": the game keeps its own logs there) ; diag_dir=<path> ; empty: %LOCALAPPDATA%\witness-coop\logs (diag.cpp)

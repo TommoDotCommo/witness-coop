@@ -10,7 +10,6 @@
 #include <cmath>
 #include <vector>
 #include "coop.h"
-#include "core/native_line.h"
 #include "tv.h"
 #include "frame/panelframe.h"
 #include "game.h"
@@ -20,13 +19,6 @@
 #include "randomizer/game_randomizer.h"
 
 void Log(const char* msg);
-// A remote solve's line written into a panel's trace, and whether the game draws it yet (core/native_line.h: the game's picture of a panel in view
-// is not rebuilt for a line written from outside, so the overlay draws the line until that picture is freed or built again). Cleared when this
-// player traces there. The overlay asks from the render thread, the line is written and dropped from the sync's callbacks: one lock.
-static SRWLOCK g_nativeMu = SRWLOCK_INIT;
-static wline::NativeLines g_native;
-struct NativeLock { NativeLock() { AcquireSRWLockExclusive(&g_nativeMu); } ~NativeLock() { ReleaseSRWLockExclusive(&g_nativeMu); } };
-
 static const uintptr_t kGlobals = 0x62D0A0, kDoorTI = 0x62DE70, kPanelTI = 0x62E670, kCableTI = 0x62EB10;
 static const int kSolvedF = 0x294, kEver = 0x298, kPanelState = 0x280, kDoorPower = 0x1D0;
 static const uint32_t kOne = 0x3F800000;
@@ -36,14 +28,9 @@ static const unsigned kMaxId = 0x40000;
 static uintptr_t Base() { return (uintptr_t)GetModuleHandleA(nullptr); }
 static bool Rd(uintptr_t a, void* out, size_t n) { SIZE_T got; return ReadProcessMemory(GetCurrentProcess(), (void*)a, out, n, &got) && got == n; }
 static uint32_t Rd32(uintptr_t a) { uint32_t v = 0; Rd(a, &v, 4); return v; }
-static uint64_t PanelPicture(uintptr_t e) { uint64_t p = 0; return e && Rd(e + 0x4A8, &p, 8) ? p : 0; }      // the game's render object of the panel: built when it comes into view
-bool StateNativeLine(unsigned panel) {
-    if (GetCfg().nativeLineOverlay) return false;
-    uint64_t pic = PanelPicture(GameEntity(panel));
-    NativeLock lock; return g_native.GameDraws(panel, pic);
-}
 
 static bool PanelSolved(uintptr_t e) { return Rd32(e + kSolvedF) == kOne && Rd32(e + kEver) == 1; }
+bool StatePanelSolved(unsigned panel) { uintptr_t e = panel < 0x40000 ? GameEntity(panel) : 0; return e && PanelSolved(e); }
 static bool DoorOpen(uintptr_t e) { return Rd32(e + kDoorPower) == kOne; }
 static uintptr_t Type(uintptr_t e) { uintptr_t ti = 0; Rd(e + 8, &ti, 8); return ti; }
 
@@ -90,21 +77,31 @@ public:
     // by the core. Twin no_remote_react=1: the solved fields, the dispatcher and the Bridge only, as before 2026-11-07.
     void applyPanelSolvedLine(unsigned id, const std::vector<witness::LinePoint>& line, bool fine) override {
         if (GetCfg().noRemoteReact) { applyPanelSolved(id); return; }
-        if (!line.empty() && !GetCfg().noRemoteLineWrite) WriteLine(id, line, fine);
+        int wrote = !line.empty() && !GetCfg().noRemoteLineWrite ? WriteLine(id, line, fine) : 0;
         GameMarkPanelSolved(id);
         int go = 1; bool reacted = GameReactNow(id, true, &go);
         if (!GetCfg().noTargetDispatch && (!reacted || go)) GameDispatchTargetNow(id);
         if (!GetCfg().noBridgeAdvance) GameBridgeAdvanceNow(id);
+        // The line was in the trace for the reactions only: taken back out, so the game never draws it. Another player's finished line is the
+        // overlay's, in that player's colour, like a line still being drawn (owner, 2026-11-10: "always use the mod's lines, it's helpful to see
+        // the colour of who actually drew it"; the game also drew it only when the panel came into view after the write). Twin remote_line_kept=1.
+        if (wrote && !GetCfg().remoteLineKept) TakeLineBack(id);
+        if (wrote) { char m[160]; snprintf(m, sizeof m, "state: remote line on panel %#x: %d edges for the reactions%s", id, wrote, GetCfg().remoteLineKept ? ", kept" : ", taken back"); Log(m); }
+    }
+    void TakeLineBack(unsigned id) {
+        uintptr_t e = GameEntity(id); if (!e) return;
+        int* count = (int*)(e + 0x228); if (IsBadWritePtr(count, 4)) return;
+        *count = 0; written_.erase(id);      // (the records stay in the buffer the game owns; with no count they are not a line)
     }
     // The trace buffer as the game's own tracing leaves it: count +0x228, capacity +0x22C, records +0x230 of 13 dwords (node a, node b, the
     // panel's engine id twice, 1.0 drawn, 1.0, world position of a, of b, 0). Grown with the game's own allocator (exe+0x2E7FA0), so the game can
     // grow or free it later. What is written is remembered so this game does not send the line back as its own.
-    void WriteLine(unsigned id, const std::vector<witness::LinePoint>& pts, bool fine) {
-        uintptr_t e = GameEntity(id); if (!e || pts.size() < 2 || pts.size() > 400) return;
+    int WriteLine(unsigned id, const std::vector<witness::LinePoint>& pts, bool fine) {      // the edges written (0: none)
+        uintptr_t e = GameEntity(id); if (!e || pts.size() < 2 || pts.size() > 400) return 0;
         static const unsigned char reservePro[] = {0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x6C, 0x24, 0x10, 0x48, 0x89};
         const unsigned char* rf = (const unsigned char*)(Base() + 0x2E7FA0);
-        if (IsBadReadPtr(rf, sizeof reservePro) || memcmp(rf, reservePro, sizeof reservePro)) return;
-        float pp[3], qq[4]; if (!Rd(e + 0x24, pp, 12) || !Rd(e + 0x34, qq, 16)) return;
+        if (IsBadReadPtr(rf, sizeof reservePro) || memcmp(rf, reservePro, sizeof reservePro)) return 0;
+        float pp[3], qq[4]; if (!Rd(e + 0x24, pp, 12) || !Rd(e + 0x34, qq, 16)) return 0;
         wframe::Q q = {qq[0], qq[1], qq[2], qq[3]};
         std::vector<std::array<float, 3>> world(pts.size());
         for (size_t i = 0; i < pts.size(); ++i) {
@@ -113,10 +110,10 @@ public:
         }
         int n = int(pts.size()) - 1; uint32_t eng = Rd32(e + 0x10);
         int* count = (int*)(e + 0x228); int* cap = (int*)(e + 0x22C); void** data = (void**)(e + 0x230);
-        if (IsBadWritePtr(count, 16)) return;
+        if (IsBadWritePtr(count, 16)) return 0;
         if (*cap < n || !*data) ((void(__fastcall*)(void*, void*, int, int))(rf))(data, cap, n < 16 ? 16 : n, 0x34);
         if (*cap < n || !*data) { if (*cap < n) *cap = n; }      // (the reserve sets the capacity; this only guards a build that does not)
-        if (!*data || IsBadWritePtr(*data, size_t(n) * 0x34)) return;
+        if (!*data || IsBadWritePtr(*data, size_t(n) * 0x34)) return 0;
         uint32_t* r = (uint32_t*)*data; const uint32_t one = kOne;
         for (int i = 0; i < n; ++i, r += 13) {
             r[0] = pts[i].node; r[1] = pts[i + 1].node; r[2] = eng; r[3] = eng; r[4] = one; r[5] = one;
@@ -124,7 +121,7 @@ public:
         }
         *count = n;
         written_[id] = std::vector<uint32_t>((uint32_t*)*data, (uint32_t*)*data + size_t(n) * 13);
-        { uint64_t pic = GetCfg().lineTrustGame ? 0 : PanelPicture(e); NativeLock lock; g_native.Written(id, pic); }
+        return n;
     }
     void applyPanelSolved(unsigned id) override {   // the fields a real solve sets; the door itself is opened by its own event
         GameMarkPanelSolved(id);
@@ -149,7 +146,7 @@ public:
             uintptr_t ptr = 0; if (!Rd(e + 0x230, &ptr, 8) || !ptr) continue;
             std::vector<uint32_t> rec(size_t(n) * 13); if (!Rd(ptr, rec.data(), rec.size() * 4)) continue;
             float pp[3], qq[4]; if (!Rd(e + 0x24, pp, 12) || !Rd(e + 0x34, qq, 16)) continue;
-            { auto w = written_.find(id); if (w != written_.end()) { if (w->second == rec) continue; written_.erase(w); NativeLock lock; g_native.Dropped(id); } }      // a line a remote solve wrote: not this player's, not sent back
+            { auto w = written_.find(id); if (w != written_.end()) { if (w->second == rec) continue; written_.erase(w); } }      // a line a remote solve wrote: not this player's, not sent back
             Frame& fr = frames_[id]; if (fr.rec != rec) { fr.rec = rec; memcpy(fr.pos, pp, 12); memcpy(fr.q, qq, 16); }      // the trace changed: the panel is where the trace was written
             if (GetCfg().lineOldAnchor) { memcpy(fr.pos, pp, 12); fr.q[0] = fr.q[1] = fr.q[2] = 0; fr.q[3] = 1; }      // (mutant: the old way, world offsets from where the panel is now)
             wframe::Q q = {fr.q[0], fr.q[1], fr.q[2], fr.q[3]};

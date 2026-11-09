@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""T2 a remote solve does what the solver's did (tools/win/wreact.py): the solver's line reaches the other panel's trace, and the game's own
-reactions run there (the Swamp rotating bridge, the Town lights), with nothing sent back, and the line is drawn once. Twins: no_remote_line_write,
-native_line_overlay, no_remote_react."""
+"""T2 a remote solve does what the solver's did (tools/win/wreact.py): the solver's line is in the other panel's trace while the game's own
+reactions run there (the Swamp rotating bridge, the Town lights), with nothing sent back, and is then taken out, so the line is drawn once, by the
+overlay in the solver's colour. Twins: no_remote_line_write, remote_line_kept, no_remote_react."""
 import os, subprocess, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from witness import TOOLS, DIR1, DIR2, PYW, RUN, pid, win
@@ -27,7 +27,7 @@ def main():
     results = []
     for name, fn, cfg, want in (('line: clean', line, '', True), ('react: clean', react, '', True),
                                 ('MUTANT no_remote_line_write (B has no line)', line, 'no_remote_line_write=1', False),
-                                ('MUTANT native_line_overlay (B draws the line twice)', line, 'native_line_overlay=1', False),
+                                ('MUTANT remote_line_kept (the line stays in B\'s trace: the game draws it too)', line, 'remote_line_kept=1', False),
                                 ('MUTANT no_remote_react (the reactions do not run on B)', react, 'no_remote_react=1', False)):
         print('=== react: %s' % name, flush=True); got = fn(cfg); good = got == want; results.append((name, good))
         print('%s: %s' % (name.split(' (')[0], ('PASS' if got else 'FAIL') if want else ('caught' if not got else 'NOT CAUGHT')), flush=True)
