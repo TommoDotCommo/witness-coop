@@ -405,6 +405,21 @@ def load_codes():
         if m: CODES[m.group(1)] = n; n += 1
 
 
+def one_mutant(name):      # --mutant NAME: exit 0 when the suite fails for that mutant (it is killed), 1 when it passes
+    load_codes(); before, after = MUTANTS[name]
+    assert SRC.count(before) == 1, (name, SRC.count(before))
+    with tempfile.TemporaryDirectory() as t:
+        d = Path(t); (d / 'w').mkdir()
+        try:
+            M = Runner(SRC.replace(before, after), d)
+            globals()['quiet'] = True
+            try: suite(M, d / 'w')
+            except AssertionError as e: fails.append('assertion: ' + str(e)[:80])
+            except Exception as e: fails.append('error: ' + str(e)[:80])
+        except SystemExit:
+            return 0      # does not even compile
+        return 0 if fails else 1
+
 def main():
     load_codes()
     with tempfile.TemporaryDirectory() as t:
@@ -415,26 +430,19 @@ def main():
         if fails: return 1
         survivors = []
         only = sys.argv[1:]
-        for name, (before, after) in MUTANTS.items():
-            if only and name not in only: continue
-            assert SRC.count(before) == 1, (name, SRC.count(before))
-            d = t / ('m-' + name); d.mkdir(); (d / 'w').mkdir()
-            n0 = len(fails)
-            try:
-                M = Runner(SRC.replace(before, after), d)
-                saved = list(fails); fails.clear(); globals()['quiet'] = True
-                try: suite(M, d / 'w')
-                except AssertionError as e: fails.append('assertion: ' + str(e)[:80])
-                except Exception as e: fails.append('error: ' + str(e)[:80])
-                killed = bool(fails); fails.clear(); fails.extend(saved)
-            except SystemExit:
-                killed = True      # does not even compile
-            print(('KILLED:   ' if killed else 'SURVIVED: ') + name)
-            if not killed: survivors.append(name)
+        names = [n for n in MUTANTS if not only or n in only]
+        from concurrent.futures import ThreadPoolExecutor      # each mutant in a process of its own (the suite keeps global state), side by side
+        def one(name): return subprocess.run([sys.executable, '-I', os.path.abspath(__file__), '--mutant', name], capture_output=True, text=True).returncode
+        with ThreadPoolExecutor(max_workers=os.cpu_count() or 4) as pool:
+            for name, rc in zip(names, pool.map(one, names)):
+                killed = rc == 0
+                print(('KILLED:   ' if killed else 'SURVIVED: ') + name)
+                if not killed: survivors.append(name)
         if survivors: print('SURVIVORS:', survivors); return 1
     print('launcher update: all checks passed, all mutants killed')
     return 0
 
 
 if __name__ == '__main__':
+    if len(sys.argv) == 3 and sys.argv[1] == '--mutant': sys.exit(one_mutant(sys.argv[2]))
     sys.exit(main())

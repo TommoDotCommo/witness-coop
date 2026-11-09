@@ -676,8 +676,8 @@ polyominoes upside down; the game must refuse the editor's solution of the shape
 what it remembered about these panels first; the next puzzle drawn is always one whose panel the game reports powered (the courtyard's panels
 power one another), so a black panel is never walked to. On the two tunnel panels the bot draws an editor solution that goes up first and
 straight into the end's stub last (the shape it finishes; turning into the stub it stopped on a grid edge and its finishing click dropped the
-line); where it gets no line to the game (on the Bend it does not start one) that is a note and the panel is solved with `nativesolve`
-(`--no-tunnel`: at once). Found that way on 2026-11-10: a dot on a horizontal line was refused by the game (the same puzzle without the dot was
+line), and at the Bend it stands 1.3 m out (from 3 m no click started a line there); both are drawn and judged by the game. Where the bot
+gets no line to the game that is a note and the panel is solved with `nativesolve` (`--no-tunnel`: at once). Found that way on 2026-11-10: a dot on a horizontal line was refused by the game (the same puzzle without the dot was
 solved, and with an empty puzzle the first panel was solved): the writer gave a dot on a line `0x20 | ROW` where the generator's own flags are
 `Dot_Row` / `Dot_Column`, which carry `0x40000` too; now the generator's (game-free check of each dot's flags in `custom_test.cpp`, mutant
 `DOT_PLAIN`). Also seen there: orange triangles do not show on the Tutorial's yellow (the editor says so). On 2026-11-10: PASS, every puzzle judged the same

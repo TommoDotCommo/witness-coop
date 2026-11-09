@@ -14,8 +14,8 @@ eliminators, turnable, fixed and negative shapes, dots on corners and lines, gap
 from 3 x 3 to 7 x 7 and 7 x 2, on the Tutorial and the panels outside it.
 The bot draws with the mouse (tools/win/wdraw.py), steering by feedback (WDRAW_STEER). On the first two Tutorial panels (doors in the tunnel)
 it draws an editor solution that goes up first and straight into the end's stub last (it solved the first panel that way); where it does not
-get a line to the game (the Bend's start circle is dark: it does not find it) that is a note, and the panel is solved by the test-only command
-`nativesolve`, which powers the courtyard (--no-tunnel: at once). The
+get a line to the game that is a note, and the panel is solved by the test-only command `nativesolve`, which powers the courtyard
+(--no-tunnel: at once). At the Bend it stands closer (STAND): from 3 m out no click started a line there. The
 courtyard's panels power one another (Front Center, then Center Left, then Front Left), so the next puzzle drawn is always one whose panel the
 game reports powered: a black panel is never walked to. A drawing is tried again (up to 4 times) when the game did not judge it (the bot lost
 the line, or did not reach the end), never when the game judged the line. What the bot remembers about these panels is forgotten first.
@@ -199,11 +199,16 @@ def judged(r):
     """The game judged the drawn line: solved, or its verdict "wrong" (state 2 after the finishing click, tools/win/wdraw.py)."""
     return bool(r.get('solved')) or '(state 2)' in r.get('why', '')
 
+STAND = {0x00182: '0,1.3'}      # the Bend in the tunnel: from 3 m out no click started a line; 1.3 m out (1.8 m from the panel) it did (2026-11-10)
+
 def draw(q, nodes, tries=4):
     """sweep.draw, again whenever the bot did not get the whole line to the game (its guess of the panel on screen, its mouse gain: it learns both
     per panel), never when the game judged the line. A panel that is not powered is not walked to: no line starts on it, and that is not the
     puzzle's fault."""
     if not powered('A', q['id']): return {'solved': False, 'why': 'the panel is not powered (black) in A', 'unpowered': True}
+    stand = STAND.get(q['id'])      # (where the bot stands, when 3 m out does not let a click enter the panel)
+    os.environ['WDRAW_STAND'] = stand or ''
+    if stand and ':WDRAW_STAND' not in os.environ.get('WSLENV', ''): os.environ['WSLENV'] = os.environ.get('WSLENV', '') + ':WDRAW_STAND'
     for t in range(tries):
         r = sweep.draw(q, nodes, 'A')
         if judged(r): break
