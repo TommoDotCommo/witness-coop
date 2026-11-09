@@ -10,6 +10,7 @@
 #include <cmath>
 #include <vector>
 #include "coop.h"
+#include "core/native_line.h"
 #include "tv.h"
 #include "frame/panelframe.h"
 #include "game.h"
@@ -19,9 +20,12 @@
 #include "randomizer/game_randomizer.h"
 
 void Log(const char* msg);
-// panels whose trace a remote solve wrote (the game draws that line itself, so the overlay does not draw it again); cleared when this player traces there
-static volatile unsigned char g_nativeLine[0x40000];
-bool StateNativeLine(unsigned panel) { return panel < 0x40000 && g_nativeLine[panel] && !GetCfg().nativeLineOverlay; }
+// A remote solve's line written into a panel's trace, and whether the game draws it yet (core/native_line.h: the game's picture of a panel in view
+// is not rebuilt for a line written from outside, so the overlay draws the line until that picture is freed or built again). Cleared when this
+// player traces there. The overlay asks from the render thread, the line is written and dropped from the sync's callbacks: one lock.
+static SRWLOCK g_nativeMu = SRWLOCK_INIT;
+static wline::NativeLines g_native;
+struct NativeLock { NativeLock() { AcquireSRWLockExclusive(&g_nativeMu); } ~NativeLock() { ReleaseSRWLockExclusive(&g_nativeMu); } };
 
 static const uintptr_t kGlobals = 0x62D0A0, kDoorTI = 0x62DE70, kPanelTI = 0x62E670, kCableTI = 0x62EB10;
 static const int kSolvedF = 0x294, kEver = 0x298, kPanelState = 0x280, kDoorPower = 0x1D0;
@@ -32,6 +36,12 @@ static const unsigned kMaxId = 0x40000;
 static uintptr_t Base() { return (uintptr_t)GetModuleHandleA(nullptr); }
 static bool Rd(uintptr_t a, void* out, size_t n) { SIZE_T got; return ReadProcessMemory(GetCurrentProcess(), (void*)a, out, n, &got) && got == n; }
 static uint32_t Rd32(uintptr_t a) { uint32_t v = 0; Rd(a, &v, 4); return v; }
+static uint64_t PanelPicture(uintptr_t e) { uint64_t p = 0; return e && Rd(e + 0x4A8, &p, 8) ? p : 0; }      // the game's render object of the panel: built when it comes into view
+bool StateNativeLine(unsigned panel) {
+    if (GetCfg().nativeLineOverlay) return false;
+    uint64_t pic = PanelPicture(GameEntity(panel));
+    NativeLock lock; return g_native.GameDraws(panel, pic);
+}
 
 static bool PanelSolved(uintptr_t e) { return Rd32(e + kSolvedF) == kOne && Rd32(e + kEver) == 1; }
 static bool DoorOpen(uintptr_t e) { return Rd32(e + kDoorPower) == kOne; }
@@ -114,7 +124,7 @@ public:
         }
         *count = n;
         written_[id] = std::vector<uint32_t>((uint32_t*)*data, (uint32_t*)*data + size_t(n) * 13);
-        g_nativeLine[id] = 1;
+        { uint64_t pic = GetCfg().lineTrustGame ? 0 : PanelPicture(e); NativeLock lock; g_native.Written(id, pic); }
     }
     void applyPanelSolved(unsigned id) override {   // the fields a real solve sets; the door itself is opened by its own event
         GameMarkPanelSolved(id);
@@ -139,7 +149,7 @@ public:
             uintptr_t ptr = 0; if (!Rd(e + 0x230, &ptr, 8) || !ptr) continue;
             std::vector<uint32_t> rec(size_t(n) * 13); if (!Rd(ptr, rec.data(), rec.size() * 4)) continue;
             float pp[3], qq[4]; if (!Rd(e + 0x24, pp, 12) || !Rd(e + 0x34, qq, 16)) continue;
-            { auto w = written_.find(id); if (w != written_.end()) { if (w->second == rec) continue; written_.erase(w); g_nativeLine[id] = 0; } }      // a line a remote solve wrote: not this player's, not sent back
+            { auto w = written_.find(id); if (w != written_.end()) { if (w->second == rec) continue; written_.erase(w); NativeLock lock; g_native.Dropped(id); } }      // a line a remote solve wrote: not this player's, not sent back
             Frame& fr = frames_[id]; if (fr.rec != rec) { fr.rec = rec; memcpy(fr.pos, pp, 12); memcpy(fr.q, qq, 16); }      // the trace changed: the panel is where the trace was written
             if (GetCfg().lineOldAnchor) { memcpy(fr.pos, pp, 12); fr.q[0] = fr.q[1] = fr.q[2] = 0; fr.q[3] = 1; }      // (mutant: the old way, world offsets from where the panel is now)
             wframe::Q q = {fr.q[0], fr.q[1], fr.q[2], fr.q[3]};

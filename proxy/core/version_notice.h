@@ -22,7 +22,7 @@ public:
             case 'D': return "2";
             case 'V': return "4";
             case 'O': return "5";
-            case 'R': return "14";
+            case 'R': return "146";      // WTR1 race, WTR4 picture request, WTR6 a player's puzzles (the randomizer's fingerprint)
             default: return nullptr;
         }
     }

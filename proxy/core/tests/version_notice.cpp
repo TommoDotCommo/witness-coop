@@ -9,7 +9,7 @@ static std::vector<uint8_t> pkt(const char* magic, unsigned from, size_t len = 4
 int main() {
     using wpeers::VersionNotice;
     VersionNotice vn; auto say = [&](const char* m, unsigned from, const char* theirs = "") { auto p = pkt(m, from); return vn.Observe(p.data(), p.size(), "v0.2.0", theirs); };
-    for (const char* ok : {"WTP6", "WTE6", "WTA6", "WTQ6", "WTX6", "WTK6", "WTS6", "WTL6", "WTL7", "WTP7", "WTE7", "WTA7", "WTT1", "WTU1", "WTD2", "WTV4", "WTO5", "WTR1", "WTR4"})
+    for (const char* ok : {"WTP6", "WTE6", "WTA6", "WTQ6", "WTX6", "WTK6", "WTS6", "WTL6", "WTL7", "WTP7", "WTE7", "WTA7", "WTT1", "WTU1", "WTD2", "WTV4", "WTO5", "WTR1", "WTR4", "WTR6"})
         check((std::string("this build's own magic ") + ok + " raises nothing").c_str(), say(ok, 2).empty());
     std::string s = say("WTP5", 2, "v0.1.0");
     check("an older pose magic from a player whose version the roster names: one sentence naming the player and both versions", s == "Player 2 has a different version (v0.1.0)");

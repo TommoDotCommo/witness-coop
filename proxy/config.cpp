@@ -53,6 +53,7 @@ const Cfg& GetCfg() {
             else if (sscanf(line, "no_remote_react=%d", &v) == 1) r.noRemoteReact = v != 0;
             else if (sscanf(line, "no_remote_line_write=%d", &v) == 1) r.noRemoteLineWrite = v != 0;
             else if (sscanf(line, "native_line_overlay=%d", &v) == 1) r.nativeLineOverlay = v != 0;
+            else if (sscanf(line, "line_trust_game=%d", &v) == 1) r.lineTrustGame = v != 0;
             else if (sscanf(line, "hover_fights_reset=%d", &v) == 1) r.hoverFightsReset = v != 0;
             else if (sscanf(line, "hover_diag=%d", &v) == 1) r.hoverDiag = v != 0;
             else if (sscanf(line, "old_projection=%d", &v) == 1) r.oldProjection = v != 0;
