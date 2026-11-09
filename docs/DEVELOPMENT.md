@@ -611,6 +611,8 @@ against the one built into the mod), with no read outside the recording (mutants
 keeps its save's puzzles (mutant `CONTINUE_REPICKS`). One game: `tools/randomizer_solo.sh [--spec S] [--mutant]` (applied, the game alive). Two
 games: `tools/qa.sh randomizer [--mutant]` (`tools/qa_randomizer.py`: the same fingerprint in both, the puzzles read from each game the same and not the
 game's own, a randomized panel drawn in A solved in B, another seed in B told in both games; the mutant B never writes its puzzles).
+Run on 2026-11-09: Normal, Expert and Variety pass; with the panel shuffle, checks 1, 2 and 4 pass but the bot (`tools/win/wdraw.py`) could not draw
+any shuffled tutorial panel (the shuffle changes their path width and start size), so a shared solve on a shuffled panel is not checked yet.
 
 ## Testing every puzzle, or one puzzle
 
