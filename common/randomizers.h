@@ -4,6 +4,8 @@
 // game reads it from witness_coop.cfg (randomizer=...) and the save's sidecar keeps it, so a continued game gets the same puzzles.
 //
 // Spec text: "<mode>;seed:<n>[;shuffle][;colorblind][;fast]", e.g. "expert;seed:48213;fast". "off" (or empty) is no randomizer.
+// The player's own puzzles (the launcher's puzzle editor, common/wpuzzle.h): "custom;set:<16 hex digits>", the set's hash (wpz::Hash), which names
+// its file in the puzzles folder of every player (the lobby sends the set to those who do not have it).
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -11,7 +13,7 @@
 namespace wrand {
 
 enum Mode : uint8_t { kOff = 0, kNormal = 1, kExpert = 2, kVariety = 3, kAscension = 4, kDespairSymbols = 5, kDespair = 6, kShuffler = 7, kEmptiness = 8,
-                      kPuzzlePack = 9, kStar = 10, kTutorializer = 11 };
+                      kPuzzlePack = 9, kStar = 10, kTutorializer = 11, kCustom = 12 };
 
 struct Credit { const char* who; const char* what; const char* link; };
 struct Info {
@@ -87,6 +89,10 @@ inline const std::vector<Info>& Randomizers() {
          {{"hatkirby", "the Tutorializer", "https://code.fourisland.com/witness-tutorializer/about/"},
           {"jbzdarkid", "the randomizer it builds on", "https://github.com/jbzdarkid/witness-randomizer"}}, "Tutorializer", false, false,
          "Its author's note: some panels (the tutorial gate, every Bunker puzzle) behave strangely and are solved by double-clicking in the middle.", false},
+        {kCustom, "custom", "Your puzzles",
+         "Puzzles you make in the puzzle editor, or bring from witnesspuzzles.com, on the panels you choose. Every other panel keeps the game's own.", false,
+         {{"jbzdarkid", "the editor's rules and solver, from witnesspuzzles.com", "https://github.com/jbzdarkid/jbzdarkid.github.io"},
+          {"sigma144", "the panel writer of the puzzle generator", "https://github.com/sigma144/witness-randomizer"}}, "Your puzzles", false, false, "", false},
     };
     return v;
 }
@@ -106,14 +112,16 @@ struct Spec {
     Mode mode = kOff;
     uint32_t seed = 0;          // 0 .. 2^31-1 (upstream's seed is an int)
     bool shuffle = false, colorblind = false, fast = false;
+    std::string set;            // kCustom: the puzzle set's hash, 16 lower-case hex digits
     bool on() const { return mode != kOff; }
-    bool operator==(const Spec& o) const { return mode == o.mode && seed == o.seed && shuffle == o.shuffle && colorblind == o.colorblind && fast == o.fast; }
+    bool operator==(const Spec& o) const { return mode == o.mode && seed == o.seed && shuffle == o.shuffle && colorblind == o.colorblind && fast == o.fast && set == o.set; }
     bool operator!=(const Spec& o) const { return !(*this == o); }
 };
 
 inline std::string SpecText(const Spec& s) {
     const Info* i = FindRandomizer(s.mode);
     if (!i) return "off";
+    if (s.mode == kCustom) return "custom;set:" + s.set;
 #ifdef RZ_MUT_SEED_LOST
     std::string t = std::string(i->key);      // mutant: the seed is not written (every player would roll their own)
 #else
@@ -140,12 +148,18 @@ inline Spec ParseSpec(const std::string& text) {
             for (size_t k = 5; k < w.size() && ok; k++) { if (w[k] < '0' || w[k] > '9') ok = false; else { v = v * 10 + (uint64_t)(w[k] - '0'); if (v > 0x7FFFFFFFu) ok = false; } }
             if (ok) s.seed = (uint32_t)v;
         }
+        else if (w.compare(0, 4, "set:") == 0) {
+            bool ok = w.size() == 20;
+            for (size_t k = 4; k < w.size() && ok; k++) ok = (w[k] >= '0' && w[k] <= '9') || (w[k] >= 'a' && w[k] <= 'f');
+            if (ok) s.set = w.substr(4);
+        }
         else if (w == "shuffle") s.shuffle = true;
         else if (w == "colorblind") s.colorblind = true;
         else if (w == "fast") s.fast = true;
         a = b + 1;
     }
-    if (s.mode == kOff) return Spec();
+    if (s.mode == kOff || (s.mode == kCustom && s.set.empty())) return Spec();      // (your puzzles without a set: nothing to play)
+    if (s.mode != kCustom) s.set.clear(); else s.seed = 0;
     const Info* i = FindRandomizer(s.mode);
     if (i && !i->canShuffle) s.shuffle = false;
     if (i && !i->canColorblind) s.colorblind = false;
@@ -162,6 +176,7 @@ inline std::string CreditNames(Mode m) {
 inline std::string SpecSummary(const Spec& s) {
     const Info* i = FindRandomizer(s.mode);
     if (!i) return "No randomizer";
+    if (s.mode == kCustom) return std::string(i->name) + " (set " + s.set.substr(0, 6) + ")";
     std::string t = std::string(i->name) + (i->seeded ? ", seed " + std::to_string(s.seed) : std::string());
     if (s.shuffle) t += ", panels shuffled";
     if (s.colorblind) t += ", colour-blind colours";

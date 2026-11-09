@@ -71,8 +71,9 @@ private:
 class ReplayRaw : public Raw {
 public:
     std::map<int, uintptr_t> ents; RangeStore mem; unsigned misses = 0;
-    uintptr_t entity(int id) override { auto it = ents.find(id); if (it == ents.end()) { misses++; return 0; } return it->second; }
-    bool read(uintptr_t a, void* d, size_t n) override { if (mem.get(a, d, n)) return true; misses++; return false; }
+    int missEntity = -1; uintptr_t missAddr = 0;      // the last entity or address the recording did not have
+    uintptr_t entity(int id) override { auto it = ents.find(id); if (it == ents.end()) { misses++; missEntity = id; return 0; } return it->second; }
+    bool read(uintptr_t a, void* d, size_t n) override { if (mem.get(a, d, n)) return true; misses++; missAddr = a; return false; }
     bool write(uintptr_t a, const void* s, size_t n) override { mem.put(a, (const uint8_t*)s, n); return true; }      // (applying into a copy of the world in the test)
 };
 

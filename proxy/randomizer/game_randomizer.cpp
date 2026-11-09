@@ -66,8 +66,21 @@ struct Gen {
     HANDLE thread = nullptr;      // kept: a generation given up on is lowered to idle priority (one stuck in its own computation never reads again, so the cancel never reaches it)
 };
 std::string GenStatus(Gen* g) { AcquireSRWLockShared(&g->statusLock); std::string s = g->status; ReleaseSRWLockShared(&g->statusLock); return s; }
+// The player's puzzle sets: <data folder>\puzzles\<hash>.txt, written by the launcher (its editor, or the lobby from the host). Read on the
+// generation thread, never in DllMain.
+std::string LoadPuzzleSetFile(const std::string& hash) {
+    if (hash.size() != 16 || hash.find_first_not_of("0123456789abcdef") != std::string::npos) return "";
+    std::wstring path = DataDir() + L"puzzles\\" + std::wstring(hash.begin(), hash.end()) + L".txt";
+    HANDLE f = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
+    if (f == INVALID_HANDLE_VALUE) return "";
+    std::string text; char buf[8192]; DWORD got = 0;
+    while (ReadFile(f, buf, sizeof buf, &got, nullptr) && got && text.size() < (4u << 20)) text.append(buf, got);
+    CloseHandle(f);
+    return text;
+}
 DWORD WINAPI GenThread(void* p) {
     Gen* g = (Gen*)p;
+    wrand::LoadPuzzleSet = LoadPuzzleSetFile;
     g->result = wrand::Generate(g->spec, &g_raw, g->arrays.get(), [g](const std::string& s) { AcquireSRWLockExclusive(&g->statusLock); g->status = s; ReleaseSRWLockExclusive(&g->statusLock); }, &g->cancel);
     g->finished = GetTickCount(); g->done = true;
     return 0;

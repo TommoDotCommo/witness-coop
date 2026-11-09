@@ -55,18 +55,27 @@ $(BUILD)/generate-test: tests/generate_test.cpp world.h $(BUILD)/backend.o $(GLU
 $(BUILD)/generate-mut-%: tests/generate_test.cpp world.h $(BUILD)/backend.o $$(call glue-mut,$$*) $(LIBS)
 	g++ $(CXXF) -include compat.h -o $@ tests/generate_test.cpp $(BUILD)/backend.o $(call glue-mut,$*) $(LIBS)
 
+# the player's own puzzles written into a recorded game and read back (tests/custom_test.cpp); mutant: polyominoes upside down
+$(BUILD)/custom-test: tests/custom_test.cpp world.h $(BUILD)/backend.o $(GLUE) $(LIBS)
+	g++ $(CXXF) -include compat.h -Wall -o $@ tests/custom_test.cpp $(BUILD)/backend.o $(GLUE) $(LIBS)
+$(BUILD)/custom-mut-%: tests/custom_test.cpp world.h $(BUILD)/backend.o $$(call glue-mut,$$*) $(LIBS)
+	g++ $(CXXF) -include compat.h -o $@ tests/custom_test.cpp $(BUILD)/backend.o $(call glue-mut,$*) $(LIBS)
+CUSTOM_MUTANTS = SHAPE_FLIPPED
+
 # one run of one spec over a recorded game (tools/randomizer_sweep.py: every mode over many seeds, each in a process of its own)
 $(BUILD)/one-run: tests/one_run.cpp world.h $(BUILD)/backend.o $(GLUE) $(LIBS)
 	g++ $(CXXF) -include compat.h -o $@ tests/one_run.cpp $(BUILD)/backend.o $(GLUE) $(LIBS)
 
 BACKEND_MUTANTS = COW_NO_COPY FP_ADDRESSES
 GENERATE_MUTANTS = NO_RESET WATCHDOG_THREAD
-test: $(BUILD)/backend-test $(addprefix $(BUILD)/backend-mut-,$(BACKEND_MUTANTS)) $(BUILD)/generate-test $(addprefix $(BUILD)/generate-mut-,$(GENERATE_MUTANTS))
+test: $(BUILD)/backend-test $(addprefix $(BUILD)/backend-mut-,$(BACKEND_MUTANTS)) $(BUILD)/generate-test $(addprefix $(BUILD)/generate-mut-,$(GENERATE_MUTANTS)) $(BUILD)/custom-test $(addprefix $(BUILD)/custom-mut-,$(CUSTOM_MUTANTS))
 	$(BUILD)/backend-test
 	@for m in $(BACKEND_MUTANTS); do if $(BUILD)/backend-mut-$$m >/dev/null; then echo "MUTANT $$m SURVIVED (the test cannot fail for it)"; exit 1; else echo "mutant $$m killed"; fi; done
 	@if [ -z "$(WORLDS)" ]; then echo "generate-test: SKIPPED, no recorded game in local/randomizer/ (tools/randomizer_solo.sh --record)"; else \
 	  $(BUILD)/generate-test $(WORLDS) && \
-	  for m in $(GENERATE_MUTANTS); do if $(BUILD)/generate-mut-$$m $(WORLDS) >/dev/null; then echo "MUTANT $$m SURVIVED (the test cannot fail for it)"; exit 1; else echo "mutant $$m killed"; fi; done; fi
+	  for m in $(GENERATE_MUTANTS); do if $(BUILD)/generate-mut-$$m $(WORLDS) >/dev/null; then echo "MUTANT $$m SURVIVED (the test cannot fail for it)"; exit 1; else echo "mutant $$m killed"; fi; done && \
+	  $(BUILD)/custom-test $(firstword $(WORLDS)) && \
+	  for m in $(CUSTOM_MUTANTS); do if $(BUILD)/custom-mut-$$m $(firstword $(WORLDS)) >/dev/null; then echo "MUTANT $$m SURVIVED (the test cannot fail for it)"; exit 1; else echo "mutant $$m killed"; fi; done; fi
 clean:
 	rm -rf $(BUILD)
 .PHONY: test clean

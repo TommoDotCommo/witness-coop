@@ -527,7 +527,7 @@ inline std::vector<std::string> Problems(const Puzzle& p) {
         if (c.symbol() && !ColourByIndex(c.colour)) { out.push_back("a symbol has no colour the game knows"); }
         if (c.kind == kTriangle && (c.count < 1 || c.count > 3)) out.push_back("a triangle must count 1, 2 or 3");
         if ((c.kind == kPoly || c.kind == kYlop) && !(c.shape & 0xFFFF)) out.push_back("a polyomino has no squares");
-        if (c.start) starts++;
+        if (c.start) { starts++; if (x % 2 || y % 2) out.push_back("a start point must be on a corner of the grid (the game's panels cannot start in the middle of a line)"); }
         if (c.end) { ends++; auto d = p.validEndDirs(x, y); if (std::find(d.begin(), d.end(), c.end) == d.end() || (x % 2 && y % 2)) out.push_back("an end point must be on the edge of the grid and point out of it"); }
         if (p.sym != kSymNone && (c.start || c.end)) {
             int sx, sy; p.symPos(x, y, &sx, &sy);

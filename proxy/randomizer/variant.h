@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 #include "../../common/randomizers.h"
+#include "../../common/wpuzzle.h"
 
 namespace wrand {
 // A watchdog of any variant, as the game runs it on the render thread (upstream: a thread of its own each): what it does, how often, whether it is done.
@@ -23,6 +24,12 @@ std::vector<Dog> RunDespair(const Spec& spec);      // third_party/despair-rando
 std::vector<Dog> RunShuffler(const Spec& spec);     // third_party/symbol-shuffler: Symbol Shuffler, Emptiness, Puzzle Pack
 std::vector<Dog> RunStar(const Spec& spec);         // third_party/star-randomizer: Star
 std::vector<Dog> RunTutorializer(const Spec& spec); // third_party/tutorializer: Tutorializer
+std::vector<Dog> RunCustom(const Spec& spec);       // the player's own puzzles (common/wpuzzle.h), written by third_party/witness-randomizer's Panel (variants/nsv.cpp)
+// Where the player's puzzle sets come from: the text of the set with this hash, or empty when there is none. The DLL reads the puzzles folder
+// (game_randomizer.cpp), the tests a fixture. Set before the first Generate.
+extern std::string (*LoadPuzzleSet)(const std::string& hash);
+// A panel read back into the editor's model (through the current backend), for the tests: what the game holds.
+wpz::Puzzle ReadCustomPuzzle(int id);
 }  // namespace wrand
 
 // Inside a variant's namespace: a Dog for one of its watchdogs (any class with action(), sleepTime and terminate; never deleted, as upstream).

@@ -7,9 +7,9 @@ static void check(bool ok, const char* what) { if (!ok) { std::printf("FAIL: %s\
 using namespace wrand;
 int main() {
     for (const auto& i : Randomizers()) {
-        Spec s; s.mode = i.mode; s.seed = 48213; s.shuffle = true; s.colorblind = true; s.fast = true;
+        Spec s; s.mode = i.mode; s.seed = 48213; s.shuffle = true; s.colorblind = true; s.fast = true; if (i.mode == kCustom) s.set = "0123456789abcdef";
         Spec b = ParseSpec(SpecText(s));
-        check(b.mode == s.mode && b.seed == 48213 && b.colorblind == i.canColorblind && b.fast == i.canFast && b.shuffle == i.canShuffle, "every randomizer and the options it has survive the text");
+        check(b.mode == s.mode && b.seed == (i.mode == kCustom ? 0u : 48213u) && b.set == s.set && b.colorblind == i.canColorblind && b.fast == i.canFast && b.shuffle == i.canShuffle, "every randomizer and the options it has survive the text");
         check(std::string(i.project).size() > 0, "every randomizer names the project it comes from");
         check(!i.credits.empty() && !CreditNames(i.mode).empty(), "every randomizer names who made it");
     }
@@ -20,6 +20,10 @@ int main() {
     check(SpecSummary(ParseSpec("tutorializer;seed:9")) == "Tutorializer", "a randomizer whose seed changes nothing names no seed");
     check(ParseSpec(" normal ; seed:5 ; wobble ; fast\r").fast && ParseSpec(" normal ; seed:5 ; wobble ; fast\r").seed == 5, "spaces and unknown words are ignored");
     check(SpecSummary(ParseSpec("expert;seed:48213;fast")) == "Sigma's Randomizer: Expert, seed 48213, faster doors" && SpecSummary(Spec()) == "No randomizer", "the summary");
+    check(SpecText(ParseSpec("custom;set:00ff00ff00ff00ff")) == "custom;set:00ff00ff00ff00ff" && ParseSpec("custom;set:00ff00ff00ff00ff;seed:5").seed == 0, "your puzzles: the set, no seed");
+    check(!ParseSpec("custom").on() && !ParseSpec("custom;set:00FF").on() && !ParseSpec("custom;set:00ff00ff00ff00fg").on(), "your puzzles without a good set is off");
+    check(ParseSpec("normal;seed:3;set:00ff00ff00ff00ff").set.empty(), "a set belongs only to your puzzles");
+    check(SpecSummary(ParseSpec("custom;set:00ff00ff00ff00ff")) == "Your puzzles (set 00ff00)", "your puzzles' summary");
     check(CreditNames(kNormal) == "sigma144 and jbzdarkid" && CreditNames(kVariety) == "Penguin12335, sigma144 and jbzdarkid", "credit names");
     std::printf(failures ? "randomizers: %d FAILED\n" : "randomizers: all checks passed\n", failures);
     return failures ? 1 : 0;

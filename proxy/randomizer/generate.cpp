@@ -12,6 +12,7 @@ VariantRun FindVariant(Mode m) {
     case kShuffler: case kEmptiness: case kPuzzlePack: return RunShuffler;
     case kStar: return RunStar;
     case kTutorializer: return RunTutorializer;
+    case kCustom: return RunCustom;
     default: return nullptr;
     }
 }
