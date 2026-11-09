@@ -78,7 +78,7 @@ std::atomic<uint64_t> g_fp{0};
 wrand::Spec g_spec; bool g_specRead = false;
 std::unique_ptr<Gen> g_gen;                       // the one generating or applied
 std::vector<std::unique_ptr<Gen>> g_old;          // replaced ones: their arrays may still be read for a moment (freed two generations later)
-uint64_t g_lastWorld = 0; DWORD g_stableSince = 0;
+uint64_t g_lastWorld = 0; DWORD g_stableSince = 0, g_nextCount = 0; unsigned g_lastCount = 0, g_sameCount = 0, g_retries = 0;
 struct Dog { Watchdog* w; DWORD next; };
 std::vector<Dog> g_dogs;
 wrand::Arrays g_liveArrays([](size_t n) -> uint8_t* { static Arena a; return a.alloc(n); });      // what the watchdogs make (a failed arrow trace: a new sequence)
@@ -88,6 +88,12 @@ uint64_t WorldId() {      // the addresses of three tutorial panels: a loaded sa
     uint64_t h = 1469598103934665603ull;
     for (unsigned id : {0x64u, 0x182u, 0x293u}) { uintptr_t e = GameEntity(id); if (!e) return 0; h = (h ^ (uint64_t)e) * 1099511628211ull; }
     return h;
+}
+unsigned EntityCount() {      // how many entities the world has: a load creates them over several frames, and the generator reads all over the island
+    uintptr_t base = (uintptr_t)GetModuleHandleA(nullptr), glob = 0, arr = 0;
+    if (!g_raw.read(base + 0x62D0A0, &glob, 8) || !glob || !g_raw.read(glob + 0x18, &arr, 8) || !arr) return 0;
+    static std::vector<uint64_t> t(0x40000); if (!g_raw.read(arr, t.data(), t.size() * 8)) return 0;
+    unsigned n = 0; for (uint64_t e : t) n += e != 0; return n;
 }
 void Logf(const char* fmt, ...) { char m[600]; va_list a; va_start(a, fmt); vsnprintf(m, sizeof m, fmt, a); va_end(a); Log(m); }
 
@@ -110,6 +116,10 @@ void StartGeneration(uint64_t world) {
 void Finish() {
     Gen* g = g_gen.get();
     uint64_t now = WorldId();
+    if (!g->result.ok && g->result.error.find("read failed") != std::string::npos && g_retries < 5 && now == g->world) {      // a part of the world not there yet: again in a moment
+        g_retries++; Logf("randomizer: %s: again (%u)", g->result.error.c_str(), g_retries);
+        g_state = kWaitWorld; g_settled = false; g_stableSince = GetTickCount(); g_sameCount = 0; return;
+    }
     if (!g->result.ok) {
         g_state = kFailed; g_settled = true; g_fp = 0; SetCore(witness::PUZ_FAILED);
         Logf("randomizer: FAILED after %lu ms: %s (last status '%s')", g->finished - g->started, g->result.error.c_str(), g->result.lastStatus.c_str());
@@ -204,14 +214,22 @@ void RandomizerFrame() {
     DWORD now = GetTickCount();
     if ((g_state == kApplied || g_state == kFailed) && g_gen && world != g_gen->world) {      // another world (a save loaded, a new game): its own puzzles
         Logf("randomizer: the world was loaded again: new puzzles for it");
-        g_state = kWaitWorld; g_settled = false; g_fp = 0; g_dogs.clear(); SetCore(witness::PUZ_WORKING);
+        g_state = kWaitWorld; g_settled = false; g_fp = 0; g_dogs.clear(); SetCore(witness::PUZ_WORKING); g_retries = 0; g_sameCount = 0;
     }
     switch (g_state) {
     case kWaitWorld:
         g_settled = false;
         if (!world) { g_lastWorld = 0; g_stableSince = 0; break; }
         if (world != g_lastWorld) { g_lastWorld = world; g_stableSince = now; break; }
-        if (now - g_stableSince >= 1500) StartGeneration(world);      // the same world for a moment (a load builds it in steps)
+        if (now - g_stableSince < 1500) break;      // the same world for a moment (a load builds it in steps)
+        if ((LONG)(now - g_nextCount) >= 0) {      // and as many entities as half a second before (the whole island is there, not only the tutorial)
+            g_nextCount = now + 500; unsigned n = EntityCount();
+#ifndef WR_MUT_EARLY_START
+            if (n < 1000 || n != g_lastCount) { g_lastCount = n; g_sameCount = 0; break; }
+            if (++g_sameCount < 2) break;
+#endif
+            StartGeneration(world);
+        }
         break;
     case kGenerating:
         if (g_gen && g_gen->done) Finish();

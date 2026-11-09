@@ -580,18 +580,20 @@ separate program that writes the game from outside; here it runs inside the game
   fingerprint: a hash of every changed byte in which our arrays count by their contents and a pointer the game had by where it was first read,
   so it is the same on every PC for the same puzzles.
 - `proxy/randomizer/game_randomizer.cpp`, once per frame on the render thread: for every world the game loads (a new game, a save, the same save
-  again: the three tutorial panels' addresses change) it waits 1.5 s of the same world, starts the generation thread (above normal priority:
+  again: the three tutorial panels' addresses change) it waits 1.5 s of the same world and until the entity table stops growing (a load
+  creates the island in steps: a generation started on the tutorial alone failed reading the Keep), starts the generation thread (above normal priority:
   it competes with the game's loading), and when it is done writes the overlay in one frame (refused if an entity changed meanwhile: then
   again), then runs upstream's watchdogs (arrow puzzles, the Keep, the Jungle's sound dots, Treehouse, Town door, a bridge) on the render
   thread at their own intervals. Until then `RandomizerSettled()` is false: the sync core's stable-world gate waits for it (`World::worldReady`),
   so nothing from another player is applied to a panel before its puzzle is in, and what the randomizer switched off at the start is in the
   baseline; the start-progress option waits for it too (the randomizer powers some targets off on a fresh world, which must not undo the parts
-  done). A failed generation leaves the game's own puzzles, says so to the player and lets the sync go on.
+  done). A generation that failed reading the game is tried again (up to 5 times); one that fails otherwise leaves the game's own puzzles, says so to the player and lets the sync go on.
 - Each game sends its fingerprint and state to the others (`WTR6`, `SyncCore::setPuzzles`, every 2 s and at once on a change; nothing is sent by a
   game that never set it), and says `<name> has different puzzles` once per difference (`common/notices.h`).
 
-Measured (build 11370412, one PC): a generation over a stable world takes 0.27 s (Normal), 0.66 s (Expert), 2.4 to 3 s (Variety); at the start of a
-new game, competing with the game's loading, Normal took 7.5 s and Expert 24 s before the generation thread's priority was raised (not measured since).
+Measured (build 11370412, one PC): a generation takes 0.27 to 0.38 s (Normal), 0.6 to 0.8 s (Expert), 2.4 to 3 s (Variety), at the start of a new game
+as well since the generation thread runs above normal priority (before that, competing with the game's loading: 7.5 s for Normal, 24 s for Expert);
+both games of `tools/qa.sh randomizer` settle about 38 s after the restart is asked.
 A generation changes about 370 to 490 entities (34 to 165 KB) and makes about 2000 arrays (0.4 to 0.6 MB); Expert and Variety start about 50 watchdogs.
 
 Known limits: a save loaded from the game's own menu gets the randomizer of the cfg the game was started with (the launcher's continue uses the

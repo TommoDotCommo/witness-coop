@@ -56,7 +56,7 @@ def main():
     t0 = time.time(); qa_sweep.restart('name=Alpha\nrandomizer=' + SPEC, 'name=Beta\nrandomizer=' + SPEC)
     print('  both settled %.0f s after the restart was asked' % (time.time() - t0), flush=True)
     for d in (DIR1, DIR2):
-        print('  ' + ' | '.join(l for l in log(d).splitlines() if l.startswith('randomizer: applied')), flush=True)
+        print('  ' + ' | '.join(l for l in log(d).splitlines() if l.startswith('randomizer: applied') or l.startswith('randomizer: FAILED') or 'watchdog stopped' in l), flush=True)
     (sa, pa), (sb, pb) = randstat(DIR1), randstat(DIR2)
     fa, fb = sa.get('fingerprint', '0'), sb.get('fingerprint', '0')
     check('1. both games applied the puzzles', sa.get('state') == 'applied' and sb.get('state') == 'applied', (sa, sb))
@@ -71,14 +71,16 @@ def main():
         print('qa_randomizer MUTANT: %s' % ('PASS (the check failed, as it must)' if not ok else 'FAIL (the checks passed with B never writing its puzzles)'), flush=True)
         return 0 if not ok else 1
     # 3. a randomized panel solved in A reaches B
-    target = None
-    for i in changed:
+    target, res = None, {}
+    for i in changed:      # the first randomized panel the solver has a line for and the bot can draw (it cannot draw every shape Expert makes)
         q = ra[i]; path = solver.solve(dict(q, seq=[]))      # (not the game's stored line: it belongs to the panel's old puzzle)
-        if path: target = (q, path); break
+        if not path: continue
+        target = (q, path); res = sweep.draw(q, path, 'A')
+        if res.get('solved'): break
+        print('  (panel %#x: the bot could not draw it: %s; the next one)' % (i, res.get('why', '')), flush=True)
     check('3. the solver found a line for one of the randomized panels', target is not None)
     if target:
-        q, path = target
-        res = sweep.draw(q, path, 'A'); t1 = time.time()
+        q, path = target; t1 = time.time()
         on_b = False
         while time.time() - t1 < 30 and not on_b: on_b = q['id'] in qa_sweep.solved_set('B'); time.sleep(0.5) if not on_b else None
         check('   panel %#x drawn in A is solved in A' % q['id'], res.get('solved'), res.get('why', ''))
