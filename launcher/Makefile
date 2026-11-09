@@ -9,9 +9,20 @@ $(BUILD)/core-test.exe: $(SRC) core.h ../common/buildid.h ../common/buildid_fixt
 $(BUILD)/mutant-%.exe: $(SRC) core.h ../common/buildid.h ../common/buildid_fixture.h
 	mkdir -p $(BUILD)
 	$(CXX) -std=c++17 -O2 -Wno-unused-parameter -static -DWL_MUT_$* -o $@ $(SRC)
-test: $(BUILD)/core-test.exe $(addsuffix .exe,$(addprefix $(BUILD)/mutant-,$(MUTANTS))) diag-test crash-test
+test: $(BUILD)/core-test.exe $(addsuffix .exe,$(addprefix $(BUILD)/mutant-,$(MUTANTS))) diag-test crash-test editor-test
 	$(BUILD)/core-test.exe
 	@for m in $(MUTANTS); do if $(BUILD)/mutant-$$m.exe >/dev/null; then echo "MUTANT $$m SURVIVED (the test cannot fail for it)"; exit 1; else echo "mutant $$m killed"; fi; done
+
+# the puzzle editor's logic (editor_core.h), game-free with g++ (no Windows calls); mutants: a start not mirrored, a drawn line crossing gaps
+ED_MUTANTS = NO_MIRROR TRACE_THROUGH_GAP
+$(BUILD)/editor-test: editor_test.cpp editor_core.h ../common/wpuzzle.h
+	mkdir -p $(BUILD); g++ -std=c++17 -O2 -Wall -Wextra -g -fsanitize=address,undefined -fno-sanitize-recover=undefined -o $@ editor_test.cpp
+$(BUILD)/editor-mut-%: editor_test.cpp editor_core.h ../common/wpuzzle.h
+	mkdir -p $(BUILD); g++ -std=c++17 -O2 -DED_MUT_$* -o $@ editor_test.cpp
+editor-test: $(BUILD)/editor-test $(addprefix $(BUILD)/editor-mut-,$(ED_MUTANTS))
+	$(BUILD)/editor-test
+	@for m in $(ED_MUTANTS); do if $(BUILD)/editor-mut-$$m >/dev/null; then echo "MUTANT editor $$m SURVIVED"; exit 1; else echo "mutant editor $$m killed"; fi; done
+.PHONY: editor-test
 
 # the session logs shared with the proxy (common/diag_log.h), game-free, with mutants
 DIAG_MUTANTS = WEAK_CHAIN NO_CHAIN PRUNE_CRASHED PRUNE_ALL
@@ -69,16 +80,16 @@ $(BUILD)/netfind_%.o: netfind.c $(NF_HDRS)
 	mkdir -p $(BUILD)
 	x86_64-w64-mingw32-gcc -std=c99 -O2 -Wno-unused-parameter -D_WIN32_WINNT=0x0601 -D$* -c -o $@ netfind.c
 $(BUILD)/witness_launcher_NF_MUT_IGNORE_REPLIES.exe: $(BUILD)/netfind_NF_MUT_IGNORE_REPLIES.o      # (the Join list mutant is in netfind.c)
-$(BUILD)/witness_launcher_%.exe: $(NF_HDRS) $(BUILD)/netfind.o ../common/guide.h ../common/bindings.def ../proxy/config.h main.cpp shell.cpp shell.h ../common/handover.h update_win.h update.h ../dist/install-policy.h core.cpp core.h ../proxy/core/appearance.h theme.cpp theme.h trace.h lobby.cpp lobby.h lobby_win.cpp lobby_win.h lobby_steam.cpp lobby_steam.h ../common/steam_abi.h ../common/steam_ids.h ../proxy/voice/voice.cpp $(BUILD)/launcher_res.o ../proxy/progress/progress.cpp ../proxy/progress/progress_data.cpp ../proxy/progress/savemeta.cpp $(BUILD)/diag_ps1.h $(BUILD)/notices_txt.h $(BUILD)/version.h ../common/diag_log.h ../common/crash_handler.h
-	$(CXX) -std=c++17 -O2 -I$(BUILD) -D_WIN32_WINNT=0x0601 -mwindows -municode -static -DWL_MUT_$* -o $@ main.cpp shell.cpp core.cpp theme.cpp lobby.cpp lobby_win.cpp lobby_steam.cpp ../proxy/voice/voice.cpp ../proxy/progress/progress.cpp ../proxy/progress/progress_data.cpp ../proxy/progress/savemeta.cpp $(if $(filter NF_MUT_%,$*),$(BUILD)/netfind_$*.o,$(BUILD)/netfind.o) $(BUILD)/launcher_res.o -lcomctl32 -lshell32 -lole32 -luuid -luxtheme -lws2_32 -lwinmm -lgdi32 -lmsimg32 -lwininet -ld2d1 -ldwrite
+$(BUILD)/witness_launcher_%.exe: $(NF_HDRS) $(BUILD)/netfind.o ../common/guide.h ../common/bindings.def ../proxy/config.h main.cpp editor.cpp editor.h editor_core.h ../common/wpuzzle.h ../common/wpuzzle_json.h ../common/wpuzzle_panels.h shell.cpp shell.h ../common/handover.h update_win.h update.h ../dist/install-policy.h core.cpp core.h ../proxy/core/appearance.h theme.cpp theme.h trace.h lobby.cpp lobby.h lobby_win.cpp lobby_win.h lobby_steam.cpp lobby_steam.h ../common/steam_abi.h ../common/steam_ids.h ../proxy/voice/voice.cpp $(BUILD)/launcher_res.o ../proxy/progress/progress.cpp ../proxy/progress/progress_data.cpp ../proxy/progress/savemeta.cpp $(BUILD)/diag_ps1.h $(BUILD)/notices_txt.h $(BUILD)/version.h ../common/diag_log.h ../common/crash_handler.h
+	$(CXX) -std=c++17 -O2 -I$(BUILD) -D_WIN32_WINNT=0x0601 -mwindows -municode -static -DWL_MUT_$* -o $@ main.cpp editor.cpp shell.cpp core.cpp theme.cpp lobby.cpp lobby_win.cpp lobby_steam.cpp ../proxy/voice/voice.cpp ../proxy/progress/progress.cpp ../proxy/progress/progress_data.cpp ../proxy/progress/savemeta.cpp $(if $(filter NF_MUT_%,$*),$(BUILD)/netfind_$*.o,$(BUILD)/netfind.o) $(BUILD)/launcher_res.o -lcomctl32 -lshell32 -lole32 -luuid -luxtheme -lws2_32 -lwinmm -lgdi32 -lmsimg32 -lwininet -ld2d1 -ldwrite
 # the manifest plus a VERSIONINFO (ProductName "The Witness Co-op", the mod version): tools/versioninfo.py writes the version part
 $(BUILD)/launcher_res.o: launcher.rc launcher.manifest ../tools/versioninfo.py $(BUILD)/version.h
 	mkdir -p $(BUILD)
 	python3 -I ../tools/versioninfo.py '$(VERSION)' witness_launcher.exe 'The Witness Co-op launcher' $(BUILD)/launcher_version.rc
 	{ cat launcher.rc; cat $(BUILD)/launcher_version.rc; } > $(BUILD)/launcher_all.rc
 	x86_64-w64-mingw32-windres -I . $(BUILD)/launcher_all.rc -o $@
-$(BUILD)/witness_launcher.exe: $(NF_HDRS) $(BUILD)/netfind.o ../common/guide.h ../common/bindings.def ../proxy/config.h main.cpp shell.cpp shell.h ../common/handover.h update_win.h update.h ../dist/install-policy.h core.cpp core.h ../proxy/core/appearance.h theme.cpp theme.h trace.h lobby.cpp lobby.h lobby_win.cpp lobby_win.h lobby_steam.cpp lobby_steam.h ../common/steam_abi.h ../common/steam_ids.h ../proxy/voice/voice.cpp $(BUILD)/launcher_res.o ../proxy/progress/progress.cpp ../proxy/progress/progress_data.cpp ../proxy/progress/savemeta.cpp $(BUILD)/diag_ps1.h $(BUILD)/notices_txt.h $(BUILD)/version.h ../common/diag_log.h ../common/crash_handler.h
-	$(CXX) -std=c++17 -O2 -Wall -I$(BUILD) -D_WIN32_WINNT=0x0601 -mwindows -municode -static -o $@ main.cpp shell.cpp core.cpp theme.cpp lobby.cpp lobby_win.cpp lobby_steam.cpp ../proxy/voice/voice.cpp ../proxy/progress/progress.cpp ../proxy/progress/progress_data.cpp ../proxy/progress/savemeta.cpp $(BUILD)/netfind.o $(BUILD)/launcher_res.o -lcomctl32 -lshell32 -lole32 -luuid -luxtheme -lws2_32 -lwinmm -lgdi32 -lmsimg32 -lwininet -ld2d1 -ldwrite
+$(BUILD)/witness_launcher.exe: $(NF_HDRS) $(BUILD)/netfind.o ../common/guide.h ../common/bindings.def ../proxy/config.h main.cpp editor.cpp editor.h editor_core.h ../common/wpuzzle.h ../common/wpuzzle_json.h ../common/wpuzzle_panels.h shell.cpp shell.h ../common/handover.h update_win.h update.h ../dist/install-policy.h core.cpp core.h ../proxy/core/appearance.h theme.cpp theme.h trace.h lobby.cpp lobby.h lobby_win.cpp lobby_win.h lobby_steam.cpp lobby_steam.h ../common/steam_abi.h ../common/steam_ids.h ../proxy/voice/voice.cpp $(BUILD)/launcher_res.o ../proxy/progress/progress.cpp ../proxy/progress/progress_data.cpp ../proxy/progress/savemeta.cpp $(BUILD)/diag_ps1.h $(BUILD)/notices_txt.h $(BUILD)/version.h ../common/diag_log.h ../common/crash_handler.h
+	$(CXX) -std=c++17 -O2 -Wall -I$(BUILD) -D_WIN32_WINNT=0x0601 -mwindows -municode -static -o $@ main.cpp editor.cpp shell.cpp core.cpp theme.cpp lobby.cpp lobby_win.cpp lobby_steam.cpp ../proxy/voice/voice.cpp ../proxy/progress/progress.cpp ../proxy/progress/progress_data.cpp ../proxy/progress/savemeta.cpp $(BUILD)/netfind.o $(BUILD)/launcher_res.o -lcomctl32 -lshell32 -lole32 -luuid -luxtheme -lws2_32 -lwinmm -lgdi32 -lmsimg32 -lwininet -ld2d1 -ldwrite
 .PHONY: launcher
 
 # the lobby (game-free): the same kind of test and mutants

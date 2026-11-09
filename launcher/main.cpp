@@ -36,6 +36,7 @@
 #include "version.h"
 #include "update_win.h"
 #include "../common/userdata.h"
+#include "editor.h"
 #include "diag_ps1.h"
 #include "notices_txt.h"      // dist/THIRD-PARTY-NOTICES.txt
 #define STB_IMAGE_IMPLEMENTATION
@@ -58,7 +59,7 @@ enum { ID_TAB = 100, ID_APPLY, ID_LAUNCH, ID_NEWGAME, ID_BROWSE, ID_GAMEDIR, ID_
        // the Randomizers page (common/randomizers.h, proxy/trainer.cpp): the randomizer (a list), what it is and who made it, its options; the Witness Trainer; the credits
        ID_RZ_TITLE = 800, ID_RZ_INTRO, ID_RZ_MODE, ID_RZ_BLURB, ID_RZ_WARN, ID_RZ_BY, ID_RZ_SEED_LABEL, ID_RZ_SEED, ID_RZ_NEWSEED, ID_RZ_ROLL, ID_RZ_SHUFFLE, ID_RZ_COLOR, ID_RZ_FAST,
        ID_RZ_STATUS, ID_RZ_H_TRAINER, ID_RZ_TR_SPEED_LABEL, ID_RZ_TR_SPEED, ID_RZ_TR_FOV_LABEL, ID_RZ_TR_FOV, ID_RZ_TR_NOCLIP, ID_RZ_TR_CHALLENGE, ID_RZ_TR_EPS, ID_RZ_TR_NOTE,
-       ID_RZ_H_CREDITS, ID_RZ_CREDITS, ID_RZ_LINK_MODE, ID_RZ_LINK_TRAINER, ID_RZ_LICENCE };
+       ID_RZ_H_CREDITS, ID_RZ_CREDITS, ID_RZ_LINK_MODE, ID_RZ_LINK_TRAINER, ID_RZ_SET_LABEL, ID_RZ_SET, ID_RZ_EDIT, ID_RZ_LICENCE };
 static_assert(ID_UP_WHICH < ID_NG_OK, "control ids run into the New game dialog's");
 static_assert(ID_RZ_LICENCE < ID_FIELD, "the Randomizers page's ids run into the settings fields");
 enum Kind { kCheck, kCombo, kEdit, kMulti, kSlider, kKeyBtn, kNoteK };
@@ -1015,7 +1016,18 @@ void LayoutAbout(int W, int H) {
 uint32_t g_rzRound;                      // this round's seed for "a new seed for each new game" (the lobby shows it before the start; a new one after each game)
 bool g_rzLoading;
 uint32_t FreshSeed() { LARGE_INTEGER q; QueryPerformanceCounter(&q); uint64_t x = (uint64_t)q.QuadPart ^ (GetTickCount64() << 21) ^ ((uint64_t)GetCurrentProcessId() << 40); x ^= x >> 33; x *= 0xff51afd7ed558ccdULL; x ^= x >> 33; return 1 + (uint32_t)(x % 999999); }      // 1..999999: easy to read out to a friend
-wrand::Spec RzPick() { return wrand::ParseSpec(CfgGet("randomizer_pick", "off")); }
+// "Your puzzles" (the puzzle editor, launcher/editor.cpp): the pick names a set of the player's library (randomizer_set); the spec carries the hash of
+// that set as it is now, whose copy is written to the puzzles folder for the game (and sent by the lobby to the others).
+std::string RzSetName() { return CfgGet("randomizer_set", ""); }
+std::string RzSetHash(const std::string& name) {
+    wpz::Set set; if (name.empty() || !ped::LoadSet(g_data, name, &set)) return "";
+    return ped::PublishSet(g_data, set);
+}
+wrand::Spec RzPick() {
+    std::string pick = CfgGet("randomizer_pick", "off");
+    if (pick.rfind("custom", 0) == 0) { std::string h = RzSetHash(RzSetName()); pick = h.empty() ? "off" : "custom;set:" + h; }
+    return wrand::ParseSpec(pick);
+}
 bool RzNewSeed() { return CfgGet("randomizer_new_seed", "1") != "0"; }
 std::string RzNewestSave() {      // the randomizer the newest save was made with ("" none): a continued game keeps it
     std::vector<wl::SaveInfo> v = wl::ListSaves(SaveFolder(LoadCfg()));
@@ -1050,6 +1062,8 @@ void BuildRandomizers(HWND pg) {
     Make(pg, L"BUTTON", L"A new seed for each new game", BS_AUTOCHECKBOX | WS_TABSTOP, 0, 0, 10, 10, ID_RZ_NEWSEED);
     Make(pg, L"STATIC", L"Seed", SS_LEFT, 0, 0, 10, 10, ID_RZ_SEED_LABEL); Make(pg, L"EDIT", L"", WS_BORDER | ES_NUMBER | ES_AUTOHSCROLL, 0, 0, 10, 10, ID_RZ_SEED);
     Make(pg, L"BUTTON", L"New seed", BS_PUSHBUTTON, 0, 0, 10, 10, ID_RZ_ROLL);
+    Make(pg, L"STATIC", L"Puzzle set", SS_LEFT, 0, 0, 10, 10, ID_RZ_SET_LABEL); Make(pg, L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP, 0, 0, 10, 10, ID_RZ_SET);
+    Make(pg, L"BUTTON", L"Open the puzzle editor", BS_PUSHBUTTON, 0, 0, 10, 10, ID_RZ_EDIT);
     Make(pg, L"BUTTON", L"Shuffle which panel is where", BS_AUTOCHECKBOX | WS_TABSTOP, 0, 0, 10, 10, ID_RZ_SHUFFLE);
     Make(pg, L"BUTTON", L"Colour-blind friendly colours", BS_AUTOCHECKBOX | WS_TABSTOP, 0, 0, 10, 10, ID_RZ_COLOR);
     Make(pg, L"BUTTON", L"Faster doors, bridges and elevators", BS_AUTOCHECKBOX | WS_TABSTOP, 0, 0, 10, 10, ID_RZ_FAST);
@@ -1076,7 +1090,8 @@ void LayoutRandomizers(int W, int H) {
     PlaceId(ID_RZ_MODE, m, ly, left, 400); ly += 40;
     PlaceId(ID_RZ_BLURB, m, ly, left, 40); ly += 42; PlaceId(ID_RZ_BY, m, ly, left, 22); ly += 26; PlaceId(ID_RZ_WARN, m, ly, left, 40); ly += 46;      // (the author's warning, often none, last)
     PlaceId(ID_RZ_NEWSEED, m, ly, left, 26); ly += 32;
-    PlaceId(ID_RZ_SEED_LABEL, m, ly + 6, 60, 22); PlaceId(ID_RZ_SEED, m + 64, ly + 2, 140, 30); PlaceId(ID_RZ_ROLL, m + 214, ly, 120, 34); ly += 42;
+    PlaceId(ID_RZ_SEED_LABEL, m, ly + 6, 60, 22); PlaceId(ID_RZ_SEED, m + 64, ly + 2, 140, 30); PlaceId(ID_RZ_ROLL, m + 214, ly, 120, 34);
+    PlaceId(ID_RZ_SET_LABEL, m, ly - 26, 90, 22); PlaceId(ID_RZ_SET, m + 94, ly - 30, std::max(120, left - 94), 300); PlaceId(ID_RZ_EDIT, m, ly + 8, std::min(left, 260), 34); ly += 42;
     PlaceId(ID_RZ_SHUFFLE, m, ly, left, 26); ly += 30; PlaceId(ID_RZ_COLOR, m, ly, left, 26); ly += 30; PlaceId(ID_RZ_FAST, m, ly, left, 26); ly += 34;
     PlaceId(ID_RZ_STATUS, m, ly, left, std::max(22, H - ly - 10));
     int ry = y;
@@ -1089,11 +1104,24 @@ void LayoutRandomizers(int W, int H) {
     PlaceId(ID_RZ_CREDITS, rx, ry, rw, std::max(80, H - ry - 52)); ry = H - 44;
     int bw = (rw - 10) / 2; PlaceId(ID_RZ_LINK_MODE, rx, ry, bw, 34); PlaceId(ID_RZ_LINK_TRAINER, rx + bw + 10, ry, bw, 34);
 }
+std::string RzShownSet() {      // the set the page shows (the library's names, in the combo box)
+    int k = (int)SendMessageW(C(ID_RZ_SET), CB_GETCURSEL, 0, 0); auto names = ped::ListSets(g_data);
+    return k >= 0 && k < (int)names.size() ? names[k] : (names.empty() ? std::string() : names[0]);
+}
+void RzFillSets() {
+    bool was = g_rzLoading; g_rzLoading = true;
+    HWND c = C(ID_RZ_SET); auto names = ped::ListSets(g_data); std::string want = RzSetName(); int k = 0;
+    SendMessageW(c, CB_RESETCONTENT, 0, 0);
+    for (size_t i = 0; i < names.size(); i++) { SendMessageW(c, CB_ADDSTRING, 0, (LPARAM)W(names[i]).c_str()); if (names[i] == want) k = (int)i; }
+    if (names.empty()) SendMessageW(c, CB_ADDSTRING, 0, (LPARAM)L"(none yet: open the editor)");
+    SendMessageW(c, CB_SETCURSEL, k, 0); g_rzLoading = was;
+}
 const wrand::Info* RzShownInfo() { int k = (int)SendMessageW(C(ID_RZ_MODE), CB_GETCURSEL, 0, 0); return k >= 1 && k <= (int)wrand::Randomizers().size() ? &wrand::Randomizers()[k - 1] : nullptr; }
 wrand::Spec RzFromUi() {      // what the page shows, as a spec
     wrand::Spec s; const wrand::Info* inf = RzShownInfo(); s.mode = inf ? inf->mode : wrand::kOff;
     unsigned long seed = strtoul(EditText(C(ID_RZ_SEED)).c_str(), nullptr, 10); s.seed = (uint32_t)std::min<unsigned long>(seed, 0x7FFFFFFFul);
     s.shuffle = SendMessageW(C(ID_RZ_SHUFFLE), BM_GETCHECK, 0, 0) == BST_CHECKED; s.colorblind = SendMessageW(C(ID_RZ_COLOR), BM_GETCHECK, 0, 0) == BST_CHECKED; s.fast = SendMessageW(C(ID_RZ_FAST), BM_GETCHECK, 0, 0) == BST_CHECKED;
+    if (s.mode == wrand::kCustom) { s.seed = 0; s.set = RzSetHash(RzShownSet()); if (s.set.empty()) s.mode = wrand::kOff; return s; }
     if (!s.on()) { wrand::Spec keep = RzPick(); keep.mode = wrand::kOff; return keep; }      // (off: the options are kept for the next time one is chosen)
     return s;
 }
@@ -1158,6 +1186,10 @@ void RzRefresh() {      // what may be changed, and what the next game gets
     EnableWindow(C(ID_RZ_NEWSEED), can && seeded); EnableWindow(C(ID_RZ_SEED), can && seeded && !newSeed); EnableWindow(C(ID_RZ_ROLL), can && seeded);
     EnableWindow(C(ID_RZ_SHUFFLE), can && on && inf->canShuffle); EnableWindow(C(ID_RZ_COLOR), can && on && inf->canColorblind); EnableWindow(C(ID_RZ_FAST), can && on && inf->canFast);
     EnableWindow(C(ID_RZ_LINK_MODE), on && inf->credits.size() && *inf->credits[0].link);
+    bool custom = on && inf->mode == wrand::kCustom;
+    for (int id : {ID_RZ_NEWSEED, ID_RZ_SEED_LABEL, ID_RZ_SEED, ID_RZ_ROLL}) ShowWindow(C(id), custom ? SW_HIDE : SW_SHOW);
+    for (int id : {ID_RZ_SET_LABEL, ID_RZ_SET, ID_RZ_EDIT}) ShowWindow(C(id), custom ? SW_SHOW : SW_HIDE);
+    EnableWindow(C(ID_RZ_SET), can && custom); EnableWindow(C(ID_RZ_EDIT), true);
     if (newSeed && !guest && seeded) { g_rzLoading = true; SetWindowTextW(C(ID_RZ_SEED), std::to_wstring(g_rzRound ? g_rzRound : (g_rzRound = FreshSeed())).c_str()); g_rzLoading = false; }
     std::string lobbyLine = g_sess.Active() ? wrand::SpecSummary(wrand::ParseSpec(g_sess.State().settings.randomizer)) : "";
     SetWindowTextW(LB(ID_LB_RZ), W(lobbyLine.empty() ? std::string() : "Puzzles: " + lobbyLine).c_str());
@@ -1167,12 +1199,14 @@ void RzSave() {      // the page into the cfg (during a lobby game: into the set
     if (g_rzLoading || RzGuest()) return;
     wrand::Spec s = RzFromUi(); bool newSeed = SendMessageW(C(ID_RZ_NEWSEED), BM_GETCHECK, 0, 0) == BST_CHECKED;
     if (newSeed && s.on()) { wrand::Spec keep = RzPick(); s.seed = keep.seed; }      // (the typed seed is kept for when "a new seed" is turned off)
-    auto put = [&](wl::CfgFile& c) { c.Set("randomizer_pick", s.on() ? wrand::SpecText(s) : "off"); c.Set("randomizer_new_seed", newSeed ? "1" : "0"); };
+    std::string setName = s.mode == wrand::kCustom ? RzShownSet() : RzSetName();
+    auto put = [&](wl::CfgFile& c) { c.Set("randomizer_pick", s.on() ? wrand::SpecText(s) : "off"); c.Set("randomizer_new_seed", newSeed ? "1" : "0"); if (!setName.empty()) c.Set("randomizer_set", setName); };
     if (g_game && !g_cfgBackup.empty()) { wl::CfgFile c = wl::CfgFile::Parse(g_cfgBackup); put(c); g_cfgBackup = c.Text(); }
     else { wl::CfgFile c = LoadCfg(); put(c); WriteFile8(CfgPath(), c.Text()); }
     PushSettings(); RzRefresh();
 }
-void RzLoad() { RzShow(RzPick(), RzNewSeed()); RzTrainerShow(); RzRefresh(); }
+void RzLoad() { RzFillSets(); RzShow(RzPick(), RzNewSeed()); RzTrainerShow(); RzRefresh(); }
+void RzSetsChanged() { RzFillSets(); if (RzShownInfo() && RzShownInfo()->mode == wrand::kCustom) RzSave(); else RzRefresh(); }      // the editor changed the library: the pick's hash follows
 void RzCommand(int id, int code) {
     if (id == ID_RZ_LINK_MODE || id == ID_RZ_LINK_TRAINER) {
         if (code != BN_CLICKED) return;
@@ -1187,6 +1221,8 @@ void RzCommand(int id, int code) {
         if (SendMessageW(C(ID_RZ_NEWSEED), BM_GETCHECK, 0, 0) != BST_CHECKED) RzSave(); else { PushSettings(); RzRefresh(); } return; }
     if (id == ID_RZ_SEED) { if (code == EN_CHANGE) RzSave(); return; }
     if (id == ID_RZ_MODE) { if (code == CBN_SELCHANGE) RzSave(); return; }
+    if (id == ID_RZ_SET) { if (code == CBN_SELCHANGE) RzSave(); return; }
+    if (id == ID_RZ_EDIT) { if (code == BN_CLICKED) ped::OpenEditor(g_main, g_data, RzShownSet(), RzSetsChanged); return; }
     if (code == BN_CLICKED) RzSave();
 }
 void RzSetFromCommand(const std::string& arg) {      // tests: randomizer <spec> [newseed 0|1]
@@ -1196,7 +1232,8 @@ void RzSetFromCommand(const std::string& arg) {      // tests: randomizer <spec>
 std::string RzStat() {
     return "randomizers pick " + wrand::SpecText(RzPick()) + " newseed " + (RzNewSeed() ? "1" : "0") + " round " + std::to_string(g_rzRound) + " guest " + (RzGuest() ? "1" : "0") +
            " seededit " + (IsWindowEnabled(C(ID_RZ_SEED)) ? "1" : "0") + " shuffleedit " + (IsWindowEnabled(C(ID_RZ_SHUFFLE)) ? "1" : "0") + " offedit " + (IsWindowEnabled(C(ID_RZ_MODE)) ? "1" : "0") +
-           " trainer " + LoadCfg().Get("trainer_speed", "100") + "," + LoadCfg().Get("trainer_fov", "0") + "," + LoadCfg().Get("trainer_noclip", "0") + "\n";
+           " trainer " + LoadCfg().Get("trainer_speed", "100") + "," + LoadCfg().Get("trainer_fov", "0") + "," + LoadCfg().Get("trainer_noclip", "0") + " set " + ped::SafeName(RzSetName()) + "\n" +
+           ped::EditorStat() + "\n";
 }
 
 // ---- the update banner (Play) and the About block follow the updater's state
