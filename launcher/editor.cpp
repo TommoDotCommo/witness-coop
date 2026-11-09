@@ -75,7 +75,7 @@ void ShowProblems() {
     auto hard = wpz::HardToSee(*p, CurLook());
     if (!hard.empty()) {
         std::string names; for (size_t i = 0; i < hard.size(); i++) names += (i ? (i + 1 == hard.size() ? " and " : ", ") : "") + hard[i];
-        Say("Ready, but " + names + " symbols are hard to see on this panel: another colour or another panel shows them better.", true); return;
+        Say("Ready, but " + names + " is hard to see on this panel's colour.", true); return;
     }
     Say("Ready. Click to place the tool, right-click to clear; Try it to draw a line.", true);
 }

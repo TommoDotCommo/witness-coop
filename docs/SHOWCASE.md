@@ -39,6 +39,19 @@ and *Refresh*.
 
 *New game*: tick the parts of the map that are done; the window says how many panels that is and what else the game needs first, and the game starts with exactly those solved.
 
+![Randomizers: the randomizer and its seed, the Witness Trainer's options, and the credits](showcase/launcher_randomizers.jpg)
+
+**Randomizers**: new puzzles for the island, made when the game starts, with a seed you can share. In a lobby the host's choice is everyone's.
+The credits name the people whose randomizers these are.
+
+![The puzzle editor: a puzzle in the Tutorial panel's colours, the tools and the colours](showcase/launcher_editor.jpg)
+
+**Your puzzles**: the puzzle editor. Draw a puzzle with the game's symbols, choose its panel, and the editor shows it in that panel's colours (and
+says when a symbol would be hard to see there). *Try it* lets you draw a line; *Show a solution* and *Count solutions* say whether and how it can be
+solved. In a lobby the host's puzzles are sent to everyone.
+
+![A symmetry puzzle for Symmetry Island, with one of its 278 solutions shown](showcase/launcher_editor_symmetry.jpg)
+
 **Settings** has the sections Co-op rules, Players and interface, Voice and sound, Controls, Display, Network and Launcher. A setting is saved when it changes, and *Reset section*
 puts a section back.
 
