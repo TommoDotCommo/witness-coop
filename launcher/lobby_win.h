@@ -55,7 +55,12 @@ public:
     std::vector<wlobby::ChatLine> TakeChat(); bool TakeLaunch(wlobby::Launch* l);
     void SendVoice(const wvoice::Packet& p); void SetSpeaking(bool b);
     void SetVoiceSink(std::function<void(const wvoice::Packet&)> f);
+    // the host's puzzle set (lobby.h): where this launcher reads and keeps sets; given before Host / Join, used by every lobby it makes
+    void SetPuzzleStore(std::function<std::string(const std::string&)> text, std::function<bool(const std::string&)> have, std::function<void(const std::string&, const std::string&)> store) { setText_ = std::move(text); haveSet_ = std::move(have); storeSet_ = std::move(store); }
+    bool HavePuzzles(); size_t PuzzleBytes();
 private:
+    std::function<std::string(const std::string&)> setText_; std::function<bool(const std::string&)> haveSet_; std::function<void(const std::string&, const std::string&)> storeSet_;
+    void Wire() { lobby_->setText = setText_; lobby_->haveSet = haveSet_; lobby_->storeSet = storeSet_; }
     bool Open(uint16_t port, std::string* err); void Loop(); uint64_t VNow();       // VNow: the lobby's clock, which stands still while this launcher's game holds the Steam connection
     void MakeSteamLobby();
     std::unique_ptr<lsteam::SteamLobby> steam_; bool steamMode_ = false; std::string steamName_, steamCode_; uint16_t steamGamePort_ = 0; uint64_t pausedSince_ = 0, pausedTotal_ = 0;

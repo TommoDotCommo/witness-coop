@@ -46,7 +46,7 @@ bool Session::Host(const std::string& name, uint16_t gamePort, uint16_t lobbyPor
     SOCKET s = sock_;
     lobby_ = std::make_unique<wlobby::Lobby>(true, name, gamePort, tok, [s](const wlobby::Addr& to, const wlobby::Bytes& b) { sockaddr_in a = {}; a.sin_family = AF_INET; a.sin_addr.s_addr = htonl(to.ip); a.sin_port = htons(to.port); sendto(s, (const char*)b.data(), (int)b.size(), 0, (sockaddr*)&a, sizeof a); }); lobby_->SetModVersion(modVersion_);
     lobby_->SetSession((uint32_t)GetTickCount64() ^ 0x5bd1e995u); lobby_->SetInviteOnly(inviteOnly_);
-    lobby_->onVoice = [this](const wvoice::Packet& p) { if (sink_) sink_(p); };
+    lobby_->onVoice = [this](const wvoice::Packet& p) { if (sink_) sink_(p); }; Wire();
     char b[80]; snprintf(b, sizeof b, "%s:%u/%s", wlobby::IpText(ip).c_str(), lobbyPort, tok.c_str()); invite_ = b; host_ = true; hostIp_ = ip; stop_ = false; active_ = true; th_ = CreateThread(nullptr, 0, Run, this, 0, nullptr); return true;
 }
 bool Session::Join(const std::string& invite, const std::string& name, uint16_t gamePort, std::string* err) {
@@ -61,7 +61,7 @@ bool Session::JoinAt(uint32_t ip, uint16_t port, const std::string& tok, const s
     Stop(); Wsa(); if (!ip || !port) { *err = "No address to join."; return false; }
     if (!Open(0, err)) return false; SOCKET s = sock_;
     lobby_ = std::make_unique<wlobby::Lobby>(false, name, gamePort, tok, [s](const wlobby::Addr& to, const wlobby::Bytes& b) { sockaddr_in a = {}; a.sin_family = AF_INET; a.sin_addr.s_addr = htonl(to.ip); a.sin_port = htons(to.port); sendto(s, (const char*)b.data(), (int)b.size(), 0, (sockaddr*)&a, sizeof a); }); lobby_->SetModVersion(modVersion_);
-    lobby_->onVoice = [this](const wvoice::Packet& p) { if (sink_) sink_(p); };
+    lobby_->onVoice = [this](const wvoice::Packet& p) { if (sink_) sink_(p); }; Wire();
     lobby_->Join({ip, (uint16_t)port}); invite_ = wlobby::IpText(ip) + ":" + std::to_string(port) + "/" + tok; hostPort_ = port; host_ = false; hostIp_ = ip; stop_ = false; active_ = true; th_ = CreateThread(nullptr, 0, Run, this, 0, nullptr); return true;
 }
 void Session::Stop() {
@@ -73,7 +73,7 @@ uint64_t Session::VNow() { uint64_t t = GetTickCount64(); return t - pausedTotal
 void Session::MakeSteamLobby() {      // (locked) the Steam lobby is entered: the lobby logic starts on it, as host if this player owns the Steam lobby
     bool host = steam_->IsOwner(); std::string code = host ? steamCode_ : steam_->Code(); lsteam::SteamLobby* st = steam_.get();
     lobby_ = std::make_unique<wlobby::Lobby>(host, steamName_, steamGamePort_, code, [st](const wlobby::Addr& to, const wlobby::Bytes& b) { if (to.steam) st->Send(to.steam, b.data(), b.size()); }); lobby_->SetModVersion(modVersion_);
-    lobby_->SetSteamId(steam_->Self()); lobby_->onVoice = [this](const wvoice::Packet& p) { if (sink_) sink_(p); };
+    lobby_->SetSteamId(steam_->Self()); lobby_->onVoice = [this](const wvoice::Packet& p) { if (sink_) sink_(p); }; Wire();
     if (host) lobby_->SetSession((uint32_t)GetTickCount64() ^ 0x5bd1e995u); else lobby_->Join(wlobby::SteamAddr(steam_->Owner()));
     host_ = host; invite_ = steamids::Text(steam_->LobbyId());
 }
@@ -162,6 +162,8 @@ void Session::SetResult(const std::string& t) { Guard l(mu_); if (lobby_) lobby_
 void Session::SendVoice(const wvoice::Packet& p) { Guard l(mu_); if (lobby_) lobby_->SendVoice(p); }
 void Session::SetSpeaking(bool b) { Guard l(mu_); if (lobby_) lobby_->SetSpeaking(b); }
 void Session::SetVoiceSink(std::function<void(const wvoice::Packet&)> f) { Guard l(mu_); sink_ = std::move(f); }
+bool Session::HavePuzzles() { Guard l(mu_); return !lobby_ || lobby_->HavePuzzles(); }
+size_t Session::PuzzleBytes() { Guard l(mu_); return lobby_ ? lobby_->PuzzleBytes() : 0; }
 
 // ---- the voice of the lobby: the same codec, packet and mixer as in the game, every voice heard as it is (the global channel)
 Voice::Voice() {}

@@ -576,7 +576,10 @@ void PendingJoinTick() {
 }
 void LeaveLobby() { nf_host_close(); g_voice.Stop(); g_sess.Stop(); g_shown = wlobby::State(); SendMessageW(LB(ID_LB_MEMBERS), LB_RESETCONTENT, 0, 0); SendMessageW(LB(ID_LB_READY), BM_SETCHECK, BST_UNCHECKED, 0); RefreshLobbyUi(); LobbyStatus(L"You left the lobby."); g_fleeting = L"You left the lobby."; g_fleetingUntil = GetTickCount64() + 4000; }
 void AppendChat(const std::wstring& line) { g_chatLog += line + L"\r\n"; HWND l = LB(ID_LB_LOG); SetWindowTextW(l, g_chatLog.c_str()); SendMessageW(l, EM_SETSEL, g_chatLog.size(), g_chatLog.size()); SendMessageW(l, EM_SCROLLCARET, 0, 0); }
-std::string WaitingFor() { std::string w; for (const auto& m : g_shown.members) if (!m.host && !m.ready) w += (w.empty() ? "" : ", ") + m.name; return w; }
+std::string WaitingFor() {      // who the host waits for: not ready, or still getting the host's own puzzles
+    std::string w; for (const auto& m : g_shown.members) if (!m.host && (!m.ready || !m.puzzles)) w += (w.empty() ? "" : ", ") + m.name + (m.ready && !m.puzzles ? " (getting your puzzles)" : "");
+    return w;
+}
 void StartLabel() {      // D3: the host's button says whom it waits for
     static std::wstring last; std::string w = WaitingFor(); std::wstring t = w.empty() ? L"Start game" : W("Waiting for " + w); if (t != last) { last = t; SetWindowTextW(LB(ID_LB_START), t.c_str()); }
 }
@@ -778,7 +781,7 @@ void DrawMember(DRAWITEMSTRUCT* d) {
     SelectObject(dc, m.host ? th::Bold() : th::Body()); SetTextColor(dc, th::kText); bool differs = !m.version.empty() && m.version != MOD_VERSION;      // (the version only when it is not mine: in a narrow column it left the name a few letters)
     RECT nr = r; nr.left += 34; nr.right -= differs ? 230 : 96; th::Text(dc, W(m.name + (m.id == g_sess.MyId() ? "  (you)" : "")).c_str(), -1, &nr, DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
     if (differs) { SelectObject(dc, th::Small()); SetTextColor(dc, differs ? th::kAccent : th::kMuted); RECT vr = r; vr.right -= 120; vr.left = r.right - 230; th::Text(dc, W(m.version).c_str(), -1, &vr, DT_VCENTER | DT_SINGLELINE | DT_RIGHT | DT_END_ELLIPSIS); }
-    const wchar_t* st = m.inGame ? L"in game" : m.host ? L"host" : m.ready ? L"ready" : L"not ready"; SelectObject(dc, th::Small()); SetTextColor(dc, m.inGame ? th::kAccent : m.ready || m.host ? th::kWarm : th::kMuted); RECT sr = r; sr.right -= 12; th::Text(dc, st, -1, &sr, DT_VCENTER | DT_SINGLELINE | DT_RIGHT);
+    const wchar_t* st = m.inGame ? L"in game" : m.host ? L"host" : !m.puzzles ? L"getting puzzles" : m.ready ? L"ready" : L"not ready"; SelectObject(dc, th::Small()); SetTextColor(dc, m.inGame ? th::kAccent : m.ready || m.host ? th::kWarm : th::kMuted); RECT sr = r; sr.right -= 12; th::Text(dc, st, -1, &sr, DT_VCENTER | DT_SINGLELINE | DT_RIGHT);
 }
 void DrawLevel(DRAWITEMSTRUCT* d) {
     HDC dc = d->hDC; RECT r = d->rcItem; HBRUSH bg = CreateSolidBrush(th::kSurface2); FillRect(dc, &r, bg); DeleteObject(bg); lw::VoiceStats v = g_voice.Stats();
@@ -1725,6 +1728,8 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE, LPWSTR cmdline, int show) {
     g_status = Make(g_main, L"STATIC", L"", SS_LEFT | SS_ENDELLIPSIS, 0, 0, 10, 10, ID_STATUS); Make(g_main, L"BUTTON", L"", BS_PUSHBUTTON, 0, 0, 10, 10, ID_FOOT_ACTION); ShowId(ID_FOOT_ACTION, false);
     g_hints = Make(g_main, L"STATIC", L"", SS_LEFT | SS_ENDELLIPSIS, 0, 0, 10, 10, ID_HINTS); th::MarkMuted(g_hints);
     g_sess.SetModVersion(MOD_VERSION);
+    g_sess.SetPuzzleStore([](const std::string& h) { return ped::SetText(g_data, h); }, [](const std::string& h) { return ped::HaveSet(g_data, h); },
+                          [](const std::string& h, const std::string& t) { ped::StoreSet(g_data, h, t); });      // the host's own puzzles (Your puzzles): sent to whoever lacks them
 #ifndef WL_MUT_NO_STEAM_AT_START
     { wchar_t e[16]; if (!g_autoJoin && GetEnvironmentVariableW(L"SteamAppId", e, 16)) {      // Steam started this session (Play in Steam handed over, K1): the launcher runs the game's Steam API itself, so Steam
         std::string err; g_steamAtStart = g_sess.SteamInit(g_dir, &err) ? "ok" : err;      // sees The Witness running while the player is in the launcher, and an invite accepted in Steam reaches it

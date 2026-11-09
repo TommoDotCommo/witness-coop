@@ -1,6 +1,7 @@
 // Game-free (T0) test of the lobby: joining with an invite, the member list, ready and start, the roster every game is started from, chat exactly once and in order, voice relayed by the host,
 // members that go away, a host that restarts, on a link that loses, delays and reorders packets. Every protection has a twin (Lobby::twins) that must fail here.
 #include "lobby.h"
+#include "../common/wpuzzle.h"
 #include "core.h"
 #include "../common/steam_ids.h"
 #include <cmath>
@@ -181,5 +182,34 @@ int main() {
       Launch lh, la; for (int step = 0; step < 600; ++step) { cfgn.advance(10); cfgn.n[ch]->TakeLaunch(cfgn.now, &lh); cfgn.n[ca]->TakeLaunch(cfgn.now, &la); }
       wl::CfgFile cf = wl::CfgFile::Parse(BuildGameCfg("", la, 0x0A000001)); auto pv = cf.GetAll("peer_version");
       check("version: each game's cfg lists the other members' versions (peer_version=<id>,<version>)", pv.size() == 1 && pv[0] == "1,v0.2.0"); }
+    // the host's own puzzles ("Your puzzles"): a member without the set gets it from the host, a piece at a time over a lossy link, keeps it only when it
+    // is the set chosen, and the host's Start waits until everyone has it
+    { std::string text = "witness-coop puzzles 1\nset Big\n"; for (int k = 0; k < 160; ++k) text += "puzzle 4 4 none 0x00000 puzzle " + std::to_string(k) + "\nat 0 8 start\nat 8 0 end right\nat 1 1 square white\n";
+      std::string hash = wpz::Hash(text);
+      Net net(15, 60); unsigned h = net.add(true, "Host"); unsigned a = net.add(false, "Alpha"), b = net.add(false, "Beta"), c = net.add(false, "Gamma");
+      std::map<unsigned, std::string> stored; int hostAsked = 0;
+      net.n[h]->setText = [&](const std::string& q) { ++hostAsked; return q == hash ? text : std::string(); };
+      for (unsigned i : {a, b}) { net.n[i]->haveSet = [](const std::string&) { return false; }; net.n[i]->storeSet = [&, i](const std::string& q, const std::string& t) { if (q == hash) stored[i] = t; }; }
+      net.n[c]->haveSet = [&](const std::string& q) { return q == hash; };      // Gamma made it itself: nothing to send
+      net.advance(3000); for (unsigned i : {a, b, c}) net.n[i]->SetReady(true); net.advance(1000);
+      Settings st; st.randomizer = "custom;set:" + hash; net.n[h]->SetSettings(st); net.advance(30);
+      check("puzzles: the host cannot start before everyone has its puzzles", !net.n[h]->Start(net.now));
+      net.advance(12000);
+      check(("puzzles: a member without the set gets it whole from the host (" + std::to_string(text.size()) + " bytes, 15 % lost)").c_str(), stored[a] == text && stored[b] == text);
+      check("puzzles: a member who has it already is sent nothing", !stored.count(c) && net.n[c]->PuzzleBytes() == 0 && net.n[c]->HavePuzzles());
+      bool all = true; for (const auto& m : net.n[h]->state().members) all = all && m.puzzles;
+      check("puzzles: the host's member list says everyone has them", all && net.n[a]->HavePuzzles());
+      check("puzzles: then the host starts", net.n[h]->Start(net.now));
+      // a set whose text is not the chosen one (the host's file changed under it) is never kept
+      Net bad; unsigned bh = bad.add(true, "Host"); unsigned ba = bad.add(false, "Alpha"); bool kept = false;
+      bad.n[bh]->setText = [&](const std::string&) { return text + "at 3 3 star orange\n"; };
+      bad.n[ba]->haveSet = [](const std::string&) { return false; }; bad.n[ba]->storeSet = [&](const std::string&, const std::string&) { kept = true; };
+      bad.advance(2000); bad.n[bh]->SetSettings(st); bad.advance(6000);
+      check("puzzles: a set whose text does not have the chosen hash is not kept", !kept && !bad.n[ba]->HavePuzzles());
+      // another member asking for anything but the chosen set gets nothing
+      Net other; unsigned oh = other.add(true, "Host"); other.add(false, "Alpha"); std::vector<std::string> asked;
+      other.n[oh]->setText = [&](const std::string& q) { asked.push_back(q); return text; };
+      other.advance(2000);
+      check("puzzles: with no set chosen the host is never asked for one", asked.empty()); }
     printf("%d checks, %d failed\n", checks, fails); return fails ? 1 : 0;
 }

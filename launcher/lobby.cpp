@@ -1,5 +1,6 @@
 // See lobby.h.
 #include "../common/randomizers.h"
+#include "../common/wpuzzle.h"
 #include "lobby.h"
 #include "core.h"
 #include "../common/steam_ids.h"
@@ -10,8 +11,9 @@
 
 namespace wlobby {
 namespace {
-enum Type : uint8_t { T_JOIN = 1, T_WELCOME = 2, T_HELLO = 3, T_STATE = 4, T_CHAT = 5, T_LEAVE = 7 };
-constexpr uint8_t kVersion = 4;      // 2: members carry a SteamID (Steam lobbies). 3: JOIN carries the mod version, WELCOME names both versions, the member list carries each member's version (an older launcher is refused as kBadVersion). 4: the state carries the randomizer
+enum Type : uint8_t { T_JOIN = 1, T_WELCOME = 2, T_HELLO = 3, T_STATE = 4, T_CHAT = 5, T_LEAVE = 7, T_SET_ASK = 8, T_SET_PART = 9 };
+constexpr size_t kSetPart = 1000, kSetMax = 2u << 20;      // a piece of a puzzle set per datagram; the largest set sent
+constexpr uint8_t kVersion = 5;      // 2: members carry a SteamID (Steam lobbies). 3: JOIN carries the mod version, WELCOME names both versions, the member list carries each member's version (an older launcher is refused as kBadVersion). 4: the state carries the randomizer. 5: the host's puzzle set is sent (SET_ASK, SET_PART) and each member says it has it
 uint32_t Fnv(const uint8_t* d, size_t n) { uint32_t h = 2166136261u; for (size_t i = 0; i < n; ++i) { h ^= d[i]; h *= 16777619u; } return h; }
 struct W {
     Bytes b; explicit W(Type t) { b = {'W', 'T', 'L', '1', (uint8_t)t}; }
@@ -66,11 +68,16 @@ void Lobby::PushChat(unsigned from, const std::string& text) {      // host: a c
     ChatLine c; c.seq = chatNext_++; c.from = from; c.text = text; chatIn_.push_back(c);
     for (auto& kv : peers_) { kv.second.outbox[c.seq] = c; kv.second.outboxAt = 0; }
 }
-void Lobby::SetSettings(const Settings& s) { if (!host_) return; st_.settings = s; st_.settings.raceGoal = Clean(s.raceGoal, 23); st_.settings.progress = Clean(s.progress, 160); st_.settings.randomizer = Clean(s.randomizer, 80); Refresh(); }
+void Lobby::SetSettings(const Settings& s) { if (!host_) return; std::string was = NeededSet(); st_.settings = s; st_.settings.raceGoal = Clean(s.raceGoal, 23); st_.settings.progress = Clean(s.progress, 160); st_.settings.randomizer = Clean(s.randomizer, 80);
+    if (NeededSet() != was && !NeededSet().empty()) for (auto& kv : peers_) kv.second.m.puzzles = false;      // (until each says it has the new set)
+    Refresh(); }
 void Lobby::SetResult(const std::string& t) { if (!host_) return; st_.lastResult = Clean(t, 200); Refresh(); }
 bool Lobby::Start(uint64_t now) {
     if (!host_ || st_.phase != kLobby) return false;
     if (!twins.startWithoutReady) for (const auto& kv : peers_) if (!kv.second.m.ready) return false;
+#ifndef WLB_MUT_START_WITHOUT_PUZZLES
+    if (!NeededSet().empty()) for (const auto& kv : peers_) if (!kv.second.m.puzzles) return false;
+#endif
     st_.phase = kStarting; startAt_ = now + kStartMs; startedAt_ = now; launched_ = false; seenInGame_ = false; backSince_ = 0;
     for (auto& kv : peers_) kv.second.m.playing = true;      // the roster is fixed now: whoever joins later is only in the lobby
     Refresh(); return true;
@@ -97,7 +104,7 @@ void Lobby::SendVoice(const wvoice::Packet& p) {
 void Lobby::SendHello(uint64_t now) {
     W w(T_HELLO); w.u8(id_).u8(ready_ ? 1 : 0).u8(inGame_ ? 1 : 0).u8(speaking_ ? 1 : 0).u32(hostSession_).u32(seenChat_);
     std::string text; uint32_t seq = 0; for (auto& o : out_) if (o.first > outAcked_ || twins.noChatAck) { seq = o.first; text = o.second; break; }      // the oldest line the host has not taken yet
-    w.u32(seq).str(text, 200);
+    w.u32(seq).str(text, 200).u8(HavePuzzles() ? 1 : 0);
     send_(hostAddr_, w.done()); nextHello_ = now + kHelloMs;
 }
 
@@ -121,7 +128,7 @@ void Lobby::Tick(uint64_t now) {
                 st_.settings.randomizer
 #endif
                 , 80).lstr(st_.lastResult, 200).u8((unsigned)st_.members.size());
-            for (const auto& m : st_.members) w.u8(m.id).u8((m.host ? 1 : 0) | (m.ready ? 2 : 0) | (m.inGame ? 4 : 0) | (m.speaking ? 8 : 0) | (m.playing ? 16 : 0)).u16(m.gamePort).u32(m.ip).u32(m.ackedChat).str(m.name, 23).u64(m.steamId).str(
+            for (const auto& m : st_.members) w.u8(m.id).u8((m.host ? 1 : 0) | (m.ready ? 2 : 0) | (m.inGame ? 4 : 0) | (m.speaking ? 8 : 0) | (m.playing ? 16 : 0) | (m.puzzles ? 32 : 0)).u16(m.gamePort).u32(m.ip).u32(m.ackedChat).str(m.name, 23).u64(m.steamId).str(
 #ifdef WLB_MUT_LIST_NO_VERSION
                 ""
 #else
@@ -140,6 +147,7 @@ void Lobby::Tick(uint64_t now) {
         if (!joined_) { if (now >= nextHello_) { W w(T_JOIN); w.u8(kVersion).str(token_, 8).str(name_, 23).u16(gamePort_).str(modVersion_, 31); send_(hostAddr_, w.done()); nextHello_ = now + kHelloMs; } return; }
         if (!twins.noTimeout && now - lastHost_ > kStaleMs) { joined_ = false; refused_ = kPending; id_ = 0; hostSession_ = 0; nextHello_ = 0; return; }      // the host is gone (or dropped us): ask again
         if (now >= nextHello_) SendHello(now);
+        AskForSet(now);
         if (st_.phase == kStarting && !startAt_) startAt_ = now + uint64_t(std::max(0, st_.startInMs));
     }
 }
@@ -199,9 +207,17 @@ void Lobby::OnPacket(const Addr& from, const uint8_t* d, size_t n, uint64_t now)
         auto it = peers_.find(from); if (it == peers_.end()) return;
         Peer& p = it->second;
         if (t == T_LEAVE) { peers_.erase(it); Refresh(); return; }
+        if (t == T_SET_ASK) {      // a piece of the set the host chose (no other: a member cannot read the host's other files)
+            std::string hash = r.str(); uint32_t off = r.u32(); if (r.bad) return;
+            p.at = now;
+            if (hash != NeededSet() || !setText) return;
+            std::string text = setText(hash); if (text.empty() || text.size() > kSetMax || off > text.size()) return;
+            W w(T_SET_PART); w.str(hash, 16).u32((uint32_t)text.size()).u32(off).lstr(text.substr(off, kSetPart), kSetPart); send_(from, w.done()); return;
+        }
         if (t == T_HELLO) {
-            unsigned id = r.u8(), ready = r.u8(), inGame = r.u8(), speaking = r.u8(); r.u32(); uint32_t chatAck = r.u32(), cseq = r.u32(); std::string text = r.str(); if (r.bad || id != p.m.id) return;
+            unsigned id = r.u8(), ready = r.u8(), inGame = r.u8(), speaking = r.u8(); r.u32(); uint32_t chatAck = r.u32(), cseq = r.u32(); std::string text = r.str(); unsigned puzzles = r.u8(); if (r.bad || id != p.m.id) return;
             p.at = now; bool changed = false;
+            if ((puzzles != 0) != p.m.puzzles) { p.m.puzzles = puzzles != 0; changed = true; }
             if ((ready != 0) != p.m.ready) { p.m.ready = ready != 0; changed = true; } if ((inGame != 0) != p.m.inGame) { p.m.inGame = inGame != 0; changed = true; if (inGame) seenInGame_ = true; } if ((speaking != 0) != p.m.speaking) { p.m.speaking = speaking != 0; changed = true; }
             if (chatAck > p.chatSeen) { p.chatSeen = chatAck; for (auto o = p.outbox.begin(); o != p.outbox.end();) { if (o->first <= chatAck) o = p.outbox.erase(o); else ++o; } }
             if (cseq && (cseq == p.chatTaken + 1 || (twins.noChatDedupe && cseq <= p.chatTaken + 1))) { p.chatTaken = cseq; PushChat(p.m.id, Clean(text, 200)); changed = true; }
@@ -216,7 +232,7 @@ void Lobby::OnPacket(const Addr& from, const uint8_t* d, size_t n, uint64_t now)
     if (!joined_) return;
     if (t == T_STATE) {
         State s; uint32_t session = r.u32(); s.seq = r.u32(); s.phase = Phase(r.u8()); s.startInMs = int32_t(r.u32()); s.settings.mode = Mode(r.u8()); s.settings.newGame = r.u8() != 0; s.settings.raceGoal = r.str(); s.settings.progress = r.lstr(); s.settings.randomizer = r.lstr(); s.lastResult = r.lstr();
-        unsigned cnt = r.u8(); for (unsigned i = 0; i < cnt && !r.bad; ++i) { Member m; m.id = r.u8(); unsigned f = r.u8(); m.host = f & 1; m.ready = f & 2; m.inGame = f & 4; m.speaking = f & 8; m.playing = f & 16; m.gamePort = (uint16_t)r.u16(); m.ip = r.u32(); m.ackedChat = r.u32(); m.name = r.str(); m.steamId = r.u64(); m.version = r.str(); s.members.push_back(m); }
+        unsigned cnt = r.u8(); for (unsigned i = 0; i < cnt && !r.bad; ++i) { Member m; m.id = r.u8(); unsigned f = r.u8(); m.host = f & 1; m.ready = f & 2; m.inGame = f & 4; m.speaking = f & 8; m.playing = f & 16; m.puzzles = f & 32; m.gamePort = (uint16_t)r.u16(); m.ip = r.u32(); m.ackedChat = r.u32(); m.name = r.str(); m.steamId = r.u64(); m.version = r.str(); s.members.push_back(m); }
         if (r.bad || s.phase > kInGame) return;
         bool newHost = hostSession_ != session;
         if (!twins.noStateSeq && !newHost && s.seq <= stateSeq_) { lastHost_ = now; return; }      // an older state arrived late
@@ -224,9 +240,26 @@ void Lobby::OnPacket(const Addr& from, const uint8_t* d, size_t n, uint64_t now)
         if (!mine) { joined_ = false; refused_ = kPending; hostSession_ = 0; nextHello_ = 0; return; }      // the host does not know us (it timed us out or restarted)
         if (newHost) { hostSession_ = session; seenChat_ = 0; pendingIn_.clear(); }
         if (st_.phase != kLobby && s.phase == kLobby) { ready_ = false; launched_ = false; startAt_ = 0; }
+        if (s.settings.randomizer != st_.settings.randomizer) nextHello_ = 0;      // (a new choice: say at once whether its puzzles are here)
         if (s.phase == kStarting && st_.phase != kStarting) { startAt_ = now + uint64_t(std::max(0, s.startInMs)); launched_ = false; }
         if (s.phase == kLobby) startAt_ = 0;
         stateSeq_ = s.seq; lastHost_ = now; st_ = s; return;
+    }
+    if (t == T_SET_PART) {
+        std::string hash = r.str(); uint32_t total = r.u32(), off = r.u32(); std::string part = r.lstr(); if (r.bad) return;
+        lastHost_ = now;
+        if (hash != setHash_ || setDone_ || total > kSetMax || off != setBuf_.size() || (setTotal_ && total != setTotal_)) return;      // (stop and wait: only the next piece is taken)
+        setTotal_ = total; setBuf_ += part;
+        if (setBuf_.size() > total) { setBuf_.clear(); setTotal_ = 0; return; }
+        if (setBuf_.size() == total) {
+            bool ok = twins.setUnchecked || wpz::Hash(setBuf_) == hash;
+#ifdef WLB_MUT_SET_UNCHECKED
+            ok = true;      // mutant: whatever arrives is kept as the set
+#endif
+            if (ok) { setDone_ = true; if (storeSet) storeSet(hash, setBuf_); nextHello_ = 0; }
+            else { setBuf_.clear(); setTotal_ = 0; }      // (a damaged set: asked for again from the start)
+        } else { setAskedAt_ = 0; AskForSet(now); }
+        return;
     }
     if (t == T_CHAT) {
         ChatLine c; c.seq = r.u32(); c.from = r.u8(); c.text = r.str(); if (r.bad) return; lastHost_ = now;
@@ -234,6 +267,18 @@ void Lobby::OnPacket(const Addr& from, const uint8_t* d, size_t n, uint64_t now)
         else if (c.seq > seenChat_ + 1) pendingIn_[c.seq] = c;
         return;
     }
+}
+
+std::string Lobby::NeededSet() const { wrand::Spec r = wrand::ParseSpec(st_.settings.randomizer); return r.mode == wrand::kCustom ? r.set : std::string(); }
+bool Lobby::HavePuzzles() const {
+    std::string h = NeededSet(); if (h.empty() || host_) return true;
+    return h == setHash_ && setDone_;
+}
+void Lobby::AskForSet(uint64_t now) {      // client: the next piece of the host's set, again after a while when it did not come
+    std::string h = NeededSet();
+    if (h != setHash_) { setHash_ = h; setBuf_.clear(); setTotal_ = 0; setAskedAt_ = 0; setDone_ = !h.empty() && haveSet && haveSet(h); nextHello_ = 0; }      // (asked once per choice)
+    if (h.empty() || setDone_ || (setAskedAt_ && now - setAskedAt_ < 300)) return;
+    W w(T_SET_ASK); w.str(h, 16).u32((uint32_t)setBuf_.size()); send_(hostAddr_, w.done()); setAskedAt_ = now;
 }
 
 std::string BuildGameCfg(const std::string& base, const Launch& l, uint32_t hostDialIp) {

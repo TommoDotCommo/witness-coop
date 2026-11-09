@@ -94,8 +94,8 @@ $(BUILD)/witness_launcher.exe: $(NF_HDRS) $(BUILD)/netfind.o ../common/guide.h .
 
 # the lobby (game-free): the same kind of test and mutants
 LSRC = lobby.cpp lobby_test.cpp core.cpp ../proxy/voice/voice.cpp ../proxy/progress/savemeta.cpp ../proxy/progress/progress.cpp ../proxy/progress/progress_data.cpp
-LOBBY_MUTANTS = NO_CHECKSUM GATE_OPEN VERSION_NOT_CHECKED REPLY_NO_VERSIONS LIST_NO_VERSION INVITE_ONLY_OPEN NO_RANDOMIZER
-$(BUILD)/lobby-test.exe: $(LSRC) lobby.h core.h ../proxy/voice/voice.h ../common/steam_ids.h
+LOBBY_MUTANTS = NO_CHECKSUM GATE_OPEN VERSION_NOT_CHECKED REPLY_NO_VERSIONS LIST_NO_VERSION INVITE_ONLY_OPEN NO_RANDOMIZER START_WITHOUT_PUZZLES SET_UNCHECKED
+$(BUILD)/lobby-test.exe: $(LSRC) lobby.h core.h ../proxy/voice/voice.h ../common/steam_ids.h ../common/wpuzzle.h ../common/randomizers.h
 	mkdir -p $(BUILD)
 	$(CXX) -std=c++17 -O2 -Wall -Wextra -static -o $@ $(LSRC)
 $(BUILD)/lobby-mutant-%.exe: $(LSRC) lobby.h core.h ../proxy/voice/voice.h ../common/steam_ids.h

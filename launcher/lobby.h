@@ -41,7 +41,7 @@ struct Gate {
     }
 };
 struct Settings { Mode mode = kCoop; bool newGame = true; std::string raceGoal = "panel:9F7F", progress, randomizer; };      // progress: the new game's spec ("area:X;lasers:N", progress/progress.h), empty: nothing done; randomizer: the built-in randomizer and its seed (common/randomizers.h), empty or "off": the game's own puzzles
-struct Member { unsigned id = 0; std::string name; bool host = false, ready = false, inGame = false, speaking = false, playing = false; uint16_t gamePort = 0; uint32_t ip = 0; uint32_t ackedChat = 0; uint64_t steamId = 0; std::string version; };      // version: the member's mod version (git describe); steamId: in a Steam lobby      // playing: was in the lobby when the game was started: only these are in the game
+struct Member { unsigned id = 0; std::string name; bool host = false, ready = false, inGame = false, speaking = false, playing = false, puzzles = true; uint16_t gamePort = 0; uint32_t ip = 0; uint32_t ackedChat = 0; uint64_t steamId = 0; std::string version; };      // version: the member's mod version (git describe); steamId: in a Steam lobby      // playing: was in the lobby when the game was started: only these are in the game
 struct ChatLine { unsigned seq = 0, from = 0; std::string text; };
 struct State { uint32_t seq = 0; Phase phase = kLobby; int32_t startInMs = 0; Settings settings; std::vector<Member> members; std::string lastResult; };
 struct Launch { unsigned myId = 0; State state; };      // what the game is started from: the same on every member (apart from myId)
@@ -81,8 +81,15 @@ public:
     std::vector<ChatLine> TakeChat();
     bool TakeLaunch(uint64_t now, Launch* out);          // once, when the countdown ends
     std::function<void(const wvoice::Packet&)> onVoice;   // a packet from another member
+    // The host's own puzzles ("custom;set:<hash>", common/randomizers.h): a member who does not have that set asks the host for it, a piece at a time,
+    // keeps it when its text has that hash, and says so; the host's Start waits until every member has it (Member::puzzles).
+    std::function<std::string(const std::string& hash)> setText;                          // host: the text of a set it has ("" when none)
+    std::function<bool(const std::string& hash)> haveSet;                                 // client: whether this set is here already
+    std::function<void(const std::string& hash, const std::string& text)> storeSet;       // client: a whole set arrived (its hash checked)
+    bool HavePuzzles() const;                                                             // this member has the host's puzzles (true when none are needed)
+    size_t PuzzleBytes() const { return setBuf_.size(); }                                 // client: how much of the set has arrived
     // bug twins (tests only)
-    struct Twins { bool noToken = false, noChatAck = false, noChatDedupe = false, noVoiceRelay = false, voiceEcho = false, noTimeout = false, noStateSeq = false, noVoiceFromCheck = false, startWithoutReady = false; } twins;
+    struct Twins { bool noToken = false, noChatAck = false, noChatDedupe = false, noVoiceRelay = false, voiceEcho = false, noTimeout = false, noStateSeq = false, noVoiceFromCheck = false, startWithoutReady = false, setUnchecked = false; } twins;
 private:
     struct Peer { Member m; Addr addr; uint64_t at = 0; uint32_t chatTaken = 0; uint32_t chatSeen = 0; std::map<uint32_t, ChatLine> outbox; uint64_t outboxAt = 0; };
     void Parse(const Addr& from, const uint8_t* d, size_t n, uint64_t now);
@@ -96,6 +103,9 @@ private:
     std::map<Addr, Peer> peers_; unsigned nextId_ = 2; uint32_t chatNext_ = 1;         // host
     std::vector<std::pair<uint32_t, std::string>> out_; uint32_t outSeq_ = 0, outAcked_ = 0, seenChat_ = 0, stateSeq_ = 0, session_ = 0, hostSession_ = 0; bool seenInGame_ = false; uint64_t startedAt_ = 0;   // client (session_: the host's)
     std::vector<ChatLine> chatIn_; std::map<uint32_t, ChatLine> pendingIn_;
+    std::string NeededSet() const;                                                         // the set the host's choice names, or ""
+    void AskForSet(uint64_t now);
+    std::string setHash_, setBuf_; uint32_t setTotal_ = 0; uint64_t setAskedAt_ = 0; bool setDone_ = false;      // client: the set being fetched
 };
 
 // The cfg of one member's game from the roster (and the host's randomizer, always written: a guest's own earlier choice never applies): id, game port, every other member as peer=<id>,<ip>,<port> (and peer_version=<id>,<version>, so the game can say whose version differs) (or peer=<id>,steam:<steamid64> when the lobby is a Steam lobby: every
