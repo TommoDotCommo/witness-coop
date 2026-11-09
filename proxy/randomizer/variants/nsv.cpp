@@ -88,8 +88,21 @@ static int Flags(const wpz::Puzzle& p, int x, int y) {
     }
     return v;
 }
+// The panel reader (Panel::Read) needs a grid: on a panel that is not one (the first two Tutorial panels, a straight line and a bend) it divides by
+// zero and indexes far outside its arrays (found in the game: both games crashed). Such a panel takes the frame of a grid panel of the Tutorial
+// (0x00293); its own id and style flags are kept, and everything else is written from the puzzle.
+static bool IsGridPanel(int id) {
+    Memory* m = Memory::get(); int gx = m->ReadPanelData<int>(id, GRID_SIZE_X), gy = m->ReadPanelData<int>(id, GRID_SIZE_Y), n = m->ReadPanelData<int>(id, NUM_DOTS);
+    return gx >= 2 && gy >= 2 && gx <= 16 && gy <= 16 && n >= gx * gy && !m->ReadPanelData<int>(id, IS_CYLINDER);
+}
 void PanelExtractionTests::WriteCustom(int id, const wpz::Puzzle& p) {
-    Panel panel(id);
+#ifndef WR_MUT_READ_ANY_PANEL
+    bool grid = IsGridPanel(id);
+#else
+    bool grid = true;      // mutant: every panel is read as it is
+#endif
+    Panel panel(grid ? id : 0x00293);
+    if (!grid) { panel.id = id; panel._style = Memory::get()->ReadPanelData<int>(id, STYLE_FLAGS); panel.symmetry = Panel::Symmetry::None; }
     Point::pillarWidth = 0;
     panel.Resize(p.width(), p.height());
     for (int x = 0; x < p.width(); x++) for (int y = 0; y < p.height(); y++) panel._grid[x][y] = Flags(p, x, y);
@@ -111,6 +124,10 @@ void PanelExtractionTests::WriteCustom(int id, const wpz::Puzzle& p) {
         memory->WritePanelData(id, PATTERN_POINT_COLOR_B, memory->ReadPanelData<Color>(0x0007C, PATTERN_POINT_COLOR_B));
         memory->WritePanelData(id, REFLECTION_PATH_COLOR, memory->ReadPanelData<Color>(0x0007C, PATTERN_POINT_COLOR_B));
         memory->WritePanelData(id, ACTIVE_COLOR, memory->ReadPanelData<Color>(0x0007C, PATTERN_POINT_COLOR_A));
+        // and its colours of the two solved lines: a panel that is not a symmetry panel kept its own (on the Tutorial a pale yellow and a green,
+        // seen in the game over a blue and a yellow dot)
+        memory->WritePanelData(id, SUCCESS_COLOR_A, memory->ReadPanelData<Color>(0x0007C, SUCCESS_COLOR_A));
+        memory->WritePanelData(id, SUCCESS_COLOR_B, memory->ReadPanelData<Color>(0x0007C, SUCCESS_COLOR_B));
     }
     panel.Write(id);
 }

@@ -658,10 +658,27 @@ Tests: `make -C common wpuzzle-test` (600 random puzzles with the solutions his 
 mutants: a rule off, rotation ignored, the solver's early check blind to eliminators, the set text without rotation). `tools/wpuzzle_diff.py
 <his repository>` compares the two on his published puzzles: on 2026-11-09 the 7454 that the game could show (up to 25 cells) gave the same
 solutions in both. `make -C proxy/randomizer test` writes a set of every kind into the recorded game and reads each panel back with the generator's
-reader (`custom_test.cpp`, mutant: polyominoes upside down; the first Tutorial panels are not fully in the recording, so its puzzles name other
-panels). `make -C launcher editor-test` (clicks, tools, a drawn line; 2 mutants) and `lobby-test` (a set sent over a lossy link, Start waiting,
-a wrong text refused; mutants `START_WITHOUT_PUZZLES`, `SET_UNCHECKED`). `tools/win/weditor_shot.py` takes pictures of the editor (the launcher only).
-Not run yet: a set played in the game (one game or two); a start in the middle of an edge is not offered, as the panel writer cannot make one.
+reader, and a small puzzle on every one of the 83 panels the editor offers (`custom_test.cpp`; mutants: polyominoes upside down, `READ_ANY_PANEL`).
+The first two Tutorial panels are not grids (a straight line and a bend): the generator's panel reader divides by zero on them, which crashed both
+games in the first live run, so they take the frame of the Tutorial grid panel 0x00293 (`IsGridPanel` in `nsv.cpp`). A gap on a corner is a
+problem (`Problems`, mutant `CORNER_GAP`): the game shows none there, while the rules block the corner. `make -C launcher editor-test` (clicks,
+tools, a drawn line; 2 mutants) and `lobby-test` (a set sent over a lossy link, Start waiting, a wrong text refused; mutants
+`START_WITHOUT_PUZZLES`, `SET_UNCHECKED`). `tools/win/weditor_shot.py` takes pictures of the editor (the launcher only).
+In the game: `tools/qa.sh custom` (`tools/qa_custom.py`, two games: a set of six puzzles on the Tutorial's panels). Both games apply it with
+the same fingerprint, and each panel holds its puzzle (size, starts, symbols, read from the game). The bot draws a line the rules refuse (the
+game must say "wrong"), then on each courtyard puzzle the line the repo's rule solver (`tools/psolve`) finds from what the game holds: the game
+and the editor's rules must judge it the same; when the game refuses it, an editor solution is drawn and must be taken; each solve must reach B.
+`--mutant`: A with polyominoes upside down; the game must refuse the editor's solution of the shapes puzzle. The bot steers by feedback
+(`WDRAW_STEER`; its projection misjudged how these panels are turned) and forgets what it remembered about them first; the two tunnel panels are
+checked as held and pictured, then solved with `nativesolve`; the next puzzle drawn is always one whose panel the game reports powered (the
+courtyard's panels power one another), so a black panel is never walked to. On 2026-11-09: PASS (the shapes, eliminator, colours and mirror
+puzzles solved in A and in B 0.4 s later, the wrong line refused), and the mutant caught. The game refused the line on which an eliminator had
+nothing to remove, as jbzdarkid's rules do; `tools/psolve` takes that line (a spare eraser is not an error there), which is a bug of the sweep's
+solver, not of the editor. Seen in the game's pictures: the game draws no gap on a corner (now a problem); a puzzle with symmetry on a panel that is
+not a symmetry panel kept that panel's colours of the solved lines (a pale yellow and a green over blue and yellow dots), so those are copied from
+Symmetry Island too. `tools/qa.sh lobbyset` (`tools/qa_lobbyset.py`, two launchers and two games: B gets A's set over the network, A's Start
+waits for it, and both games apply it with the same fingerprint; launcher mutant `LOBBY_NO_SET_SEND`, caught: Start stays blocked). On
+2026-11-09: PASS. A start in the middle of an edge is not offered, as the panel writer cannot make one.
 
 ## Testing every puzzle, or one puzzle
 

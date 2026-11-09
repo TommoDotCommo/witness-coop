@@ -211,6 +211,9 @@ void Lobby::OnPacket(const Addr& from, const uint8_t* d, size_t n, uint64_t now)
             std::string hash = r.str(); uint32_t off = r.u32(); if (r.bad) return;
             p.at = now;
             if (hash != NeededSet() || !setText) return;
+#ifdef WL_MUT_LOBBY_NO_SET_SEND
+            return;      // mutant (tools/qa.sh lobbyset): the host never sends its set
+#endif
             std::string text = setText(hash); if (text.empty() || text.size() > kSetMax || off > text.size()) return;
             W w(T_SET_PART); w.str(hash, 16).u32((uint32_t)text.size()).u32(off).lstr(text.substr(off, kSetPart), kSetPart); send_(from, w.done()); return;
         }

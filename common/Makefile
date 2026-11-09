@@ -63,7 +63,7 @@ randomizers-test: build/randomizers-test build/randomizers-mutant
 .PHONY: randomizers-test
 # the puzzle editor's model, rules, solver and texts (wpuzzle.h, wpuzzle_json.h) against jbzdarkid's engine on tests/wpuzzle_fixture.txt; mutants: a rule
 # switched off, rotation ignored, the solver's early check blind to eliminators, the set text without rotation
-WPZ_MUTANTS = GAP_IGNORED TRIANGLES_IGNORED SQUARES_IGNORED STARS_IGNORED NO_ROTATION PRUNE_UNSCANNED PRINT_NO_ROTATION
+WPZ_MUTANTS = GAP_IGNORED TRIANGLES_IGNORED SQUARES_IGNORED STARS_IGNORED NO_ROTATION PRUNE_UNSCANNED PRINT_NO_ROTATION CORNER_GAP
 build/wpuzzle-test: wpuzzle_test.cpp wpuzzle.h wpuzzle_json.h
 	mkdir -p build; $(CXX) $(CXXFLAGS) -g -fsanitize=address,undefined -fno-sanitize-recover=undefined -o $@ wpuzzle_test.cpp
 build/wpuzzle-mutant-%: wpuzzle_test.cpp wpuzzle.h wpuzzle_json.h

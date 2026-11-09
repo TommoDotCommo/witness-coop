@@ -78,3 +78,9 @@ build/randomizer/game_randomizer_mut_%.o: randomizer/game_randomizer.cpp Makefil
 	$(CXX) $(RFLAGS) -DWR_MUT_$* -c -o $@ $<
 dsound_mut_rand_%.dll: $(filter-out build/randomizer/game_randomizer.o,$(OBJ)) build/randomizer/game_randomizer_mut_%.o $(RES) dsound.def
 	$(CXX) -shared -static-libgcc -static-libstdc++ -o $@ $(filter-out build/randomizer/game_randomizer.o,$(OBJ)) build/randomizer/game_randomizer_mut_$*.o $(RES) dsound.def $(LIBS)
+# Test builds for tools/qa_custom.py: dsound_mut_nsv_SHAPE_FLIPPED.dll (your own puzzles' polyominoes written upside down). Only the nsv glue differs.
+build/variants/nsv_glue_mut_%.o: randomizer/variants/nsv.cpp Makefile
+	@mkdir -p build/variants
+	$(CXX) $(RFLAGS) $(nsv_FLAGS) -DWR_MUT_$* -include variant_prelude.h -c -o $@ $<
+dsound_mut_nsv_%.dll: $(filter-out build/variants/nsv_glue.o,$(OBJ)) build/variants/nsv_glue_mut_%.o $(RES) dsound.def
+	$(CXX) -shared -static-libgcc -static-libstdc++ -o $@ $(filter-out build/variants/nsv_glue.o,$(OBJ)) build/variants/nsv_glue_mut_$*.o $(RES) dsound.def $(LIBS)

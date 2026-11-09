@@ -67,6 +67,8 @@ static void Basics() {
     // problems
     wpz::Puzzle q = wpz::NewPuzzle(3, 3); q.at(0, 6).start = false;
     CHECK(!wpz::Problems(q).empty(), "no start point is not a problem");
+    { wpz::Puzzle g = wpz::NewPuzzle(3, 3); g.at(4, 0).gap = wpz::kGapBreak; CHECK(!wpz::Problems(g).empty(), "a gap on a corner is not a problem (the game shows none there)");
+      g.at(4, 0).gap = wpz::kGapNone; g.at(3, 0).gap = wpz::kGapBreak; CHECK(wpz::Problems(g).empty(), "a gap on a line is a problem"); }
     q = wpz::NewPuzzle(3, 3); q.sym = wpz::kSymX;
     CHECK(!wpz::Problems(q).empty(), "a symmetry puzzle without mirrored start and end is not a problem");
     q.at(6, 6).start = true; q.at(0, 0).end = wpz::kEndLeft;

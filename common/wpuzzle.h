@@ -535,6 +535,9 @@ inline std::vector<std::string> Problems(const Puzzle& p) {
             if (c.end && p.at(sx, sy).end != p.symEnd(c.end)) out.push_back("on a symmetry puzzle every end point needs its mirrored one");
         }
         if ((c.dot == kDotBlue || c.dot == kDotYellow) && p.sym == kSymNone) out.push_back("blue and yellow dots need a symmetry puzzle");
+#ifndef WPZ_MUT_CORNER_GAP
+        if (c.gap && x % 2 == 0 && y % 2 == 0) out.push_back("a gap must be on a line between two corners (the game shows none on a corner)");
+#endif
     }
     if (!starts) out.push_back("the puzzle needs a start point");
     if (!ends) out.push_back("the puzzle needs an end point");

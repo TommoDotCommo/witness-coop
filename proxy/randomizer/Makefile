@@ -55,12 +55,12 @@ $(BUILD)/generate-test: tests/generate_test.cpp world.h $(BUILD)/backend.o $(GLU
 $(BUILD)/generate-mut-%: tests/generate_test.cpp world.h $(BUILD)/backend.o $$(call glue-mut,$$*) $(LIBS)
 	g++ $(CXXF) -include compat.h -o $@ tests/generate_test.cpp $(BUILD)/backend.o $(call glue-mut,$*) $(LIBS)
 
-# the player's own puzzles written into a recorded game and read back (tests/custom_test.cpp); mutant: polyominoes upside down
+# the player's own puzzles written into a recorded game and read back (tests/custom_test.cpp); mutants: polyominoes upside down, panels that are not grids read as they are
 $(BUILD)/custom-test: tests/custom_test.cpp world.h $(BUILD)/backend.o $(GLUE) $(LIBS)
 	g++ $(CXXF) -include compat.h -Wall -o $@ tests/custom_test.cpp $(BUILD)/backend.o $(GLUE) $(LIBS)
 $(BUILD)/custom-mut-%: tests/custom_test.cpp world.h $(BUILD)/backend.o $$(call glue-mut,$$*) $(LIBS)
 	g++ $(CXXF) -include compat.h -o $@ tests/custom_test.cpp $(BUILD)/backend.o $(call glue-mut,$*) $(LIBS)
-CUSTOM_MUTANTS = SHAPE_FLIPPED
+CUSTOM_MUTANTS = SHAPE_FLIPPED READ_ANY_PANEL
 
 # one run of one spec over a recorded game (tools/randomizer_sweep.py: every mode over many seeds, each in a process of its own)
 $(BUILD)/one-run: tests/one_run.cpp world.h $(BUILD)/backend.o $(GLUE) $(LIBS)

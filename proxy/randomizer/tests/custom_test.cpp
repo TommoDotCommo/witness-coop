@@ -1,9 +1,9 @@
 // Game-free (T0): the player's own puzzles (common/wpuzzle.h) written into the panels of a recorded game (world.h) by the generator's panel
 // writer, then read back with its own reader: every puzzle of the test set is on its panel as it was made (size, symbols and their colours,
 // polyominoes the right way up, dots, gaps, start and end points (an end in the middle of an edge too), symmetry), only those panels change, a second run makes the same, and a set
-// that is missing stops the run with a reason. (The test set names its panels: the recording has what the built-in randomizers read, and
-// the first Tutorial panels, which only "Your puzzles" changes, are not fully in it.)
-// Mutant (must fail): WR_MUT_SHAPE_FLIPPED (polyominoes written upside down).
+// that is missing stops the run with a reason. The first two Tutorial panels are not grids (a straight line, a bend): they take a grid
+// panel's frame (nsv.cpp IsGridPanel; mutant READ_ANY_PANEL: read as they are, which crashed both games).
+// Mutants (must fail): WR_MUT_SHAPE_FLIPPED (polyominoes written upside down), WR_MUT_READ_ANY_PANEL.
 #include <cstdio>
 #include "../generate.h"
 #include "../variant.h"
@@ -32,6 +32,8 @@ static wpz::Set TestSet() {
     wpz::Puzzle c = wpz::NewPuzzle(5, 2, "wide"); c.at(10, 4).start = true; c.at(5, 3) = wpz::Cell{wpz::kPoly, 7, 0, 0x33};
     c.panel = 0x00469; s.puzzles.push_back(c);
     wpz::Puzzle d = wpz::NewPuzzle(1, 2, "small"); d.panel = 0x0001B; d.at(2, 0).end = wpz::kEndNone; d.at(1, 0).end = wpz::kEndTop; s.puzzles.push_back(d);
+    wpz::Puzzle e = wpz::NewPuzzle(3, 3, "first"); e.panel = 0x00064; e.at(1, 1) = wpz::Cell{wpz::kSquare, 1}; e.at(5, 5) = wpz::Cell{wpz::kSquare, 2}; s.puzzles.push_back(e);      // panels that are not grids
+    wpz::Puzzle f = wpz::NewPuzzle(2, 2, "bend"); f.panel = 0x00182; f.at(1, 1) = wpz::Cell{wpz::kStar, 10}; f.at(3, 3) = wpz::Cell{wpz::kStar, 10}; s.puzzles.push_back(f);
     return s;
 }
 static std::string Shape(wpz::Puzzle p) {      // the puzzle as the set text prints it, without its name and panel and with each polyomino moved to the corner
@@ -72,12 +74,41 @@ int main(int argc, char** argv) {
         }
         if (r.overlay->changes().size() != where.size()) { std::printf("FAIL: %zu entities changed, %zu panels placed\n", r.overlay->changes().size(), where.size()); fails++; }
         wrand::ScopedBackend use(r.overlay.get());      // (the run's own view: the recorded game with its writes and its arrays)
+        uint8_t bg[16];      // the recording lacks Tutorial Straight's background colour (+0x110: the reader reads it; no randomizer did): Bend's stands in
+        if (!r.overlay->readField(0x64, 0x110, bg, 16) && r.overlay->readField(0x182, 0x110, bg, 16)) r.overlay->writeField(0x64, 0x110, bg, 16);
         for (size_t k = 0; k < set.puzzles.size(); k++) {
-            wpz::Puzzle back = wrand::ReadCustomPuzzle((int)where[k]);
+            wpz::Puzzle back;
+            try { back = wrand::ReadCustomPuzzle((int)where[k]); }
+            catch (const std::exception& ex) {
+                int near = -1; uintptr_t base = 0;
+                for (auto& e : world.ents) if (e.second <= world.missAddr && e.second > base) { base = e.second; near = e.first; }
+                std::printf("FAIL: %s on %x: %s (the recording does not have entity %x +%llx)\n", set.puzzles[k].name.c_str(), where[k], ex.what(), near, (unsigned long long)(world.missAddr - base)); fails++; continue;
+            }
             bool same = Shape(back) == Shape(set.puzzles[k]);
             if (pass == 1) std::printf("  %-14s on %-36s %s\n", set.puzzles[k].name.c_str(), wpz::SlotName(where[k]).c_str(), same ? "read back the same" : "DIFFERENT");
             if (!same) { fails++; if (pass == 1) std::printf("--- made\n%s--- read back\n%s", Shape(set.puzzles[k]).c_str(), Shape(back).c_str()); }
         }
+    }
+    {      // every panel the editor offers takes a puzzle and reads it back (a panel the reader cannot read crashed the game)
+        wpz::Set all; all.name = "every panel";
+        for (auto& slot : wpz::Slots()) { wpz::Puzzle q = wpz::NewPuzzle(2, 2, slot.name); q.panel = slot.id; q.at(1, 1) = wpz::Cell{wpz::kSquare, 1}; q.at(3, 3) = wpz::Cell{wpz::kStar, 10}; all.puzzles.push_back(q); }
+        std::string keep = g_text; g_text = wpz::Print(all); wrand::Arrays aa; world.misses = 0;
+        auto r = wrand::Generate(wrand::ParseSpec("custom;set:" + wpz::Hash(g_text)), &world, &aa);
+        if (!r.ok) {
+            int near = -1; uintptr_t base = 0;
+            for (auto& e : world.ents) if (e.second <= world.missAddr && e.second > base) { base = e.second; near = e.first; }
+            std::printf("FAIL: every panel: %s (entity %x +%llx)\n", r.error.c_str(), near, (unsigned long long)(world.missAddr - base)); fails++;
+        } else {
+            wrand::ScopedBackend use(r.overlay.get()); int same = 0, lacking = 0;
+            uint8_t bg[16]; if (!r.overlay->readField(0x64, 0x110, bg, 16) && r.overlay->readField(0x182, 0x110, bg, 16)) r.overlay->writeField(0x64, 0x110, bg, 16);
+            for (auto& q : all.puzzles) {
+                try { if (Shape(wrand::ReadCustomPuzzle((int)q.panel)) == Shape(q)) same++; else { std::printf("FAIL: on %s (%x) the puzzle reads back different\n", wpz::SlotName(q.panel).c_str(), q.panel); fails++; } }
+                catch (const std::exception&) { lacking++; std::printf("  (%s, %x: the recording lacks a field the reader reads)\n", wpz::SlotName(q.panel).c_str(), q.panel); }
+            }
+            std::printf("every panel: %zu panels written, %d read back the same, %d not readable from the recording\n", all.puzzles.size(), same, lacking);
+            if (r.overlay->changes().size() != all.puzzles.size()) { std::printf("FAIL: every panel: %zu entities changed\n", r.overlay->changes().size()); fails++; }
+        }
+        g_text = keep;
     }
     wrand::Arrays a3; auto missing = wrand::Generate(wrand::ParseSpec("custom;set:0000000000000001"), &world, &a3);
     if (missing.ok || missing.error.find("not on this PC") == std::string::npos) { std::printf("FAIL: a missing set: %s\n", missing.error.c_str()); fails++; }
