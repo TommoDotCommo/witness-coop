@@ -8,6 +8,7 @@ proxy/model/build/
 witness_cmd.txt
 witness_cmd.txt.tmp
 witness_cmd.taken
+puzzledata*.dat      # the Symbol Shuffler's own save of a seed, written into the folder it runs from (the mod's build no longer writes it)
 tools/psolve/psolve
 tools/win/wdraw_snapshot.py
 
