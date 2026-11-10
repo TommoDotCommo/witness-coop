@@ -12,8 +12,16 @@ import qa_custom
 LDIR = os.path.join(ROOT, 'launcher', 'build')
 WITNESS_RESOURCES = os.environ['WITNESS_RESOURCES']
 
+def stop_own_games():
+    """Close the games this agent started in its slots (restart.sh records them in RUN/pidA.txt, pidB.txt), as restart.sh does first."""
+    for w in ('A', 'B'):
+        f = os.path.join(RUN, 'pid%s.txt' % w)
+        if os.path.exists(f): subprocess.run(['taskkill.exe', '/PID', open(f).read().strip(), '/F'], capture_output=True)
+    time.sleep(2.0)
+
 def run(launcher_exe='witness_launcher.exe'):
     subprocess.run(['make', '-C', os.path.join(ROOT, 'launcher'), 'launcher', os.path.join('build', 'witness_launcher_CONTINUE_REPICKS.exe')], check=True, capture_output=True)
+    stop_own_games()      # (in the full regression the scenario before leaves its games running: the DLL is in use and cannot be replaced)
     subprocess.run([os.path.join(TOOLS, 'install.sh'), 'A'], check=True, capture_output=True)
     exe = qa_custom.cli(); raw = os.path.join(RUN, 'custom_set.txt'); open(raw, 'w').write(qa_custom.SET)
     text = subprocess.run([exe, 'print', raw], capture_output=True, text=True, check=True).stdout
